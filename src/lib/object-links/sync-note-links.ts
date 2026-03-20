@@ -192,11 +192,11 @@ async function resolvePlainTextPatterns(html: string): Promise<ExtractedReferenc
         return
       }
       if (themes) {
-        const lowerHashtags = hashtags.map(h => h.toLowerCase())
+        const normalizedHashtags = hashtags.map(h => h.toLowerCase().replace(/\s+/g, ''))
         for (const theme of themes) {
-          // Match hashtag against theme name (case-insensitive, ignore spaces)
+          // Match hashtag against theme name (case-insensitive, space-normalized)
           const normalizedName = theme.name.toLowerCase().replace(/\s+/g, '')
-          if (lowerHashtags.includes(normalizedName)) {
+          if (normalizedHashtags.includes(normalizedName)) {
             refs.push({ targetType: 'theme', targetId: theme.id })
           }
         }

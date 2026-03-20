@@ -112,32 +112,34 @@ function AddResearchPanel({
     // Close the modal first so the right-hand pane creator is accessible
     onCloseModal?.()
     // Delay to let modal unmount before dispatching
-    setTimeout(() => {
-      if (type === 'note') {
-        const symbols = ideaContext?.assetSymbols || []
-        const noteTitle = symbols.length > 0 ? `Note - ${symbols[0]}` : 'Note'
-        // Open the asset's note workspace — the editor handles note creation via its own + button
-        if (assetId) {
-          window.dispatchEvent(new CustomEvent('decision-engine-action', {
-            detail: {
-              id: `notes-${assetId}`,
-              title: noteTitle,
-              type: 'note',
-              data: { entityType: 'asset', assetId, entityId: assetId, assetSymbol: symbols[0] },
-            },
-          }))
+    // Wait for current modal to unmount before dispatching creator events.
+    // Uses rAF + setTimeout to reliably wait for React commit + DOM cleanup.
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (type === 'note') {
+          const symbols = ideaContext?.assetSymbols || []
+          const noteTitle = symbols.length > 0 ? `Note - ${symbols[0]}` : 'Note'
+          if (assetId) {
+            window.dispatchEvent(new CustomEvent('decision-engine-action', {
+              detail: {
+                id: `notes-${assetId}`,
+                title: noteTitle,
+                type: 'note',
+                data: { entityType: 'asset', assetId, entityId: assetId, assetSymbol: symbols[0] },
+              },
+            }))
+          } else {
+            window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+              detail: { captureType: 'idea' },
+            }))
+          }
         } else {
-          // No asset (rare) — open thought capture as fallback
           window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-            detail: { captureType: 'idea' },
+            detail: { captureType: type === 'prompt' ? 'prompt' : 'idea' },
           }))
         }
-      } else {
-        window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-          detail: { captureType: type === 'prompt' ? 'prompt' : 'idea' },
-        }))
-      }
-    }, 150)
+      }, 50)
+    })
   }
 
   // Search existing notes + thoughts

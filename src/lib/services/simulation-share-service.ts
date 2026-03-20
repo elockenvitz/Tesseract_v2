@@ -271,6 +271,93 @@ export async function shareSimulation(params: ShareSimulationParams): Promise<{
 }
 
 /**
+ * Share a saved snapshot (trade sheet) with other users.
+ * Creates a simulation_snapshot from the trade sheet's variants_snapshot
+ * and share records — without touching the live simulation.
+ */
+export async function shareTradeSheetSnapshot(params: {
+  tradeSheet: { id: string; name: string; description: string | null; portfolio_id: string; variants_snapshot: any[]; total_notional: number }
+  simulationId: string
+  recipientIds: string[]
+  message?: string
+  actorId: string
+}): Promise<{ shares: SimulationShare[] }> {
+  const { tradeSheet, simulationId, recipientIds, message, actorId } = params
+
+  // Get baseline from simulation for the snapshot record
+  const { data: simulation } = await supabase
+    .from('simulations')
+    .select('baseline_holdings, baseline_total_value, result_metrics')
+    .eq('id', simulationId)
+    .single()
+
+  // Create a snapshot from the trade sheet data (not from live state)
+  const { data: snapshot, error: snapError } = await supabase
+    .from('simulation_snapshots')
+    .insert({
+      source_simulation_id: simulationId,
+      name: tradeSheet.name,
+      description: tradeSheet.description,
+      baseline_holdings: simulation?.baseline_holdings || [],
+      baseline_total_value: simulation?.baseline_total_value || 0,
+      snapshot_trades: [],
+      snapshot_variants: tradeSheet.variants_snapshot || [],
+      result_metrics: simulation?.result_metrics || null,
+      created_by: actorId,
+      source_version: 1,
+    })
+    .select()
+    .single()
+
+  if (snapError) throw new Error(`Failed to create snapshot: ${snapError.message}`)
+
+  // Create share records
+  const shareInserts = recipientIds.map(recipientId => ({
+    simulation_id: simulationId,
+    snapshot_id: snapshot.id,
+    shared_by: actorId,
+    shared_with: recipientId,
+    access_level: 'view' as SimulationShareAccess,
+    share_mode: 'snapshot' as SimulationShareMode,
+    message: message || null,
+  }))
+
+  const { data: shares, error: shareError } = await supabase
+    .from('simulation_shares')
+    .insert(shareInserts)
+    .select()
+
+  if (shareError) throw new Error(`Failed to create shares: ${shareError.message}`)
+
+  // Notifications
+  const { data: actor } = await supabase.from('users').select('full_name, email').eq('id', actorId).single()
+  const actorName = actor?.full_name || actor?.email || 'Someone'
+
+  const notificationInserts = recipientIds.map(recipientId => ({
+    user_id: recipientId,
+    type: 'simulation_shared',
+    title: `${actorName} shared a snapshot with you`,
+    message: `"${tradeSheet.name}"${message ? ` — ${message}` : ''}`,
+    metadata: { simulation_id: simulationId, snapshot_id: snapshot.id, share_mode: 'snapshot' },
+  }))
+
+  await supabase.from('notifications').insert(notificationInserts).catch(() => {})
+
+  // Log events
+  for (const share of shares || []) {
+    await logShareEvent({
+      shareId: share.id,
+      simulationId,
+      eventType: 'shared',
+      actorId,
+      details: { recipient_id: share.shared_with, access_level: 'view', share_mode: 'snapshot', snapshot_id: snapshot.id },
+    }).catch(() => {})
+  }
+
+  return { shares: shares as SimulationShare[] }
+}
+
+/**
  * Revoke a share (soft delete)
  */
 export async function revokeShare(params: RevokeShareParams): Promise<void> {

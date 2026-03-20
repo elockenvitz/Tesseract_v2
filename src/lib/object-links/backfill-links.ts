@@ -104,7 +104,7 @@ export async function backfillObjectLinks(): Promise<{
           if (assetId) plainTextRefs.push({ targetType: 'asset', targetId: assetId })
         }
         for (const tag of hashtags) {
-          const normalizedTag = tag.toLowerCase()
+          const normalizedTag = tag.toLowerCase().replace(/\s+/g, '')
           const themeId = themeMap.get(normalizedTag)
           if (themeId) plainTextRefs.push({ targetType: 'theme', targetId: themeId })
           const portfolioId = portfolioMap.get(normalizedTag)

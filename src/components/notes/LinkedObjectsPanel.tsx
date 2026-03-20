@@ -102,9 +102,12 @@ function navigateToObject(link: EnrichedForwardLink) {
     case 'trade_idea_thesis':
       // Navigate to trade queue tab, then open the idea modal
       window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: { selectedTradeId: link.target_id } }))
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('openTradeIdeaModal', { detail: { tradeId: link.target_id } }))
-      }, 100)
+      // Wait for tab navigation to complete before opening modal
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('openTradeIdeaModal', { detail: { tradeId: link.target_id } }))
+        }, 50)
+      })
       break
     case 'workflow':
       window.dispatchEvent(new CustomEvent('navigate-to-workflow', { detail: { workflowId: link.target_id } }))

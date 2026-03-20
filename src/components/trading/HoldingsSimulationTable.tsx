@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, ChevronDown, ChevronRight, FileCheck, FileText, Info, MessageSquare, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, ChevronDown, ChevronRight, FileCheck, FileText, Info, MessageSquare, Plus, Search, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { SimulationRow, SimulationRowSummary } from '../../hooks/useSimulationRows'
 import type { TradeAction, ExecutionStatus } from '../../types/trading'
@@ -41,7 +41,7 @@ function actionLabel(action: TradeAction, isNew: boolean, isRemoved: boolean): s
   if (isRemoved || action === 'sell') return 'CLOSE'
   switch (action) {
     case 'buy':
-    case 'add':  return 'ADD'
+    case 'add':  return 'INCREASE'
     case 'trim': return 'REDUCE'
     default:     return action.toUpperCase()
   }
@@ -129,9 +129,11 @@ function getGroupKey(row: SimulationRow, g: GroupBy): string {
   switch (g) {
     case 'sector': return row.sector || 'Other'
     case 'action': {
-      if (row.isNew) return 'New Positions'
+      if (row.isNew) {
+        return row.derivedAction === 'sell' || row.derivedAction === 'trim' ? 'New Short' : 'New Long'
+      }
       if (row.isRemoved) return 'Sold'
-      if (row.variant) return row.derivedAction === 'buy' || row.derivedAction === 'add' ? 'Adding' : 'Trimming'
+      if (row.variant && row.variant.sizing_input) return row.derivedAction === 'buy' || row.derivedAction === 'add' ? 'Increasing' : 'Reducing'
       return 'Unchanged'
     }
     case 'change': {
@@ -165,6 +167,39 @@ function getSortValue(row: SimulationRow, col: ColKey): string | number {
 }
 
 /** Get the filterable text value for a row+column */
+/** Get the raw numeric value for a column (for comparison filters like >4, <2) */
+function getNumericValue(row: SimulationRow, col: ColKey): number | null {
+  switch (col) {
+    case 'SHARES': return row.currentShares
+    case 'WEIGHT': return row.currentWeight
+    case 'BENCH': return row.benchWeight
+    case 'ACTIVE': return row.activeWeight
+    case 'SIM_WT': return row.simWeight
+    case 'SIM_SHARES': return row.simShares
+    case 'DELTA_WT': return row.deltaWeight
+    case 'DELTA_SHARES': return row.deltaShares
+    case 'DELTA_NOTIONAL': return row.notional
+    default: return null
+  }
+}
+
+/** Check if a filter term is a numeric comparison (e.g. >4, <=2.5, <0) */
+function matchesNumericFilter(row: SimulationRow, col: ColKey, term: string): boolean | null {
+  const match = term.match(/^([><]=?)\s*(-?\d+\.?\d*)$/)
+  if (!match) return null // not a numeric filter — fall through to text match
+  const op = match[1]
+  const threshold = parseFloat(match[2])
+  const value = getNumericValue(row, col)
+  if (value === null) return false
+  switch (op) {
+    case '>': return value > threshold
+    case '<': return value < threshold
+    case '>=': return value >= threshold
+    case '<=': return value <= threshold
+    default: return null
+  }
+}
+
 function getFilterValue(row: SimulationRow, col: ColKey): string {
   switch (col) {
     case 'SYMBOL': return row.symbol
@@ -443,7 +478,7 @@ function HoldingRow({
               checked={promoteSelected ?? false}
               onChange={(e) => { e.stopPropagation(); onTogglePromote(v.id) }}
               className="w-3 h-3 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 flex-shrink-0 cursor-pointer"
-              title="Select for promotion to Trade Book"
+              title="Select for execution"
             />
           )}
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
@@ -736,22 +771,6 @@ function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreate
             </button>
           )}
 
-          {onCreateTradeSheet && summary.tradedCount > 0 && (
-            <button
-              onClick={onCreateTradeSheet}
-              disabled={!canCreateTradeSheet || isCreatingTradeSheet}
-              tabIndex={-1}
-              className={clsx(
-                'inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1 rounded-md transition-colors',
-                canCreateTradeSheet && !isCreatingTradeSheet
-                  ? 'bg-primary-600 text-white hover:bg-primary-700'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-              )}
-            >
-              <FileText className="w-3 h-3" />
-              {isCreatingTradeSheet ? 'Creating...' : 'Create Trade Sheet'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -822,6 +841,9 @@ export function HoldingsSimulationTable({
   const [editing, setEditing] = useState(false)
   const [pendingEditAssetId, setPendingEditAssetId] = useState<string | null>(null)
   const [pendingEditCol, setPendingEditCol] = useState(COL.SIM_WT)
+
+  // Execute confirmation modal
+  const [showExecuteConfirm, setShowExecuteConfirm] = useState(false)
 
   // Popover state (conflicts + sizing help)
   const [showConflictPopover, setShowConflictPopover] = useState(false)
@@ -968,9 +990,13 @@ export function HoldingsSimulationTable({
     const activeFilters = Object.entries(filters).filter(([, v]) => v && v.length > 0) as [ColKey, string][]
     if (activeFilters.length > 0) {
       result = result.filter(row =>
-        activeFilters.every(([col, term]) =>
-          getFilterValue(row, col).toLowerCase().includes(term.toLowerCase())
-        )
+        activeFilters.every(([col, term]) => {
+          // Try numeric comparison first (>4, <=2.5, etc.)
+          const numericResult = matchesNumericFilter(row, col, term.trim())
+          if (numericResult !== null) return numericResult
+          // Fall back to text match
+          return getFilterValue(row, col).toLowerCase().includes(term.toLowerCase())
+        })
       )
     }
 
@@ -1431,25 +1457,28 @@ export function HoldingsSimulationTable({
           </button>
         )}
 
-        {/* Promote to Trade Book */}
+        {/* Execute Trades — commit checked trades to Trade Book */}
         {!readOnly && !suggestMode && onBulkPromote && promotableRows.length > 0 && (
           <button
             onClick={() => {
               if (selectedForPromote.size === 0) return
-              if (!window.confirm(`Promote ${selectedForPromote.size} trade${selectedForPromote.size !== 1 ? 's' : ''} to Trade Book? They will be removed from the simulation.`)) return
-              onBulkPromote(Array.from(selectedForPromote))
-              setSelectedForPromote(new Set())
+              setShowExecuteConfirm(true)
             }}
             disabled={selectedForPromote.size === 0 || isBulkPromoting}
+            title="Commit selected trades to Trade Book for execution"
             className={clsx(
-              'text-[11px] font-medium px-2.5 py-0.5 rounded-full transition-colors flex items-center gap-1',
+              'text-[11px] font-semibold px-2.5 py-1 rounded-md transition-colors flex items-center gap-1',
               selectedForPromote.size > 0
-                ? 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 cursor-pointer'
-                : 'text-gray-400 dark:text-gray-500 cursor-default'
+                ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm cursor-pointer'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-default'
             )}
           >
-            <BookOpen className="h-3 w-3" />
-            {isBulkPromoting ? 'Promoting...' : `Promote${selectedForPromote.size > 0 ? ` (${selectedForPromote.size})` : ''}`}
+            <CheckCircle2 className="h-3 w-3" />
+            {isBulkPromoting
+              ? 'Executing...'
+              : selectedForPromote.size > 0
+                ? `Execute ${selectedForPromote.size} Trade${selectedForPromote.size !== 1 ? 's' : ''}`
+                : 'Execute Trades'}
           </button>
         )}
 
@@ -1527,9 +1556,9 @@ export function HoldingsSimulationTable({
       {/* Table */}
       <div className="flex-1 overflow-auto">
         <table className="w-full border-collapse">
-          <thead className="sticky top-0 z-10">
+          <thead className="sticky top-0 z-20 bg-white dark:bg-gray-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
             {/* Column headers */}
-            <tr className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+            <tr className="bg-white dark:bg-gray-900">
               {COLUMNS.map((col) => {
                 const colIdx = COL[col.key]
                 const isSorted = sortCol === col.key
@@ -1744,6 +1773,88 @@ export function HoldingsSimulationTable({
           isCreatingTradeSheet={isCreatingTradeSheet}
         />
       )}
+
+      {/* Execute Trades Confirmation Modal */}
+      {showExecuteConfirm && onBulkPromote && (() => {
+        const selectedRows = rows.filter(r => r.variant && selectedForPromote.has(r.variant.id))
+        const totalNotional = selectedRows.reduce((s, r) => s + Math.abs(r.notional), 0)
+        const fmtN = (v: number) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}K` : `$${v.toFixed(0)}`
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setShowExecuteConfirm(false)}>
+            <div className="fixed inset-0 bg-black/50" />
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+                      <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">
+                    Execute {selectedRows.length} Trade{selectedRows.length !== 1 ? 's' : ''}?
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
+                    These trades will be committed to Trade Book and removed from the simulation.
+                  </p>
+
+                  {/* Trade summary */}
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 mb-4 overflow-hidden">
+                    <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                      {selectedRows.map(row => (
+                        <div key={row.asset_id} className="flex items-center gap-2 px-3 py-2 text-xs">
+                          <span className={clsx(
+                            'px-1.5 py-0.5 rounded text-[9px] font-bold uppercase',
+                            row.derivedAction === 'buy' || row.derivedAction === 'add'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                          )}>
+                            {row.derivedAction}
+                          </span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{row.symbol}</span>
+                          <span className="text-gray-500 dark:text-gray-400 ml-auto font-mono">
+                            {row.variant?.sizing_input}
+                          </span>
+                          {row.computed?.target_weight != null && (
+                            <span className="text-gray-400 dark:text-gray-500 font-mono">→ {row.computed.target_weight.toFixed(2)}%</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-3 py-2 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs">
+                      <span className="font-medium text-gray-600 dark:text-gray-300">{selectedRows.length} trade{selectedRows.length !== 1 ? 's' : ''}</span>
+                      <span className="font-medium text-gray-600 dark:text-gray-300">{fmtN(totalNotional)} notional</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center mb-4">
+                    Trades become actionable for execution immediately.
+                  </p>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowExecuteConfirm(false)}
+                      className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowExecuteConfirm(false)
+                        onBulkPromote(Array.from(selectedForPromote))
+                        setSelectedForPromote(new Set())
+                      }}
+                      disabled={isBulkPromoting}
+                      className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      {isBulkPromoting ? 'Executing...' : 'Execute Trades'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

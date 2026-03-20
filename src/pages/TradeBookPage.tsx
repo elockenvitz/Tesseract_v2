@@ -10,8 +10,8 @@
  * Trade Sheets are snapshot artifacts only and must not mutate decision state.
  */
 
-import { useState, useCallback } from 'react'
-import { BookOpen, Layers, List } from 'lucide-react'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { BookOpen, Layers, List, Briefcase, ChevronDown, Search, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -51,6 +51,34 @@ export function TradeBookPage() {
 
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(undefined)
   const portfolioId = selectedPortfolioId || portfolios[0]?.id
+  const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false)
+  const [portfolioSearch, setPortfolioSearch] = useState('')
+  const portfolioDropdownRef = useRef<HTMLDivElement>(null)
+  const portfolioSearchRef = useRef<HTMLInputElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!portfolioDropdownOpen) return
+    const handler = (e: MouseEvent) => {
+      if (portfolioDropdownRef.current && !portfolioDropdownRef.current.contains(e.target as Node)) {
+        setPortfolioDropdownOpen(false)
+        setPortfolioSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [portfolioDropdownOpen])
+
+  // Auto-focus search on open
+  useEffect(() => {
+    if (portfolioDropdownOpen) portfolioSearchRef.current?.focus()
+  }, [portfolioDropdownOpen])
+
+  const filteredPortfolios = portfolios.filter((p: any) => {
+    if (!portfolioSearch) return true
+    const q = portfolioSearch.toLowerCase()
+    return p.name?.toLowerCase().includes(q) || p.portfolio_id?.toLowerCase().includes(q)
+  })
 
   // Fetch user's role for this portfolio
   const { data: userRole } = useQuery({
@@ -182,17 +210,69 @@ export function TradeBookPage() {
 
         <div className="flex items-center gap-3">
           {/* Portfolio selector */}
-          <select
-            value={portfolioId || ''}
-            onChange={e => setSelectedPortfolioId(e.target.value)}
-            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-          >
-            {portfolios.map((p: any) => (
-              <option key={p.id} value={p.id}>
-                {p.portfolio_id || p.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative" ref={portfolioDropdownRef}>
+            <button
+              onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+            >
+              <Briefcase className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <span className="text-gray-900 dark:text-white font-medium">
+                {portfolios.find((p: any) => p.id === portfolioId)?.name || 'Select portfolio'}
+              </span>
+              <ChevronDown className={clsx("h-4 w-4 text-gray-400 transition-transform", portfolioDropdownOpen && "rotate-180")} />
+            </button>
+
+            {portfolioDropdownOpen && (
+              <div className="absolute top-full right-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                {/* Search */}
+                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      ref={portfolioSearchRef}
+                      type="text"
+                      value={portfolioSearch}
+                      onChange={e => setPortfolioSearch(e.target.value)}
+                      placeholder="Search portfolios..."
+                      className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                </div>
+                {/* List */}
+                <div className="max-h-64 overflow-y-auto">
+                  {filteredPortfolios.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No portfolios found</div>
+                  ) : (
+                    filteredPortfolios.map((p: any) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setSelectedPortfolioId(p.id)
+                          setPortfolioDropdownOpen(false)
+                          setPortfolioSearch('')
+                        }}
+                        className={clsx(
+                          "w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors",
+                          p.id === portfolioId
+                            ? "bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300"
+                            : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        )}
+                      >
+                        <Briefcase className={clsx("h-4 w-4 flex-shrink-0", p.id === portfolioId ? "text-primary-500" : "text-gray-400")} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{p.name}</div>
+                          {p.portfolio_id && (
+                            <div className="text-xs text-gray-400 dark:text-gray-500 truncate">{p.portfolio_id}</div>
+                          )}
+                        </div>
+                        {p.id === portfolioId && <Check className="h-4 w-4 text-primary-500 flex-shrink-0" />}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

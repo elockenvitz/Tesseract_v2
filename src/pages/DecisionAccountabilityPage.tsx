@@ -19,16 +19,18 @@
 
 import { useState, useMemo } from 'react'
 import {
-  Target, Search, ChevronDown, Clock,
+  Target, Search, ChevronDown, ChevronRight, Clock,
   CheckCircle2, TrendingUp, TrendingDown, Briefcase,
   AlertCircle, XCircle, X, FileText,
   ArrowRight, HelpCircle, AlertTriangle,
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
   Percent, Zap, Camera, Timer, Scale,
+  Lightbulb, MessageSquare, BookOpen, Pencil, User,
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
 import {
   useDecisionAccountability,
+  useDecisionStory,
   usePortfoliosForFilter,
   useUsersForFilter,
 } from '../hooks/useDecisionAccountability'
@@ -608,6 +610,47 @@ function DecisionRow({
 // Detail Panel
 // ============================================================
 
+/** Collapsible section for the Decision Story */
+function StorySection({ icon: Icon, title, children, defaultOpen = true, badge }: {
+  icon: React.ElementType
+  title: string
+  children: React.ReactNode
+  defaultOpen?: boolean
+  badge?: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border-b border-gray-100 dark:border-gray-800">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-2.5 flex items-center gap-2 hover:bg-gray-50/50 transition-colors text-left"
+      >
+        {open ? <ChevronDown className="w-3 h-3 text-gray-400" /> : <ChevronRight className="w-3 h-3 text-gray-400" />}
+        <Icon className="w-3.5 h-3.5 text-gray-400" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex-1">{title}</span>
+        {badge}
+      </button>
+      {open && <div className="px-4 pb-3">{children}</div>}
+    </div>
+  )
+}
+
+/** Empty state for missing data */
+function EmptyField({ text }: { text: string }) {
+  return <p className="text-[10px] text-gray-300 italic">{text}</p>
+}
+
+/** Rationale field row */
+function RationaleField({ label, value }: { label: string; value: string | null | undefined }) {
+  if (!value) return null
+  return (
+    <div className="mb-2">
+      <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
+      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{value}</p>
+    </div>
+  )
+}
+
 function DetailPanel({
   row,
   onClose,
@@ -619,6 +662,17 @@ function DetailPanel({
 }) {
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600', bgColor: 'bg-gray-100' }
 
+  // Fetch the full decision story (theses, recommendation, acceptance, rationale, research)
+  const firstExecId = row.matched_executions?.[0]?.event_id || null
+  const { data: story, isLoading: storyLoading } = useDecisionStory(row.decision_id, firstExecId)
+
+  // Review status badge
+  const reviewBadge = story?.executionRationale
+    ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Reviewed</span>
+    : row.execution_status === 'executed'
+      ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Needs review</span>
+      : null
+
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
@@ -629,6 +683,7 @@ function DetailPanel({
           </span>
           <span className="text-[13px] font-semibold text-gray-900 truncate">{row.asset_symbol}</span>
           <span className="text-[11px] text-gray-400 truncate">{row.asset_name}</span>
+          {reviewBadge}
         </div>
         <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
           <X className="w-4 h-4" />
@@ -636,9 +691,102 @@ function DetailPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* ── A. Decision ── */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2">Decision</h4>
+        {/* ════════════════════════════════════════════════════════════
+            DECISION STORY — chronological lifecycle review
+            Outcomes is the canonical post-mortem workspace.
+            ════════════════════════════════════════════════════════════ */}
+
+        {/* ── 1. Idea & Thesis ── */}
+        <StorySection icon={Lightbulb} title="Idea & Thesis" badge={
+          story?.theses && story.theses.length > 0
+            ? <span className="text-[8px] text-gray-400">{story.theses.length} thesis{story.theses.length !== 1 ? 'es' : ''}</span>
+            : undefined
+        }>
+          {/* Original rationale */}
+          {row.rationale_text ? (
+            <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mb-2">{row.rationale_text}</p>
+          ) : (
+            <EmptyField text="No idea rationale captured" />
+          )}
+
+          {/* Idea metadata */}
+          <div className="flex items-center gap-3 text-[10px] text-gray-500 mb-2">
+            {row.owner_name && <span>by {row.owner_name}</span>}
+            <span>{format(new Date(row.created_at), 'MMM d, yyyy')}</span>
+            {story?.ideaExtras?.conviction && <span className="capitalize">Conviction: {story.ideaExtras.conviction}</span>}
+            {story?.ideaExtras?.time_horizon && <span className="capitalize">{story.ideaExtras.time_horizon} horizon</span>}
+          </div>
+
+          {/* Thesis text */}
+          {story?.ideaExtras?.thesis_text && (
+            <div className="mb-2 px-2.5 py-2 rounded bg-gray-50 border border-gray-100 text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">
+              {story.ideaExtras.thesis_text}
+            </div>
+          )}
+
+          {/* Bull/Bear theses */}
+          {story?.theses && story.theses.length > 0 && (
+            <div className="space-y-1.5 mt-2">
+              {story.theses.map(t => (
+                <div key={t.id} className="flex items-start gap-2 text-[10px]">
+                  <span className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase flex-shrink-0 ${
+                    t.direction === 'bull' ? 'bg-emerald-100 text-emerald-700' :
+                    t.direction === 'bear' ? 'bg-red-100 text-red-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>{t.direction}</span>
+                  <span className="text-gray-600 leading-relaxed">{t.rationale}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Linked research */}
+          {story && story.linkedResearchCount > 0 && (
+            <div className="mt-2 text-[10px] text-primary-600 flex items-center gap-1">
+              <FileText className="w-3 h-3" />
+              {story.linkedResearchCount} linked research item{story.linkedResearchCount !== 1 ? 's' : ''}
+            </div>
+          )}
+        </StorySection>
+
+        {/* ── 2. Recommendation ── */}
+        <StorySection icon={MessageSquare} title="Recommendation" defaultOpen={!!story?.decisionRequest}>
+          {story?.decisionRequest ? (() => {
+            const dr = story.decisionRequest
+            const snap = dr.submission_snapshot || {}
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                  {dr.requester_name && <span>by {dr.requester_name}</span>}
+                  <span>{format(new Date(dr.created_at), 'MMM d, yyyy')}</span>
+                  {dr.urgency && <span className="capitalize">{dr.urgency} urgency</span>}
+                </div>
+                {/* Proposed sizing */}
+                {(snap.weight || snap.shares || snap.action) && (
+                  <div className="px-2.5 py-2 rounded bg-amber-50/50 border border-amber-200/60 text-[11px]">
+                    <div className="flex items-center gap-3">
+                      {snap.action && <span className="font-semibold uppercase text-[10px]">{snap.action as string}</span>}
+                      {snap.weight != null && <span>Weight: <span className="font-medium">{Number(snap.weight).toFixed(1)}%</span></span>}
+                      {snap.shares != null && <span>Shares: <span className="font-medium">{Number(snap.shares).toLocaleString()}</span></span>}
+                    </div>
+                  </div>
+                )}
+                {/* Analyst context note */}
+                {dr.context_note && (
+                  <p className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">{dr.context_note}</p>
+                )}
+                {(snap.notes as string) && (
+                  <p className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">{snap.notes as string}</p>
+                )}
+              </div>
+            )
+          })() : (
+            <EmptyField text="No formal recommendation — direct PM decision" />
+          )}
+        </StorySection>
+
+        {/* ── 3. Decision ── */}
+        <StorySection icon={Target} title="Decision">
           <div className="space-y-1.5">
             <DetailRow label="Status" value={
               <span className={`text-[9px] font-bold uppercase px-1.5 py-[2px] rounded ${
@@ -647,49 +795,35 @@ function DetailPanel({
                 {(STAGE_CONFIG[row.stage] || STAGE_CONFIG.approved).label}
               </span>
             } />
-            {row.approved_at && (
-              <DetailRow label="Approved" value={format(new Date(row.approved_at), 'MMM d, yyyy')} />
-            )}
-            {row.approver_name && <DetailRow label="Approved by" value={row.approver_name} />}
-            {row.owner_name && <DetailRow label="Owner" value={row.owner_name} />}
+            {row.approved_at && <DetailRow label="Decided" value={format(new Date(row.approved_at), 'MMM d, yyyy')} />}
+            {row.approver_name && <DetailRow label="Decided by" value={row.approver_name} />}
             {row.portfolio_name && <DetailRow label="Portfolio" value={row.portfolio_name} />}
-
-            {/* Decision price snapshot */}
-            {row.has_decision_price && row.decision_price !== null ? (
+            {row.has_decision_price && row.decision_price !== null && (
               <DetailRow label="Price at decision" value={
-                <span className="text-[11px] font-medium text-gray-700 tabular-nums">
-                  {formatPrice(row.decision_price)}
-                  <span className="text-[8px] text-gray-400 ml-1">(snapshot)</span>
-                </span>
-              } />
-            ) : (
-              <DetailRow label="Price at decision" value={
-                <span className="text-[9px] text-gray-300 italic">No snapshot</span>
+                <span className="text-[11px] font-medium text-gray-700 tabular-nums">{formatPrice(row.decision_price)}</span>
               } />
             )}
           </div>
-        </div>
 
-        {/* ── B. Decision Rationale ── */}
-        {row.rationale_text && (
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h4 className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1">
-              <FileText className="w-3 h-3" />
-              Decision Rationale
-            </h4>
-            <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {row.rationale_text}
-            </p>
-          </div>
-        )}
+          {/* PM decision note */}
+          {story?.decisionRequest?.decision_note && (
+            <div className="mt-2 px-2.5 py-2 rounded bg-blue-50/50 border border-blue-200/60">
+              <div className="text-[9px] font-semibold text-blue-600 mb-1">PM Decision Note</div>
+              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{story.decisionRequest.decision_note}</p>
+            </div>
+          )}
 
-        {/* ── C. Execution ── */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1">
-            <ArrowRight className="w-3 h-3" />
-            Execution
-          </h4>
+          {/* Acceptance note */}
+          {story?.acceptedTrade?.acceptance_note && (
+            <div className="mt-2 px-2.5 py-2 rounded bg-emerald-50/50 border border-emerald-200/60">
+              <div className="text-[9px] font-semibold text-emerald-600 mb-1">Acceptance Note</div>
+              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{story.acceptedTrade.acceptance_note}</p>
+            </div>
+          )}
+        </StorySection>
 
+        {/* ── 4. Execution ── */}
+        <StorySection icon={ArrowRight} title="Execution" badge={<ExecStatusPill status={row.execution_status} />}>
           {row.execution_status === 'not_applicable' ? (
             <p className="text-[11px] text-gray-400">
               Decision was {row.stage} — execution not expected.
@@ -710,15 +844,18 @@ function DetailPanel({
               ))}
             </div>
           )}
-        </div>
+        </StorySection>
 
-        {/* ── D. Result / Impact — now with decision price ── */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1">
-            <DollarSign className="w-3 h-3" />
-            Result
-          </h4>
-
+        {/* ── 5. Outcome ── */}
+        <StorySection icon={DollarSign} title="Outcome" badge={
+          row.result_direction ? (
+            <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
+              row.result_direction === 'positive' ? 'text-emerald-700 bg-emerald-50' :
+              row.result_direction === 'negative' ? 'text-red-700 bg-red-50' :
+              'text-gray-500 bg-gray-100'
+            }`}>{RESULT_CONFIG[row.result_direction].label}</span>
+          ) : undefined
+        }>
           {row.execution_status === 'not_applicable' ? (
             <p className="text-[11px] text-gray-400">Not applicable for {row.stage} decisions.</p>
           ) : (
@@ -886,37 +1023,44 @@ function DetailPanel({
               )}
             </div>
           )}
-        </div>
+        </StorySection>
 
-        {/* ── E. Context & Links ── */}
-        <div className="px-4 py-3">
-          <h4 className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2">
-            Context
-          </h4>
-          <div className="space-y-1.5">
-            <DetailRow label="Execution status" value={<ExecStatusPill status={row.execution_status} />} />
-            {row.execution_lag_days !== null && row.execution_lag_days >= 0 && (
-              <DetailRow label="Lag" value={`${row.execution_lag_days}d`} />
-            )}
-            {row.days_since_decision !== null && (
-              <DetailRow label="Decision age" value={`${row.days_since_decision}d`} />
-            )}
-          </div>
-
-          {/* Navigation links */}
-          {onNavigate && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              <button
-                onClick={() => onNavigate({
-                  id: row.decision_id,
-                  title: `${row.direction} ${row.asset_symbol}`,
-                  type: 'trade-queue',
-                })}
-                className="text-[10px] text-primary-600 hover:text-primary-700 hover:underline"
-              >
-                View source idea
-              </button>
-              {row.portfolio_id && (
+        {/* ── 6. Post-Mortem / Lessons ── */}
+        <StorySection icon={Pencil} title="Post-Mortem" defaultOpen={true} badge={
+          story?.executionRationale
+            ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Captured</span>
+            : row.execution_status === 'executed'
+              ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Needs review</span>
+              : undefined
+        }>
+          {story?.executionRationale ? (
+            <div className="space-y-1">
+              <RationaleField label="Why was this trade made?" value={story.executionRationale.reason_for_action} />
+              <RationaleField label="Why now?" value={story.executionRationale.why_now} />
+              <RationaleField label="What changed?" value={story.executionRationale.what_changed} />
+              <RationaleField label="Thesis context" value={story.executionRationale.thesis_context} />
+              <RationaleField label="Catalyst / trigger" value={story.executionRationale.catalyst_trigger} />
+              <RationaleField label="Sizing logic" value={story.executionRationale.sizing_logic} />
+              <RationaleField label="Risk context" value={story.executionRationale.risk_context} />
+              <RationaleField label="Execution context" value={story.executionRationale.execution_context} />
+              {story.executionRationale.divergence_from_plan && (
+                <div className="mt-2 px-2.5 py-2 rounded bg-amber-50 border border-amber-200">
+                  <div className="text-[9px] font-semibold text-amber-700 mb-1">Diverged from plan</div>
+                  <p className="text-[11px] text-gray-700">{story.executionRationale.divergence_explanation || 'No explanation provided'}</p>
+                </div>
+              )}
+              <div className="mt-2 flex items-center gap-3 text-[10px] text-gray-400">
+                {story.executionRationale.authored_by_name && <span>by {story.executionRationale.authored_by_name}</span>}
+                {story.executionRationale.reviewed_by_name && <span>Reviewed by {story.executionRationale.reviewed_by_name}</span>}
+                <span className="capitalize">{story.executionRationale.status}</span>
+              </div>
+            </div>
+          ) : row.execution_status === 'executed' ? (
+            <div className="text-center py-4">
+              <Pencil className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+              <p className="text-[11px] font-medium text-gray-500 mb-1">No post-mortem captured yet</p>
+              <p className="text-[10px] text-gray-400 mb-3">Review what happened and capture lessons learned.</p>
+              {onNavigate && row.portfolio_id && (
                 <button
                   onClick={() => onNavigate({
                     id: row.portfolio_id,
@@ -924,19 +1068,47 @@ function DetailPanel({
                     type: 'portfolio',
                     data: { subTab: 'journal' },
                   })}
+                  className="text-[10px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                >
+                  Open Trade Journal to write review →
+                </button>
+              )}
+            </div>
+          ) : (
+            <EmptyField text="Post-mortem available after execution" />
+          )}
+        </StorySection>
+
+        {/* ── Navigation & Metadata ── */}
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-3 text-[10px] text-gray-400 mb-2">
+            <DetailRow label="Decision age" value={row.days_since_decision !== null ? `${row.days_since_decision}d` : '—'} />
+            {row.execution_lag_days !== null && row.execution_lag_days >= 0 && (
+              <DetailRow label="Exec lag" value={`${row.execution_lag_days}d`} />
+            )}
+          </div>
+
+          {onNavigate && (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => onNavigate({ id: row.decision_id, title: `${row.direction} ${row.asset_symbol}`, type: 'trade-queue' })}
+                className="text-[10px] text-primary-600 hover:text-primary-700 hover:underline"
+              >
+                View source idea
+              </button>
+              {row.portfolio_id && (
+                <button
+                  onClick={() => onNavigate({ id: row.portfolio_id, title: row.portfolio_name, type: 'portfolio', data: { subTab: 'journal' } })}
                   className="text-[10px] text-primary-600 hover:text-primary-700 hover:underline"
                 >
-                  View trade journal
+                  Trade journal
                 </button>
               )}
             </div>
           )}
 
-          {/* Metric honesty note */}
-          <div className="mt-3 text-[9px] text-gray-300 leading-relaxed">
-            Moves are directionalized proxies. Decision price from DB-cached snapshot.
-            Execution price derived from position value/quantity. Impact proxy =
-            trade size {'\u00D7'} directionalized move. Not exact P&L attribution.
+          <div className="mt-3 text-[8px] text-gray-300 leading-relaxed">
+            Moves are directionalized proxies. Impact proxy = trade size × directionalized move. Not exact P&L.
           </div>
         </div>
       </div>

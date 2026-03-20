@@ -401,7 +401,8 @@ export function Layout({
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
           return (
             <div className={clsx(
-              "relative h-full flex flex-col overflow-hidden",
+              "relative h-full flex flex-col",
+              isFullWidth ? "overflow-hidden" : "overflow-auto",
               // Only transition margin for comm pane, not padding
               "transition-[margin] duration-300",
               !isFullWidth && "px-4 sm:px-6 lg:px-8 py-6",

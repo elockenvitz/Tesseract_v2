@@ -36,7 +36,8 @@ import {
   Wrench,
   AlertTriangle,
   User,
-  Share2
+  Share2,
+  RotateCcw
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -52,7 +53,6 @@ import { PortfolioImpactView } from '../components/trading/PortfolioImpactView'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { RecommendationEditorModal } from '../components/trading/RecommendationEditorModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
-import { ShareSimulationModal } from '../components/trading/ShareSimulationModal'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -73,6 +73,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { useToast } from '../components/common/Toast'
 import { useWorkbench } from '../hooks/useTradeLab'
 import { submitRecommendation } from '../lib/services/recommendation-service'
+import { shareTradeSheetSnapshot } from '../lib/services/simulation-share-service'
 import { moveTradeIdea } from '../lib/services/trade-idea-service'
 import { parseSizingInput, toSizingSpec, type SizingSpec } from '../lib/trade-lab/sizing-parser'
 import { detectDirectionConflict } from '../lib/trade-lab/normalize-sizing'
@@ -388,7 +389,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // New: Portfolio-first workflow state
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(initialPortfolioId || null)
-  const [selectedViewType, setSelectedViewType] = useState<'private' | 'shared' | 'lists'>('private')
+  const [selectedViewType, setSelectedViewType] = useState<'private' | 'lists'>('private')
   const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false)
   const [portfolioSearchQuery, setPortfolioSearchQuery] = useState('')
   const portfolioDropdownRef = useRef<HTMLDivElement>(null)
@@ -399,11 +400,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [newSimPortfolioId, setNewSimPortfolioId] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [showAddTradeIdeaModal, setShowAddTradeIdeaModal] = useState(false)
-  const [showShareModal, setShowShareModal] = useState(false)
   const [showCreateSheetConfirm, setShowCreateSheetConfirm] = useState(false)
+  const [snapshotSubView, setSnapshotSubView] = useState<'mine' | 'shared'>('mine')
   const [proposalEditorIdea, setProposalEditorIdea] = useState<TradeQueueItemWithDetails | null>(null)
   const [confirmExecuteIdea, setConfirmExecuteIdea] = useState<TradeQueueItemWithDetails | null>(null)
   const [confirmRecommendIdea, setConfirmRecommendIdea] = useState<TradeQueueItemWithDetails | null>(null)
+  const [confirmLoadSnapshot, setConfirmLoadSnapshot] = useState<import('../types/trading').TradeSheet | null>(null)
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false)
+  const [shareSnapshotSheet, setShareSnapshotSheet] = useState<import('../types/trading').TradeSheet | null>(null)
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
   const [tradeModalInitialTab, setTradeModalInitialTab] = useState<'details' | 'discussion' | 'decisions' | 'activity'>('details')
   const [holdingsGroupBy, setHoldingsGroupBy] = useState<'none' | 'sector' | 'action' | 'change'>('none')
@@ -977,9 +981,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     })
   }
 
-  // Handler for creating trade sheet + clearing simulation
-  const handleCreateTradeSheet = async (name: string, description?: string) => {
-    await v3CreateTradeSheet({ name, description })
+  // Handler for creating snapshot + clearing simulation
+  const handleSaveSnapshotAndClear = async (name: string, description?: string) => {
+    const sheet = await v3CreateTradeSheet({ name, description })
+    // Auto-finalize so snapshot appears as saved (not draft)
+    if (sheet?.id) {
+      await supabase.from('trade_sheets').update({ status: 'committed', committed_at: new Date().toISOString(), committed_by: user?.id }).eq('id', sheet.id)
+    }
 
     // Clear all simulation trades
     if (selectedSimulationId) {
@@ -1000,6 +1008,81 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Invalidate caches so UI refreshes
     queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
     queryClient.invalidateQueries({ queryKey: ['intent-variants', tradeLab?.id] })
+  }
+
+  // Handler for creating snapshot WITHOUT clearing simulation
+  const handleSaveSnapshotAndKeep = async (name: string, description?: string) => {
+    const sheet = await v3CreateTradeSheet({ name, description })
+    // Auto-finalize so snapshot appears as saved (not draft)
+    if (sheet?.id) {
+      await supabase.from('trade_sheets').update({ status: 'committed', committed_at: new Date().toISOString(), committed_by: user?.id }).eq('id', sheet.id)
+    }
+    queryClient.invalidateQueries({ queryKey: ['trade-sheets'] })
+  }
+
+  // Handler for loading a snapshot back into Trade Lab.
+  // Replaces the current simulation state with the snapshot's variants.
+  // Snapshots remain immutable — this only writes to the live lab_variants + simulation_trades.
+  const handleLoadSnapshot = async (sheet: import('../types/trading').TradeSheet) => {
+    if (!tradeLab?.id || !selectedSimulationId) return
+    setIsLoadingSnapshot(true)
+    try {
+      const variants = (sheet.variants_snapshot || []) as any[]
+
+      // 1. Clear current live state
+      await supabase.from('simulation_trades').delete().eq('simulation_id', selectedSimulationId)
+      await supabase.from('lab_variants').delete().eq('lab_id', tradeLab.id)
+
+      // 2. Rebuild simulation_trades from snapshot
+      if (variants.length > 0) {
+        const simTrades = variants.map((v: any, idx: number) => ({
+          simulation_id: selectedSimulationId,
+          trade_queue_item_id: v.trade_queue_item_id || null,
+          asset_id: v.asset_id,
+          action: v.action,
+          shares: v.computed?.target_shares ?? null,
+          weight: v.computed?.target_weight ?? null,
+          price: v.computed?.price_used ?? null,
+          sort_order: v.sort_order ?? idx,
+        }))
+        await supabase.from('simulation_trades').upsert(simTrades, { onConflict: 'simulation_id,asset_id' })
+      }
+
+      // 3. Rebuild lab_variants from snapshot
+      if (variants.length > 0) {
+        const labVariants = variants.map((v: any) => ({
+          lab_id: tradeLab.id,
+          asset_id: v.asset_id,
+          action: v.action,
+          sizing_input: v.sizing_input || '',
+          sizing_spec: v.sizing_spec || null,
+          computed: v.computed || null,
+          direction_conflict: v.direction_conflict || null,
+          below_lot_warning: v.below_lot_warning || false,
+          portfolio_id: v.portfolio_id || sheet.portfolio_id,
+          current_position: v.current_position || null,
+          active_weight_config: v.active_weight_config || null,
+          trade_queue_item_id: v.trade_queue_item_id || null,
+          proposal_id: v.proposal_id || null,
+          notes: v.notes || null,
+          sort_order: v.sort_order ?? 0,
+          created_by: user?.id || null,
+        }))
+        await supabase.from('lab_variants').insert(labVariants)
+      }
+
+      // 4. Invalidate all relevant caches so UI updates
+      queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+      queryClient.invalidateQueries({ queryKey: ['intent-variants', tradeLab.id] })
+      queryClient.invalidateQueries({ queryKey: ['trade-sheets'] })
+
+      toast.success(`Loaded snapshot: ${sheet.name}`)
+    } catch (err: any) {
+      toast.error('Failed to load snapshot', err.message)
+    } finally {
+      setIsLoadingSnapshot(false)
+      setConfirmLoadSnapshot(null)
+    }
   }
 
   // ── PM Action: Execute Trade ──────────────────────────────────────────
@@ -1024,10 +1107,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })
     },
     onSuccess: (_data, idea) => {
-      showToast({ type: 'success', title: `${idea.assets?.symbol || 'Trade'} committed to Trade Book` })
+      toast.success(`${idea.assets?.symbol || 'Trade'} committed to Trade Book`)
     },
     onError: (err: any) => {
-      showToast({ type: 'error', title: 'Execute failed', description: err.message })
+      toast.error('Execute failed', err.message)
     },
   })
 
@@ -1108,10 +1191,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals', selectedPortfolioId] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas', selectedPortfolioId] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      showToast({ type: 'success', title: 'Recommendation requested' })
+      toast.success('Recommendation requested')
     },
     onError: (err: any) => {
-      showToast({ type: 'error', title: 'Request failed', description: err.message })
+      toast.error('Request failed', err.message)
     },
   })
 
@@ -1282,14 +1365,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Build asset_id → idea action map for direction conflict detection.
   // The variant's action may be auto-derived from deltas and differ from
   // the originating idea's intended direction (e.g., idea=SELL but variant=ADD).
+  // Map of asset_id → idea action for direction conflict detection.
+  // Only includes assets with actual trade ideas — direct edits on baseline
+  // positions (no trade_queue_item_id) should not trigger idea-direction conflicts.
   const ideaActionByAsset = useMemo(() => {
     const map: Record<string, import('../types/trading').TradeAction> = {}
     tradeIdeas?.forEach(idea => {
       if (idea.asset_id && idea.action) map[idea.asset_id] = idea.action as import('../types/trading').TradeAction
     })
-    // Also include actions from simulation_trades (covers ideas not in tradeIdeas query)
+    // Include simulation_trades only if they are linked to an actual trade idea
     simulation?.simulation_trades?.forEach((t: any) => {
-      if (t.asset_id && t.action && !map[t.asset_id]) map[t.asset_id] = t.action
+      if (t.asset_id && t.action && t.trade_queue_item_id && !map[t.asset_id]) {
+        map[t.asset_id] = t.action
+      }
     })
     return map
   }, [tradeIdeas, simulation?.simulation_trades])
@@ -3979,16 +4067,16 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 )}
               </>
             )}
-            {/* Share Simulation Button — hidden in shared view */}
-            {simulation && !isSharedView && (
+            {/* Save Snapshot — hidden in shared view and snapshots tab */}
+            {simulation && !isSharedView && selectedViewType !== 'lists' && simulationRows.summary.tradedCount > 0 && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowShareModal(true)}
-                title="Share this simulation"
+                onClick={() => setShowCreateSheetConfirm(true)}
+                title="Save a snapshot of this simulation"
               >
-                <Share2 className="h-4 w-4 mr-1.5" />
-                Share
+                <FileText className="h-4 w-4 mr-1.5" />
+                Save Snapshot
               </Button>
             )}
             {/* Exit shared view button */}
@@ -4023,9 +4111,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 >
                   <FileText className="h-4 w-4" />
                   Workspace
-                  {selectedViewType === 'private' && (
-                    <span className="ml-1 text-xs text-gray-500 dark:text-gray-400 font-normal">Only you</span>
-                  )}
                 </button>
                 <button
                   onClick={() => setSelectedViewType('lists')}
@@ -4037,19 +4122,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   )}
                 >
                   <List className="h-4 w-4" />
-                  Trade Sheets
-                </button>
-                <button
-                  onClick={() => setSelectedViewType('shared')}
-                  className={clsx(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                    selectedViewType === 'shared'
-                      ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  )}
-                >
-                  <Share2 className="h-4 w-4" />
-                  Shared with me
+                  Snapshots
                 </button>
               </div>
             ) : <div />}
@@ -4138,36 +4211,55 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           /* Trade Sheets Section */
           <div className="flex-1 bg-white dark:bg-gray-900 overflow-auto">
             <div className="p-6">
-              {/* Trade Sheets Header */}
-              <div className="mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Trade Sheets</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Committed trade sheets for this portfolio
-                </p>
+              {/* Snapshots Header + Toggle */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Snapshots</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Save and revisit simulation scenarios. Snapshots do not commit trades.
+                  </p>
+                </div>
+                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setSnapshotSubView('mine')}
+                    className={clsx(
+                      'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      snapshotSubView === 'mine'
+                        ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    )}
+                  >
+                    My Snapshots
+                  </button>
+                  <button
+                    onClick={() => setSnapshotSubView('shared')}
+                    className={clsx(
+                      'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      snapshotSubView === 'shared'
+                        ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    )}
+                  >
+                    Shared with me
+                  </button>
+                </div>
               </div>
 
-              {/* V3: Trade Sheet List */}
-              <TradeSheetPanel
-                tradeSheets={v3TradeSheets}
-                assetSymbolMap={assetSymbolMap}
-              />
-            </div>
-          </div>
-        ) : selectedViewType === 'shared' ? (
-          /* Shared with me Section */
-          <div className="flex-1 bg-white dark:bg-gray-900 overflow-auto">
-            <div className="p-6 max-w-3xl mx-auto">
-              <div className="mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Shared with me</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Simulations that other team members have shared with you.
-                </p>
-              </div>
-              <SharedWithMeList
-                onSelectShare={(share) => {
-                  window.dispatchEvent(new CustomEvent('open-shared-simulation', { detail: { share } }))
-                }}
-              />
+              {snapshotSubView === 'mine' ? (
+                <TradeSheetPanel
+                  tradeSheets={v3TradeSheets}
+                  assetSymbolMap={assetSymbolMap}
+                  onLoadSnapshot={(sheet) => setConfirmLoadSnapshot(sheet)}
+                  onShareSnapshot={(sheet) => setShareSnapshotSheet(sheet)}
+                  isLoadingSnapshot={isLoadingSnapshot}
+                />
+              ) : (
+                <SharedWithMeList
+                  onSelectShare={(share) => {
+                    window.dispatchEvent(new CustomEvent('open-shared-simulation', { detail: { share } }))
+                  }}
+                />
+              )}
             </div>
           </div>
         ) : (
@@ -4258,7 +4350,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               { value: 'ready_for_decision' as const, label: 'Deciding', dot: 'bg-amber-500' },
                               { value: 'thesis_forming' as const, label: 'Thesis', dot: 'bg-purple-500' },
                               { value: 'deep_research' as const, label: 'Research', dot: 'bg-indigo-500' },
-                              { value: 'investigate' as const, label: 'Invest.', dot: 'bg-blue-500' },
+                              { value: 'investigate' as const, label: 'Investigate', dot: 'bg-blue-500' },
                             ]).map(({ value, label, dot }) => (
                               <button
                                 key={value}
@@ -5541,49 +5633,406 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         />
       )}
 
-      {/* Share Simulation Modal */}
-      {simulation && (
-        <ShareSimulationModal
-          isOpen={showShareModal}
-          onClose={() => setShowShareModal(false)}
-          simulationId={simulation.id}
-          simulationName={simulation.name}
-        />
-      )}
 
-      {/* Create Trade Sheet Confirmation Modal */}
-      {showCreateSheetConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowCreateSheetConfirm(false)} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Create Trade Sheet
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-              Are you sure? This will create a new trade sheet and clear the current simulation.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowCreateSheetConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  setShowCreateSheetConfirm(false)
-                  const name = `Trade Sheet — ${format(new Date(), 'MMM d, yyyy HH:mm')}`
-                  await handleCreateTradeSheet(name)
-                }}
-                disabled={v3CreatingSheet}
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {v3CreatingSheet ? 'Creating...' : 'Create & Clear'}
-              </button>
+      {/* Share Snapshot Modal */}
+      {shareSnapshotSheet && simulation && (() => {
+        const ShareSnapshotModal = () => {
+          const [searchQuery, setSearchQuery] = React.useState('')
+          const [selectedUsers, setSelectedUsers] = React.useState<string[]>([])
+          const [shareMessage, setShareMessage] = React.useState('')
+          const [isSending, setIsSending] = React.useState(false)
+
+          const { data: teamMembers } = useQuery({
+            queryKey: ['portfolio-team-members', selectedPortfolioId],
+            queryFn: async () => {
+              const { data } = await supabase
+                .from('portfolio_team')
+                .select('user_id, role, users:user_id(id, email, first_name, last_name)')
+                .eq('portfolio_id', selectedPortfolioId)
+                .neq('user_id', user?.id)
+              return data || []
+            },
+            enabled: !!selectedPortfolioId && !!user?.id,
+          })
+
+          const filtered = teamMembers?.filter((m: any) => {
+            if (!searchQuery) return true
+            const u = m.users
+            const q = searchQuery.toLowerCase()
+            return u?.email?.toLowerCase().includes(q) || u?.first_name?.toLowerCase().includes(q) || u?.last_name?.toLowerCase().includes(q)
+          }) || []
+
+          const handleSend = async () => {
+            if (selectedUsers.length === 0) return
+            setIsSending(true)
+            try {
+              await shareTradeSheetSnapshot({
+                tradeSheet: shareSnapshotSheet,
+                simulationId: simulation.id,
+                recipientIds: selectedUsers,
+                message: shareMessage || undefined,
+                actorId: user!.id,
+              })
+              toast.success(`Snapshot shared with ${selectedUsers.length} team member${selectedUsers.length !== 1 ? 's' : ''}`)
+              setShareSnapshotSheet(null)
+            } catch (err: any) {
+              toast.error('Failed to share', err.message)
+            } finally {
+              setIsSending(false)
+            }
+          }
+
+          const variants = (shareSnapshotSheet.variants_snapshot || []) as any[]
+
+          return (
+            <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setShareSnapshotSheet(null)}>
+              <div className="fixed inset-0 bg-black/50" />
+              <div className="flex min-h-full items-center justify-center p-4">
+                <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto" onClick={e => e.stopPropagation()}>
+                  <div className="p-6">
+                    <div className="flex items-center justify-center mb-4">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                        <Share2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">Share Snapshot</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-4">
+                      {shareSnapshotSheet.name} · {variants.length} trade{variants.length !== 1 ? 's' : ''}
+                    </p>
+
+                    {/* Team member selector */}
+                    <div className="mb-3">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        placeholder="Search team members..."
+                        className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div className="max-h-40 overflow-y-auto mb-3 space-y-1">
+                      {filtered.map((m: any) => {
+                        const u = m.users
+                        const isSelected = selectedUsers.includes(u.id)
+                        const name = u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.email
+                        return (
+                          <button
+                            key={u.id}
+                            onClick={() => setSelectedUsers(prev => isSelected ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                            className={clsx(
+                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors',
+                              isSelected ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            )}
+                          >
+                            <span className={clsx(
+                              'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                              isSelected ? 'bg-primary-600 border-primary-600 text-white' : 'border-gray-300 dark:border-gray-600'
+                            )}>
+                              {isSelected && <Check className="w-2.5 h-2.5" />}
+                            </span>
+                            <span className="truncate">{name}</span>
+                            <span className="text-xs text-gray-400 ml-auto flex-shrink-0">{m.role}</span>
+                          </button>
+                        )
+                      })}
+                      {filtered.length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-3">No team members found</p>
+                      )}
+                    </div>
+
+                    {/* Optional message */}
+                    <input
+                      type="text"
+                      value={shareMessage}
+                      onChange={e => setShareMessage(e.target.value)}
+                      placeholder="Add a message (optional)"
+                      className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
+                    />
+
+                    <div className="flex gap-3">
+                      <button onClick={() => setShareSnapshotSheet(null)} className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSend}
+                        disabled={selectedUsers.length === 0 || isSending}
+                        className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50"
+                      >
+                        {isSending ? 'Sending...' : `Share${selectedUsers.length > 0 ? ` (${selectedUsers.length})` : ''}`}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
+        return <ShareSnapshotModal />
+      })()}
+
+      {/* Load Snapshot Confirmation Modal */}
+      {confirmLoadSnapshot && (() => {
+        const variants = (confirmLoadSnapshot.variants_snapshot || []) as any[]
+        const hasCurrentWork = simulationRows.summary.tradedCount > 0
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setConfirmLoadSnapshot(null)}>
+            <div className="fixed inset-0 bg-black/50" />
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center">
+                      <RotateCcw className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">Load into Trade Lab?</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
+                    {hasCurrentWork
+                      ? `Your current simulation has ${simulationRows.summary.tradedCount} trade${simulationRows.summary.tradedCount !== 1 ? 's' : ''} that will be replaced.`
+                      : 'This will load the snapshot into your active workspace.'}
+                  </p>
+
+                  {/* Snapshot being loaded */}
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 mb-4">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white mb-1">{confirmLoadSnapshot.name}</div>
+                    <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <span>{variants.length} trade{variants.length !== 1 ? 's' : ''}</span>
+                      {confirmLoadSnapshot.total_notional != null && confirmLoadSnapshot.total_notional !== 0 && (
+                        <span>${Math.abs(confirmLoadSnapshot.total_notional).toLocaleString()} notional</span>
+                      )}
+                      <span>{formatDistanceToNow(new Date(confirmLoadSnapshot.created_at), { addSuffix: true })}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center mb-4">
+                    The snapshot itself will not be changed. No trades will be committed.
+                  </p>
+
+                  <div className="space-y-2">
+                    {/* Save current work first, then load */}
+                    {hasCurrentWork && (
+                      <button
+                        onClick={async () => {
+                          const name = `Snapshot — ${format(new Date(), 'MMM d, yyyy HH:mm')}`
+                          await handleSaveSnapshotAndKeep(name)
+                          await handleLoadSnapshot(confirmLoadSnapshot)
+                        }}
+                        disabled={isLoadingSnapshot}
+                        className="w-full px-4 py-2.5 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50 flex items-center justify-between"
+                      >
+                        <span>{isLoadingSnapshot ? 'Loading...' : 'Save Current & Load'}</span>
+                        <span className="text-[10px] font-normal text-primary-200">Saves a snapshot first</span>
+                      </button>
+                    )}
+
+                    {/* Load without saving — discard current work */}
+                    <button
+                      onClick={() => handleLoadSnapshot(confirmLoadSnapshot)}
+                      disabled={isLoadingSnapshot}
+                      className={clsx(
+                        "w-full px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center justify-between",
+                        hasCurrentWork
+                          ? "border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                          : "bg-primary-600 text-white hover:bg-primary-700 shadow-sm"
+                      )}
+                    >
+                      <span>{isLoadingSnapshot ? 'Loading...' : hasCurrentWork ? 'Discard & Load' : 'Load Snapshot'}</span>
+                      {hasCurrentWork && <span className="text-[10px] font-normal text-gray-400">Current work will be lost</span>}
+                    </button>
+
+                    {/* Cancel */}
+                    <button
+                      onClick={() => setConfirmLoadSnapshot(null)}
+                      className="w-full px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
+
+      {/* Save Snapshot Modal — with optional sharing */}
+      {showCreateSheetConfirm && simulation && (() => {
+        const SaveSnapshotModal = () => {
+          const [snapshotName, setSnapshotName] = React.useState('')
+          const [shareWith, setShareWith] = React.useState<string[]>([])
+          const [shareMessage, setShareMessage] = React.useState('')
+          const [shareSearch, setShareSearch] = React.useState('')
+          const [showShareSection, setShowShareSection] = React.useState(false)
+
+          const { data: teamMembers } = useQuery({
+            queryKey: ['portfolio-team-members', selectedPortfolioId],
+            queryFn: async () => {
+              const { data } = await supabase
+                .from('portfolio_team')
+                .select('user_id, role, users:user_id(id, email, first_name, last_name)')
+                .eq('portfolio_id', selectedPortfolioId)
+                .neq('user_id', user?.id)
+              return data || []
+            },
+            enabled: !!selectedPortfolioId && !!user?.id && showShareSection,
+          })
+
+          const filteredMembers = teamMembers?.filter((m: any) => {
+            if (!shareSearch) return true
+            const u = m.users
+            const q = shareSearch.toLowerCase()
+            return u?.email?.toLowerCase().includes(q) || u?.first_name?.toLowerCase().includes(q) || u?.last_name?.toLowerCase().includes(q)
+          }) || []
+
+          const handleSave = async (clearAfter: boolean) => {
+            const name = snapshotName.trim() || `Snapshot — ${format(new Date(), 'MMM d, yyyy HH:mm')}`
+            setShowCreateSheetConfirm(false)
+
+            if (clearAfter) {
+              await handleSaveSnapshotAndClear(name)
+            } else {
+              await handleSaveSnapshotAndKeep(name)
+            }
+
+            // Share if recipients selected
+            if (shareWith.length > 0 && simulation) {
+              try {
+                // Get the just-created sheet to share it
+                const { data: sheets } = await supabase
+                  .from('trade_sheets')
+                  .select('id, name, description, portfolio_id, variants_snapshot, total_notional')
+                  .eq('name', name)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                if (sheets?.[0]) {
+                  await shareTradeSheetSnapshot({
+                    tradeSheet: sheets[0],
+                    simulationId: simulation.id,
+                    recipientIds: shareWith,
+                    message: shareMessage || undefined,
+                    actorId: user!.id,
+                  })
+                  toast.success(`Shared with ${shareWith.length} team member${shareWith.length !== 1 ? 's' : ''}`)
+                }
+              } catch (err: any) {
+                toast.error('Saved but sharing failed', err.message)
+              }
+            }
+          }
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateSheetConfirm(false)}>
+              <div className="fixed inset-0 bg-black/50" />
+              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">Save Snapshot</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-4">
+                    {simulationRows.summary.tradedCount} trade{simulationRows.summary.tradedCount !== 1 ? 's' : ''} · Does not commit trades
+                  </p>
+
+                  {/* Snapshot name */}
+                  <input
+                    type="text"
+                    value={snapshotName}
+                    onChange={e => setSnapshotName(e.target.value)}
+                    placeholder="Name this snapshot (optional)"
+                    className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
+                    autoFocus
+                  />
+
+                  {/* Share toggle */}
+                  {!showShareSection ? (
+                    <button
+                      onClick={() => setShowShareSection(true)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 mb-4"
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      Share with team members
+                    </button>
+                  ) : (
+                    <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Share with</span>
+                        <button onClick={() => { setShowShareSection(false); setShareWith([]) }} className="text-xs text-gray-400 hover:text-gray-600">Remove</button>
+                      </div>
+                      <input
+                        type="text"
+                        value={shareSearch}
+                        onChange={e => setShareSearch(e.target.value)}
+                        placeholder="Search team..."
+                        className="w-full text-xs px-2 py-1.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-2"
+                      />
+                      <div className="max-h-28 overflow-y-auto space-y-0.5">
+                        {filteredMembers.map((m: any) => {
+                          const u = m.users
+                          const isSelected = shareWith.includes(u.id)
+                          const name = u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.email
+                          return (
+                            <button
+                              key={u.id}
+                              onClick={() => setShareWith(prev => isSelected ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                              className={clsx(
+                                'w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-colors',
+                                isSelected ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                              )}
+                            >
+                              <span className={clsx('w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0', isSelected ? 'bg-primary-600 border-primary-600 text-white' : 'border-gray-300 dark:border-gray-600')}>
+                                {isSelected && <Check className="w-2 h-2" />}
+                              </span>
+                              <span className="truncate">{name}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {shareWith.length > 0 && (
+                        <input
+                          type="text"
+                          value={shareMessage}
+                          onChange={e => setShareMessage(e.target.value)}
+                          placeholder="Add a message (optional)"
+                          className="w-full text-xs px-2 py-1.5 mt-2 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => handleSave(false)}
+                      disabled={v3CreatingSheet}
+                      className="w-full px-4 py-2.5 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50 flex items-center justify-between"
+                    >
+                      <span>{v3CreatingSheet ? 'Saving...' : shareWith.length > 0 ? 'Save & Share' : 'Save Snapshot'}</span>
+                      <span className="text-[10px] font-normal text-primary-200">Continue working</span>
+                    </button>
+                    <button
+                      onClick={() => handleSave(true)}
+                      disabled={v3CreatingSheet}
+                      className="w-full px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
+                    >
+                      <span>{v3CreatingSheet ? 'Saving...' : shareWith.length > 0 ? 'Save, Share & Clear' : 'Save & Clear'}</span>
+                      <span className="text-[10px] font-normal text-gray-400 dark:text-gray-500">Resets workspace</span>
+                    </button>
+                    <button
+                      onClick={() => setShowCreateSheetConfirm(false)}
+                      className="w-full px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
+        return <SaveSnapshotModal />
+      })()}
     </div>
   )
 }

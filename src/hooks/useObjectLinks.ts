@@ -116,39 +116,36 @@ export function useBacklinks(
         custom_note:    { table: 'custom_notebook_notes', fkJoin: 'custom_notebooks(name)' },
       }
 
-      const results: BacklinkNote[] = []
-
-      for (const [sourceType, config] of Object.entries(noteTypes)) {
+      // Fetch all note types in parallel for efficiency
+      const noteQueryPromises = Object.entries(noteTypes).map(async ([sourceType, config]) => {
         const sourceLinks = links.filter(l => l.source_type === sourceType)
-        if (sourceLinks.length === 0) continue
+        if (sourceLinks.length === 0) return []
 
         const noteIds = sourceLinks.map(l => l.source_id)
-
         const { data: notes, error: noteError } = await supabase
           .from(config.table)
           .select(`id, title, note_type, created_by, updated_at, users!created_by(first_name, last_name, email)`)
           .in('id', noteIds)
           .eq('is_deleted', false)
 
-        if (noteError) {
-          console.warn(`[useBacklinks] Error fetching ${config.table}:`, noteError)
-          continue
+        if (noteError || !notes) {
+          if (noteError) console.warn(`[useBacklinks] Error fetching ${config.table}:`, noteError)
+          return []
         }
 
-        if (!notes) continue
-
         const noteMap = new Map(notes.map((n: any) => [n.id, n]))
+        const items: BacklinkNote[] = []
 
         for (const link of sourceLinks) {
           const note = noteMap.get(link.source_id)
-          if (!note) continue // RLS filtered it out — user can't see this note
+          if (!note) continue // RLS filtered — user can't see this note
 
-          const user = (note as any).users
-          const authorName = user
-            ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
+          const u = (note as any).users
+          const authorName = u
+            ? [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email
             : null
 
-          results.push({
+          items.push({
             link_id: link.id,
             link_type: link.link_type,
             is_auto: link.is_auto,
@@ -161,7 +158,10 @@ export function useBacklinks(
             author_name: authorName ?? undefined,
           })
         }
-      }
+        return items
+      })
+
+      const results = (await Promise.all(noteQueryPromises)).flat()
 
       // Sort by updated_at descending
       results.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -210,28 +210,24 @@ export function useBacklinkCount(
         custom_note: 'custom_notebook_notes',
       }
 
-      let visibleCount = 0
+      // Batch all note-type count queries in parallel for efficiency
+      const countPromises = Object.entries(noteTypes)
+        .map(([sourceType, table]) => {
+          const noteIds = links.filter(l => l.source_type === sourceType).map(l => l.source_id)
+          if (noteIds.length === 0) return Promise.resolve(0)
+          return supabase
+            .from(table)
+            .select('id', { count: 'exact', head: true })
+            .in('id', noteIds)
+            .eq('is_deleted', false)
+            .then(({ count, error }) => (!error && count) ? count : 0)
+        })
 
-      for (const [sourceType, table] of Object.entries(noteTypes)) {
-        const sourceLinks = links.filter(l => l.source_type === sourceType)
-        if (sourceLinks.length === 0) continue
+      const counts = await Promise.all(countPromises)
+      let visibleCount = counts.reduce((s, c) => s + c, 0)
 
-        const noteIds = sourceLinks.map(l => l.source_id)
-        const { count, error } = await supabase
-          .from(table)
-          .select('id', { count: 'exact', head: true })
-          .in('id', noteIds)
-          .eq('is_deleted', false)
-
-        if (!error && count) {
-          visibleCount += count
-        }
-      }
-
-      // Non-note source types (asset, workflow, etc.) — count directly
-      // These don't have note-level RLS concerns
-      const nonNoteLinks = links.filter(l => !noteTypes[l.source_type])
-      visibleCount += nonNoteLinks.length
+      // Non-note source types — count directly (no RLS concern)
+      visibleCount += links.filter(l => !noteTypes[l.source_type]).length
 
       return visibleCount
     },
