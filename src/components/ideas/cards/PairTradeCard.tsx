@@ -4,7 +4,6 @@ import { formatDistanceToNow } from 'date-fns'
 import {
   TrendingUp,
   TrendingDown,
-  Zap,
   FlaskConical,
   Clock,
   MoreVertical,
@@ -12,14 +11,7 @@ import {
   Lock,
   Users
 } from 'lucide-react'
-import type { PairTradeItem, TradeUrgency, ScoredFeedItem, Author } from '../../../hooks/ideas/types'
-
-const urgencyConfig: Record<TradeUrgency, { color: string; bg: string; darkBg: string; label: string }> = {
-  low: { color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100', darkBg: 'dark:bg-slate-800', label: 'Low' },
-  medium: { color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100', darkBg: 'dark:bg-blue-900/30', label: 'Medium' },
-  high: { color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100', darkBg: 'dark:bg-orange-900/30', label: 'High' },
-  urgent: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100', darkBg: 'dark:bg-red-900/30', label: 'Urgent!' }
-}
+import type { PairTradeItem, ScoredFeedItem, Author } from '../../../hooks/ideas/types'
 
 interface PairTradeCardProps {
   item: ScoredFeedItem & PairTradeItem
@@ -51,7 +43,7 @@ export function PairTradeCard({
   actionsWidget,
   labInclusions
 }: PairTradeCardProps) {
-  const urgency = urgencyConfig[item.urgency]
+  // Urgency is now system-derived, not displayed as a badge
 
   const sizeClasses = {
     small: 'p-3',
@@ -85,14 +77,7 @@ export function PairTradeCard({
             <span className="font-semibold text-gray-900 dark:text-white truncate">{item.short_legs.map(l => l.asset.symbol).join(', ') || '?'}</span>
           </div>
 
-          {/* Urgency badge */}
-          <span className={clsx(
-            'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0',
-            urgency.bg, urgency.darkBg, urgency.color
-          )}>
-            <Zap className="h-3 w-3" />
-            {urgency.label}
-          </span>
+          {/* Pair trade indicator */}
         </div>
 
         {/* Menu button */}

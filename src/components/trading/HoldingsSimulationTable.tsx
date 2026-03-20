@@ -7,10 +7,11 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, FileText, Info, MessageSquare, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, ChevronDown, ChevronRight, FileCheck, FileText, Info, MessageSquare, Plus, Search, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { SimulationRow, SimulationRowSummary } from '../../hooks/useSimulationRows'
-import type { TradeAction } from '../../types/trading'
+import type { TradeAction, ExecutionStatus } from '../../types/trading'
+import { AcceptedTradeBadge } from './AcceptedTradeBadge'
 import type { SimulationSuggestion } from '../../hooks/useSimulationSuggestions'
 import { SuggestionIndicator } from './SuggestionIndicator'
 
@@ -34,11 +35,15 @@ const ACTION_BORDER: Record<TradeAction, string> = {
 
 /** Specific badge label based on action + whether position exists in portfolio */
 function actionLabel(action: TradeAction, isNew: boolean, isRemoved: boolean): string {
+  if (isNew) {
+    return action === 'sell' || action === 'trim' ? 'NEW SHORT' : 'NEW LONG'
+  }
+  if (isRemoved || action === 'sell') return 'CLOSE'
   switch (action) {
-    case 'buy':  return 'BUY NEW'
-    case 'add':  return 'BUY ADD'
-    case 'sell': return isNew ? 'SELL SHORT' : 'SELL ALL'
-    case 'trim': return isRemoved ? 'SELL ALL' : 'SELL TRIM'
+    case 'buy':
+    case 'add':  return 'ADD'
+    case 'trim': return 'REDUCE'
+    default:     return action.toUpperCase()
   }
 }
 
@@ -112,8 +117,8 @@ function fmtWt(v: number, signed = false): string {
 }
 
 function fmtShares(v: number, signed = false): string {
-  const a = Math.abs(v)
-  const n = a >= 1000 ? a.toLocaleString() : a.toString()
+  const a = Math.abs(Math.round(v))
+  const n = a.toLocaleString()
   if (!signed) return n
   if (v > 0) return `+${n}`
   if (v < 0) return `-${n}`
@@ -192,6 +197,8 @@ export interface HoldingsSimulationTableProps {
   priceMap: Record<string, number>
   onUpdateVariant: (variantId: string, updates: { action?: TradeAction; sizingInput?: string }) => void
   onDeleteVariant: (variantId: string) => void
+  /** Remove an asset entirely from the simulation (uncheck from left panel) */
+  onRemoveAsset?: (assetId: string) => void
   onCreateVariant: (assetId: string, action: TradeAction) => void
   onFixConflict: (variantId: string, suggestedAction: TradeAction) => void
   onAddAsset: (asset: { id: string; symbol: string; company_name: string; sector: string | null }) => void
@@ -210,6 +217,9 @@ export interface HoldingsSimulationTableProps {
   pendingSuggestionsByAsset?: Map<string, SimulationSuggestion[]>
   pendingSuggestionCount?: number
   onOpenSuggestionReview?: () => void
+  // Promote to Trade Book
+  onBulkPromote?: (variantIds: string[]) => void
+  isBulkPromoting?: boolean
 }
 
 // =============================================================================
@@ -227,6 +237,7 @@ function HoldingRow({
   row, rowIndex, isEven, focusedCol, isEditing,
   onUpdateVariant, onFocusCell, onStartEdit, onStopEdit, onCreateVariantAndEdit, onClickEditableCell, rowRef,
   suggestMode, onSubmitSuggestion, pendingSuggestions, onOpenSuggestionReview,
+  promoteSelected, onTogglePromote,
 }: {
   row: SimulationRow
   rowIndex: number
@@ -244,6 +255,8 @@ function HoldingRow({
   onSubmitSuggestion?: (assetId: string, sizingInput: string) => void
   pendingSuggestions?: SimulationSuggestion[]
   onOpenSuggestionReview?: () => void
+  promoteSelected?: boolean
+  onTogglePromote?: (variantId: string) => void
 }) {
   const v = row.variant
   const isFocused = focusedCol !== null
@@ -288,7 +301,7 @@ function HoldingRow({
       onStopEdit(trimmed || undefined)
       return
     }
-    if (trimmed && v) {
+    if (v && trimmed !== (v.sizing_input || '').trim()) {
       onUpdateVariant(v.id, { sizingInput: trimmed })
     }
     onStopEdit(trimmed || undefined)
@@ -297,19 +310,41 @@ function HoldingRow({
   const sizingEditor = () => (
     <input
       type="text"
-      autoFocus
+      ref={(el) => {
+        // Focus without scrolling — autoFocus triggers browser scrollIntoView
+        // which can jump the table container in overflow:auto layouts.
+        if (el && document.activeElement !== el) {
+          el.focus({ preventScroll: true })
+          el.select()
+        }
+      }}
       value={editValue}
       onChange={(e) => setEditValue(e.target.value)}
-      onFocus={(e) => e.target.select()}
       onBlur={handleEditBlur}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation()
-        if (e.key === 'Escape') { cancelledRef.current = true; e.currentTarget.blur() }
-        else if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          cancelledRef.current = true
+          onStopEdit()
+        } else if (e.key === 'Enter') {
+          e.preventDefault()
+          // Commit directly without blur — preserves table focus for arrow key navigation
+          const trimmed = editValue.trim()
+          if (suggestMode) {
+            if (trimmed && onSubmitSuggestion) onSubmitSuggestion(row.asset_id, trimmed)
+            onStopEdit(trimmed || undefined)
+            return
+          }
+          if (v && trimmed !== (v.sizing_input || '').trim()) {
+            onUpdateVariant(v.id, { sizingInput: trimmed })
+          }
+          onStopEdit(trimmed || undefined)
+        }
       }}
       placeholder={focusedCol === COL.SIM_SHARES ? '#500' : '2.5'}
-      className="w-20 h-6 text-[13px] font-mono tabular-nums text-right px-1.5 rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-1 focus:ring-primary-400"
+      className="w-20 h-5 text-[13px] font-mono tabular-nums text-right px-1.5 -my-0.5 rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-1 focus:ring-primary-400"
     />
   )
 
@@ -368,7 +403,7 @@ function HoldingRow({
     }
 
     if (v.sizing_input) {
-      return <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>{fmtShares(row.simShares)}</span>
+      return <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>{row.simShares < 0 ? fmtShares(row.simShares, true) : fmtShares(row.simShares)}</span>
     }
 
     return (
@@ -402,16 +437,42 @@ function HoldingRow({
         onClick={() => onFocusCell(rowIndex, COL.SYMBOL)}
       >
         <div className="flex items-center gap-1.5 min-w-0">
+          {onTogglePromote && hasSizing && v && (
+            <input
+              type="checkbox"
+              checked={promoteSelected ?? false}
+              onChange={(e) => { e.stopPropagation(); onTogglePromote(v.id) }}
+              className="w-3 h-3 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 flex-shrink-0 cursor-pointer"
+              title="Select for promotion to Trade Book"
+            />
+          )}
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
             {row.symbol}
           </span>
           {hasSizing && v && (
-            <span
-              className={clsx(
-                'flex-shrink-0 px-1.5 py-px rounded-full text-[8px] font-bold uppercase tracking-wide text-center select-none shadow-sm whitespace-nowrap',
-                ACTION_BG[action],
+            <span className="flex-shrink-0 flex items-center gap-0.5">
+              <span
+                className={clsx(
+                  'px-1.5 py-px rounded-full text-[8px] font-bold uppercase tracking-wide text-center select-none shadow-sm whitespace-nowrap',
+                  ACTION_BG[action],
+                )}
+              >{actionLabel(action, row.isNew, row.isRemoved)}</span>
+              {row.hasIdeaDirectionConflict && !row.hasConflict && (
+                <span
+                  title={`Sizing conflicts with idea direction — idea intends to ${row.deltaShares > 0 ? 'sell/reduce' : 'buy/add'} but current sizing ${row.deltaShares > 0 ? 'increases' : 'decreases'} exposure`}
+                  className="cursor-help"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                </span>
               )}
-            >{actionLabel(action, row.isNew, row.isRemoved)}</span>
+            </span>
+          )}
+          {row.acceptedTrade && (
+            <AcceptedTradeBadge
+              executionStatus={row.acceptedTrade.execution_status as ExecutionStatus}
+              reconciliationStatus={row.acceptedTrade.reconciliation_status}
+              className="flex-shrink-0"
+            />
           )}
         </div>
       </td>
@@ -747,11 +808,12 @@ function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreate
 export function HoldingsSimulationTable({
   rows, cashRow, tradedRows, untradedRows, newPositionRows, summary,
   portfolioTotalValue, hasBenchmark, priceMap,
-  onUpdateVariant, onDeleteVariant, onCreateVariant, onFixConflict,
+  onUpdateVariant, onDeleteVariant, onRemoveAsset, onCreateVariant, onFixConflict,
   onAddAsset, assetSearchResults, onAssetSearchChange,
   onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet,
   groupBy: externalGroupBy, onGroupByChange, readOnly = false, className = '',
   suggestMode, onSubmitSuggestion, pendingSuggestionsByAsset, pendingSuggestionCount, onOpenSuggestionReview,
+  onBulkPromote, isBulkPromoting,
 }: HoldingsSimulationTableProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<GroupBy>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -795,16 +857,37 @@ export function HoldingsSimulationTable({
   // Filter state
   const [filters, setFilters] = useState<Partial<Record<ColKey, string>>>({})
 
+  // Promote state (Trade Book)
+  const [selectedForPromote, setSelectedForPromote] = useState<Set<string>>(new Set())
+  const togglePromoteSelection = useCallback((variantId: string) => {
+    setSelectedForPromote(prev => {
+      const next = new Set(prev)
+      next.has(variantId) ? next.delete(variantId) : next.add(variantId)
+      return next
+    })
+  }, [])
+  const promotableRows = useMemo(() =>
+    rows.filter(r => r.variant?.sizing_input && !r.isCash),
+    [rows]
+  )
+
   const containerRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
 
   // Stable row order: preserve existing positions across refetches/cache churn.
-  // New rows append at end; removed rows are dropped. This prevents rows from
-  // jumping when the variant cache is replaced by a DB refetch.
+  // New rows append at end; temporarily missing rows are retained from the
+  // previous snapshot to prevent flicker during cache transitions.
   const rowOrderRef = useRef<string[]>([])
+  const lastRowSnapshotRef = useRef<Map<string, SimulationRow>>(new Map())
+  // Tracks asset IDs that were missing from `rows` but retained from snapshot.
+  // If still missing on the NEXT render, they're dropped for real.
+  const graceSetRef = useRef<Set<string>>(new Set())
   const stableRows = useMemo(() => {
     const knownOrder = rowOrderRef.current
     const rowMap = new Map(rows.map(r => [r.asset_id, r]))
+    const prevSnapshot = lastRowSnapshotRef.current
+    const prevGrace = graceSetRef.current
+    const nextGrace = new Set<string>()
 
     const result: SimulationRow[] = []
     const seen = new Set<string>()
@@ -815,7 +898,16 @@ export function HoldingsSimulationTable({
       if (row) {
         result.push(row)
         seen.add(id)
+      } else if (!prevGrace.has(id)) {
+        // First render missing — grace: retain last known version
+        const prev = prevSnapshot.get(id)
+        if (prev) {
+          result.push(prev)
+          seen.add(id)
+          nextGrace.add(id)
+        }
       }
+      // else: was in grace last render AND still missing → drop it
     }
 
     // Append new rows at end
@@ -825,8 +917,10 @@ export function HoldingsSimulationTable({
       }
     }
 
-    // Sync ref (benign side effect — ref update doesn't trigger re-render)
+    // Sync refs
+    graceSetRef.current = nextGrace
     rowOrderRef.current = result.map(r => r.asset_id)
+    lastRowSnapshotRef.current = new Map(result.map(r => [r.asset_id, r]))
 
     return result
   }, [rows])
@@ -935,8 +1029,14 @@ export function HoldingsSimulationTable({
     }
   }, [displayRows, pendingEditAssetId, pendingEditCol, onDeleteVariant])
 
+  // Only scroll focused row into view for keyboard navigation.
+  // Mouse clicks don't need scrollIntoView — the clicked row is already visible.
+  const focusSourceRef = useRef<'keyboard' | 'mouse' | null>(null)
   useEffect(() => {
-    if (focusRow >= 0) rowRefs.current.get(focusRow)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    if (focusRow >= 0 && focusSourceRef.current === 'keyboard') {
+      rowRefs.current.get(focusRow)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+    focusSourceRef.current = null
   }, [focusRow])
 
   // Tracks whether the last edit was committed with a non-empty value.
@@ -951,13 +1051,23 @@ export function HoldingsSimulationTable({
     if (editing) committedEditRef.current = false
   }, [editing])
 
-  // Delete variant if user exits editing without entering a value
+  // Delete variant if user exits editing without entering a value.
+  // Uses a ref to prevent double-firing from both input blur and container blur.
+  const cleanupInFlightRef = useRef(false)
   const cleanupEmptyVariant = useCallback((rowIdx: number) => {
     if (committedEditRef.current) return // Edit was committed — don't delete the variant
+    if (cleanupInFlightRef.current) return // Already cleaning up from another blur path
     if (rowIdx < 0 || rowIdx >= displayRows.length) return
     const row = displayRows[rowIdx]
-    if (row?.variant && !row.variant.sizing_input) {
-      onDeleteVariant(row.variant.id)
+    if (!row?.variant || row.variant.sizing_input) return // Has content — keep it
+    // Delete empty variants that have no backing trade idea.
+    if (!row.variant.trade_queue_item_id) {
+      cleanupInFlightRef.current = true
+      // Defer the delete so the UI settles before the row shifts
+      requestAnimationFrame(() => {
+        onDeleteVariant(row.variant!.id)
+        cleanupInFlightRef.current = false
+      })
     }
   }, [displayRows, onDeleteVariant])
 
@@ -998,7 +1108,7 @@ export function HoldingsSimulationTable({
       else if (e.key === 'Tab') {
         e.preventDefault(); cleanupEmptyVariant(focusRow); setEditing(false)
         const next = e.shiftKey ? Math.max(focusRow - 1, 0) : Math.min(focusRow + 1, displayRows.length - 1)
-        setFocusRow(next)
+        focusSourceRef.current = 'keyboard'; setFocusRow(next)
         // Keep same column so Tab advances down the same editable column
         if (displayRows[next]?.variant) setEditing(true)
       }
@@ -1006,10 +1116,11 @@ export function HoldingsSimulationTable({
     }
 
     const maxRow = displayRows.length - 1
+    const kbFocus = (fn: (prev: number) => number) => { focusSourceRef.current = 'keyboard'; setFocusRow(fn) }
 
     switch (e.key) {
-      case 'ArrowDown': case 'j': e.preventDefault(); setFocusRow(p => Math.min(p + 1, maxRow)); break
-      case 'ArrowUp': case 'k': e.preventDefault(); setFocusRow(p => Math.max(p - 1, 0)); break
+      case 'ArrowDown': case 'j': e.preventDefault(); kbFocus(p => Math.min(p + 1, maxRow)); break
+      case 'ArrowUp': case 'k': e.preventDefault(); kbFocus(p => Math.max(p - 1, 0)); break
       case 'ArrowRight': case 'l': e.preventDefault(); setFocusCol(p => Math.min(p + 1, COL_COUNT - 1)); break
       case 'ArrowLeft': case 'h': e.preventDefault(); setFocusCol(p => Math.max(p - 1, 0)); break
       case 'Enter': e.preventDefault(); activateCell(focusRow, focusCol); break
@@ -1021,8 +1132,31 @@ export function HoldingsSimulationTable({
           setEditing(true)
         }
         break
-      case 'Delete': case 'Backspace':
-        if (focusRow >= 0 && displayRows[focusRow]?.variant) { e.preventDefault(); onDeleteVariant(displayRows[focusRow].variant!.id) }
+      case 'Delete': case 'Backspace': {
+        if (focusRow < 0) break
+        const delRow = displayRows[focusRow]
+        if (!delRow) break
+        e.preventDefault()
+        if (delRow.baseline && !delRow.isNew) {
+          // Existing position: set sim weight to 0 (full exit)
+          if (delRow.variant) {
+            onUpdateVariant(delRow.variant.id, { sizingInput: '0' })
+          } else {
+            // No variant yet — create one with 0 sizing
+            onCreateVariant(delRow.asset_id, 'sell')
+            // The variant will be created, then we need to set sizing to 0
+            // Use pending edit pattern: the variant creation will trigger an edit
+          }
+        } else if (delRow.variant) {
+          // Idea/recommendation (new position): remove from simulation entirely
+          if (onRemoveAsset) {
+            onRemoveAsset(delRow.asset_id)
+          } else {
+            onDeleteVariant(delRow.variant.id)
+          }
+        }
+        break
+      }
         break
       case 'Tab': {
         e.preventDefault()
@@ -1038,8 +1172,8 @@ export function HoldingsSimulationTable({
         break
       }
       case 'Escape': setFocusRow(-1); setEditing(false); containerRef.current?.blur(); break
-      case 'Home': e.preventDefault(); e.ctrlKey ? (setFocusRow(0), setFocusCol(0)) : setFocusCol(0); break
-      case 'End': e.preventDefault(); e.ctrlKey ? (setFocusRow(maxRow), setFocusCol(COL_COUNT - 1)) : setFocusCol(COL_COUNT - 1); break
+      case 'Home': e.preventDefault(); e.ctrlKey ? (focusSourceRef.current = 'keyboard', setFocusRow(0), setFocusCol(0)) : setFocusCol(0); break
+      case 'End': e.preventDefault(); e.ctrlKey ? (focusSourceRef.current = 'keyboard', setFocusRow(maxRow), setFocusCol(COL_COUNT - 1)) : setFocusCol(COL_COUNT - 1); break
     }
   }, [displayRows, focusRow, focusCol, editing, activateCell, onDeleteVariant, cleanupEmptyVariant])
 
@@ -1082,18 +1216,19 @@ export function HoldingsSimulationTable({
 
   const handleStopEdit = useCallback((committedValue?: string) => {
     if (suggestMode) {
-      // Suggest mode: no variant to clean up, just close editor
       setEditing(false)
+      containerRef.current?.focus({ preventScroll: true })
       return
     }
     if (committedValue) {
       committedEditRef.current = true
     } else if (!committedEditRef.current) {
-      // No value committed — immediately delete the empty variant so the cell
-      // snaps back to the original weight without any intermediate "enter size" state.
       cleanupEmptyVariant(focusRow)
     }
     setEditing(false)
+    // Refocus the table container so arrow keys work immediately.
+    // Use preventScroll to avoid jumping the scroll position.
+    requestAnimationFrame(() => containerRef.current?.focus({ preventScroll: true }))
   }, [focusRow, cleanupEmptyVariant, suggestMode])
 
   const handleShowPhantom = useCallback(() => {
@@ -1169,6 +1304,8 @@ export function HoldingsSimulationTable({
       onSubmitSuggestion={onSubmitSuggestion}
       pendingSuggestions={pendingSuggestionsByAsset?.get(row.asset_id)}
       onOpenSuggestionReview={onOpenSuggestionReview}
+      promoteSelected={row.variant ? selectedForPromote.has(row.variant.id) : false}
+      onTogglePromote={!readOnly && !suggestMode && onBulkPromote ? togglePromoteSelection : undefined}
     />
   )
 
@@ -1186,7 +1323,9 @@ export function HoldingsSimulationTable({
           setPendingEditAssetId(null)
           if (focusRow >= 0 && !suggestMode) cleanupEmptyVariant(focusRow)
           setEditing(false)
-          setFocusRow(-1)
+          // Defer focus row reset so the cleanup animation frame runs first,
+          // preventing a flash where the row loses focus highlight before deletion
+          requestAnimationFrame(() => setFocusRow(-1))
         }
       }}
     >
@@ -1253,6 +1392,9 @@ export function HoldingsSimulationTable({
                               {row.variant?.action || row.derivedAction}
                             </span>
                             <span className="font-semibold text-sm text-gray-900 dark:text-white">{row.symbol}</span>
+                            {row.variant?.proposal_id && (
+                              <FileCheck className="h-3 w-3 text-teal-500 dark:text-teal-400 shrink-0" title="From analyst recommendation" />
+                            )}
                           </div>
                           {conflict?.suggested_direction && row.variant && (
                             <button
@@ -1286,6 +1428,28 @@ export function HoldingsSimulationTable({
           >
             <MessageSquare className="h-3 w-3" />
             {pendingSuggestionCount} suggestion{pendingSuggestionCount !== 1 ? 's' : ''}
+          </button>
+        )}
+
+        {/* Promote to Trade Book */}
+        {!readOnly && !suggestMode && onBulkPromote && promotableRows.length > 0 && (
+          <button
+            onClick={() => {
+              if (selectedForPromote.size === 0) return
+              if (!window.confirm(`Promote ${selectedForPromote.size} trade${selectedForPromote.size !== 1 ? 's' : ''} to Trade Book? They will be removed from the simulation.`)) return
+              onBulkPromote(Array.from(selectedForPromote))
+              setSelectedForPromote(new Set())
+            }}
+            disabled={selectedForPromote.size === 0 || isBulkPromoting}
+            className={clsx(
+              'text-[11px] font-medium px-2.5 py-0.5 rounded-full transition-colors flex items-center gap-1',
+              selectedForPromote.size > 0
+                ? 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 cursor-pointer'
+                : 'text-gray-400 dark:text-gray-500 cursor-default'
+            )}
+          >
+            <BookOpen className="h-3 w-3" />
+            {isBulkPromoting ? 'Promoting...' : `Promote${selectedForPromote.size > 0 ? ` (${selectedForPromote.size})` : ''}`}
           </button>
         )}
 
@@ -1404,8 +1568,8 @@ export function HoldingsSimulationTable({
               })}
             </tr>
 
-            {/* Filter row — always visible */}
-            <tr className="bg-gray-200/60 dark:bg-gray-700/50 border-b border-gray-200/60 dark:border-gray-700/40">
+            {/* Filter row — always visible, solid bg so content doesn't show through */}
+            <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
               {COLUMNS.map((col) => (
                 <td key={col.key} className={clsx('px-2 py-0.5', col.key === 'SYMBOL' && 'pl-3')}>
                   {col.filterable ? (

@@ -127,7 +127,7 @@ async function fetchTimeline(
   const [ideas, portfolioTracks, proposals, tradeEvents, outcomes] = await Promise.all([
     fetchIdeas(assetId),
     fetchPortfolioDecisions(assetId),
-    fetchProposals(assetId),
+    fetchRecommendations(assetId),
     fetchTradeEvents(assetId, portfolioId),
     fetchOutcomes(assetId),
   ])
@@ -220,45 +220,45 @@ async function fetchTimeline(
     }
   }
 
-  // --- 4. Proposal submitted (first per user per portfolio only) ---
-  const seenProposals = new Set<string>()
-  for (const proposal of proposals) {
+  // --- 4. Recommendation submitted (first per user per portfolio only) ---
+  const seenRecs = new Set<string>()
+  for (const rec of proposals) {
     // Deduplicate: one entry per user+portfolio combination
-    const dedupeKey = `${proposal.user_id}:${proposal.portfolio_id}`
-    if (seenProposals.has(dedupeKey)) continue
-    seenProposals.add(dedupeKey)
+    const dedupeKey = `${rec.user_id}:${rec.portfolio_id}`
+    if (seenRecs.has(dedupeKey)) continue
+    seenRecs.add(dedupeKey)
 
-    const sizingLabel = proposal.weight != null
-      ? `${proposal.weight}%`
-      : proposal.shares != null
-        ? `#${proposal.shares.toLocaleString()}`
+    const sizingLabel = rec.weight != null
+      ? `${rec.weight}%`
+      : rec.shares != null
+        ? `#${rec.shares.toLocaleString()}`
         : null
 
     events.push({
-      id: `proposal_submitted:${proposal.id}`,
+      id: `proposal_submitted:${rec.id}`,
       type: 'proposal_submitted',
       phase: 'formal',
-      timestamp: proposal.created_at,
-      title: `Proposal submitted${sizingLabel ? ` — ${sizingLabel}` : ''}`,
-      subtitle: proposal.notes || null,
-      actor: proposal.user
+      timestamp: rec.created_at,
+      title: `Recommendation submitted${sizingLabel ? ` — ${sizingLabel}` : ''}`,
+      subtitle: rec.notes || null,
+      actor: rec.user
         ? {
-            name: getFullName(proposal.user.first_name, proposal.user.last_name),
-            initials: getInitials(proposal.user.first_name, proposal.user.last_name),
+            name: getFullName(rec.user.first_name, rec.user.last_name),
+            initials: getInitials(rec.user.first_name, rec.user.last_name),
           }
         : null,
-      portfolio: proposal.portfolio,
-      sizing: proposal.weight != null || proposal.shares != null
+      portfolio: rec.portfolio,
+      sizing: rec.weight != null || rec.shares != null
         ? {
-            action: proposal.action ?? 'trade',
+            action: rec.action ?? 'trade',
             weightDelta: null,
             sharesDelta: null,
             weightBefore: null,
-            weightAfter: proposal.weight,
+            weightAfter: rec.weight,
           }
         : null,
       rationale: null,
-      sourceRef: { type: 'proposal', id: proposal.id },
+      sourceRef: { type: 'decision_request', id: rec.id },
       disposition: 'neutral',
     })
   }
@@ -461,7 +461,7 @@ async function fetchPortfolioDecisions(assetId: string): Promise<PortfolioTrackR
   }))
 }
 
-interface ProposalRow {
+interface RecommendationRow {
   id: string
   user_id: string
   portfolio_id: string
@@ -474,7 +474,7 @@ interface ProposalRow {
   portfolio: { id: string; name: string } | null
 }
 
-async function fetchProposals(assetId: string): Promise<ProposalRow[]> {
+async function fetchRecommendations(assetId: string): Promise<RecommendationRow[]> {
   // Get trade_queue_item IDs for this asset
   const { data: items, error: itemsErr } = await supabase
     .from('trade_queue_items')
@@ -487,18 +487,18 @@ async function fetchProposals(assetId: string): Promise<ProposalRow[]> {
   const itemIds = items.map(i => i.id)
   const actionMap = new Map(items.map(i => [i.id, i.action]))
 
+  // Read from decision_requests + submission_snapshot instead of trade_proposals
   const { data, error } = await supabase
-    .from('trade_proposals')
+    .from('decision_requests')
     .select(`
       id,
       trade_queue_item_id,
-      user_id,
+      requested_by,
       portfolio_id,
-      weight,
-      shares,
-      notes,
+      requested_action,
+      submission_snapshot,
       created_at,
-      users:user_id (first_name, last_name),
+      requester:requested_by (first_name, last_name),
       portfolio:portfolio_id (id, name)
     `)
     .in('trade_queue_item_id', itemIds)
@@ -506,18 +506,21 @@ async function fetchProposals(assetId: string): Promise<ProposalRow[]> {
 
   if (error) throw error
 
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    user_id: row.user_id,
-    portfolio_id: row.portfolio_id,
-    action: actionMap.get(row.trade_queue_item_id) || null,
-    weight: row.weight,
-    shares: row.shares,
-    notes: row.notes,
-    created_at: row.created_at,
-    user: row.users || null,
-    portfolio: row.portfolio || null,
-  }))
+  return (data || []).map((row: any) => {
+    const snap = row.submission_snapshot as Record<string, any> | null
+    return {
+      id: row.id,
+      user_id: row.requested_by,
+      portfolio_id: row.portfolio_id,
+      action: snap?.action || row.requested_action || actionMap.get(row.trade_queue_item_id) || null,
+      weight: snap?.weight ?? null,
+      shares: snap?.shares ?? null,
+      notes: snap?.notes ?? null,
+      created_at: snap?.submitted_at || row.created_at,
+      user: row.requester || null,
+      portfolio: row.portfolio || null,
+    }
+  })
 }
 
 interface TradeEventRow {

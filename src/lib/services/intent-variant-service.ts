@@ -259,6 +259,8 @@ export async function createVariant(params: CreateVariantParams): Promise<Intent
     lab_id: input.lab_id,
     view_id: input.view_id ?? null,
     trade_queue_item_id: input.trade_queue_item_id ?? null,
+    proposal_id: input.proposal_id ?? null,
+    decision_request_id: input.decision_request_id ?? null,
     asset_id: input.asset_id,
     portfolio_id: portfolioId,
     action: derivedAction,

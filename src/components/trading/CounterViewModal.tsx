@@ -54,7 +54,7 @@ const ACTION_DISPLAY: Record<string, { label: string; color: string; bgColor: st
   buy:  { label: 'Buy',  color: 'text-emerald-700', bgColor: 'bg-emerald-50',  darkColor: 'dark:text-emerald-400', darkBgColor: 'dark:bg-emerald-900/30', icon: TrendingUp },
   add:  { label: 'Add',  color: 'text-emerald-700', bgColor: 'bg-emerald-50',  darkColor: 'dark:text-emerald-400', darkBgColor: 'dark:bg-emerald-900/30', icon: TrendingUp },
   sell: { label: 'Sell', color: 'text-red-700',     bgColor: 'bg-red-50',      darkColor: 'dark:text-red-400',     darkBgColor: 'dark:bg-red-900/30',     icon: TrendingDown },
-  trim: { label: 'Trim', color: 'text-red-700',     bgColor: 'bg-red-50',      darkColor: 'dark:text-red-400',     darkBgColor: 'dark:bg-red-900/30',     icon: TrendingDown },
+  trim: { label: 'Reduce', color: 'text-red-700',     bgColor: 'bg-red-50',      darkColor: 'dark:text-red-400',     darkBgColor: 'dark:bg-red-900/30',     icon: TrendingDown },
 }
 
 const DIRECTION_LABEL: Record<string, string> = {
@@ -81,16 +81,15 @@ export function CounterViewModal({
   const counterAction = OPPOSITE_ACTION[originalIdea.action] || 'buy'
 
   // Form state
-  const [urgency, setUrgency] = useState(originalIdea.urgency || 'medium')
+  const urgency = 'medium'
   const [rationale, setRationale] = useState('')
 
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setUrgency(originalIdea.urgency || 'medium')
       setRationale('')
     }
-  }, [isOpen, originalIdea.urgency])
+  }, [isOpen])
 
   const counterCfg = ACTION_DISPLAY[counterAction] || ACTION_DISPLAY.buy
   const origCfg = ACTION_DISPLAY[originalIdea.action] || ACTION_DISPLAY.sell
@@ -213,28 +212,6 @@ export function CounterViewModal({
             </p>
 
             {/* Urgency */}
-            <div className="mb-3">
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Urgency
-              </label>
-              <div className="inline-flex gap-1 p-0.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                {(['low', 'medium', 'high', 'urgent'] as const).map(u => (
-                  <button
-                    key={u}
-                    onClick={() => setUrgency(u)}
-                    className={clsx(
-                      'px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors capitalize',
-                      urgency === u
-                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700',
-                    )}
-                  >
-                    {u}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Rationale (required) */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">

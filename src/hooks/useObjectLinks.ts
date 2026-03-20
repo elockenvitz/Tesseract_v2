@@ -317,10 +317,28 @@ export function useForwardLinksEnriched(
               break
             }
             case 'trade_idea': {
-              const { data: ideas } = await supabase.from('trade_queue_items').select('id, action, assets(symbol)').in('id', ids)
-              if (ideas) ideas.forEach((i: any) => labelMap.set(i.id, {
-                label: `${i.action || 'Trade'} ${i.assets?.symbol || '?'}`,
-              }))
+              const { data: ideas } = await supabase
+                .from('trade_queue_items')
+                .select('id, action, stage, created_at, assets(symbol, company_name), users:created_by(first_name, last_name)')
+                .in('id', ids)
+              const stageLabels: Record<string, string> = {
+                aware: 'Aware', investigate: 'Investigate', deep_research: 'Deep Research',
+                thesis_forming: 'Thesis Forming', ready_for_decision: 'Ready for Decision',
+                idea: 'Idea', discussing: 'Discussing', simulating: 'Simulating', deciding: 'Deciding',
+              }
+              if (ideas) ideas.forEach((i: any) => {
+                const action = (i.action || 'Trade').toUpperCase()
+                const symbol = i.assets?.symbol || '?'
+                const companyName = i.assets?.company_name || ''
+                const creator = i.users ? [i.users.first_name, i.users.last_name].filter(Boolean).join(' ') : ''
+                const date = i.created_at ? new Date(i.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+                const stage = stageLabels[i.stage] || ''
+                const subtitleParts = [companyName, creator, date].filter(Boolean)
+                labelMap.set(i.id, {
+                  label: `${action} ${symbol}`,
+                  subtitle: (stage ? `${stage} \u00b7 ` : '') + subtitleParts.join(' \u00b7 ') || undefined,
+                })
+              })
               break
             }
             case 'trade': {
@@ -382,6 +400,22 @@ export function useForwardLinksEnriched(
               if (thoughts) thoughts.forEach((t: any) => {
                 const preview = t.content?.slice(0, 60) || (t.idea_type === 'prompt' ? 'Prompt' : 'Thought')
                 labelMap.set(t.id, { label: preview, subtitle: t.idea_type || undefined })
+              })
+              break
+            }
+            case 'trade_idea_thesis': {
+              const { data: theses } = await supabase
+                .from('trade_idea_theses')
+                .select('id, direction, rationale, trade_queue_items:trade_queue_item_id (action, assets:asset_id (symbol))')
+                .in('id', ids)
+              if (theses) (theses as any[]).forEach(t => {
+                const tqi = t.trade_queue_items
+                const dir = t.direction === 'bull' ? 'Bull' : t.direction === 'bear' ? 'Bear' : t.direction
+                const action = (tqi?.action || '').toUpperCase()
+                const sym = tqi?.assets?.symbol || ''
+                const preview = t.rationale?.slice(0, 50) || 'Argument'
+                const ideaRef = action && sym ? `${action} ${sym}` : sym
+                labelMap.set(t.id, { label: `${dir} \u2014 ${preview}`, subtitle: ideaRef || undefined })
               })
               break
             }

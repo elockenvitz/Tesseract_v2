@@ -30,7 +30,7 @@ import { DecisionAccountabilityPage } from './DecisionAccountabilityPage'
 import { FilesPage } from './FilesPage'
 import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
-import { TradePlanHistoryPage } from './TradePlanHistoryPage'
+import { TradeBookPage } from './TradeBookPage'
 import { AssetAllocationPage } from './AssetAllocationPage'
 import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
@@ -221,7 +221,7 @@ export function DashboardPage() {
       if (result.type === 'coverage' && tab.type === 'coverage') return true
       if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
       if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
-      if (result.type === 'trade-plans' && tab.type === 'trade-plans') return true
+      if (result.type === 'trade-book' && tab.type === 'trade-book') return true
       if (result.type === 'workflows' && tab.type === 'workflows') return true
       return false
     })
@@ -535,20 +535,6 @@ export function DashboardPage() {
     return () => window.removeEventListener('open-shared-simulation', handleOpenSharedSimulation as EventListener)
   }, [])
 
-  // Listen for custom event to open Trade Plans tab
-  useEffect(() => {
-    const handleOpenTradePlans = () => {
-      handleSearchResult({
-        id: 'trade-plans',
-        title: 'Trade Plans',
-        type: 'trade-plans',
-        data: {}
-      })
-    }
-    window.addEventListener('openTradePlans', handleOpenTradePlans)
-    return () => window.removeEventListener('openTradePlans', handleOpenTradePlans)
-  }, [])
-
   // Listen for custom event to open Ideas tab with filters (e.g., from "View all" in sidebar)
   useEffect(() => {
     const handleOpenIdeasTab = (event: CustomEvent) => {
@@ -641,8 +627,8 @@ export function DashboardPage() {
         return <TradeQueuePage />
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
-      case 'trade-plans':
-        return <TradePlanHistoryPage />
+      case 'trade-book':
+        return <TradeBookPage />
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':
@@ -659,7 +645,9 @@ export function DashboardPage() {
       case 'note': {
         // Handle notes from different sources: asset, portfolio, theme
         const entityType = activeTab.data?.entityType || 'asset' // Default to asset for backwards compatibility
-        const noteId = activeTab.data?.isNew ? undefined : (activeTab.data?.id || activeTab.id)
+        // Use data.id for the selected note. Only fall back to activeTab.id if it looks like a UUID (not a synthetic tab ID like "notes-{assetId}")
+        const rawNoteId = activeTab.data?.isNew ? undefined : activeTab.data?.id
+        const noteId = rawNoteId || (activeTab.id && !activeTab.id.startsWith('notes-') && !activeTab.id.startsWith('research-') ? activeTab.id : undefined)
 
         const handleNoteSelect = (newNoteId: string) => {
           // Update the tab's data.id to the new note (but keep the stable tab ID)

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, BookOpen, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -29,7 +29,7 @@ export interface Tab {
   type: 'asset' | 'portfolio' | 'theme' | 'note' | 'dashboard' | 'assets-list'
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
   | 'idea-generator' | 'workflows' | 'projects-list' | 'project'
-  | 'trade-queue' | 'trade-lab' | 'trade-plans' | 'tdf' | 'tdf-list' | 'asset-allocation'
+  | 'trade-queue' | 'trade-lab' | 'trade-book' | 'tdf' | 'tdf-list' | 'asset-allocation'
   | 'calendar' | 'priorities' | 'coverage' | 'organization' | 'outcomes' | 'files' | 'charting' | 'audit'
   data?: any
   isActive: boolean
@@ -51,7 +51,7 @@ interface TabManagerProps {
 // Types that should NOT be grouped (singleton types)
 const SINGLETON_TYPES = new Set([
   'dashboard', 'idea-generator', 'workflows', 'trade-queue',
-  'trade-lab', 'trade-plans', 'asset-allocation', 'calendar',
+  'trade-lab', 'trade-book', 'asset-allocation', 'calendar',
   'priorities', 'coverage', 'organization', 'outcomes', 'files', 'charting', 'audit'
 ])
 
@@ -766,6 +766,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       case 'project': return <FolderKanban className="h-3.5 w-3.5" />
       case 'trade-queue': return <ListTodo className="h-3.5 w-3.5" />
       case 'trade-lab': return <Beaker className="h-3.5 w-3.5" />
+      case 'trade-book': return <BookOpen className="h-3.5 w-3.5" />
       case 'tdf': return <Clock className="h-3.5 w-3.5" />
       case 'tdf-list': return <Clock className="h-3.5 w-3.5" />
       case 'asset-allocation': return <PieChart className="h-3.5 w-3.5" />

@@ -9,6 +9,8 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { usePendingLineageStore } from '../../stores/pendingLineageStore'
+import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
+import { PendingResearchBanner } from '../common/PendingResearchBanner'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -644,6 +646,26 @@ export function UniversalNoteEditor({
         if (linked) {
           queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
           queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
+        }
+      }
+
+      // Auto-link research targets if creating from an argument/idea context
+      if (newNote?.id) {
+        const noteType: Record<string, string> = {
+          asset_notes: 'asset_note',
+          portfolio_notes: 'portfolio_note',
+          theme_notes: 'theme_note',
+          custom_notebook_notes: 'custom_note',
+        }
+        const researchLinked = await usePendingResearchLinksStore.getState().linkIfPending({
+          sourceType: (noteType[config.tableName] || 'asset_note') as any,
+          sourceId: newNote.id,
+          userId: newNote.created_by,
+        })
+        if (researchLinked > 0) {
+          queryClient.invalidateQueries({ queryKey: ['linked-research'] })
+          queryClient.invalidateQueries({ queryKey: ['argument-research-counts'] })
+          queryClient.invalidateQueries({ queryKey: ['object-links'] })
         }
       }
 
@@ -1948,6 +1970,12 @@ export function UniversalNoteEditor({
           </div>
         ) : selectedNote ? (
           <>
+            {/* Linking context banner — shows when creating research from idea modal */}
+            {usePendingResearchLinksStore.getState().targets.length > 0 && (
+              <div className="px-6 pt-3">
+                <PendingResearchBanner />
+              </div>
+            )}
             {/* Editor Header */}
             <div className="px-6 py-4 border-b border-gray-100 bg-white">
               <div className="flex items-center justify-between">
@@ -2245,6 +2273,10 @@ export function UniversalNoteEditor({
             <LinkedObjectsPanel
               links={forwardLinks}
               onDeleteLink={(linkId) => deleteManualLink.mutate(linkId)}
+              onUpdateLinkType={async (linkId, newType) => {
+                await supabase.from('object_links').update({ link_type: newType }).eq('id', linkId)
+                queryClient.invalidateQueries({ queryKey: ['object-links', 'forward-enriched', selectedNoteSourceType, selectedNoteId] })
+              }}
               isLoading={isLoadingLinks}
             />
 

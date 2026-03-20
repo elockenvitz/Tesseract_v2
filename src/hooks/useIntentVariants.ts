@@ -122,6 +122,7 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
       action: TradeAction
       sizingInput: string
       tradeQueueItemId?: string | null
+      proposalId?: string | null
       notes?: string | null
       sortOrder?: number
       currentPosition?: {
@@ -143,6 +144,7 @@ export function useIntentVariants(options: UseIntentVariantsOptions = {}) {
           lab_id: labId,
           view_id: viewId,
           trade_queue_item_id: params.tradeQueueItemId,
+          proposal_id: params.proposalId,
           asset_id: params.assetId,
           action: params.action,
           sizing_input: params.sizingInput,

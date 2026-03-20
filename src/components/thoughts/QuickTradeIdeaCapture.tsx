@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { emitAuditEvent } from '../../lib/audit'
 import { clsx } from 'clsx'
-import type { TradeAction, TradeUrgency } from '../../types/trading'
+import type { TradeAction } from '../../types/trading'
 import { inferProvenance, type Provenance } from '../../lib/provenance'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 
@@ -26,12 +26,6 @@ interface QuickTradeIdeaCaptureProps {
   assetName?: string
 }
 
-const urgencyOptions: { value: TradeUrgency; label: string; color: string }[] = [
-  { value: 'low', label: 'Low', color: 'text-slate-700 bg-slate-100 border-slate-300' },
-  { value: 'medium', label: 'Medium', color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { value: 'high', label: 'High', color: 'text-orange-600 bg-orange-50 border-orange-200' },
-  { value: 'urgent', label: 'Urgent', color: 'text-red-600 bg-red-50 border-red-200' },
-]
 
 export function QuickTradeIdeaCapture({
   onSuccess,
@@ -69,7 +63,7 @@ export function QuickTradeIdeaCapture({
 
   // Trade details
   const [action, setAction] = useState<TradeAction>('buy')
-  const [urgency, setUrgency] = useState<TradeUrgency>('medium')
+  const urgency = 'medium' as const
   const [rationale, setRationale] = useState('')
 
   // Portfolio - multiple selection or none
@@ -518,7 +512,6 @@ export function QuickTradeIdeaCapture({
       setShortAssets([])
       setShortSearch('')
       setAction('buy')
-      setUrgency('medium')
       setRationale('')
       setContextTags([])
       setSelectedPortfolioIds([])
@@ -888,31 +881,6 @@ export function QuickTradeIdeaCapture({
           </div>
         </div>
       )}
-
-      {/* Urgency */}
-      <div className="mb-3">
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Urgency</span>
-          <span className="text-[10px] text-gray-400">· affects priority ranking</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {urgencyOptions.map((option) => {
-            const isSelected = urgency === option.value
-            return (
-              <button
-                key={option.value}
-                onClick={() => setUrgency(option.value)}
-                className={clsx(
-                  "px-2 py-1 rounded-full text-xs font-medium border transition-all capitalize",
-                  isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
-                )}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
 
       {/* Rationale */}
       <textarea

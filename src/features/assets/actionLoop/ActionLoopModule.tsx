@@ -105,7 +105,7 @@ const STEP_STATUS_STYLE: Record<WorkflowStepStatus, string> = {
 const WORKFLOW_STEPS: { key: keyof WorkflowSummary; label: string }[] = [
   { key: 'research', label: 'Research' },
   { key: 'idea', label: 'Idea' },
-  { key: 'proposal', label: 'Proposal' },
+  { key: 'proposal', label: 'Recommendation' },
   { key: 'decision', label: 'Decision' },
   { key: 'execution', label: 'Execution' },
 ]

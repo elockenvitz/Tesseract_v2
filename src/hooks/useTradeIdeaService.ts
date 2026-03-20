@@ -66,9 +66,9 @@ function buildActionContext(
 }
 
 /**
- * Map legacy status to new stage/outcome
+ * Map legacy status (or research stage used as targetStatus) to new stage/outcome
  */
-function statusToTarget(status: TradeQueueStatus): MoveTarget {
+function statusToTarget(status: TradeQueueStatus | string): MoveTarget {
   switch (status) {
     case 'executed':
     case 'approved':
@@ -79,6 +79,13 @@ function statusToTarget(status: TradeQueueStatus): MoveTarget {
       return { stage: 'deciding', outcome: 'deferred' }
     case 'deleted':
       throw new Error('Use deleteTradeIdea instead')
+    // Research stages pass through directly
+    case 'aware':
+    case 'investigate':
+    case 'deep_research':
+    case 'thesis_forming':
+    case 'ready_for_decision':
+      return { stage: status as TradeStage }
     default:
       return { stage: status as TradeStage }
   }
@@ -135,29 +142,47 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     onMutate: async (params) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['trade-queue-items'] })
+      await queryClient.cancelQueries({ queryKey: ['trade-detail', params.tradeId] })
 
-      // Snapshot previous value
+      // Snapshot previous values
       const previousItems = queryClient.getQueryData(['trade-queue-items'])
+      const previousDetail = queryClient.getQueryData(['trade-detail', params.tradeId])
 
       // Determine new status
       const newStatus = params.targetStatus || params.stage
 
-      // Optimistically update the cache
+      // Optimistically update the list cache
       queryClient.setQueriesData({ queryKey: ['trade-queue-items'] }, (old: any) => {
         if (!old) return old
         return old.map((item: any) =>
           item.id === params.tradeId
-            ? { ...item, status: newStatus, workflow_stage: params.stage || newStatus }
+            ? { ...item, status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
             : item
         )
       })
 
-      return { previousItems }
+      // Optimistically update the detail cache (used by TradeIdeaDetailModal)
+      const stageUpdate = { status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
+      queryClient.setQueryData(['trade-detail', params.tradeId], (old: any) => {
+        if (!old) return old
+        if (old.type === 'single' && old.data) {
+          return { ...old, data: { ...old.data, ...stageUpdate } }
+        }
+        if ((old.type === 'pair' || old.type === 'pair_from_legs') && old.data) {
+          return { ...old, data: { ...old.data, ...stageUpdate } }
+        }
+        return old
+      })
+
+      return { previousItems, previousDetail }
     },
     onError: (error, params, context) => {
       // Rollback on error
       if (context?.previousItems) {
         queryClient.setQueryData(['trade-queue-items'], context.previousItems)
+      }
+      if (context?.previousDetail) {
+        queryClient.setQueryData(['trade-detail', params.tradeId], context.previousDetail)
       }
       toast.error(error instanceof Error ? error.message : 'Failed to move trade')
     },
@@ -309,7 +334,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         if (!old) return old
         return old.map((item: any) =>
           tradeIdSet.has(item.id)
-            ? { ...item, status: newStatus, workflow_stage: params.stage || newStatus }
+            ? { ...item, status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
             : item
         )
       })
@@ -367,8 +392,10 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     onMutate: async (params) => {
       await queryClient.cancelQueries({ queryKey: ['pair-trades'] })
       await queryClient.cancelQueries({ queryKey: ['trade-queue-items'] })
+      await queryClient.cancelQueries({ queryKey: ['trade-detail', params.pairTradeId] })
       const previousItems = queryClient.getQueryData(['pair-trades'])
       const previousTradeItems = queryClient.getQueryData(['trade-queue-items'])
+      const previousDetail = queryClient.getQueryData(['trade-detail', params.pairTradeId])
       const newStatus = params.targetStatus || params.stage
 
       // Update pair_trades cache
@@ -392,7 +419,17 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         })
       })
 
-      return { previousItems, previousTradeItems }
+      // Optimistically update the detail cache
+      const stageUpdate = { status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
+      queryClient.setQueryData(['trade-detail', params.pairTradeId], (old: any) => {
+        if (!old) return old
+        if ((old.type === 'pair' || old.type === 'pair_from_legs') && old.data) {
+          return { ...old, data: { ...old.data, ...stageUpdate } }
+        }
+        return old
+      })
+
+      return { previousItems, previousTradeItems, previousDetail }
     },
     onError: (error, params, context) => {
       if (context?.previousItems) {
@@ -400,6 +437,9 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       }
       if (context?.previousTradeItems) {
         queryClient.setQueryData(['trade-queue-items'], context.previousTradeItems)
+      }
+      if (context?.previousDetail) {
+        queryClient.setQueryData(['trade-detail', params.pairTradeId], context.previousDetail)
       }
       toast.error(error instanceof Error ? error.message : 'Failed to move pair trade')
     },
@@ -555,6 +595,9 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         conviction?: 'low' | 'medium' | 'high' | null
         timeHorizon?: 'short' | 'medium' | 'long' | null
         urgency?: string
+        thesisText?: string | null
+        expectedPositionSize?: number | null
+        maxPositionSize?: number | null
         sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public' | null
         contextTags?: Array<{
           entity_type: string

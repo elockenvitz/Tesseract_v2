@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, Activity, Plus, Shield } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, BookOpen, Activity, Plus, Shield } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -271,6 +271,7 @@ export function Header({
                     {/* Other Core tiles */}
                     {[
                       { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ShoppingCart, color: 'text-amber-500', bg: 'bg-amber-50' },
+                      { id: 'trade-book', title: 'Trade Book', type: 'trade-book', icon: BookOpen, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
                       { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },
                       { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },

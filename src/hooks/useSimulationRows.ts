@@ -9,6 +9,7 @@ import { useMemo } from 'react'
 import type {
   BaselineHolding,
   IntentVariant,
+  AcceptedTrade,
   ComputedValues,
   SizingValidationError,
   TradeAction,
@@ -35,6 +36,7 @@ export interface SimulationRow {
 
   variant: IntentVariant | null
   computed: ComputedValues | null
+  acceptedTrade: AcceptedTrade | null
 
   // Display values
   currentShares: number
@@ -57,6 +59,9 @@ export interface SimulationRow {
   hasConflict: boolean
   hasWarning: boolean
   conflict: SizingValidationError | null
+  /** True when the variant's computed delta conflicts with the originating idea's action direction.
+   *  E.g., idea says SELL but sizing increases exposure. */
+  hasIdeaDirectionConflict: boolean
 }
 
 export interface SimulationRowSummary {
@@ -75,11 +80,31 @@ interface UseSimulationRowsOptions {
   variants: IntentVariant[]
   priceMap: Record<string, number>
   benchmarkWeightMap?: Record<string, number>
+  acceptedTrades?: AcceptedTrade[]
+  /** Map of asset_id → originating idea action (from trade queue item).
+   *  Used for idea-direction conflict detection — the variant's action may be
+   *  auto-derived from deltas and differ from the idea's intended direction. */
+  ideaActionByAsset?: Record<string, TradeAction>
 }
 
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+/** Check if the computed delta conflicts with the originating idea's intended direction.
+ *  E.g., idea says SELL but user sized +1% which increases exposure. */
+function checkIdeaDirectionConflict(
+  ideaAction: TradeAction | null | undefined,
+  deltaShares: number,
+  hasSizing: boolean,
+): boolean {
+  if (!ideaAction || !hasSizing || deltaShares === 0) return false
+  const isBuyIntent = ideaAction === 'buy' || ideaAction === 'add'
+  const isSellIntent = ideaAction === 'sell' || ideaAction === 'trim'
+  if (isBuyIntent && deltaShares < 0) return true
+  if (isSellIntent && deltaShares > 0) return true
+  return false
+}
 
 /** Derive the correct action from computed deltas (no manual override needed) */
 function deriveAction(
@@ -93,11 +118,12 @@ function deriveAction(
   // Before computed values arrive, trust the stored action from the trade idea
   if (!hasComputed) return fallback
   if (isNew) {
-    // New position with negative delta = short sell
+    // New position: positive delta = buy (new long), negative = sell (new short)
     if (deltaShares < 0 || deltaWeight < -0.005) return 'sell'
     return 'buy'
   }
   if (isRemoved) return 'sell'
+  // Increasing position = add, decreasing = trim (display maps trim → "Reduce")
   if (deltaShares > 0 || deltaWeight > 0.005) return 'add'
   if (deltaShares < 0 || deltaWeight < -0.005) return 'trim'
   return fallback
@@ -203,6 +229,8 @@ export function useSimulationRows({
   variants,
   priceMap,
   benchmarkWeightMap,
+  acceptedTrades,
+  ideaActionByAsset,
 }: UseSimulationRowsOptions) {
   return useMemo(() => {
     // Step 1: Build maps
@@ -212,8 +240,17 @@ export function useSimulationRows({
     const variantMap = new Map<string, IntentVariant>()
     variants.forEach(v => variantMap.set(v.asset_id, v))
 
+    const acceptedTradeMap = new Map<string, AcceptedTrade>()
+    acceptedTrades?.forEach(t => acceptedTradeMap.set(t.asset_id, t))
+
     const totalValue = baselineHoldings.reduce((s, h) => s + h.value, 0)
     const rows: SimulationRow[] = []
+
+    // Helper: is this a cash holding? (handled separately by synthetic cash row)
+    const isCashSymbol = (sym: string) => {
+      const s = sym.toUpperCase()
+      return s === 'CASH' || s === '$CASH' || s === 'CASH_USD'
+    }
 
     // Step 2: For each baseline holding → lookup variant → build row
     baselineMap.forEach((holding, assetId) => {
@@ -260,6 +297,7 @@ export function useSimulationRows({
         },
         variant,
         computed,
+        acceptedTrade: acceptedTradeMap.get(assetId) || null,
         currentShares: holding.shares,
         simShares,
         currentWeight: holding.weight,
@@ -272,10 +310,13 @@ export function useSimulationRows({
         derivedAction: derived,
         isNew: false,
         isRemoved,
-        isCash: false,
+        isCash: isCashSymbol(holding.symbol),
         hasConflict: conflict !== null,
         hasWarning: variant?.below_lot_warning ?? false,
         conflict,
+        hasIdeaDirectionConflict: checkIdeaDirectionConflict(
+          ideaActionByAsset?.[assetId] ?? variant?.action, ds, !!variant?.sizing_input
+        ),
       })
     })
 
@@ -315,6 +356,7 @@ export function useSimulationRows({
         baseline: null,
         variant,
         computed,
+        acceptedTrade: acceptedTradeMap.get(assetId) || null,
         currentShares: 0,
         simShares,
         currentWeight: 0,
@@ -331,6 +373,9 @@ export function useSimulationRows({
         hasConflict: conflict !== null,
         hasWarning: variant.below_lot_warning ?? false,
         conflict,
+        hasIdeaDirectionConflict: checkIdeaDirectionConflict(
+          ideaActionByAsset?.[assetId] ?? variant.action, ds, !!variant.sizing_input
+        ),
       })
     })
 
@@ -378,17 +423,40 @@ export function useSimulationRows({
 
     // Find existing cash baseline (if portfolio already has a cash position)
     const cashBaseline = baselineHoldings.find(h =>
-      h.symbol.toUpperCase() === 'CASH' || h.symbol.toUpperCase() === '$CASH'
+      h.symbol.toUpperCase() === 'CASH' || h.symbol.toUpperCase() === '$CASH' || h.symbol.toUpperCase() === 'CASH_USD'
     )
     const baseCashWeight = cashBaseline?.weight ?? (100 - totalCurrentWeight)
     const cashSimWeight = 100 - totalSimWeight
     const cashDeltaWeight = cashSimWeight - baseCashWeight
 
-    // Only show cash row when there are trades that move cash
+    // If a real cash holding exists in the rows, update its deltas to reflect trade impact.
+    // Cash is treated like a real position: trades consume/add cash, so delta shares = -netTradeNotional / cashPrice.
+    if (cashBaseline && netTradeNotional !== 0) {
+      const cashRowInList = sortedRows.find(r => r.isCash)
+      if (cashRowInList) {
+        const cashPrice = cashBaseline.price || 1
+        const cashDeltaShares = Math.round(cashNotional / cashPrice)
+        const cashSimShares = cashBaseline.shares + cashDeltaShares
+        const cashSimValue = cashSimShares * cashPrice
+        const portfolioSimValue = totalValue + cashNotional // approximate
+        const cashNewWeight = portfolioSimValue > 0 ? (cashSimValue / portfolioSimValue) * 100 : 0
+        const cashWeightDelta = cashNewWeight - cashBaseline.weight
+
+        cashRowInList.simShares = cashSimShares
+        cashRowInList.deltaShares = cashDeltaShares
+        cashRowInList.simWeight = cashNewWeight
+        cashRowInList.deltaWeight = cashWeightDelta
+        cashRowInList.notional = cashNotional
+        cashRowInList.derivedAction = cashNotional >= 0 ? 'add' : 'trim'
+      }
+    }
+
+    // Only show synthetic cash row when trades exist AND no real cash holding is in baseline
     const hasTrades = netTradeNotional !== 0
-    const cashRow: SimulationRow | null = hasTrades ? {
+    const showSyntheticCash = hasTrades && !cashBaseline
+    const cashRow: SimulationRow | null = showSyntheticCash ? {
       asset_id: '__cash__',
-      symbol: 'CASH',
+      symbol: 'CASH_USD',
       company_name: 'Cash & Equivalents',
       sector: null,
       baseline: cashBaseline ? {
@@ -399,6 +467,7 @@ export function useSimulationRows({
       } : null,
       variant: null,
       computed: null,
+      acceptedTrade: null,
       currentShares: 0,
       simShares: 0,
       currentWeight: baseCashWeight,
@@ -415,6 +484,7 @@ export function useSimulationRows({
       hasConflict: false,
       hasWarning: false,
       conflict: null,
+      hasIdeaDirectionConflict: false,
     } : null
 
     // Step 6: Summary
@@ -437,5 +507,5 @@ export function useSimulationRows({
       newPositionRows,
       summary,
     }
-  }, [baselineHoldings, variants, priceMap, benchmarkWeightMap])
+  }, [baselineHoldings, variants, priceMap, benchmarkWeightMap, acceptedTrades, ideaActionByAsset])
 }

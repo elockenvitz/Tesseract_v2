@@ -55,7 +55,7 @@ export function DashboardPipelineStrip({
         {stats.oldestProposalDays != null && stats.oldestProposalDays > 5 && (
           <span className="flex items-center gap-0.5 text-[10px] text-amber-500 dark:text-amber-400">
             <AlertCircle className="w-3 h-3" />
-            Oldest {stats.oldestProposalDays}d
+            Oldest {stats.oldestProposalDays}d pending
           </span>
         )}
       </div>

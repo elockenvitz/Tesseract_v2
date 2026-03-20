@@ -9,6 +9,8 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
 import { usePendingLineageStore } from '../../stores/pendingLineageStore'
+import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
+import { PendingResearchBanner } from '../common/PendingResearchBanner'
 import { clsx } from 'clsx'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 import type { CapturedContext } from './ContextSelector'
@@ -281,6 +283,18 @@ export function QuickThoughtCapture({
           queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
           queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
         }
+
+        // Auto-link research targets if creating from an argument/idea context
+        const researchLinked = await usePendingResearchLinksStore.getState().linkIfPending({
+          sourceType: 'quick_thought',
+          sourceId: data.id,
+          userId: data.created_by,
+        })
+        if (researchLinked > 0) {
+          queryClient.invalidateQueries({ queryKey: ['linked-research'] })
+          queryClient.invalidateQueries({ queryKey: ['argument-research-counts'] })
+          queryClient.invalidateQueries({ queryKey: ['object-links'] })
+        }
       }
 
       // Capture the current idea type before resetting (for toast message)
@@ -470,6 +484,8 @@ export function QuickThoughtCapture({
       "bg-white rounded-lg border border-gray-200 shadow-sm",
       compact ? "p-3" : "p-4"
     )}>
+      {/* Linking context banner — shows when creating research from idea modal */}
+      <PendingResearchBanner />
       {/* Idea Type - ABOVE text field */}
       <div className="mb-3">
         <div className="flex flex-wrap gap-1.5">

@@ -27,8 +27,10 @@ export interface TradeSizing {
 }
 
 // New workflow types
-// Stages: idea → working_on → modeling → deciding
-export type TradeStage = 'idea' | 'working_on' | 'modeling' | 'deciding'
+// Research Pipeline stages (v2): aware → investigate → deep_research → thesis_forming → ready_for_decision
+export type ResearchStage = 'aware' | 'investigate' | 'deep_research' | 'thesis_forming' | 'ready_for_decision'
+// Legacy stages kept for backwards compat
+export type TradeStage = 'idea' | 'working_on' | 'modeling' | 'deciding' | ResearchStage
 // Decision outcomes (set by PM/owner in deciding stage)
 export type DecisionOutcome = 'accepted' | 'deferred' | 'rejected'
 // Legacy outcome type for backwards compatibility
@@ -36,7 +38,12 @@ export type TradeOutcome = 'executed' | 'rejected' | 'deferred' | 'accepted'
 export type VisibilityTier = 'active' | 'trash' | 'archive'
 
 // Thesis/debate system
-export type ThesisDirection = 'bull' | 'bear'
+export type ThesisDirection = 'bull' | 'bear' | 'catalyst' | 'risk' | 'context'
+
+/** Directional thesis types (bull/bear) — used for debate columns */
+export type DirectionalThesisDirection = 'bull' | 'bear'
+/** Non-directional context types — catalyst, risk, general context */
+export type ContextThesisDirection = 'catalyst' | 'risk' | 'context'
 export type ThesisConviction = 'low' | 'medium' | 'high'
 
 export interface TradeIdeaThesis {
@@ -45,6 +52,7 @@ export interface TradeIdeaThesis {
   direction: ThesisDirection
   rationale: string
   conviction: ThesisConviction | null
+  portfolio_id: string | null
   created_by: string
   updated_at: string
   created_at: string
@@ -52,11 +60,99 @@ export interface TradeIdeaThesis {
 
 export interface ThesisWithUser extends TradeIdeaThesis {
   users: { id: string; email: string; first_name: string | null; last_name: string | null }
+  portfolio?: { id: string; name: string } | null
 }
 
 export interface ThesisCounts {
   bull: number
   bear: number
+  context: number
+}
+
+// Decision request urgency levels
+export type DecisionRequestUrgency = 'low' | 'medium' | 'high' | 'critical'
+export type DecisionRequestStatus = 'pending' | 'under_review' | 'needs_discussion' | 'accepted' | 'accepted_with_modification' | 'rejected' | 'deferred' | 'withdrawn'
+
+/** Immutable snapshot of what was submitted for PM review */
+export interface SubmissionSnapshot {
+  action?: string
+  symbol?: string
+  company_name?: string
+  portfolio_name?: string
+  weight?: number | null
+  shares?: number | null
+  sizing_mode?: string | null
+  notes?: string | null
+  proposal_type?: string
+  sizing_context?: Record<string, unknown>
+  /** Who submitted the recommendation */
+  requester_name?: string
+  requester_email?: string
+  /** When the recommendation was submitted (ISO 8601) */
+  submitted_at?: string
+  /** Set to true for records created by the historical backfill migration */
+  backfilled?: boolean
+  backfilled_at?: string
+  proposal_created_at?: string
+  /** Set when a backfill migration enriched an existing snapshot */
+  enriched_at?: string
+}
+
+// Deferral trigger types for event-based resurfacing
+export type DeferralTriggerType = 'price_level' | 'earnings' | 'custom'
+
+export interface PriceLevelTrigger {
+  type: 'price_level'
+  symbol: string
+  asset_id?: string
+  condition: 'above' | 'below'
+  price: number
+}
+
+export interface EarningsTrigger {
+  type: 'earnings'
+  symbol: string
+  asset_id?: string
+}
+
+export interface CustomTrigger {
+  type: 'custom'
+  description: string
+}
+
+export type DeferralTrigger = PriceLevelTrigger | EarningsTrigger | CustomTrigger
+
+export interface DecisionRequest {
+  id: string
+  trade_queue_item_id: string
+  requested_by: string
+  portfolio_id: string
+  proposal_id: string | null
+  accepted_trade_id: string | null
+  urgency: DecisionRequestUrgency
+  context_note: string | null
+  status: DecisionRequestStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
+  decision_note: string | null
+  deferred_until: string | null
+  deferred_trigger: DeferralTrigger | null
+  sizing_weight: number | null
+  sizing_shares: number | null
+  sizing_mode: string | null
+  requested_action: string | null
+  submission_snapshot: SubmissionSnapshot | null
+  created_at: string
+  updated_at: string
+  // Joined data
+  requester?: { id: string; email: string; first_name: string | null; last_name: string | null }
+  portfolio?: { id: string; name: string }
+  trade_queue_item?: Pick<TradeQueueItem, 'id' | 'action' | 'rationale' | 'conviction' | 'urgency'> & {
+    pair_trade_id?: string | null
+    created_by?: string | null
+    assigned_to?: string | null
+    assets?: { id: string; symbol: string; company_name: string }
+  }
 }
 
 // Portfolio-scoped workflow track for a trade idea
@@ -174,12 +270,16 @@ export interface TradeQueueItem {
   urgency: TradeUrgency
   priority: number
   rationale: string
+  thesis_text: string | null
+  expected_position_size: number | null
+  max_position_size: number | null
 
   // Legacy status field (kept for backwards compatibility during migration)
   status: TradeQueueStatus
 
   // New workflow fields
   stage: TradeStage
+  stage_changed_at: string | null
   outcome: TradeOutcome | null
   outcome_at: string | null
   outcome_by: string | null
@@ -222,6 +322,8 @@ export interface TradeQueueItem {
   take_profit: number | null
   conviction: 'low' | 'medium' | 'high' | null
   time_horizon: 'short' | 'medium' | 'long' | null
+  research_depth: number | null  // 1-5 scale
+  catalyst_clarity: number | null  // 1-5 scale
 
   // Context tags for entity-based categorization
   context_tags: Array<{
@@ -519,6 +621,8 @@ export interface UpdateTradeQueueItemInput {
   take_profit?: number | null
   conviction?: 'low' | 'medium' | 'high' | null
   time_horizon?: 'short' | 'medium' | 'long' | null
+  research_depth?: number | null
+  catalyst_clarity?: number | null
   context_tags?: Array<{
     entity_type: string
     entity_id: string
@@ -577,6 +681,7 @@ export type TradeEventType =
   | 'created'           // Trade idea created
   | 'proposal_created'  // User created a proposal
   | 'proposal_updated'  // User updated their proposal
+  | 'proposal_withdrawn' // User withdrew their proposal
   | 'proposal_snapshot' // Proposal version saved
   | 'moved_to_deciding' // Trade moved to deciding stage
   | 'moved_to_simulating' // Trade moved to simulating
@@ -846,6 +951,8 @@ export interface IntentVariant {
   lab_id: string
   view_id: string | null          // null = lab-wide, string = view-scoped
   trade_queue_item_id: string | null  // Source trade idea (if any)
+  proposal_id: string | null      // Source recommendation (if imported from a proposal)
+  decision_request_id: string | null  // Link to decision_request (for inbox accept undo)
   asset_id: string
 
   // User input
@@ -900,6 +1007,8 @@ export interface CreateIntentVariantInput {
   lab_id: string
   view_id?: string | null
   trade_queue_item_id?: string | null
+  proposal_id?: string | null
+  decision_request_id?: string | null
   asset_id: string
   action: TradeAction
   sizing_input: string
@@ -940,7 +1049,9 @@ export interface TradeSheet {
   net_weight_change: number
 
   // Workflow state
-  status: 'draft' | 'pending_approval' | 'approved' | 'sent_to_desk' | 'executed' | 'cancelled'
+  status: 'draft' | 'committed' | 'pending_approval' | 'approved' | 'sent_to_desk' | 'executed' | 'cancelled'
+  committed_at: string | null
+  committed_by: string | null
   submitted_at: string | null
   submitted_by: string | null
   approved_at: string | null
@@ -980,4 +1091,136 @@ export interface PriceBatchResult {
   prices: Map<string, AssetPrice>
   errors: Map<string, string>
   fetched_at: string
+}
+
+// =============================================================================
+// Accepted Trades (Trade Book)
+// =============================================================================
+
+export type AcceptedTradeSource = 'inbox' | 'simulation' | 'adhoc'
+export type ExecutionStatus = 'not_started' | 'in_progress' | 'complete' | 'cancelled'
+export type ReconciliationStatus = 'pending' | 'matched' | 'partial' | 'deviated' | 'unmatched'
+
+export interface ReconciliationDetail {
+  actual_shares?: number
+  actual_weight?: number
+  deviation_pct?: number
+  feed_timestamp?: string
+}
+
+export interface AcceptedTrade {
+  id: string
+  portfolio_id: string
+  asset_id: string
+
+  // Trade specification
+  action: TradeAction
+  sizing_input: string | null
+  sizing_spec: import('../lib/trade-lab/sizing-parser').SizingSpec | null
+  target_weight: number | null
+  target_shares: number | null
+  delta_weight: number | null
+  delta_shares: number | null
+  notional_value: number | null
+  price_at_acceptance: number | null
+
+  // Provenance
+  source: AcceptedTradeSource
+  decision_request_id: string | null
+  lab_variant_id: string | null
+  trade_queue_item_id: string | null
+  proposal_id: string | null
+
+  // PM decision
+  accepted_by: string
+  acceptance_note: string | null
+
+  // Execution tracking
+  execution_status: ExecutionStatus
+  execution_started_at: string | null
+  execution_completed_at: string | null
+  executed_by: string | null
+  execution_note: string | null
+
+  // Reconciliation
+  reconciliation_status: ReconciliationStatus
+  reconciled_at: string | null
+  reconciliation_detail: ReconciliationDetail | null
+
+  // Batch grouping
+  batch_id: string | null
+
+  // Metadata
+  sort_order: number
+  created_at: string
+  updated_at: string
+  is_active: boolean
+  reverted_at: string | null
+  reverted_by: string | null
+  revert_reason: string | null
+}
+
+export interface AcceptedTradeWithJoins extends AcceptedTrade {
+  asset: {
+    id: string
+    symbol: string
+    company_name: string
+    sector: string | null
+  }
+  accepted_by_user?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
+  executed_by_user?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
+}
+
+// =============================================================================
+// Trade Batches (grouped commitments, replaces Trade Plans approval workflow)
+// =============================================================================
+
+// Trade Book is post-decision. Batches are pure grouping/context objects —
+// they do not gate execution or imply review/approval workflow.
+export type TradeBatchStatus = 'active' | 'cancelled'
+
+export interface TradeBatch {
+  id: string
+  portfolio_id: string
+  name: string | null
+  description: string | null
+  status: TradeBatchStatus
+  source_type: AcceptedTradeSource | 'mixed'
+  snapshot: Record<string, unknown> | null
+  metadata: Record<string, unknown>
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface TradeBatchWithTrades extends TradeBatch {
+  accepted_trades?: AcceptedTradeWithJoins[]
+}
+
+export type AcceptedTradeCommentType = 'note' | 'sizing_change' | 'execution_update' | 'system'
+
+export interface AcceptedTradeComment {
+  id: string
+  accepted_trade_id: string
+  user_id: string
+  content: string
+  comment_type: AcceptedTradeCommentType
+  metadata: Record<string, unknown>
+  created_at: string
+  user?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
 }

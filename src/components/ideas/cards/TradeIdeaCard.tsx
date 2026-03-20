@@ -4,22 +4,21 @@ import { formatDistanceToNow } from 'date-fns'
 import {
   TrendingUp,
   TrendingDown,
-  Zap,
   FlaskConical,
   ChevronDown,
   Clock,
   MoreVertical,
   Building2,
   Lock,
-  Users
+  Users,
+  CheckCircle2,
 } from 'lucide-react'
-import type { TradeIdeaItem, TradeUrgency, ScoredFeedItem, Author } from '../../../hooks/ideas/types'
+import type { TradeIdeaItem, ScoredFeedItem, Author } from '../../../hooks/ideas/types'
 
-const urgencyConfig: Record<TradeUrgency, { color: string; bg: string; darkBg: string; label: string }> = {
-  low: { color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100', darkBg: 'dark:bg-slate-800', label: 'Low' },
-  medium: { color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100', darkBg: 'dark:bg-blue-900/30', label: 'Medium' },
-  high: { color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100', darkBg: 'dark:bg-orange-900/30', label: 'High' },
-  urgent: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100', darkBg: 'dark:bg-red-900/30', label: 'Urgent!' }
+const CONVICTION_DISPLAY: Record<string, { color: string; dot: string; label: string }> = {
+  low: { color: 'text-gray-500 dark:text-gray-400', dot: 'bg-gray-400', label: 'Low' },
+  medium: { color: 'text-blue-600 dark:text-blue-400', dot: 'bg-blue-500', label: 'Med' },
+  high: { color: 'text-green-600 dark:text-green-400', dot: 'bg-green-500', label: 'High' },
 }
 
 interface LabInfo {
@@ -45,6 +44,8 @@ interface TradeIdeaCardProps {
     labIds: string[]
     portfolioIds: string[]
   }
+  /** Portfolio IDs that have an accepted_trade for this idea (committed to Trade Book) */
+  committedPortfolioIds?: Set<string>
 }
 
 export function TradeIdeaCard({
@@ -56,12 +57,13 @@ export function TradeIdeaCard({
   onLabClick,
   onMenuClick,
   className,
-  labInclusions
+  labInclusions,
+  committedPortfolioIds,
 }: TradeIdeaCardProps) {
   const [showLabsDropdown, setShowLabsDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const urgency = urgencyConfig[item.urgency]
+  const conviction = item.conviction ? CONVICTION_DISPLAY[item.conviction] : null
   const isBuy = item.action === 'buy'
 
   // Close dropdown on outside click
@@ -120,14 +122,13 @@ export function TradeIdeaCard({
             {actionLabel}
           </span>
 
-          {/* Urgency badge */}
-          <span className={clsx(
-            'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
-            urgency.bg, urgency.darkBg, urgency.color
-          )}>
-            <Zap className="h-3 w-3" />
-            {urgency.label}
-          </span>
+          {/* Conviction indicator */}
+          {conviction && (
+            <span className={clsx('inline-flex items-center gap-1 text-[11px] font-medium', conviction.color)}>
+              {conviction.label}
+              <span className={clsx('inline-block h-1.5 w-1.5 rounded-full', conviction.dot)} />
+            </span>
+          )}
         </div>
 
         {/* Menu button */}
@@ -217,23 +218,31 @@ export function TradeIdeaCard({
             className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[200px]"
             onClick={(e) => e.stopPropagation()}
           >
-            {labInclusions.labNames.map((name, idx) => (
-              <button
-                key={labInclusions.labIds[idx]}
-                onClick={() => {
-                  onLabClick?.(
-                    labInclusions.labIds[idx],
-                    name,
-                    labInclusions.portfolioIds[idx]
-                  )
-                  setShowLabsDropdown(false)
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-              >
-                <FlaskConical className="h-4 w-4 text-purple-500" />
-                <span className="truncate">{name}</span>
-              </button>
-            ))}
+            {labInclusions.labNames.map((name, idx) => {
+              const pid = labInclusions.portfolioIds[idx]
+              const isCommitted = committedPortfolioIds?.has(pid)
+              return (
+                <button
+                  key={labInclusions.labIds[idx]}
+                  onClick={() => {
+                    onLabClick?.(labInclusions.labIds[idx], name, pid)
+                    setShowLabsDropdown(false)
+                  }}
+                  className={clsx(
+                    "w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors",
+                    isCommitted
+                      ? "text-gray-500 dark:text-gray-400"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                  )}
+                >
+                  <FlaskConical className={clsx("h-4 w-4", isCommitted ? "text-gray-400" : "text-purple-500")} />
+                  <span className="truncate flex-1">{name}</span>
+                  {isCommitted && (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" title="Committed to Trade Book" />
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
       </div>

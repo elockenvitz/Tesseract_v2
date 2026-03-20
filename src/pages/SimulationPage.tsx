@@ -50,7 +50,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { PortfolioImpactView } from '../components/trading/PortfolioImpactView'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
-import { ProposalEditorModal } from '../components/trading/ProposalEditorModal'
+import { RecommendationEditorModal } from '../components/trading/RecommendationEditorModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
 import { ShareSimulationModal } from '../components/trading/ShareSimulationModal'
 import type {
@@ -71,9 +71,8 @@ import type {
 import { clsx } from 'clsx'
 import { formatDistanceToNow, format } from 'date-fns'
 import { useToast } from '../components/common/Toast'
-import { useTradePlans as useTradeLists, usePlanStats as useListStats, useWorkbench } from '../hooks/useTradeLab'
-import type { TradePlanWithDetails as TradeListWithDetails } from '../lib/services/trade-plan-service'
-import { upsertProposal, requestAnalystInput } from '../lib/services/trade-lab-service'
+import { useWorkbench } from '../hooks/useTradeLab'
+import { submitRecommendation } from '../lib/services/recommendation-service'
 import { moveTradeIdea } from '../lib/services/trade-idea-service'
 import { parseSizingInput, toSizingSpec, type SizingSpec } from '../lib/trade-lab/sizing-parser'
 import { detectDirectionConflict } from '../lib/trade-lab/normalize-sizing'
@@ -87,6 +86,7 @@ import { SharedSimulationBanner } from '../components/trading/SharedSimulationBa
 import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
 import { useSimulationRows } from '../hooks/useSimulationRows'
+import { useAcceptedTrades } from '../hooks/useAcceptedTrades'
 import { useSharedSimulation } from '../hooks/useSimulationShare'
 import { useSimulationSuggestions } from '../hooks/useSimulationSuggestions'
 import { SuggestionReviewPanel } from '../components/trading/SuggestionReviewPanel'
@@ -402,8 +402,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [showShareModal, setShowShareModal] = useState(false)
   const [showCreateSheetConfirm, setShowCreateSheetConfirm] = useState(false)
   const [proposalEditorIdea, setProposalEditorIdea] = useState<TradeQueueItemWithDetails | null>(null)
+  const [confirmExecuteIdea, setConfirmExecuteIdea] = useState<TradeQueueItemWithDetails | null>(null)
+  const [confirmRecommendIdea, setConfirmRecommendIdea] = useState<TradeQueueItemWithDetails | null>(null)
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
-  const [tradeModalInitialTab, setTradeModalInitialTab] = useState<'details' | 'discussion' | 'proposals' | 'activity'>('details')
+  const [tradeModalInitialTab, setTradeModalInitialTab] = useState<'details' | 'discussion' | 'decisions' | 'activity'>('details')
   const [holdingsGroupBy, setHoldingsGroupBy] = useState<'none' | 'sector' | 'action' | 'change'>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
@@ -420,7 +422,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   // Left pane search and filter
   const [leftPaneSearch, setLeftPaneSearch] = useState('')
-  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling' | 'deciding'>('all')
+  const [leftPaneStageFilter, setLeftPaneStageFilter] = useState<'all' | 'investigate' | 'deep_research' | 'thesis_forming' | 'ready_for_decision'>('all')
 
   // Track which proposals have been applied to the simulation
   const [appliedProposalIds, setAppliedProposalIds] = useState<Set<string>>(new Set())
@@ -864,14 +866,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     staleTime: 60000,
   })
 
-  // Fetch trade lists for the selected portfolio
-  const { plans: lists, isLoading: listsLoading } = useTradeLists({
-    portfolioId: selectedPortfolioId || undefined,
-  })
-
-  // Fetch list statistics
-  const { data: listStats } = useListStats(selectedPortfolioId || undefined)
-
   // Workbench hook for auto-save
   const {
     isSaving: workbenchSaving,
@@ -1008,109 +1002,39 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     queryClient.invalidateQueries({ queryKey: ['intent-variants', tradeLab?.id] })
   }
 
-  // PM decision mutation for proposals (Accept/Reject/Defer)
-  const proposalDecisionMutation = useMutation({
-    mutationFn: async ({
-      proposalId,
-      decision,
-      reason
-    }: {
-      proposalId: string
-      decision: 'accept' | 'reject' | 'defer'
-      reason?: string
-    }) => {
-      const { data: proposal, error: fetchError } = await supabase
-        .from('trade_proposals')
-        .select('id, trade_queue_item_id, portfolio_id, weight, shares, user_id')
-        .eq('id', proposalId)
-        .single()
-
-      if (fetchError || !proposal) throw fetchError || new Error('Proposal not found')
-
-      if (decision === 'accept') {
-        const { error: trackError } = await supabase
-          .from('trade_idea_portfolios')
-          .upsert({
-            trade_queue_item_id: proposal.trade_queue_item_id,
-            portfolio_id: proposal.portfolio_id,
-            decision_outcome: 'accepted',
-            decision_reason: reason || null,
-            accepted_weight: proposal.weight,
-            accepted_shares: proposal.shares,
-            decided_by: user?.id,
-            decided_at: new Date().toISOString(),
-          }, { onConflict: 'trade_queue_item_id,portfolio_id' })
-        if (trackError) throw trackError
-
-        // Check if all portfolio tracks are decided
-        const { data: allTracks } = await supabase
-          .from('trade_idea_portfolios')
-          .select('decision_outcome')
-          .eq('trade_queue_item_id', proposal.trade_queue_item_id)
-
-        const allDecided = allTracks?.every(t => t.decision_outcome !== null)
-        const anyAccepted = allTracks?.some(t => t.decision_outcome === 'accepted')
-        if (allDecided) {
-          const newStatus = anyAccepted ? 'approved' : 'rejected'
-          await supabase
-            .from('trade_queue_items')
-            .update({ status: newStatus, stage: newStatus, outcome: newStatus })
-            .eq('id', proposal.trade_queue_item_id)
-        }
-      } else if (decision === 'reject') {
-        const { error: trackError } = await supabase
-          .from('trade_idea_portfolios')
-          .upsert({
-            trade_queue_item_id: proposal.trade_queue_item_id,
-            portfolio_id: proposal.portfolio_id,
-            decision_outcome: 'rejected',
-            decision_reason: reason || null,
-            decided_by: user?.id,
-            decided_at: new Date().toISOString(),
-          }, { onConflict: 'trade_queue_item_id,portfolio_id' })
-        if (trackError) throw trackError
-
-        // Deactivate the proposal
-        await supabase
-          .from('trade_proposals')
-          .update({ is_active: false })
-          .eq('id', proposalId)
-      } else if (decision === 'defer') {
-        const { error: trackError } = await supabase
-          .from('trade_idea_portfolios')
-          .upsert({
-            trade_queue_item_id: proposal.trade_queue_item_id,
-            portfolio_id: proposal.portfolio_id,
-            decision_outcome: 'deferred',
-            decision_reason: reason || null,
-            decided_by: user?.id,
-            decided_at: new Date().toISOString(),
-          }, { onConflict: 'trade_queue_item_id,portfolio_id' })
-        if (trackError) throw trackError
-      }
-
-      return { proposalId, decision }
-    },
-    onSuccess: (_data, { proposalId, decision }) => {
-      // Optimistically remove rejected proposals from cache for instant dedup
-      if (decision === 'reject') {
-        queryClient.setQueryData<any[]>(
-          ['trade-lab-proposals', selectedPortfolioId],
-          (old) => old?.filter(p => p.id !== proposalId) ?? []
-        )
-      }
-      queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals', selectedPortfolioId] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas', selectedPortfolioId] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      showToast({
-        type: 'success',
-        title: decision === 'accept' ? 'Proposal accepted' : decision === 'reject' ? 'Proposal rejected' : 'Proposal deferred',
+  // ── PM Action: Execute Trade ──────────────────────────────────────────
+  // Commits a single idea's variant to Trade Book (accepted_trades).
+  // This is POST-DECISION: creates an accepted_trade, deletes the variant,
+  // and advances the idea outcome. Uses the same canonical path as bulk promote.
+  const executeTradeM = useMutation({
+    mutationFn: async (idea: TradeQueueItemWithDetails) => {
+      if (!user?.id || !selectedPortfolioId) throw new Error('Missing user or portfolio')
+      const variant = intentVariants.find(v => v.asset_id === idea.asset_id && !v.id.startsWith('temp-'))
+      if (!variant) throw new Error('No sized variant — enter sizing in the simulation before executing')
+      if (!variant.sizing_input) throw new Error('No sizing entered for this trade')
+      return bulkPromoteM.mutateAsync({
+        variantIds: [variant.id],
+        portfolioId: selectedPortfolioId,
+        context: {
+          actorId: user.id,
+          actorName: (user as any)?.first_name || user.email || 'PM',
+          actorRole: 'pm',
+          requestId: `execute-${Date.now()}`,
+        },
       })
+    },
+    onSuccess: (_data, idea) => {
+      showToast({ type: 'success', title: `${idea.assets?.symbol || 'Trade'} committed to Trade Book` })
+    },
+    onError: (err: any) => {
+      showToast({ type: 'error', title: 'Execute failed', description: err.message })
     },
   })
 
-  // Fast-track mutation: PM creates pm_initiated proposal + requests analyst input + moves to deciding
-  const fastTrackMutation = useMutation({
+  // ── PM Action: Request Recommendation ───────────────────────────────
+  // Creates a PM-initiated proposal from current variant sizing and moves
+  // the idea to deciding. This is PRE-COMMIT: no accepted_trade is created.
+  const requestRecommendationM = useMutation({
     mutationFn: async (idea: TradeQueueItemWithDetails) => {
       if (!user?.id || !selectedPortfolioId) throw new Error('Missing user or portfolio')
 
@@ -1122,23 +1046,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         requestId: crypto.randomUUID(),
       }
 
-      // Get current variant sizing if the idea is checked
       const variant = intentVariants.find(v => v.asset_id === idea.asset_id)
 
-      // Create PM-initiated proposal
-      const proposal = await upsertProposal({
-        trade_queue_item_id: idea.id,
-        portfolio_id: selectedPortfolioId,
-        lab_id: tradeLab?.id || null,
+      const { proposal } = await submitRecommendation({
+        tradeQueueItemId: idea.id,
+        portfolioId: selectedPortfolioId,
+        labId: tradeLab?.id || null,
         weight: variant?.computed?.target_weight ?? null,
         shares: variant?.computed?.target_shares ?? null,
-        sizing_mode: variant?.sizing_spec?.framework as any ?? null,
-        sizing_context: variant?.sizing_input ? { input_value: variant.sizing_input } : {},
-        proposal_type: 'pm_initiated',
+        sizingMode: variant?.sizing_spec?.framework as any ?? null,
+        sizingContext: variant?.sizing_input ? { input_value: variant.sizing_input, source: 'trade_lab' } : { source: 'trade_lab' },
+        proposalType: 'pm_initiated',
+        requestedAction: idea.action || null,
+        assetSymbol: (idea as any).asset?.symbol || idea.assets?.symbol || null,
+        assetCompanyName: (idea as any).asset?.company_name || idea.assets?.company_name || null,
+        portfolioName: portfolios?.find(p => p.id === selectedPortfolioId)?.name || null,
       }, actionContext)
-
-      // Request analyst input
-      await requestAnalystInput(proposal.id, actionContext)
 
       // Move to deciding if not already there
       const stage = idea.stage || idea.status
@@ -1153,7 +1076,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return proposal
     },
     onSuccess: (proposal, idea) => {
-      // Optimistically add to proposals cache for instant dedup
       if (proposal) {
         queryClient.setQueryData<any[]>(
           ['trade-lab-proposals', selectedPortfolioId],
@@ -1186,10 +1108,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals', selectedPortfolioId] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas', selectedPortfolioId] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
-      showToast({ type: 'success', title: 'Fast-tracked — awaiting analyst sizing' })
+      showToast({ type: 'success', title: 'Recommendation requested' })
     },
     onError: (err: any) => {
-      showToast({ type: 'error', title: 'Fast-track failed', description: err.message })
+      showToast({ type: 'error', title: 'Request failed', description: err.message })
     },
   })
 
@@ -1354,12 +1276,32 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     return () => { supabase.removeChannel(channel) }
   }, [isSharedView, sharedSimData?.share_mode, selectedSimulationId, queryClient])
 
+  // Fetch accepted trades for badge overlay in simulation
+  const { trades: acceptedTrades, bulkPromoteM } = useAcceptedTrades(selectedPortfolioId || undefined)
+
+  // Build asset_id → idea action map for direction conflict detection.
+  // The variant's action may be auto-derived from deltas and differ from
+  // the originating idea's intended direction (e.g., idea=SELL but variant=ADD).
+  const ideaActionByAsset = useMemo(() => {
+    const map: Record<string, import('../types/trading').TradeAction> = {}
+    tradeIdeas?.forEach(idea => {
+      if (idea.asset_id && idea.action) map[idea.asset_id] = idea.action as import('../types/trading').TradeAction
+    })
+    // Also include actions from simulation_trades (covers ideas not in tradeIdeas query)
+    simulation?.simulation_trades?.forEach((t: any) => {
+      if (t.asset_id && t.action && !map[t.asset_id]) map[t.asset_id] = t.action
+    })
+    return map
+  }, [tradeIdeas, simulation?.simulation_trades])
+
   // Merge baseline + variants into simulation rows for the table
   const simulationRows = useSimulationRows({
     baselineHoldings: effectiveBaselineHoldings,
     variants: effectiveVariants,
     priceMap: priceMap || {},
     benchmarkWeightMap: benchmarkWeightMap || {},
+    acceptedTrades,
+    ideaActionByAsset,
   })
 
   // Build asset_id → symbol map for trade sheet display
@@ -1748,6 +1690,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 action: tradeIdea.action,
                 sizingInput,
                 tradeQueueItemId: tradeIdea.id,
+                proposalId: (tradeIdea as any)._proposalId ?? null,
                 currentPosition,
                 price: assetPrice,
                 portfolioTotalValue: simulation.baseline_total_value || 0,
@@ -1804,12 +1747,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         // Clear in-flight flag AFTER all async variant work completes.
         // This prevents the sync effect from racing with this import flow.
         importsInFlightRef.current.delete(tradeIdea.asset_id)
-        // Invalidate AFTER in-flight flag is cleared so the convergence effect
-        // sees both the fresh trade AND the cleared flag in the same render.
-        // (React Query v5 fires onSettled before async onSuccess completes,
-        // so placing this in onSettled caused a race: the refetch would trigger
-        // the convergence effect while variant creation was still pending.)
-        queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+        // Surgically merge the new trade into the cached simulation instead of
+        // refetching immediately. A synchronous invalidate triggers a refetch that
+        // causes rows to flicker (the variant cache and simulation data briefly
+        // disagree during the refetch window).
+        queryClient.setQueryData(
+          ['simulation', selectedSimulationId],
+          (old: any) => {
+            if (!old || !data) return old
+            const existingTrades = old.simulation_trades || []
+            const alreadyPresent = existingTrades.some((t: any) => t.id === data.id)
+            if (alreadyPresent) return old
+            return { ...old, simulation_trades: [...existingTrades, { ...data, assets: tradeIdea.assets }] }
+          }
+        )
+        // Background sync: refetch after a longer delay so the full simulation
+        // data (with server-computed fields) is eventually consistent.
+        // Long delay avoids interference with the user's sizing edits.
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+        }, 8000)
       }
     },
     onError: (_err, tradeIdea) => {
@@ -2371,7 +2328,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
       queryClient.invalidateQueries({ queryKey: ['simulation-included-ideas'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-plans'] })
       queryClient.invalidateQueries({ queryKey: ['trade-lab-drafts'] })
       // Navigate back to dashboard
       setSelectedSimulationId(null)
@@ -2399,22 +2355,36 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (!tradeIdeas) return []
     const expressedAssetIds = new Set(simulation?.simulation_trades?.map(t => t.asset_id) || [])
     return tradeIdeas.map(idea => {
-      // Prefer per-portfolio stage from trade_idea_portfolios over parent stage
+      // Use the more advanced stage between portfolio track and idea itself.
+      // Portfolio tracks can be stale (e.g., from a rejection) while the idea has moved forward.
       const portfolioTrack = (idea as any).trade_idea_portfolios?.find(
         (t: any) => t.portfolio_id === selectedPortfolioId
       )
-      const effectiveStage = portfolioTrack?.stage || idea.stage || idea.status
+      const stageRankMap: Record<string, number> = {
+        idea: 0, aware: 0, discussing: 1, working_on: 1, investigate: 1,
+        simulating: 2, modeling: 2, deep_research: 2,
+        thesis_forming: 3, deciding: 4, ready_for_decision: 4, approved: 5, executed: 5,
+      }
+      const ideaStage = idea.stage || idea.status
+      const trackStage = portfolioTrack?.stage
+      const effectiveStage = trackStage && (stageRankMap[trackStage] ?? 0) > (stageRankMap[ideaStage] ?? 0)
+        ? trackStage
+        : ideaStage
 
       // Checkbox override takes precedence for instant feedback
       if (checkboxOverrides.has(idea.asset_id)) {
-        return { ...idea, effectiveStage, isIncluded: includedIdeaIds?.has(idea.id) || false, isAdded: checkboxOverrides.get(idea.asset_id)! }
+        return { ...idea, effectiveStage, isIncluded: includedIdeaIds?.has(idea.id) || false, isAdded: checkboxOverrides.get(idea.asset_id)!, isExpressed: expressedAssetIds.has(idea.asset_id) }
       }
       return {
         ...idea,
         effectiveStage,
         isIncluded: includedIdeaIds?.has(idea.id) || false,
+        // For standalone ideas, suppress isAdded when a proposal owns this asset.
+        // For pair-grouped ideas, isExpressed is the true source of checked state
+        // (pair groups use isExpressed to avoid partial-state from proposal dedup).
         isAdded: expressedAssetIds.has(idea.asset_id)
           && !proposalAddedAssetIds.has(idea.asset_id),
+        isExpressed: expressedAssetIds.has(idea.asset_id),
       }
     })
   }, [tradeIdeas, simulation?.simulation_trades, includedIdeaIds, proposalAddedAssetIds, checkboxOverrides, selectedPortfolioId])
@@ -2444,8 +2414,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
         const entry = pairTradesMap.get(idea.pair_trade_id)!
         entry.legs.push(idea)
-        if (!idea.isAdded) entry.allAdded = false
-        if (idea.isAdded) entry.someAdded = true
+        // Use isExpressed (raw simulation_trades presence) for pair group state,
+        // ignoring proposal dedup — a leg is "added" if it's expressed in the sim.
+        const legExpressed = (idea as any).isExpressed ?? idea.isAdded
+        if (!legExpressed) entry.allAdded = false
+        if (legExpressed) entry.someAdded = true
       }
       // Check for newer pair_id (shared UUID grouping)
       else if (idea.pair_id) {
@@ -2473,8 +2446,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
         const entry = pairTradesMap.get(idea.pair_id)!
         entry.legs.push(idea)
-        if (!idea.isAdded) entry.allAdded = false
-        if (idea.isAdded) entry.someAdded = true
+        // Use isExpressed for pair group state (see comment above)
+        const legExpressed = (idea as any).isExpressed ?? idea.isAdded
+        if (!legExpressed) entry.allAdded = false
+        if (legExpressed) entry.someAdded = true
         // Update the synthetic pair trade status based on the legs
         // Use the most advanced stage among the legs
         const stageOrder = ['idea', 'discussing', 'working_on', 'simulating', 'modeling', 'deciding', 'approved']
@@ -2521,6 +2496,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // go into Ideas first, then shuffle to Proposals when the query arrives.
     if (!activeProposals) return groups
 
+    // Build set of trade_queue_item_ids already committed to Trade Book for this portfolio.
+    // Ideas with accepted_trades should not appear in Trade Lab — they are resolved.
+    const committedTradeItemIds = new Set<string>()
+    acceptedTrades?.forEach(at => {
+      if (at.trade_queue_item_id) committedTradeItemIds.add(at.trade_queue_item_id)
+    })
+
     // Build set of trade_queue_item_ids that have active proposals for this portfolio
     const proposalTradeItemIds = new Set<string>()
     const seenPairTradeProposals = new Set<string>()
@@ -2532,20 +2514,37 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       const sizingContext = proposal.sizing_context as any
       const isPairTrade = sizingContext?.isPairTrade === true
-      const pairTradeId = sizingContext?.pairTradeId
 
-      // For pair trade proposals, mark ALL leg IDs as having a proposal
-      // (the proposal is linked to one trade_queue_item_id but covers all legs)
-      if (isPairTrade && sizingContext?.legs?.length) {
-        sizingContext.legs.forEach((leg: any) => {
-          if (leg.legId) proposalTradeItemIds.add(leg.legId)
-        })
-      }
+      if (isPairTrade) {
+        // Mark ALL leg IDs as having a proposal.
+        // Try legId first, then fall back to matching by symbol against trade ideas.
+        if (sizingContext?.legs?.length) {
+          sizingContext.legs.forEach((leg: any) => {
+            if (leg.legId) {
+              proposalTradeItemIds.add(leg.legId)
+            } else if (leg.symbol) {
+              // Match by symbol — find the trade idea for this symbol in any pair group
+              const match = tradeIdeas?.find(i =>
+                i.assets?.symbol === leg.symbol &&
+                (i.pair_id || i.pair_trade_id)
+              )
+              if (match) proposalTradeItemIds.add(match.id)
+            }
+          })
+        }
 
-      // For pair trades, only add one proposal entry per pairTradeId
-      if (isPairTrade && pairTradeId) {
-        if (seenPairTradeProposals.has(pairTradeId)) return
-        seenPairTradeProposals.add(pairTradeId)
+        // Resolve the pair group ID: try sizing_context.pairTradeId first,
+        // then look up from the linked trade_queue_item's pair_id or pair_trade_id.
+        let resolvedPairId = sizingContext?.pairTradeId as string | undefined
+        if (!resolvedPairId && proposal.trade_queue_item_id) {
+          const linkedIdea = tradeIdeas?.find(i => i.id === proposal.trade_queue_item_id)
+          resolvedPairId = linkedIdea?.pair_id || linkedIdea?.pair_trade_id || undefined
+        }
+
+        if (resolvedPairId) {
+          if (seenPairTradeProposals.has(resolvedPairId)) return
+          seenPairTradeProposals.add(resolvedPairId)
+        }
       }
 
       groups.proposals.push({
@@ -2556,16 +2555,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })
     })
 
-    // Ideas: only include items WITHOUT a proposal for this portfolio
+    // Filter out proposals for ideas already committed to Trade Book
+    groups.proposals = groups.proposals.filter(p =>
+      !p.proposal.trade_queue_item_id || !committedTradeItemIds.has(p.proposal.trade_queue_item_id)
+    )
+
+    // Ideas: only include items WITHOUT a proposal AND not already committed
     pairTradesGrouped.standalone.forEach(idea => {
+      if (committedTradeItemIds.has(idea.id)) return // already in Trade Book
       if (!proposalTradeItemIds.has(idea.id)) {
         groups.ideas.push({ type: 'single', idea })
       }
     })
 
-    // Pair trades: exclude if a proposal covers this pair trade (by pairTradeId)
+    // Pair trades: exclude if committed, or if a proposal covers this pair trade,
     // or if ALL legs have individual proposals
     pairTradesGrouped.pairTrades.forEach((entry, pairId) => {
+      // If ALL legs are committed, hide the entire group
+      const allLegsCommitted = entry.legs.every(leg => committedTradeItemIds.has(leg.id))
+      if (allLegsCommitted) return
       if (seenPairTradeProposals.has(pairId)) return // entire pair covered by a proposal
       const hasUnproposedLeg = entry.legs.some(leg => !proposalTradeItemIds.has(leg.id))
       if (hasUnproposedLeg) {
@@ -2574,7 +2582,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     })
 
     return groups
-  }, [pairTradesGrouped, activeProposals])
+  }, [pairTradesGrouped, activeProposals, tradeIdeas, acceptedTrades])
 
   // Filter items by search query and stage
   const filteredItems = useMemo(() => {
@@ -2593,22 +2601,27 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }
     }
 
+    // Exclude aware/idea stage from Trade Lab — too early in research to simulate
+    const isAwareStage = (s: string) => s === 'aware' || s === 'idea'
+
     const matchesStage = (item: TradeItem): boolean => {
-      if (leftPaneStageFilter === 'all') return true
       if (item.type === 'single') {
         const stage = item.idea.effectiveStage || item.idea.stage || item.idea.status
-        if (leftPaneStageFilter === 'idea') return stage === 'idea'
-        if (leftPaneStageFilter === 'working_on') return stage === 'working_on' || stage === 'discussing'
-        if (leftPaneStageFilter === 'modeling') return stage === 'modeling' || stage === 'simulating'
-        if (leftPaneStageFilter === 'deciding') return stage === 'deciding'
+        if (isAwareStage(stage)) return false // never show aware in Trade Lab
+        if (leftPaneStageFilter === 'all') return true
+        if (leftPaneStageFilter === 'investigate') return stage === 'investigate' || stage === 'working_on' || stage === 'discussing'
+        if (leftPaneStageFilter === 'deep_research') return stage === 'deep_research' || stage === 'modeling' || stage === 'simulating'
+        if (leftPaneStageFilter === 'thesis_forming') return stage === 'thesis_forming'
+        if (leftPaneStageFilter === 'ready_for_decision') return stage === 'ready_for_decision' || stage === 'deciding'
       } else {
-        // For pair trades, use the most-advanced leg's effectiveStage
         const legStages = item.legs.map(l => (l as any).effectiveStage || l.stage || l.status)
+        if (legStages.every(isAwareStage)) return false // all legs are aware — hide
+        if (leftPaneStageFilter === 'all') return true
         const stageMatches = (s: string) => {
-          if (leftPaneStageFilter === 'idea') return s === 'idea'
-          if (leftPaneStageFilter === 'working_on') return s === 'working_on' || s === 'discussing'
-          if (leftPaneStageFilter === 'modeling') return s === 'modeling' || s === 'simulating'
-          if (leftPaneStageFilter === 'deciding') return s === 'deciding'
+          if (leftPaneStageFilter === 'investigate') return s === 'investigate' || s === 'working_on' || s === 'discussing'
+          if (leftPaneStageFilter === 'deep_research') return s === 'deep_research' || s === 'modeling' || s === 'simulating'
+          if (leftPaneStageFilter === 'thesis_forming') return s === 'thesis_forming'
+          if (leftPaneStageFilter === 'ready_for_decision') return s === 'ready_for_decision' || s === 'deciding'
           return false
         }
         return legStages.some(stageMatches)
@@ -2634,10 +2647,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const s = item.type === 'single'
         ? (item.idea.effectiveStage || item.idea.stage || item.idea.status)
         : item.pairTrade.status
-      if (s === 'deciding') return 0
-      if (s === 'modeling' || s === 'simulating') return 1
-      if (s === 'working_on' || s === 'discussing') return 2
-      return 3 // idea
+      if (s === 'ready_for_decision' || s === 'deciding') return 0
+      if (s === 'thesis_forming') return 1
+      if (s === 'deep_research' || s === 'modeling' || s === 'simulating') return 2
+      if (s === 'investigate' || s === 'working_on' || s === 'discussing') return 3
+      return 4
     }
 
     const filteredIdeas = itemsByCategory.ideas
@@ -3049,26 +3063,45 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const timePressure = getTimePressure(idea)
     const authorInitials = getUserInitials(idea.users)
 
-    // Stage-based left border color (prefer per-portfolio stage)
+    // Stage-based left border + subtle background tint
     const stageOfIdea = idea.effectiveStage || idea.stage || idea.status
     const stageBorderClass =
-      (stageOfIdea === 'deciding') ? 'border-l-amber-500 dark:border-l-amber-400' :
-      (stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'border-l-indigo-500 dark:border-l-indigo-400' :
-      (stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'border-l-purple-500 dark:border-l-purple-400' :
-      'border-l-blue-400 dark:border-l-blue-500'
+      (stageOfIdea === 'ready_for_decision' || stageOfIdea === 'deciding') ? 'border-l-amber-500 dark:border-l-amber-400' :
+      (stageOfIdea === 'thesis_forming') ? 'border-l-purple-500 dark:border-l-purple-400' :
+      (stageOfIdea === 'deep_research' || stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'border-l-indigo-500 dark:border-l-indigo-400' :
+      (stageOfIdea === 'investigate' || stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'border-l-blue-500 dark:border-l-blue-400' :
+      'border-l-gray-400 dark:border-l-gray-500'
+    const stageBgClass =
+      (stageOfIdea === 'ready_for_decision' || stageOfIdea === 'deciding') ? 'bg-amber-50/40 dark:bg-amber-900/5 hover:bg-amber-50/80 dark:hover:bg-amber-900/15' :
+      (stageOfIdea === 'thesis_forming') ? 'bg-purple-50/40 dark:bg-purple-900/5 hover:bg-purple-50/80 dark:hover:bg-purple-900/15' :
+      (stageOfIdea === 'deep_research' || stageOfIdea === 'modeling' || stageOfIdea === 'simulating') ? 'bg-indigo-50/40 dark:bg-indigo-900/5 hover:bg-indigo-50/80 dark:hover:bg-indigo-900/15' :
+      (stageOfIdea === 'investigate' || stageOfIdea === 'working_on' || stageOfIdea === 'discussing') ? 'bg-blue-50/40 dark:bg-blue-900/5 hover:bg-blue-50/80 dark:hover:bg-blue-900/15' :
+      'hover:bg-gray-50 dark:hover:bg-gray-800'
+
+    // Direction conflict for single-name ideas (computed once, used for badge + card border)
+    const singleIdeaConflict = idea.isAdded ? (() => {
+      const variant = intentVariants.find(v => v.asset_id === idea.asset_id)
+      if (!variant?.sizing_input) return false
+      const ds = variant?.computed?.delta_shares ?? 0
+      if (ds === 0) return false
+      const a = idea.action as string
+      return ((a === 'buy' || a === 'add') && ds < 0) || ((a === 'sell' || a === 'trim') && ds > 0)
+    })() : false
 
     return (
       <div
         key={idea.id}
         onClick={() => setSelectedTradeId(idea.id)}
         className={clsx(
-          "bg-white dark:bg-gray-800 rounded-lg p-2.5 border border-l-[3px] transition-colors cursor-pointer",
+          "rounded-lg p-2.5 border border-l-[3px] transition-colors cursor-pointer relative",
           stageBorderClass,
-          idea.isAdded
-            ? "border-green-300 dark:border-green-700 border-l-green-500 dark:border-l-green-400 bg-green-50/50 dark:bg-green-900/10"
-            : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600"
+          singleIdeaConflict
+            ? "border-red-300 dark:border-red-700 border-l-red-500 dark:border-l-red-400 bg-red-50/30 dark:bg-red-900/10"
+            : clsx("border-gray-200 dark:border-gray-700", stageBgClass || "bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800")
         )}
       >
+        {/* Conflict indication is contained within the card body (sizing box).
+            No floating external badge — keeps card bounds clean and avoids crowding adjacent tiles. */}
         <div className="flex items-start gap-2">
           {/* Checkbox for added status */}
           <button
@@ -3133,7 +3166,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     setProposalEditorIdea(idea)
                   }}
                   className="text-[10px] text-gray-400 hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400 transition-colors"
-                  title="Edit your proposal"
+                  title="Edit your recommendation"
                 >
                   <Scale className="h-3 w-3" />
                 </button>
@@ -3141,16 +3174,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             )}
 
           </div>
-          {/* Expand button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleExpand(e)
-            }}
-            className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          >
-            <ChevronDown className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
-          </button>
+          {/* Author name + Expand button */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span
+              className="text-[9px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded-full px-1.5 py-0.5 flex-shrink-0"
+              title={idea.users?.first_name && idea.users?.last_name
+                ? `${idea.users.first_name} ${idea.users.last_name}`
+                : idea.users?.email || 'Unknown'}
+            >
+              {idea.users?.first_name && idea.users?.last_name
+                ? `${idea.users.first_name} ${idea.users.last_name.charAt(0)}.`
+                : idea.users?.first_name || idea.users?.email?.split('@')[0] || '?'}
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExpand(e)
+              }}
+              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              <ChevronDown className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
+            </button>
+          </div>
         </div>
 
 
@@ -3162,16 +3207,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             ) : (
               <p className="text-xs text-gray-400 dark:text-gray-500 italic">No rationale provided</p>
             )}
-            {/* Author and timestamp */}
+            {/* Stage, timestamp, and actions */}
             <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400 dark:text-gray-500">
-              <span
-                className="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-700 font-medium text-gray-600 dark:text-gray-300 flex items-center justify-center"
-                title={idea.users?.first_name && idea.users?.last_name
-                  ? `${idea.users.first_name} ${idea.users.last_name}`
-                  : idea.users?.email || 'Unknown'}
-              >
-                {authorInitials}
-              </span>
+              {(() => {
+                const stageConfig: Record<string, { label: string; dot: string; text: string }> = {
+                  ready_for_decision: { label: 'Deciding', dot: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400' },
+                  deciding:           { label: 'Deciding', dot: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-400' },
+                  thesis_forming:     { label: 'Thesis', dot: 'bg-purple-500', text: 'text-purple-700 dark:text-purple-400' },
+                  deep_research:      { label: 'Research', dot: 'bg-indigo-500', text: 'text-indigo-700 dark:text-indigo-400' },
+                  investigate:        { label: 'Investigate', dot: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-400' },
+                  aware:              { label: 'Aware', dot: 'bg-gray-400', text: 'text-gray-500 dark:text-gray-400' },
+                  idea:               { label: 'Aware', dot: 'bg-gray-400', text: 'text-gray-500 dark:text-gray-400' },
+                }
+                const cfg = stageConfig[stageOfIdea] || { label: stageOfIdea, dot: 'bg-gray-400', text: 'text-gray-500 dark:text-gray-400' }
+                return (
+                  <span className={clsx('flex items-center gap-1 text-[10px] font-medium', cfg.text)}>
+                    <span className={clsx('w-1.5 h-1.5 rounded-full', cfg.dot)} />
+                    {cfg.label}
+                  </span>
+                )
+              })()}
               <span>·</span>
               {timePressure ? (
                 <span className={clsx(
@@ -3183,33 +3238,136 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               ) : (
                 <span>{formatDistanceToNow(new Date(idea.updated_at), { addSuffix: false })}</span>
               )}
-            </div>
-            {/* Make Proposal + Fast-track buttons */}
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setProposalEditorIdea(idea)
-                }}
-                className="flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
-              >
-                <Scale className="h-3 w-3" />
-                Make Proposal
-              </button>
-              {isCurrentUserPM && (
+              {/* Analyst action: Make Recommendation */}
+              {!isCurrentUserPM && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    fastTrackMutation.mutate(idea)
+                    setProposalEditorIdea(idea)
                   }}
-                  disabled={fastTrackMutation.isPending}
-                  className="flex items-center gap-1 text-[11px] font-medium text-purple-700 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 transition-colors disabled:opacity-50"
+                  className="ml-auto flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+                  title="Create a recommendation without committing the trade"
                 >
-                  <Sparkles className="h-3 w-3" />
-                  Fast-track
+                  <Scale className="h-3 w-3" />
+                  Make Recommendation
                 </button>
               )}
             </div>
+            {/* PM actions: Execute Trade + Request Recommendation */}
+            {isCurrentUserPM && idea.isAdded && (() => {
+              const v = intentVariants.find(vr => vr.asset_id === idea.asset_id)
+              const hasSizing = !!v?.sizing_input
+              const c = v?.computed
+              // Compact number formatting
+              const fmtNotional = (val: number) => {
+                const abs = Math.abs(val)
+                if (abs >= 1_000_000) return `$${(abs / 1_000_000).toFixed(1)}M`
+                if (abs >= 1_000) return `$${(abs / 1_000).toFixed(0)}K`
+                return `$${abs.toFixed(0)}`
+              }
+              const fmtShares = (val: number) => {
+                const abs = Math.abs(val)
+                return `${val > 0 ? '+' : val < 0 ? '-' : ''}${abs.toLocaleString()}`
+              }
+              // Conflict explanation
+              const ideaAction = idea.action as string
+              const ds = c?.delta_shares ?? 0
+              const hasConflict = hasSizing && ds !== 0 && (
+                ((ideaAction === 'buy' || ideaAction === 'add') && ds < 0) ||
+                ((ideaAction === 'sell' || ideaAction === 'trim') && ds > 0)
+              )
+              const conflictExplanation = hasConflict
+                ? `Idea: ${ideaAction.toUpperCase()} · Simulation ${ds > 0 ? 'increases' : 'decreases'} exposure`
+                : null
+              return (
+                <>
+                  {/* Simulation result */}
+                  {hasSizing && c && (
+                    <div className={clsx(
+                      "mt-2 rounded-md border",
+                      hasConflict
+                        ? "bg-red-50/50 dark:bg-red-950/10 border-red-200 dark:border-red-800/50"
+                        : "bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700/50"
+                    )}>
+                      {/* Label */}
+                      <div className="px-2.5 pt-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                        Simulation Result
+                      </div>
+                      {/* Derived outputs */}
+                      <div className="px-2.5 pt-1 pb-2 flex items-baseline gap-3 text-[12px]">
+                        {c.target_weight != null && (
+                          <span className="font-semibold text-gray-900 dark:text-white">{c.target_weight.toFixed(2)}%</span>
+                        )}
+                        {c.notional_value != null && c.notional_value !== 0 && (
+                          <span className="font-medium text-gray-600 dark:text-gray-300">{fmtNotional(c.notional_value)}</span>
+                        )}
+                        {ds !== 0 && (
+                          <span className={clsx('font-mono text-[11px]', ds > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+                            {fmtShares(ds)} shrs
+                          </span>
+                        )}
+                        {c.delta_weight != null && c.delta_weight !== 0 && (
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                            Δ {c.delta_weight > 0 ? '+' : ''}{c.delta_weight.toFixed(2)}%
+                          </span>
+                        )}
+                      </div>
+                      {/* Conflict explanation */}
+                      {hasConflict && (
+                        <div className="px-2.5 pb-2 flex items-start gap-1.5 text-[10px] text-red-600 dark:text-red-400">
+                          <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                          <span>
+                            <span className="font-semibold">Direction conflict:</span>{' '}
+                            Idea is {ideaAction.toUpperCase()}, but sizing {ds > 0 ? 'adds' : 'reduces'} exposure ({fmtShares(ds)} shrs)
+                          </span>
+                        </div>
+                      )}
+                      {/* Entered sizing — separated by border, readable description */}
+                      <div className="px-2.5 py-1.5 border-t border-gray-100 dark:border-gray-700/50 text-[10px] text-gray-400 dark:text-gray-500">
+                        {(() => {
+                          const fw = (v.sizing_spec as any)?.framework as string | undefined
+                          const raw = v.sizing_input
+                          switch (fw) {
+                            case 'weight_target': return <><span className="font-mono">{raw}%</span> sim weight entered</>
+                            case 'weight_delta': return <><span className="font-mono">{raw}%</span> weight change entered</>
+                            case 'shares_target': return <><span className="font-mono">{raw}</span> target shares entered</>
+                            case 'shares_delta': return <><span className="font-mono">{raw}</span> share change entered</>
+                            case 'active_target': return <><span className="font-mono">{raw}%</span> active weight entered</>
+                            case 'active_delta': return <><span className="font-mono">{raw}%</span> active weight change entered</>
+                            default: return <><span className="font-mono">{raw}</span> entered</>
+                          }
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                  {!hasSizing && (
+                    <div className="mt-2 text-[10px] text-gray-400 dark:text-gray-500 italic">No simulation sizing entered</div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmExecuteIdea(idea) }}
+                      disabled={!hasSizing || executeTradeM.isPending}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={hasSizing ? 'Commit this trade to Trade Book for execution' : 'Enter sizing in simulation first'}
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Execute Trade
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmRecommendIdea(idea) }}
+                      disabled={requestRecommendationM.isPending}
+                      className="flex items-center gap-1 text-[11px] font-medium text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors disabled:opacity-50"
+                      title="Create a PM proposal from current sizing"
+                    >
+                      <Scale className="h-3 w-3" />
+                      Request Recommendation
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         )}
       </div>
@@ -3243,16 +3401,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
     const handleTogglePairTrade = () => {
       if (allAdded) {
+        // Remove ALL legs atomically
         legs.forEach(leg => handleRemoveAsset(leg.asset_id))
       } else {
-        const legsToAdd = legs.filter(l => !l.isAdded)
+        // Add ALL not-yet-added legs atomically.
+        // Set override=true for EVERY leg (including already-added) so the group
+        // reads as fully checked immediately, preventing partial-state flicker.
+        legs.forEach(leg => {
+          checkboxOverridesRef.current.set(leg.asset_id, true)
+        })
+
+        const legsToAdd = legs.filter(l => !(l as any).isExpressed && !l.isAdded)
         if (legsToAdd.length > 0) {
-          // Optimistic: mark all legs as added + add temp variants
+          // Optimistic: add temp variants + simulation trades to cache
           legsToAdd.forEach(leg => {
-            checkboxOverridesRef.current.set(leg.asset_id, true)
             if (tradeLab?.id) {
-              const variantQueryKey = ['intent-variants', tradeLab.id, null]
-              queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+              queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null], (old) => {
                 if (old?.some(v => v.asset_id === leg.asset_id)) return old
                 return [...(old || []), {
                   id: `temp-${leg.asset_id}`, asset_id: leg.asset_id, trade_lab_id: tradeLab.id,
@@ -3263,10 +3427,30 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 } as IntentVariant]
               })
             }
+            // Also optimistically add to simulation_trades cache so expressedAssetIds
+            // includes this leg immediately (prevents partial-state on re-render)
+            queryClient.setQueryData(
+              ['simulation', selectedSimulationId],
+              (old: any) => {
+                if (!old) return old
+                const trades = old.simulation_trades || []
+                if (trades.some((t: any) => t.asset_id === leg.asset_id)) return old
+                return {
+                  ...old,
+                  simulation_trades: [...trades, {
+                    id: `temp-pair-${leg.asset_id}`,
+                    simulation_id: simulation?.id,
+                    trade_queue_item_id: leg.id,
+                    asset_id: leg.asset_id,
+                    action: leg.action,
+                  }],
+                }
+              }
+            )
           })
-          setCheckboxOverrides(new Map(checkboxOverridesRef.current))
           importPairTradeMutation.mutate(legsToAdd)
         }
+        setCheckboxOverrides(new Map(checkboxOverridesRef.current))
       }
     }
 
@@ -3284,24 +3468,57 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })
     }
 
+    // Stage-based tint for pair trade tile
+    const pairStage = pairTrade.status || 'idea'
+    const pairStageBgClass =
+      (pairStage === 'ready_for_decision' || pairStage === 'deciding') ? 'bg-amber-50/40 dark:bg-amber-900/5' :
+      (pairStage === 'thesis_forming') ? 'bg-purple-50/40 dark:bg-purple-900/5' :
+      (pairStage === 'deep_research' || pairStage === 'modeling' || pairStage === 'simulating') ? 'bg-indigo-50/40 dark:bg-indigo-900/5' :
+      (pairStage === 'investigate' || pairStage === 'working_on' || pairStage === 'discussing') ? 'bg-blue-50/40 dark:bg-blue-900/5' :
+      ''
+
     return (
       <div
         key={pairTrade.id}
         className={clsx(
-          "bg-white dark:bg-gray-800 rounded-lg p-2.5 border transition-colors relative",
+          "rounded-lg p-2.5 border transition-colors relative",
           allAdded
             ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10"
             : someAdded
               ? "border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10"
-              : "border-purple-200 dark:border-purple-800 hover:border-purple-400 dark:hover:border-purple-600"
+              : clsx("border-purple-200 dark:border-purple-800 hover:border-purple-400 dark:hover:border-purple-600", pairStageBgClass || "bg-white dark:bg-gray-800")
         )}
       >
-        {/* Partial indicator */}
-        {someAdded && !allAdded && (
-          <span className="absolute -top-2 -right-2 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-amber-500 text-white shadow-sm">
-            Partial
-          </span>
-        )}
+        {/* Badge: conflicts take priority over partial indicator */}
+        {(() => {
+          // Check for idea-direction conflicts on any added leg
+          const conflictLegs = someAdded ? legs.filter(leg => {
+            const legExp = (leg as any).isExpressed ?? leg.isAdded
+            if (!legExp) return false
+            const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
+            if (!variant?.sizing_input) return false
+            const ds = variant?.computed?.delta_shares ?? 0
+            if (ds === 0) return false
+            const a = leg.action as string
+            return ((a === 'buy' || a === 'add') && ds < 0) || ((a === 'sell' || a === 'trim') && ds > 0)
+          }) : []
+
+          if (conflictLegs.length > 0) {
+            return (
+              <span className="absolute -top-2 -right-2 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-red-500 text-white shadow-sm flex items-center gap-0.5">
+                <AlertTriangle className="w-2.5 h-2.5" /> {conflictLegs.length} conflict{conflictLegs.length !== 1 ? 's' : ''}
+              </span>
+            )
+          }
+          if (someAdded && !allAdded) {
+            return (
+              <span className="absolute -top-2 -right-2 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-amber-500 text-white shadow-sm">
+                Partial
+              </span>
+            )
+          }
+          return null
+        })()}
 
         {/* Pairs Trade Header */}
         <div className="flex items-center gap-2">
@@ -3358,62 +3575,57 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         {isExpanded && (
         <div className="space-y-1.5 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
               {/* Long legs */}
+              {/* Pair trade legs toggle atomically — individual leg checkboxes
+                  toggle the entire group to preserve grouped idea integrity. */}
               {longLegs.map(leg => {
+                const legChecked = (leg as any).isExpressed ?? leg.isAdded
                 const handleToggleLeg = (e: React.MouseEvent) => {
                   e.stopPropagation()
-                  if (leg.isAdded) {
-                    handleRemoveAsset(leg.asset_id)
-                  } else {
-                    handleAddAsset(leg)
-                  }
+                  if (legChecked) { handleRemoveAsset(leg.asset_id) } else { handleAddAsset(leg) }
                 }
-                // v3: Look up variant conflict status
-                const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
                 const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
                 const variantConflict = variant?.direction_conflict as SizingValidationError | null
+                const ideaAction = leg.action as string
+                const deltaShares = variant?.computed?.delta_shares ?? 0
+                const hasIdeaConflict = variant?.sizing_input && deltaShares !== 0 && (
+                  ((ideaAction === 'buy' || ideaAction === 'add') && deltaShares < 0) ||
+                  ((ideaAction === 'sell' || ideaAction === 'trim') && deltaShares > 0)
+                )
 
                 return (
                   <div key={leg.id} className="flex items-center gap-2 text-xs group">
                     <button
                       onClick={handleToggleLeg}
-                      disabled={false}
                       className={clsx(
                         "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors",
-                        leg.isAdded
+                        legChecked
                           ? "bg-green-500 border-green-500 text-white"
                           : "border-gray-300 dark:border-gray-600 hover:border-green-500 opacity-0 group-hover:opacity-100"
                       )}
                     >
-                      {leg.isAdded && <Check className="h-2.5 w-2.5" />}
+                      {legChecked && <Check className="h-2.5 w-2.5" />}
                     </button>
                     <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-medium uppercase">
                       buy
                     </span>
                     <span className={clsx(
                       "font-medium",
-                      leg.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
+                      legChecked ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
                     )}>
                       {leg.assets?.symbol}
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
                       {leg.proposed_weight ? `${leg.proposed_weight}%` : ''}
                       {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
-                      {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
+                      {leg.proposed_shares ? `${leg.proposed_shares} shrs` : ''}
                     </span>
-                    {/* v3: Inline conflict badge for pair leg */}
-                    {leg.isAdded && trade && (
-                      <InlineConflictBadge
-                        conflict={variantConflict}
-                        onFixAction={(suggestedAction) => {
-                          updateTradeMutation.mutate({
-                            tradeId: trade.id,
-                            action: suggestedAction,
-                            assetId: trade.asset_id,
-                            unlinkFromIdea: false,
-                          })
-                        }}
-                        size="sm"
-                      />
+                    {legChecked && variantConflict && (
+                      <InlineConflictBadge conflict={variantConflict} size="sm" />
+                    )}
+                    {legChecked && !variantConflict && hasIdeaConflict && (
+                      <span className="ml-auto flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={`Idea direction is ${ideaAction.toUpperCase()} but sizing reduces exposure`}>
+                        <AlertTriangle className="w-3 h-3" /> Conflicts with idea
+                      </span>
                     )}
                   </div>
                 )
@@ -3421,61 +3633,54 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
               {/* Short legs */}
               {shortLegs.map(leg => {
+                const legChecked = (leg as any).isExpressed ?? leg.isAdded
                 const handleToggleLeg = (e: React.MouseEvent) => {
                   e.stopPropagation()
-                  if (leg.isAdded) {
-                    handleRemoveAsset(leg.asset_id)
-                  } else {
-                    handleAddAsset(leg)
-                  }
+                  if (legChecked) { handleRemoveAsset(leg.asset_id) } else { handleAddAsset(leg) }
                 }
-                // v3: Look up variant conflict status
-                const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
                 const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
                 const variantConflict = variant?.direction_conflict as SizingValidationError | null
+                const ideaAction = leg.action as string
+                const deltaShares = variant?.computed?.delta_shares ?? 0
+                const hasIdeaConflict = variant?.sizing_input && deltaShares !== 0 && (
+                  ((ideaAction === 'buy' || ideaAction === 'add') && deltaShares < 0) ||
+                  ((ideaAction === 'sell' || ideaAction === 'trim') && deltaShares > 0)
+                )
 
                 return (
                   <div key={leg.id} className="flex items-center gap-2 text-xs group">
                     <button
                       onClick={handleToggleLeg}
-                      disabled={false}
                       className={clsx(
                         "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors",
-                        leg.isAdded
+                        legChecked
                           ? "bg-green-500 border-green-500 text-white"
                           : "border-gray-300 dark:border-gray-600 hover:border-red-500 opacity-0 group-hover:opacity-100"
                       )}
                     >
-                      {leg.isAdded && <Check className="h-2.5 w-2.5" />}
+                      {legChecked && <Check className="h-2.5 w-2.5" />}
                     </button>
                     <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium uppercase">
                       sell
                     </span>
                     <span className={clsx(
                       "font-medium",
-                      leg.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
+                      legChecked ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
                     )}>
                       {leg.assets?.symbol}
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
                       {leg.proposed_weight ? `${leg.proposed_weight}%` : ''}
                       {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
-                      {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
+                      {leg.proposed_shares ? `${leg.proposed_shares} shrs` : ''}
                     </span>
-                    {/* v3: Inline conflict badge for pair leg */}
-                    {leg.isAdded && trade && (
-                      <InlineConflictBadge
-                        conflict={variantConflict}
-                        onFixAction={(suggestedAction) => {
-                          updateTradeMutation.mutate({
-                            tradeId: trade.id,
-                            action: suggestedAction,
-                            assetId: trade.asset_id,
-                            unlinkFromIdea: false,
-                          })
-                        }}
-                        size="sm"
-                      />
+                    {legChecked && variantConflict && (
+                      <InlineConflictBadge conflict={variantConflict} size="sm" />
+                    )}
+                    {legChecked && !variantConflict && hasIdeaConflict && (
+                      <span className="ml-auto flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={`Idea direction is ${ideaAction.toUpperCase()} but sizing increases exposure`}>
+                        <AlertTriangle className="w-3 h-3" /> Conflicts with idea
+                      </span>
                     )}
                   </div>
                 )
@@ -3483,33 +3688,33 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
               {/* Uncategorized legs (fallback) */}
               {uncategorizedLegs.map(leg => {
+                const legChecked = (leg as any).isExpressed ?? leg.isAdded
                 const handleToggleLeg = (e: React.MouseEvent) => {
                   e.stopPropagation()
-                  if (leg.isAdded) {
-                    handleRemoveAsset(leg.asset_id)
-                  } else {
-                    handleAddAsset(leg)
-                  }
+                  if (legChecked) { handleRemoveAsset(leg.asset_id) } else { handleAddAsset(leg) }
                 }
                 const isBuyAction = leg.action === 'buy' || leg.action === 'add'
-                // v3: Look up variant conflict status
-                const trade = simulation?.simulation_trades?.find(t => t.asset_id === leg.asset_id)
                 const variant = intentVariants.find(v => v.asset_id === leg.asset_id)
                 const variantConflict = variant?.direction_conflict as SizingValidationError | null
+                const ideaAction = leg.action as string
+                const deltaShares = variant?.computed?.delta_shares ?? 0
+                const hasIdeaConflict = variant?.sizing_input && deltaShares !== 0 && (
+                  ((ideaAction === 'buy' || ideaAction === 'add') && deltaShares < 0) ||
+                  ((ideaAction === 'sell' || ideaAction === 'trim') && deltaShares > 0)
+                )
 
                 return (
                   <div key={leg.id} className="flex items-center gap-2 text-xs group">
                     <button
                       onClick={handleToggleLeg}
-                      disabled={false}
                       className={clsx(
                         "flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors",
-                        leg.isAdded
+                        legChecked
                           ? "bg-green-500 border-green-500 text-white"
                           : "border-gray-300 dark:border-gray-600 hover:border-gray-500 opacity-0 group-hover:opacity-100"
                       )}
                     >
-                      {leg.isAdded && <Check className="h-2.5 w-2.5" />}
+                      {legChecked && <Check className="h-2.5 w-2.5" />}
                     </button>
                     <span className={clsx(
                       "px-1.5 py-0.5 rounded font-medium uppercase",
@@ -3521,29 +3726,22 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     </span>
                     <span className={clsx(
                       "font-medium",
-                      leg.isAdded ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
+                      legChecked ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
                     )}>
                       {leg.assets?.symbol}
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
                       {leg.proposed_weight ? `${leg.proposed_weight}%` : ''}
                       {leg.proposed_weight && leg.proposed_shares ? ' · ' : ''}
-                      {leg.proposed_shares ? `${leg.proposed_shares} sh` : ''}
+                      {leg.proposed_shares ? `${leg.proposed_shares} shrs` : ''}
                     </span>
-                    {/* v3: Inline conflict badge for pair leg */}
-                    {leg.isAdded && trade && (
-                      <InlineConflictBadge
-                        conflict={variantConflict}
-                        onFixAction={(suggestedAction) => {
-                          updateTradeMutation.mutate({
-                            tradeId: trade.id,
-                            action: suggestedAction,
-                            assetId: trade.asset_id,
-                            unlinkFromIdea: false,
-                          })
-                        }}
-                        size="sm"
-                      />
+                    {legChecked && variantConflict && (
+                      <InlineConflictBadge conflict={variantConflict} size="sm" />
+                    )}
+                    {legChecked && !variantConflict && hasIdeaConflict && (
+                      <span className="ml-auto flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={`Idea direction is ${ideaAction.toUpperCase()} but sizing conflicts`}>
+                        <AlertTriangle className="w-3 h-3" /> Conflicts with idea
+                      </span>
                     )}
                   </div>
                 )
@@ -3977,7 +4175,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           <>
               {/* Trade Ideas Panel — hidden in shared view */}
               {!isSharedView && <div className={clsx(
-                "border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col transition-all",
+                "border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col overflow-hidden",
                 showIdeasPanel ? "w-80" : "w-12"
               )}>
                 <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700">
@@ -3990,8 +4188,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                         <span className="font-medium text-gray-900 dark:text-white text-sm flex items-center gap-2">
                           <Layers className="h-4 w-4" />
                           Trade Ideas
-                          {tradeIdeasWithStatus.length > 0 && (
-                            <Badge variant="default" className="text-xs">{tradeIdeasWithStatus.length}</Badge>
+                          {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+                            <Badge variant="default" className="text-xs">{filteredItems.proposals.length + filteredItems.ideas.length}</Badge>
                           )}
                         </span>
                       </>
@@ -4022,7 +4220,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 </div>
 
                 {showIdeasPanel && (
-                  <div className="flex-1 overflow-y-auto p-2">
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
                     {(tradeIdeasLoading || tradeIdeasFetching || proposalsLoading) ? (
                       <div className="flex items-center justify-center py-8">
                         <RefreshCw className="h-5 w-5 text-gray-400 animate-spin" />
@@ -4054,29 +4252,28 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               </button>
                             )}
                           </div>
-                          <div className="flex items-center gap-1">
-                            {(['all', 'deciding', 'modeling', 'working_on', 'idea'] as const).map(stage => {
-                              const dotColor =
-                                stage === 'deciding' ? 'bg-amber-500' :
-                                stage === 'modeling' ? 'bg-indigo-500' :
-                                stage === 'working_on' ? 'bg-purple-500' :
-                                stage === 'idea' ? 'bg-blue-400' : null
-                              return (
-                                <button
-                                  key={stage}
-                                  onClick={() => setLeftPaneStageFilter(stage)}
-                                  className={clsx(
-                                    "flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
-                                    leftPaneStageFilter === stage
-                                      ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                                      : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  )}
-                                >
-                                  {dotColor && <span className={clsx("w-1.5 h-1.5 rounded-full", dotColor)} />}
-                                  {stage === 'all' ? 'All' : stage === 'idea' ? 'Idea' : stage === 'working_on' ? 'Working' : stage === 'deciding' ? 'Deciding' : 'Modeling'}
-                                </button>
-                              )
-                            })}
+                          <div className="flex items-center gap-0.5">
+                            {([
+                              { value: 'all' as const, label: 'All', dot: null },
+                              { value: 'ready_for_decision' as const, label: 'Deciding', dot: 'bg-amber-500' },
+                              { value: 'thesis_forming' as const, label: 'Thesis', dot: 'bg-purple-500' },
+                              { value: 'deep_research' as const, label: 'Research', dot: 'bg-indigo-500' },
+                              { value: 'investigate' as const, label: 'Invest.', dot: 'bg-blue-500' },
+                            ]).map(({ value, label, dot }) => (
+                              <button
+                                key={value}
+                                onClick={() => setLeftPaneStageFilter(value)}
+                                className={clsx(
+                                  "flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full transition-colors whitespace-nowrap",
+                                  leftPaneStageFilter === value
+                                    ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                )}
+                              >
+                                {dot && <span className={clsx("w-1.5 h-1.5 rounded-full", dot)} />}
+                                {label}
+                              </button>
+                            ))}
                           </div>
                         </div>
 
@@ -4100,7 +4297,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                 collapsedGroups.has('category-proposals') && "-rotate-90"
                               )} />
                               <Scale className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Proposals</span>
+                              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Recommendations</span>
                               <Badge className="text-[10px] py-0 px-1.5 bg-amber-100 dark:bg-amber-800 text-amber-700 dark:text-amber-300">{filteredItems.proposals.length}</Badge>
                             </button>
                             {!collapsedGroups.has('category-proposals') && (
@@ -4135,14 +4332,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     return 0
                                   }) : []
 
-                                  // Enrich legs with asset_id from tradeIdeasWithStatus (legId = trade_queue_item.id)
+                                  // Enrich legs with asset_id from tradeIdeasWithStatus
+                                  // Try legId first, fall back to matching by symbol
                                   const enrichedLegs = isPairTrade && legs?.length
                                     ? legs.map((l: any) => {
-                                        const tradeItem = tradeIdeasWithStatus.find(t => t.id === l.legId)
+                                        const tradeItem = l.legId
+                                          ? tradeIdeasWithStatus.find(t => t.id === l.legId)
+                                          : tradeIdeasWithStatus.find(t =>
+                                              t.assets?.symbol === l.symbol && (t.pair_id || t.pair_trade_id)
+                                            )
                                         return {
                                           ...l,
                                           assetId: tradeItem?.asset_id,
-                                          tradeQueueItemId: l.legId,
+                                          tradeQueueItemId: tradeItem?.id || l.legId,
+                                          companyName: tradeItem?.assets?.company_name || '',
+                                          sector: tradeItem?.assets?.sector || null,
                                         }
                                       })
                                     : []
@@ -4229,14 +4433,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     // checkboxOverride=true → temp variant → importsInFlight → importTradeMutation
                                     for (const a of assetsToAdd) {
                                       // Build a TradeQueueItemWithDetails-shaped object
+                                      // For sell/trim actions, negate the weight so the sizing parser
+                                      // treats it as a reduction (e.g., sell 10% → sizing_input "-10")
+                                      const rawWeight = a.weight ?? proposal.weight ?? null
+                                      const isSellAction = a.action === 'sell' || a.action === 'trim'
+                                      const signedWeight = rawWeight != null && isSellAction && rawWeight > 0 ? -rawWeight : rawWeight
+
                                       const tradeIdeaLike = {
                                         id: a.tradeQueueItemId || crypto.randomUUID(),
                                         asset_id: a.assetId,
                                         action: a.action,
                                         proposed_shares: null,
-                                        proposed_weight: a.weight ?? proposal.weight ?? null,
+                                        proposed_weight: signedWeight,
                                         target_price: null,
                                         assets: { id: a.assetId, symbol: a.symbol, company_name: a.companyName, sector: a.sector },
+                                        _proposalId: proposal.id, // Provenance: which recommendation this came from
                                       } as unknown as TradeQueueItemWithDetails
 
                                       // Instant UI: override + temp variant + in-flight + mutation
@@ -4251,7 +4462,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                             asset_id: a.assetId,
                                             trade_lab_id: tradeLab.id,
                                             action: a.action,
-                                            sizing_input: a.weight != null ? String(a.weight) : (proposal.weight != null ? String(proposal.weight) : null),
+                                            sizing_input: signedWeight != null ? String(signedWeight) : null,
                                             sizing_spec: null,
                                             computed: null,
                                             direction_conflict: null,
@@ -4304,7 +4515,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                               ? "bg-amber-500 border-amber-500 text-white"
                                               : "border-amber-400 dark:border-amber-600 hover:border-amber-500"
                                           )}
-                                          title={isProposalApplied ? "Remove proposal from lab" : "Add proposal to lab"}
+                                          title={isProposalApplied ? "Remove recommendation from lab" : "Add recommendation to lab"}
                                         >
                                           {isProposalApplied && <Check className="h-2.5 w-2.5" />}
                                         </button>
@@ -4336,18 +4547,43 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                           </span>
                                         )}
 
-                                        {/* Weight (right-aligned) */}
-                                        {!isPairTrade && proposal.weight != null && (
-                                          <span className="ml-auto text-[12px] tabular-nums font-medium text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                            {proposal.weight}%
-                                          </span>
-                                        )}
+                                        {/* Weight (right-aligned) — amber + bold when PM adjusted from recommendation */}
+                                        {!isPairTrade && proposal.weight != null && (() => {
+                                          let isModified = false
+                                          let currentSizing: string | null = null
+                                          if (isProposalApplied) {
+                                            const variant = intentVariants.find(v => v.proposal_id === proposal.id)
+                                              || (asset?.id ? intentVariants.find(v => v.asset_id === asset.id) : null)
+                                            if (variant) {
+                                              const isSell = (tradeItem?.action === 'sell' || tradeItem?.action === 'trim')
+                                              const expectedWeight = isSell && proposal.weight > 0 ? -proposal.weight : proposal.weight
+                                              const variantSizing = variant.sizing_input ? parseFloat(variant.sizing_input) : null
+                                              isModified = variantSizing != null && expectedWeight != null && Math.abs(variantSizing - expectedWeight) > 0.01
+                                              if (isModified && variantSizing != null) currentSizing = `${variantSizing}%`
+                                            }
+                                          }
+                                          return isModified ? (
+                                            <span className="ml-auto flex-shrink-0 relative group">
+                                              <span className="text-[12px] tabular-nums font-bold text-amber-600 dark:text-amber-400 cursor-pointer underline decoration-dotted underline-offset-2">
+                                                {currentSizing}
+                                              </span>
+                                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-[11px] leading-snug whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-50 shadow-lg">
+                                                <span className="block font-medium">Sizing adjusted</span>
+                                                <span className="block text-gray-300 dark:text-gray-400 mt-0.5">Rec: {proposal.weight}% → Sim: {currentSizing}</span>
+                                              </span>
+                                            </span>
+                                          ) : (
+                                            <span className="ml-auto text-[12px] tabular-nums font-medium text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                              {proposal.weight}%
+                                            </span>
+                                          )
+                                        })()}
+
+                                        {/* Spacer pushes proposer + chevron to right */}
+                                        <div className="flex-1" />
 
                                         {/* Proposer initials */}
-                                        <span className={clsx(
-                                          "flex-shrink-0 text-[9px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded-full px-1.5 py-0.5",
-                                          !isPairTrade && proposal.weight == null && "ml-auto"
-                                        )}>
+                                        <span className="flex-shrink-0 text-[9px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded-full px-1.5 py-0.5">
                                           {proposerName}
                                         </span>
 
@@ -4366,25 +4602,88 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                       {/* Expanded details */}
                                       {isProposalExpanded && (
                                         <div className="px-2 pb-2 pt-0.5 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5">
-                                          {/* Pair trade legs */}
-                                          {isPairTrade && sortedLegs.length > 0 && (
+                                          {/* Pair trade legs with per-leg checkboxes */}
+                                          {isPairTrade && enrichedLegs.length > 0 && (
                                             <div className="space-y-1">
-                                              {sortedLegs.map((leg: any) => (
-                                                <div key={leg.legId} className="flex items-center gap-2 text-xs ml-5">
-                                                  <span className={clsx(
-                                                    "px-1 py-px rounded text-[9px] font-bold uppercase",
-                                                    leg.action === 'buy' || leg.action === 'add'
-                                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                                  )}>
-                                                    {leg.action}
-                                                  </span>
-                                                  <span className="font-semibold text-gray-900 dark:text-white">{leg.symbol}</span>
-                                                  {leg.weight != null && (
-                                                    <span className="text-gray-500 dark:text-gray-400 ml-auto tabular-nums">{leg.weight}%</span>
-                                                  )}
-                                                </div>
-                                              ))}
+                                              {enrichedLegs.map((leg: any) => {
+                                                const legAssetId = leg.assetId as string | undefined
+                                                const legInSim = legAssetId ? !!(simulation?.simulation_trades?.some((t: any) => t.asset_id === legAssetId) || checkboxOverrides.get(legAssetId)) : false
+                                                const handleToggleLeg = (e: React.MouseEvent) => {
+                                                  e.stopPropagation()
+                                                  if (!legAssetId) return
+                                                  if (legInSim) {
+                                                    handleRemoveAsset(legAssetId)
+                                                  } else {
+                                                    const rawWeight = leg.weight ?? null
+                                                    const isSell = leg.action === 'sell' || leg.action === 'trim'
+                                                    const signedWeight = rawWeight != null && isSell && rawWeight > 0 ? -rawWeight : rawWeight
+                                                    const ideaLike = {
+                                                      id: leg.tradeQueueItemId || crypto.randomUUID(),
+                                                      asset_id: legAssetId,
+                                                      action: leg.action || 'buy',
+                                                      proposed_shares: null,
+                                                      proposed_weight: signedWeight,
+                                                      target_price: null,
+                                                      assets: { id: legAssetId, symbol: leg.symbol, company_name: leg.companyName || '', sector: leg.sector || null },
+                                                    } as unknown as TradeQueueItemWithDetails
+                                                    checkboxOverridesRef.current.set(legAssetId, true)
+                                                    // Temp variant for instant table row + quickEstimate
+                                                    if (tradeLab?.id) {
+                                                      queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null], (old) => {
+                                                        if (old?.some(vr => vr.asset_id === legAssetId)) return old
+                                                        return [...(old || []), {
+                                                          id: `temp-${legAssetId}`, asset_id: legAssetId, trade_lab_id: tradeLab.id,
+                                                          action: leg.action || 'buy',
+                                                          sizing_input: signedWeight != null ? String(signedWeight) : null,
+                                                          sizing_spec: null, computed: null, direction_conflict: null,
+                                                          below_lot_warning: false, active_weight_config: null,
+                                                          asset: { id: legAssetId, symbol: leg.symbol, company_name: leg.companyName || '', sector: leg.sector || null },
+                                                        } as IntentVariant]
+                                                      })
+                                                    }
+                                                    // Temp simulation_trade so expressedAssetIds is consistent
+                                                    queryClient.setQueryData(['simulation', selectedSimulationId], (old: any) => {
+                                                      if (!old) return old
+                                                      const trades = old.simulation_trades || []
+                                                      if (trades.some((t: any) => t.asset_id === legAssetId)) return old
+                                                      return { ...old, simulation_trades: [...trades, { id: `temp-leg-${legAssetId}`, simulation_id: simulation?.id, trade_queue_item_id: ideaLike.id, asset_id: legAssetId, action: leg.action }] }
+                                                    })
+                                                    importsInFlightRef.current.add(legAssetId)
+                                                    importTradeMutation.mutate(ideaLike)
+                                                    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+                                                  }
+                                                }
+                                                return (
+                                                  <div key={leg.legId || leg.symbol} className="flex items-center gap-2 text-xs group">
+                                                    <button
+                                                      onClick={handleToggleLeg}
+                                                      className={clsx(
+                                                        "flex-shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ml-5",
+                                                        legInSim
+                                                          ? "bg-amber-500 border-amber-500 text-white"
+                                                          : "border-gray-300 dark:border-gray-600 hover:border-amber-500 opacity-0 group-hover:opacity-100"
+                                                      )}
+                                                    >
+                                                      {legInSim && <Check className="h-2 w-2" />}
+                                                    </button>
+                                                    <span className={clsx(
+                                                      "px-1 py-px rounded text-[9px] font-bold uppercase",
+                                                      leg.action === 'buy' || leg.action === 'add'
+                                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                                    )}>
+                                                      {leg.action}
+                                                    </span>
+                                                    <span className="font-semibold text-gray-900 dark:text-white">{leg.symbol}</span>
+                                                    {leg.companyName && (
+                                                      <span className="text-gray-400 dark:text-gray-500 truncate max-w-[8rem]">{leg.companyName}</span>
+                                                    )}
+                                                    {leg.weight != null && (
+                                                      <span className="text-gray-500 dark:text-gray-400 ml-auto tabular-nums flex-shrink-0">{leg.weight}%</span>
+                                                    )}
+                                                  </div>
+                                                )
+                                              })}
                                             </div>
                                           )}
 
@@ -4424,41 +4723,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                             View full idea
                                           </button>
 
-                                          {/* PM Decision Actions */}
-                                          {isCurrentUserPM && (
-                                            <div className="flex items-center gap-1.5 ml-5 mt-1">
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  proposalDecisionMutation.mutate({ proposalId: proposal.id, decision: 'accept' })
-                                                }}
-                                                disabled={proposalDecisionMutation.isPending}
-                                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50"
-                                              >
-                                                <Check className="h-3 w-3" />
-                                                Accept
-                                              </button>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  proposalDecisionMutation.mutate({ proposalId: proposal.id, decision: 'reject' })
-                                                }}
-                                                disabled={proposalDecisionMutation.isPending}
-                                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors disabled:opacity-50"
-                                              >
-                                                <X className="h-3 w-3" />
-                                                Reject
-                                              </button>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  proposalDecisionMutation.mutate({ proposalId: proposal.id, decision: 'defer' })
-                                                }}
-                                                disabled={proposalDecisionMutation.isPending}
-                                                className="px-2 py-1 text-[10px] font-medium rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
-                                              >
-                                                <Clock className="h-3 w-3" />
-                                              </button>
+                                          {/* Decision status — decisions flow through Trade Sheet commit */}
+                                          {isProposalApplied && (
+                                            <div className="text-[10px] text-teal-600 dark:text-teal-400 ml-5 mt-1 flex items-center gap-1">
+                                              <Check className="h-3 w-3" />
+                                              In simulation — will resolve when Trade Sheet is committed
                                             </div>
                                           )}
                                         </div>
@@ -4527,7 +4796,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   </div>
                 )}
                 {/* Main Content Area */}
-                <div className="flex-1 overflow-hidden p-4">
+                <div className="flex-1 overflow-hidden px-4 pt-4 pb-2">
                   {(simulation || (isSharedView && sharedSimData)) ? (
                   <>
                   {/* View Content */}
@@ -4655,6 +4924,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                               }
                             }
                           }}
+                          onRemoveAsset={handleRemoveAsset}
                           onDeleteVariant={(variantId) => {
                             // If deleting a temp variant from a direct edit (user escaped
                             // before server responded), track the cancellation so the
@@ -4677,6 +4947,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           } : undefined}
                           canCreateTradeSheet={!isSharedView && simulation?.status === 'draft' && simulationRows.summary.tradedCount > 0 && !v3HasConflicts}
                           isCreatingTradeSheet={v3CreatingSheet}
+                          onBulkPromote={!isSharedView && selectedPortfolioId ? (variantIds) => {
+                            bulkPromoteM.mutate({
+                              variantIds,
+                              portfolioId: selectedPortfolioId,
+                              context: {
+                                actorId: user!.id,
+                                actorName: (user as any)?.first_name || user?.email || 'PM',
+                                actorRole: 'pm',
+                                requestId: `promote-${Date.now()}`,
+                              },
+                            })
+                          } : undefined}
+                          isBulkPromoting={bulkPromoteM.isPending}
                         />
                       </div>
                       {/* Suggestion Review Panel (owner-side) */}
@@ -5033,7 +5316,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       {/* Proposal Editor Modal */}
       {proposalEditorIdea && selectedPortfolioId && (
-        <ProposalEditorModal
+        <RecommendationEditorModal
           isOpen={!!proposalEditorIdea}
           onClose={() => setProposalEditorIdea(null)}
           tradeIdea={proposalEditorIdea}
@@ -5090,6 +5373,156 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           }}
         />
       )}
+
+      {/* Execute Trade Confirmation Modal */}
+      {confirmExecuteIdea && (() => {
+        const v = intentVariants.find(vr => vr.asset_id === confirmExecuteIdea.asset_id)
+        const c = v?.computed
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setConfirmExecuteIdea(null)}>
+            <div className="fixed inset-0 bg-black/50" />
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+                      <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">Execute Trade</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
+                    This will commit the trade to Trade Book and remove it from the simulation.
+                  </p>
+
+                  {/* Trade preview */}
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={clsx(
+                        'text-xs font-semibold uppercase px-1.5 py-0.5 rounded',
+                        confirmExecuteIdea.action === 'buy' || confirmExecuteIdea.action === 'add'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      )}>
+                        {confirmExecuteIdea.action}
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{confirmExecuteIdea.assets?.symbol}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{confirmExecuteIdea.assets?.company_name}</span>
+                    </div>
+                    {v?.sizing_input && c && (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                        {c.target_weight != null && <>
+                          <div className="text-gray-500 dark:text-gray-400">Target weight</div>
+                          <div className="font-semibold text-gray-900 dark:text-white">{c.target_weight.toFixed(2)}%</div>
+                        </>}
+                        {c.notional_value != null && c.notional_value !== 0 && <>
+                          <div className="text-gray-500 dark:text-gray-400">Notional</div>
+                          <div className="font-medium text-gray-700 dark:text-gray-200">
+                            {Math.abs(c.notional_value) >= 1_000_000 ? `$${(Math.abs(c.notional_value) / 1_000_000).toFixed(1)}M` : Math.abs(c.notional_value) >= 1_000 ? `$${(Math.abs(c.notional_value) / 1_000).toFixed(0)}K` : `$${Math.abs(c.notional_value).toFixed(0)}`}
+                          </div>
+                        </>}
+                        {c.delta_shares != null && c.delta_shares !== 0 && <>
+                          <div className="text-gray-500 dark:text-gray-400">Share change</div>
+                          <div className={clsx('font-mono font-medium', c.delta_shares > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+                            {c.delta_shares > 0 ? '+' : ''}{c.delta_shares.toLocaleString()}
+                          </div>
+                        </>}
+                        <div className="text-gray-400 dark:text-gray-500">Input</div>
+                        <div className="font-mono text-gray-400 dark:text-gray-500">{v.sizing_input}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setConfirmExecuteIdea(null)} className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => { executeTradeM.mutate(confirmExecuteIdea); setConfirmExecuteIdea(null) }}
+                      disabled={executeTradeM.isPending}
+                      className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      Execute Trade
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Request Recommendation Confirmation Modal */}
+      {confirmRecommendIdea && (() => {
+        const v = intentVariants.find(vr => vr.asset_id === confirmRecommendIdea.asset_id)
+        const c = v?.computed
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setConfirmRecommendIdea(null)}>
+            <div className="fixed inset-0 bg-black/50" />
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center">
+                      <Scale className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">Request Recommendation</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
+                    This creates a PM proposal from the current simulation sizing and moves the idea into the decision workflow. It does not commit the trade.
+                  </p>
+
+                  {/* Trade preview */}
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={clsx(
+                        'text-xs font-semibold uppercase px-1.5 py-0.5 rounded',
+                        confirmRecommendIdea.action === 'buy' || confirmRecommendIdea.action === 'add'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      )}>
+                        {confirmRecommendIdea.action}
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{confirmRecommendIdea.assets?.symbol}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{confirmRecommendIdea.assets?.company_name}</span>
+                    </div>
+                    {v?.sizing_input && c ? (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                        {c.target_weight != null && <>
+                          <div className="text-gray-500 dark:text-gray-400">Target weight</div>
+                          <div className="font-semibold text-gray-900 dark:text-white">{c.target_weight.toFixed(2)}%</div>
+                        </>}
+                        {c.notional_value != null && c.notional_value !== 0 && <>
+                          <div className="text-gray-500 dark:text-gray-400">Notional</div>
+                          <div className="font-medium text-gray-700 dark:text-gray-200">
+                            {Math.abs(c.notional_value) >= 1_000_000 ? `$${(Math.abs(c.notional_value) / 1_000_000).toFixed(1)}M` : Math.abs(c.notional_value) >= 1_000 ? `$${(Math.abs(c.notional_value) / 1_000).toFixed(0)}K` : `$${Math.abs(c.notional_value).toFixed(0)}`}
+                          </div>
+                        </>}
+                        <div className="text-gray-400 dark:text-gray-500">Input</div>
+                        <div className="font-mono text-gray-400 dark:text-gray-500">{v.sizing_input}</div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 italic">No sizing entered — recommendation will use idea defaults</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setConfirmRecommendIdea(null)} className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => { requestRecommendationM.mutate(confirmRecommendIdea); setConfirmRecommendIdea(null) }}
+                      disabled={requestRecommendationM.isPending}
+                      className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-purple-600 text-white hover:bg-purple-700 shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      Request Recommendation
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Trade Idea Detail Modal */}
       {selectedTradeId && (

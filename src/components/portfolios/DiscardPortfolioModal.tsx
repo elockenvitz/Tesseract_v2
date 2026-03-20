@@ -24,7 +24,7 @@ const BLOCKER_ICONS: Record<string, typeof BarChart3> = {
   holdings: BarChart3,
   variants: FlaskConical,
   trade_sheets: FileSpreadsheet,
-  trade_plans: ClipboardList,
+  accepted_trades: ClipboardList,
   notes: FileText,
 }
 

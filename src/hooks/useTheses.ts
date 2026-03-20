@@ -9,6 +9,7 @@ import {
   type UpdateThesisInput,
 } from '../lib/services/thesis-service'
 
+/** Fetch all theses for an idea (all scopes). Client-side filtering by scope. */
 export function useTheses(tradeIdeaId: string | undefined) {
   return useQuery({
     queryKey: ['theses', tradeIdeaId],
@@ -34,6 +35,7 @@ export function useCreateThesis() {
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['theses', variables.tradeQueueItemId] })
       qc.invalidateQueries({ queryKey: ['thesis-counts', variables.tradeQueueItemId] })
+      qc.invalidateQueries({ queryKey: ['audit-events', 'entity', 'trade_idea', variables.tradeQueueItemId] })
     },
   })
 }
@@ -46,6 +48,7 @@ export function useUpdateThesis(tradeQueueItemId: string | undefined) {
     onSuccess: () => {
       if (tradeQueueItemId) {
         qc.invalidateQueries({ queryKey: ['theses', tradeQueueItemId] })
+        qc.invalidateQueries({ queryKey: ['audit-events', 'entity', 'trade_idea', tradeQueueItemId] })
       }
     },
   })
@@ -59,6 +62,7 @@ export function useDeleteThesis(tradeQueueItemId: string | undefined) {
       if (tradeQueueItemId) {
         qc.invalidateQueries({ queryKey: ['theses', tradeQueueItemId] })
         qc.invalidateQueries({ queryKey: ['thesis-counts', tradeQueueItemId] })
+        qc.invalidateQueries({ queryKey: ['audit-events', 'entity', 'trade_idea', tradeQueueItemId] })
       }
     },
   })

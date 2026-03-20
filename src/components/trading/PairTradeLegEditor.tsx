@@ -244,7 +244,7 @@ export function PairTradeLegEditor({
       <div
         key={leg.id}
         className={clsx(
-          "rounded-lg p-3 border",
+          "rounded-lg px-3 py-2 border",
           isLong
             ? "bg-green-50/50 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40"
             : "bg-red-50/50 dark:bg-red-900/10 border-red-200/60 dark:border-red-800/40",
@@ -252,17 +252,17 @@ export function PairTradeLegEditor({
           isPending && "opacity-80"
         )}
       >
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
               <span className="font-semibold text-gray-900 dark:text-white">
                 {leg.assets?.symbol}
               </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {leg.assets?.company_name}
+              </span>
             </div>
-            <span className="text-xs text-gray-500 dark:text-gray-400 block mb-2 truncate">
-              {leg.assets?.company_name}
-            </span>
-            <div className="flex flex-wrap gap-3 text-xs">
+            <div className="flex flex-wrap gap-3 text-xs mt-1">
               {leg.proposed_weight != null && (
                 <div>
                   <span className="text-gray-400">Weight: </span>

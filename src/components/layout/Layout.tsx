@@ -26,7 +26,7 @@ interface LayoutProps {
 }
 
 // Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-plans', 'trade-queue', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists']
 
 export function Layout({
   children,
@@ -365,7 +365,7 @@ export function Layout({
   const { isOrgArchived } = useOrganization()
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       <Header
         onSearchResult={onSearchResult}
         onShowDirectMessages={handleShowDirectMessages}
@@ -395,7 +395,7 @@ export function Layout({
         onTabsReorder={onTabsReorder}
         onFocusSearch={onFocusSearch}
       />
-      <main className="flex-1 h-[calc(100vh-8rem)] overflow-hidden">
+      <main className="flex-1 min-h-0 overflow-hidden">
         {(() => {
           const activeTab = tabs.find(tab => tab.id === activeTabId)
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)

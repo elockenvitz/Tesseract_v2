@@ -9,16 +9,8 @@ import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 import { inferProvenance, type Provenance } from '../../lib/provenance'
-import type { TradeAction, TradeUrgency, PairLegType } from '../../types/trading'
+import type { TradeAction, PairLegType } from '../../types/trading'
 import { clsx } from 'clsx'
-
-// Urgency options matching QuickTradeIdeaCapture
-const urgencyOptions: { value: TradeUrgency; label: string; color: string }[] = [
-  { value: 'low', label: 'Low', color: 'text-slate-700 bg-slate-100 border-slate-300' },
-  { value: 'medium', label: 'Medium', color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { value: 'high', label: 'High', color: 'text-orange-600 bg-orange-50 border-orange-200' },
-  { value: 'urgent', label: 'Urgent', color: 'text-red-600 bg-red-50 border-red-200' },
-]
 
 // Visibility options - must match database constraint: 'private', 'team', 'public'
 type VisibilityOption = 'private' | 'team'
@@ -101,7 +93,7 @@ export function AddTradeIdeaModal({
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
   const portfolioDropdownRef = useRef<HTMLDivElement>(null)
   const portfolioButtonRef = useRef<HTMLButtonElement>(null)
-  const [urgency, setUrgency] = useState<TradeUrgency>('medium')
+  const urgency = 'medium' as const // System-derived urgency replaces manual selection
   // Combined rationale/thesis field (matching QuickTradeIdeaCapture)
   const [rationale, setRationale] = useState('')
   const [contextTags, setContextTags] = useState<ContextTag[]>([])
@@ -301,7 +293,7 @@ export function AddTradeIdeaModal({
       setIsPairTrade(false)
       setSelectedPortfolioIds(preselectedPortfolioId ? [preselectedPortfolioId] : [])
       setShowPortfolioDropdown(false)
-      setUrgency('medium')
+
       setRationale('')
       setContextTags([])
       setVisibility('private')
@@ -656,6 +648,10 @@ export function AddTradeIdeaModal({
     } else {
       if (!assetId || !action) return
 
+      // Snapshot portfolio IDs before the async call — onSuccess fires resetForm()
+      // which clears selectedPortfolioIds before we reach the lab-linking code below.
+      const portfolioIdsSnapshot = [...selectedPortfolioIds]
+
       // Create the trade and get the ID back
       const result = await createTradeAsync({
         portfolioId: primaryPortfolioId!,
@@ -680,18 +676,18 @@ export function AddTradeIdeaModal({
       })
 
       // Link to trade labs for ALL selected portfolios
-      if (result?.id && selectedPortfolioIds.length > 0 && user?.id) {
+      if (result?.id && portfolioIdsSnapshot.length > 0 && user?.id) {
         try {
           // Find existing trade labs for selected portfolios
           const { data: existingLabs } = await supabase
             .from('trade_labs')
             .select('id, portfolio_id')
-            .in('portfolio_id', selectedPortfolioIds)
+            .in('portfolio_id', portfolioIdsSnapshot)
 
           const existingLabPortfolioIds = new Set(existingLabs?.map(l => l.portfolio_id) || [])
 
           // Find portfolios that need a lab created
-          const portfoliosNeedingLabs = selectedPortfolioIds.filter(id => !existingLabPortfolioIds.has(id))
+          const portfoliosNeedingLabs = portfolioIdsSnapshot.filter(id => !existingLabPortfolioIds.has(id))
 
           // Create labs for portfolios that don't have one
           let newLabs: { id: string; portfolio_id: string }[] = []
@@ -1296,31 +1292,6 @@ export function AddTradeIdeaModal({
             )}
 
             {/* Urgency - pill style matching QuickTradeIdeaCapture */}
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Urgency</span>
-                <span className="text-xs text-gray-400">· affects priority ranking</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {urgencyOptions.map((option) => {
-                  const isSelected = urgency === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setUrgency(option.value)}
-                      className={clsx(
-                        "px-2.5 py-1 rounded-full text-xs font-medium border transition-all capitalize",
-                        isSelected ? option.color + ' border-current' : "text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600"
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
             {/* Combined Rationale/Thesis field */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">

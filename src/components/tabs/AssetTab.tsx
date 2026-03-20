@@ -3885,7 +3885,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <div className="px-4 py-4 flex items-center justify-between">
                     <div>
                       <span className="text-[13px] font-medium text-gray-500 block">Not currently held</span>
-                      <span className="text-[11px] text-gray-400 block mt-0.5">No approved or executed trade proposals exist for this asset.</span>
+                      <span className="text-[11px] text-gray-400 block mt-0.5">No approved or executed trade recommendations exist for this asset.</span>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <button

@@ -20,10 +20,12 @@ interface LabInclusionInfo {
   trackCounts: PortfolioTrackCounts
   // Per-portfolio status for filtering
   portfolioTrackStatus: Map<string, PortfolioTrackStatus>
-  // Active proposal count
-  proposalCount: number
-  // Per-portfolio proposal counts: portfolioId -> count
-  portfolioProposalCounts: Map<string, number>
+  // Active recommendation count (from decision_requests)
+  recommendationCount: number
+  // Per-portfolio recommendation counts: portfolioId -> count
+  portfolioRecommendationCounts: Map<string, number>
+  // Whether the current user has submitted a recommendation for this trade
+  hasCurrentUserRecommendation: boolean
 }
 
 /**
@@ -53,30 +55,40 @@ export function useTradeExpressionCounts() {
 
       if (trackError) throw trackError
 
-      // Query active proposal counts per trade idea (with portfolio_id for per-portfolio counts)
-      const { data: proposals, error: proposalError } = await supabase
-        .from('trade_proposals')
-        .select('trade_queue_item_id, portfolio_id')
-        .eq('is_active', true)
+      // Query active recommendation counts from decision_requests
+      const { data: recommendations, error: recError } = await supabase
+        .from('decision_requests')
+        .select('trade_queue_item_id, portfolio_id, requested_by')
+        .in('status', ['pending', 'under_review', 'needs_discussion'])
 
-      if (proposalError) throw proposalError
+      if (recError) throw recError
 
-      // Build proposal count maps (total and per-portfolio)
-      const proposalCountMap = new Map<string, number>()
-      const portfolioProposalCountsMap = new Map<string, Map<string, number>>()
+      // Get current user ID for hasCurrentUserRecommendation
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      const currentUserId = currentUser?.id
 
-      proposals?.forEach((p: any) => {
+      // Build recommendation count maps (total and per-portfolio)
+      const recCountMap = new Map<string, number>()
+      const portfolioRecCountsMap = new Map<string, Map<string, number>>()
+      const userRecSet = new Set<string>() // trade IDs where current user has a rec
+
+      recommendations?.forEach((r: any) => {
         // Total count per trade
-        const count = proposalCountMap.get(p.trade_queue_item_id) || 0
-        proposalCountMap.set(p.trade_queue_item_id, count + 1)
+        const count = recCountMap.get(r.trade_queue_item_id) || 0
+        recCountMap.set(r.trade_queue_item_id, count + 1)
 
         // Per-portfolio count
-        if (!portfolioProposalCountsMap.has(p.trade_queue_item_id)) {
-          portfolioProposalCountsMap.set(p.trade_queue_item_id, new Map())
+        if (!portfolioRecCountsMap.has(r.trade_queue_item_id)) {
+          portfolioRecCountsMap.set(r.trade_queue_item_id, new Map())
         }
-        const portfolioCounts = portfolioProposalCountsMap.get(p.trade_queue_item_id)!
-        const portfolioCount = portfolioCounts.get(p.portfolio_id) || 0
-        portfolioCounts.set(p.portfolio_id, portfolioCount + 1)
+        const portfolioCounts = portfolioRecCountsMap.get(r.trade_queue_item_id)!
+        const portfolioCount = portfolioCounts.get(r.portfolio_id) || 0
+        portfolioCounts.set(r.portfolio_id, portfolioCount + 1)
+
+        // Track current user's recommendations
+        if (currentUserId && r.requested_by === currentUserId) {
+          userRecSet.add(r.trade_queue_item_id)
+        }
       })
 
       // Build portfolio track counts map and per-portfolio status map
@@ -148,8 +160,9 @@ export function useTradeExpressionCounts() {
             portfolioNames: [portfolioName],
             trackCounts: trackCountsMap.get(item.trade_queue_item_id) || defaultTrackCounts,
             portfolioTrackStatus: portfolioTrackStatusMap.get(item.trade_queue_item_id) || new Map(),
-            proposalCount: proposalCountMap.get(item.trade_queue_item_id) || 0,
-            portfolioProposalCounts: portfolioProposalCountsMap.get(item.trade_queue_item_id) || new Map()
+            recommendationCount: recCountMap.get(item.trade_queue_item_id) || 0,
+            portfolioRecommendationCounts: portfolioRecCountsMap.get(item.trade_queue_item_id) || new Map(),
+            hasCurrentUserRecommendation: userRecSet.has(item.trade_queue_item_id),
           })
         }
       })
@@ -159,28 +172,29 @@ export function useTradeExpressionCounts() {
       trackCountsMap.forEach((trackCounts, tradeId) => {
         if (!counts.has(tradeId)) {
           counts.set(tradeId, {
-            count: trackCounts.total, // Use track count as portfolio count
+            count: trackCounts.total,
             labIds: [],
             labNames: [],
             portfolioIds: [],
             portfolioNames: [],
             trackCounts,
             portfolioTrackStatus: portfolioTrackStatusMap.get(tradeId) || new Map(),
-            proposalCount: proposalCountMap.get(tradeId) || 0,
-            portfolioProposalCounts: portfolioProposalCountsMap.get(tradeId) || new Map()
+            recommendationCount: recCountMap.get(tradeId) || 0,
+            portfolioRecommendationCounts: portfolioRecCountsMap.get(tradeId) || new Map(),
+            hasCurrentUserRecommendation: userRecSet.has(tradeId),
           })
         } else {
-          // Update existing entry with track counts, status, and proposal count
           const existing = counts.get(tradeId)!
           existing.trackCounts = trackCounts
           existing.portfolioTrackStatus = portfolioTrackStatusMap.get(tradeId) || new Map()
-          existing.proposalCount = proposalCountMap.get(tradeId) || 0
-          existing.portfolioProposalCounts = portfolioProposalCountsMap.get(tradeId) || new Map()
+          existing.recommendationCount = recCountMap.get(tradeId) || 0
+          existing.portfolioRecommendationCounts = portfolioRecCountsMap.get(tradeId) || new Map()
+          existing.hasCurrentUserRecommendation = existing.hasCurrentUserRecommendation || userRecSet.has(tradeId)
         }
       })
 
       // Also include trade ideas that have proposals but aren't in lab links or portfolio tracks
-      proposalCountMap.forEach((proposalCount, tradeId) => {
+      recCountMap.forEach((recommendationCount, tradeId) => {
         if (!counts.has(tradeId)) {
           counts.set(tradeId, {
             count: 0,
@@ -190,8 +204,9 @@ export function useTradeExpressionCounts() {
             portfolioNames: [],
             trackCounts: { total: 0, active: 0, committed: 0, deferred: 0, rejected: 0 },
             portfolioTrackStatus: new Map(),
-            proposalCount,
-            portfolioProposalCounts: portfolioProposalCountsMap.get(tradeId) || new Map()
+            recommendationCount,
+            portfolioRecommendationCounts: portfolioRecCountsMap.get(tradeId) || new Map(),
+            hasCurrentUserRecommendation: userRecSet.has(tradeId),
           })
         }
       })

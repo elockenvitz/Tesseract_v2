@@ -140,6 +140,9 @@ export interface UpdateTradeIdeaParams {
     conviction?: 'low' | 'medium' | 'high' | null
     timeHorizon?: 'short' | 'medium' | 'long' | null
     urgency?: string
+    thesisText?: string | null
+    expectedPositionSize?: number | null
+    maxPositionSize?: number | null
     sharingVisibility?: 'private' | 'portfolio' | 'team' | 'public' | null
     contextTags?: Array<{
       entity_type: string
@@ -156,7 +159,7 @@ export interface UpdateTradeIdeaParams {
 
 /**
  * Map stage to legacy status for backwards compatibility
- * New stages: idea, working_on, modeling, deciding
+ * Research stages: aware, investigate, deep_research, thesis_forming, ready_for_decision
  * Legacy stages: idea, discussing, simulating, deciding
  */
 function stageToLegacyStatus(stage: TradeStage, outcome: TradeOutcome | null): TradeQueueStatus {
@@ -164,9 +167,16 @@ function stageToLegacyStatus(stage: TradeStage, outcome: TradeOutcome | null): T
   if (outcome === 'rejected') return 'rejected'
   if (outcome === 'deferred') return 'cancelled' // Map deferred to cancelled for legacy
 
-  // Map new stage names to legacy for backwards compatibility
+  // Map v1 stages to legacy
   if (stage === 'working_on') return 'discussing'
   if (stage === 'modeling') return 'simulating'
+
+  // Map v2 research stages to legacy
+  if (stage === 'aware') return 'idea'
+  if (stage === 'investigate') return 'discussing'
+  if (stage === 'deep_research') return 'simulating'
+  if (stage === 'thesis_forming') return 'simulating'
+  if (stage === 'ready_for_decision') return 'deciding'
 
   return stage as TradeQueueStatus
 }
@@ -240,15 +250,16 @@ function validateStageTransition(
     return { valid: false, error: 'Outcome can only be set in deciding stage.' }
   }
 
-  // Valid transitions - includes both new and legacy stage names
-  // idea → working_on/discussing → modeling/simulating → deciding (and backwards)
-  const validTransitions: Record<string, string[]> = {
-    idea: ['working_on', 'discussing', 'modeling', 'simulating', 'deciding'],
-    working_on: ['idea', 'modeling', 'simulating', 'deciding'],
-    discussing: ['idea', 'modeling', 'simulating', 'deciding'],
-    modeling: ['idea', 'working_on', 'discussing', 'deciding'],
-    simulating: ['idea', 'working_on', 'discussing', 'deciding'],
-    deciding: ['idea', 'working_on', 'discussing', 'modeling', 'simulating'],
+  // Valid transitions - includes v1 legacy + v2 research stages
+  // v2 pipeline: aware → investigate → deep_research → thesis_forming → ready_for_decision
+  // All stages allow free movement (research is non-linear), plus cross-version transitions
+  const allStages = [
+    'idea', 'working_on', 'discussing', 'modeling', 'simulating', 'deciding',
+    'aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision',
+  ]
+  const validTransitions: Record<string, string[]> = {}
+  for (const s of allStages) {
+    validTransitions[s] = allStages.filter(t => t !== s)
   }
 
   // Allow same stage (for setting outcome in deciding)
@@ -311,22 +322,23 @@ export async function isUserPortfolioPM(portfolioId: string, userId: string): Pr
 export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> {
   const { tradeId, target, context, note } = params
 
-  // Idempotency check
-  if (context.requestId) {
-    const isDuplicate = await checkIdempotency({
-      requestId: context.requestId,
-      entityType: 'trade_idea',
-      entityId: tradeId,
-      actionType: 'move_stage',
-    })
-    if (isDuplicate) {
-      console.log(`[TRADE] Skipping duplicate request ${context.requestId}`)
-      return
-    }
-  }
+  // Run idempotency check and state fetch in parallel
+  const [idempotencyResult, currentTrade] = await Promise.all([
+    context.requestId
+      ? checkIdempotency({
+          requestId: context.requestId,
+          entityType: 'trade_idea',
+          entityId: tradeId,
+          actionType: 'move_stage',
+        })
+      : Promise.resolve(false),
+    getTradeIdea(tradeId),
+  ])
 
-  // Get current state
-  const currentTrade = await getTradeIdea(tradeId)
+  if (idempotencyResult) {
+    console.log(`[TRADE] Skipping duplicate request ${context.requestId}`)
+    return
+  }
   if (!currentTrade) {
     throw new Error(`Trade not found: ${tradeId}`)
   }
@@ -363,6 +375,9 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
   }
 
   // Handle outcome
+  // NOTE: outcome='accepted' should ONLY be set via accepted-trade-service.ts
+  // when an accepted_trade is actually created. Do not call moveTradeIdea with
+  // outcome='accepted' from Trade Sheets, Trade Plans, or other indirect paths.
   if (target.outcome) {
     updates.outcome = target.outcome
     updates.outcome_at = now
@@ -406,7 +421,7 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     }
   }
 
-  // Perform update
+  // Perform update — this is the critical path; everything after is fire-and-forget
   const { error } = await supabase
     .from('trade_queue_items')
     .update(updates)
@@ -416,79 +431,92 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     throw new Error(`Failed to move trade: ${error.message}`)
   }
 
-  // ── Capture decision price snapshot on outcome set ──
-  // Fire-and-forget: snapshot failure must not block the state transition.
+  // ── Post-update side-effects (fire-and-forget) ──
+  // These must NOT block the mutation from resolving so the UI stays snappy.
+
+  const sideEffects: Promise<void>[] = []
+
+  // Capture decision price snapshot on outcome set
   if (target.outcome) {
     const snapshotType = outcomeToSnapshotType(target.outcome)
     if (snapshotType) {
-      captureDecisionPriceSnapshot({
-        tradeQueueItemId: tradeId,
-        assetId: currentTrade.asset_id,
-        portfolioId: currentTrade.portfolio_id || null,
-        snapshotType,
-        actorId: context.actorId,
-      }).catch(err => {
-        console.error(`[TRADE] Failed to capture ${snapshotType} price snapshot for ${tradeId}:`, err)
-      })
+      sideEffects.push(
+        captureDecisionPriceSnapshot({
+          tradeQueueItemId: tradeId,
+          assetId: currentTrade.asset_id,
+          portfolioId: currentTrade.portfolio_id || null,
+          snapshotType,
+          actorId: context.actorId,
+        }).catch(err => {
+          console.error(`[TRADE] Failed to capture ${snapshotType} price snapshot for ${tradeId}:`, err)
+        }) as Promise<void>
+      )
     }
   }
 
   // Cancel all active proposals when moving out of deciding stage
   if (movingOutOfDeciding) {
-    const { error: proposalError } = await supabase
-      .from('trade_proposals')
-      .update({
-        is_active: false,
-        updated_at: now,
-      })
-      .eq('trade_queue_item_id', tradeId)
-      .eq('is_active', true)
-
-    if (proposalError) {
-      console.error(`Failed to cancel proposals when moving out of deciding: ${proposalError.message}`)
-      // Non-blocking - log but don't fail the move
-    }
+    sideEffects.push(
+      supabase
+        .from('trade_proposals')
+        .update({ is_active: false, updated_at: now })
+        .eq('trade_queue_item_id', tradeId)
+        .eq('is_active', true)
+        .then(({ error: proposalError }) => {
+          if (proposalError) {
+            console.error(`Failed to cancel proposals when moving out of deciding: ${proposalError.message}`)
+          }
+        })
+    )
   }
 
-  // Get display name for audit
-  const displayName = await getTradeDisplayName(currentTrade)
+  // Build display name from already-fetched data (no extra DB query)
+  const assetSymbol = (currentTrade as any).assets?.symbol || 'Unknown'
+  const displayName = `${currentTrade.action.toUpperCase()} ${assetSymbol}`
 
   // Determine action type
   const isOutcomeSet = target.outcome && !currentTrade.outcome
   const actionType = isOutcomeSet ? 'set_outcome' : 'move_stage'
 
-  // Emit audit event
-  await emitAuditEvent({
-    actor: { id: context.actorId, type: 'user', role: context.actorRole },
-    entity: {
-      type: 'trade_idea',
-      id: tradeId,
-      displayName,
-    },
-    action: { type: actionType, category: 'state_change' },
-    state: {
-      from: { stage: currentTrade.stage, outcome: currentTrade.outcome },
-      to: { stage: target.stage, outcome: target.outcome || null },
-    },
-    changedFields: target.outcome ? ['stage', 'outcome'] : ['stage'],
-    metadata: {
-      request_id: context.requestId,
-      ui_source: context.uiSource,
-      batch_id: context.batchId,
-      batch_index: context.batchIndex,
-      batch_total: context.batchTotal,
-      from_stage: currentTrade.stage,
-      to_stage: target.stage,
-      from_outcome: currentTrade.outcome,
-      to_outcome: target.outcome || null,
-      note,
-      proposals_cancelled: movingOutOfDeciding,
-    },
-    orgId: getOrgId(context),
-    teamId: undefined,
-    actorName: context.actorName,
-    actorEmail: context.actorEmail,
-  })
+  // Emit audit event (fire-and-forget)
+  sideEffects.push(
+    emitAuditEvent({
+      actor: { id: context.actorId, type: 'user', role: context.actorRole },
+      entity: {
+        type: 'trade_idea',
+        id: tradeId,
+        displayName,
+      },
+      action: { type: actionType, category: 'state_change' },
+      state: {
+        from: { stage: currentTrade.stage, outcome: currentTrade.outcome },
+        to: { stage: target.stage, outcome: target.outcome || null },
+      },
+      changedFields: target.outcome ? ['stage', 'outcome'] : ['stage'],
+      metadata: {
+        request_id: context.requestId,
+        ui_source: context.uiSource,
+        batch_id: context.batchId,
+        batch_index: context.batchIndex,
+        batch_total: context.batchTotal,
+        from_stage: currentTrade.stage,
+        to_stage: target.stage,
+        from_outcome: currentTrade.outcome,
+        to_outcome: target.outcome || null,
+        note,
+        proposals_cancelled: movingOutOfDeciding,
+      },
+      orgId: getOrgId(context),
+      teamId: undefined,
+      actorName: context.actorName,
+      actorEmail: context.actorEmail,
+    }).catch(err => {
+      console.error(`[TRADE] Failed to emit audit event for ${tradeId}:`, err)
+    })
+  )
+
+  // Run all side-effects concurrently, don't await — let mutation resolve immediately
+  Promise.allSettled(sideEffects).catch(() => {})
 }
 
 /**
@@ -910,7 +938,7 @@ export async function createTradeIdea(params: CreateTradeParams): Promise<{ id: 
       urgency,
       rationale,
       sharing_visibility: sharingVisibility || 'private',
-      stage: 'idea',
+      stage: 'aware',
       outcome: null,
       visibility_tier: 'active',
       status: 'idea', // Legacy
@@ -1050,6 +1078,18 @@ export async function updateTradeIdea(params: UpdateTradeIdeaParams): Promise<vo
     dbUpdates.rationale = updates.rationale
     changedFields.push('rationale')
   }
+  if (updates.thesisText !== undefined) {
+    dbUpdates.thesis_text = updates.thesisText
+    changedFields.push('thesis_text')
+  }
+  if (updates.expectedPositionSize !== undefined) {
+    dbUpdates.expected_position_size = updates.expectedPositionSize
+    changedFields.push('expected_position_size')
+  }
+  if (updates.maxPositionSize !== undefined) {
+    dbUpdates.max_position_size = updates.maxPositionSize
+    changedFields.push('max_position_size')
+  }
   if (updates.proposedWeight !== undefined) {
     dbUpdates.proposed_weight = updates.proposedWeight
     changedFields.push('proposed_weight')
@@ -1180,7 +1220,7 @@ export async function createPairTrade(params: CreatePairTradeParams): Promise<{ 
     proposed_weight: leg.proposedWeight,
     target_price: leg.targetPrice,
     urgency,
-    stage: 'idea' as TradeStage,
+    stage: 'aware' as TradeStage,
     outcome: null,
     visibility_tier: 'active' as VisibilityTier,
     status: 'idea', // Legacy
@@ -1392,21 +1432,6 @@ export async function movePairTrade(params: {
 
   const now = new Date().toISOString()
 
-  // Update pair_trades table only if we found a record there
-  if (!isPairIdOnly && pairTrade) {
-    const { error: pairError } = await supabase
-      .from('pair_trades')
-      .update({
-        status: stageToLegacyStatus(target.stage, target.outcome || null),
-        updated_at: now,
-      })
-      .eq('id', pairTradeId)
-
-    if (pairError) {
-      throw new Error(`Failed to update pair trade: ${pairError.message}`)
-    }
-  }
-
   // Update all legs
   const legUpdates: Record<string, unknown> = {
     stage: target.stage,
@@ -1427,39 +1452,69 @@ export async function movePairTrade(params: {
     }
   }
 
-  // Update legs - use pair_id if that's how they're grouped, otherwise pair_trade_id
-  const { error: legsError } = await supabase
-    .from('trade_queue_items')
-    .update(legUpdates)
-    .eq(isPairIdOnly ? 'pair_id' : 'pair_trade_id', pairTradeId)
+  // Update pair_trades table and legs in parallel
+  const updatePromises: Promise<void>[] = []
 
-  if (legsError) {
-    throw new Error(`Failed to update pair trade legs: ${legsError.message}`)
+  if (!isPairIdOnly && pairTrade) {
+    updatePromises.push(
+      supabase
+        .from('pair_trades')
+        .update({
+          status: stageToLegacyStatus(target.stage, target.outcome || null),
+          updated_at: now,
+        })
+        .eq('id', pairTradeId)
+        .then(({ error: pairError }) => {
+          if (pairError) throw new Error(`Failed to update pair trade: ${pairError.message}`)
+        })
+    )
   }
 
-  // ── Capture decision price snapshots for pair trade legs ──
+  updatePromises.push(
+    supabase
+      .from('trade_queue_items')
+      .update(legUpdates)
+      .eq(isPairIdOnly ? 'pair_id' : 'pair_trade_id', pairTradeId)
+      .then(({ error: legsError }) => {
+        if (legsError) throw new Error(`Failed to update pair trade legs: ${legsError.message}`)
+      })
+  )
+
+  await Promise.all(updatePromises)
+
+  // ── Post-update side-effects (fire-and-forget) ──
+  // These must NOT block the mutation from resolving so the UI stays snappy.
+
+  const sideEffects: Promise<void>[] = []
+
+  // Capture decision price snapshots for pair trade legs
   if (target.outcome) {
     const snapshotType = outcomeToSnapshotType(target.outcome)
     if (snapshotType) {
-      // Fetch leg details for snapshot capture
-      const { data: legDetails } = await supabase
-        .from('trade_queue_items')
-        .select('id, asset_id, portfolio_id')
-        .eq(isPairIdOnly ? 'pair_id' : 'pair_trade_id', pairTradeId)
-
-      if (legDetails) {
-        for (const leg of legDetails) {
-          captureDecisionPriceSnapshot({
-            tradeQueueItemId: leg.id,
-            assetId: leg.asset_id,
-            portfolioId: leg.portfolio_id || null,
-            snapshotType,
-            actorId: context.actorId,
-          }).catch(err => {
-            console.error(`[TRADE] Failed to capture ${snapshotType} price snapshot for leg ${leg.id}:`, err)
+      sideEffects.push(
+        supabase
+          .from('trade_queue_items')
+          .select('id, asset_id, portfolio_id')
+          .eq(isPairIdOnly ? 'pair_id' : 'pair_trade_id', pairTradeId)
+          .then(({ data: legDetails }) => {
+            if (legDetails) {
+              for (const leg of legDetails) {
+                captureDecisionPriceSnapshot({
+                  tradeQueueItemId: leg.id,
+                  assetId: leg.asset_id,
+                  portfolioId: leg.portfolio_id || null,
+                  snapshotType,
+                  actorId: context.actorId,
+                }).catch(err => {
+                  console.error(`[TRADE] Failed to capture ${snapshotType} price snapshot for leg ${leg.id}:`, err)
+                })
+              }
+            }
           })
-        }
-      }
+          .catch(err => {
+            console.error(`[TRADE] Failed to fetch leg details for snapshots:`, err)
+          })
+      )
     }
   }
 
@@ -1469,63 +1524,74 @@ export async function movePairTrade(params: {
 
   // Emit audit event for pair trade
   const legCount = isPairIdOnly ? legsFromPairId.length : (pairTrade?.trade_queue_items?.length || 0)
-  await emitAuditEvent({
-    actor: { id: context.actorId, type: 'user', role: context.actorRole },
-    entity: {
-      type: 'pair_trade',
-      id: pairTradeId,
-      displayName: pairTrade?.name || 'Pair Trade',
-    },
-    action: { type: actionType, category: 'state_change' },
-    state: {
-      from: { status: fromStatus },
-      to: { stage: target.stage, outcome: target.outcome || null },
-    },
-    changedFields: target.outcome ? ['stage', 'outcome'] : ['stage'],
-    metadata: {
-      request_id: context.requestId,
-      ui_source: context.uiSource,
-      leg_count: legCount,
-      note,
-      is_pair_id_only: isPairIdOnly,
-    },
-    orgId: getOrgId(context),
-    teamId: undefined,
-    actorName: context.actorName,
-    actorEmail: context.actorEmail,
-  })
-
-  // Emit audit events for each leg
-  const legsToAudit = isPairIdOnly ? legsFromPairId : (pairTrade?.trade_queue_items || [])
-  for (const leg of legsToAudit) {
-    await emitAuditEvent({
+  sideEffects.push(
+    emitAuditEvent({
       actor: { id: context.actorId, type: 'user', role: context.actorRole },
       entity: {
-        type: 'trade_idea',
-        id: leg.id,
-      },
-      parent: {
         type: 'pair_trade',
         id: pairTradeId,
+        displayName: pairTrade?.name || 'Pair Trade',
       },
       action: { type: actionType, category: 'state_change' },
       state: {
-        from: { stage: leg.stage, outcome: leg.outcome },
+        from: { status: fromStatus },
         to: { stage: target.stage, outcome: target.outcome || null },
       },
       changedFields: target.outcome ? ['stage', 'outcome'] : ['stage'],
       metadata: {
         request_id: context.requestId,
         ui_source: context.uiSource,
-        via_pair_trade: true,
+        leg_count: legCount,
         note,
+        is_pair_id_only: isPairIdOnly,
       },
       orgId: getOrgId(context),
       teamId: undefined,
       actorName: context.actorName,
       actorEmail: context.actorEmail,
+    }).catch(err => {
+      console.error(`[TRADE] Failed to emit pair trade audit event:`, err)
     })
+  )
+
+  // Emit audit events for each leg (concurrently)
+  const legsToAudit = isPairIdOnly ? legsFromPairId : (pairTrade?.trade_queue_items || [])
+  for (const leg of legsToAudit) {
+    sideEffects.push(
+      emitAuditEvent({
+        actor: { id: context.actorId, type: 'user', role: context.actorRole },
+        entity: {
+          type: 'trade_idea',
+          id: leg.id,
+        },
+        parent: {
+          type: 'pair_trade',
+          id: pairTradeId,
+        },
+        action: { type: actionType, category: 'state_change' },
+        state: {
+          from: { stage: leg.stage, outcome: leg.outcome },
+          to: { stage: target.stage, outcome: target.outcome || null },
+        },
+        changedFields: target.outcome ? ['stage', 'outcome'] : ['stage'],
+        metadata: {
+          request_id: context.requestId,
+          ui_source: context.uiSource,
+          via_pair_trade: true,
+          note,
+        },
+        orgId: getOrgId(context),
+        teamId: undefined,
+        actorName: context.actorName,
+        actorEmail: context.actorEmail,
+      }).catch(err => {
+        console.error(`[TRADE] Failed to emit leg audit event for ${leg.id}:`, err)
+      })
+    )
   }
+
+  // Run all side-effects concurrently, don't await — let mutation resolve immediately
+  Promise.allSettled(sideEffects).catch(() => {})
 }
 
 // ============================================================

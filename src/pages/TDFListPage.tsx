@@ -263,7 +263,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
                 {pendingProposals?.length || 0}
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Pending Proposals</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Pending Recommendations</div>
             </div>
           </div>
         </Card>

@@ -79,7 +79,7 @@ export interface DecisionTimelineEvent {
 
   // Source object for navigation
   sourceRef: {
-    type: 'trade_idea' | 'proposal' | 'trade_event' | 'outcome' | 'decision'
+    type: 'trade_idea' | 'proposal' | 'decision_request' | 'trade_event' | 'outcome' | 'decision'
     id: string
   }
 

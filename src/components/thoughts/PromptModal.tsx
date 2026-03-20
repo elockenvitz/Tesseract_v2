@@ -14,6 +14,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { usePendingLineageStore } from '../../stores/pendingLineageStore'
+import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
+import { PendingResearchBanner } from '../common/PendingResearchBanner'
 import { useToast } from '../common/Toast'
 import type { CapturedContext } from './ContextSelector'
 
@@ -65,10 +67,17 @@ function audienceToVisibility(audience: AudienceMember[]): 'private' | 'team' {
   return 'team'
 }
 
-export function PromptModal({ isOpen, onClose, context, embedded = false }: PromptModalProps) {
+export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = false }: PromptModalProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const { success, error: showError } = useToast()
+  const clearPendingResearch = usePendingResearchLinksStore(s => s.clear)
+
+  // Wrap onClose to clear pending research links on cancel
+  const onClose = () => {
+    clearPendingResearch()
+    onCloseProp()
+  }
 
   // Form state
   const [title, setTitle] = useState('')
@@ -390,6 +399,18 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
           queryClient.invalidateQueries({ queryKey: ['portfolio-log-chains'] })
           queryClient.invalidateQueries({ queryKey: ['portfolio-log'] })
         }
+
+        // Auto-link research targets if creating from an argument/idea context
+        const researchLinked = await usePendingResearchLinksStore.getState().linkIfPending({
+          sourceType: 'quick_thought',
+          sourceId: prompt.id,
+          userId: prompt.created_by,
+        })
+        if (researchLinked > 0) {
+          queryClient.invalidateQueries({ queryKey: ['linked-research'] })
+          queryClient.invalidateQueries({ queryKey: ['argument-research-counts'] })
+          queryClient.invalidateQueries({ queryKey: ['object-links'] })
+        }
       }
 
       success('Prompt sent')
@@ -416,6 +437,8 @@ export function PromptModal({ isOpen, onClose, context, embedded = false }: Prom
   // -- Shared form content --
   const formContent = (
     <div className={embedded ? 'space-y-3' : 'px-5 py-4 space-y-4'}>
+      {/* Linking context banner — shows when creating research from idea modal */}
+      <PendingResearchBanner />
       {/* Context chips + inline search (matches ContextTagsInput style) */}
       <div ref={contextDropdownRef} className="relative">
         <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400 mb-1 block">

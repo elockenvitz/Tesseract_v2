@@ -461,7 +461,7 @@ function OverviewSection({
 
         <Card className="p-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500 dark:text-gray-400">Pending Proposals</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">Pending Recommendations</span>
             <Badge variant={pendingProposalsCount > 0 ? 'default' : 'secondary'}>
               {pendingProposalsCount}
             </Badge>
@@ -981,7 +981,7 @@ function TradesSection({
           ))}
           {tradeProposals.length === 0 && (
             <Card className="p-8 text-center">
-              <p className="text-gray-500 dark:text-gray-400">No trade proposals</p>
+              <p className="text-gray-500 dark:text-gray-400">No trade recommendations</p>
             </Card>
           )}
         </div>

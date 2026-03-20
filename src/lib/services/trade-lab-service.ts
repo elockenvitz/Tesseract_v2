@@ -1492,16 +1492,30 @@ export async function upsertProposal(
     }
 
     // Log event (fire-and-forget — don't block the save)
-    createTradeEvent({
-      trade_queue_item_id: input.trade_queue_item_id,
-      event_type: 'proposal_updated',
-      metadata: {
-        proposal_id: data.id,
-        portfolio_id: input.portfolio_id,
-        changes: { weight: input.weight, shares: input.shares },
-      },
-      proposal_id: data.id,
-    }, context).catch(e => console.warn('Failed to log proposal_updated event:', e))
+    // Enrich with portfolio name for activity timeline
+    supabase.from('portfolios').select('name').eq('id', input.portfolio_id).single()
+      .then(({ data: p }) => {
+        const sizingCtx = input.sizing_context as any
+        const legs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; sizingMode?: string; enteredValue?: string }> | undefined
+        createTradeEvent({
+          trade_queue_item_id: input.trade_queue_item_id,
+          event_type: 'proposal_updated',
+          metadata: {
+            proposal_id: data.id,
+            portfolio_id: input.portfolio_id,
+            portfolio_name: p?.name || null,
+            weight: input.weight,
+            shares: input.shares,
+            previous_weight: existing.weight,
+            previous_shares: existing.shares,
+            sizing_mode: input.sizing_mode || sizingCtx?.sizingMode || null,
+            is_pair_trade: !!sizingCtx?.isPairTrade,
+            legs: legs?.map(l => ({ symbol: l.symbol, action: l.action, weight: l.weight, sizingMode: l.sizingMode, enteredValue: l.enteredValue })),
+            changes: { weight: input.weight, shares: input.shares },
+          },
+          proposal_id: data.id,
+        }, context)
+      }).catch(e => console.warn('Failed to log proposal_updated event:', e))
 
     return data as TradeProposal
   } else {
@@ -1529,18 +1543,28 @@ export async function upsertProposal(
     }
 
     // Log event (fire-and-forget — don't block the save)
-    createTradeEvent({
-      trade_queue_item_id: input.trade_queue_item_id,
-      event_type: 'proposal_created',
-      metadata: {
-        proposal_id: data.id,
-        portfolio_id: input.portfolio_id,
-        weight: input.weight,
-        shares: input.shares,
-        proposal_type: input.proposal_type || 'analyst',
-      },
-      proposal_id: data.id,
-    }, context).catch(e => console.warn('Failed to log proposal_created event:', e))
+    // Enrich with portfolio name for activity timeline
+    supabase.from('portfolios').select('name').eq('id', input.portfolio_id).single()
+      .then(({ data: p }) => {
+        const sizingCtx = input.sizing_context as any
+        const legs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; sizingMode?: string; enteredValue?: string }> | undefined
+        createTradeEvent({
+          trade_queue_item_id: input.trade_queue_item_id,
+          event_type: 'proposal_created',
+          metadata: {
+            proposal_id: data.id,
+            portfolio_id: input.portfolio_id,
+            portfolio_name: p?.name || null,
+            weight: input.weight,
+            shares: input.shares,
+            sizing_mode: input.sizing_mode || sizingCtx?.sizingMode || null,
+            is_pair_trade: !!sizingCtx?.isPairTrade,
+            legs: legs?.map(l => ({ symbol: l.symbol, action: l.action, weight: l.weight, sizingMode: l.sizingMode, enteredValue: l.enteredValue })),
+            proposal_type: input.proposal_type || 'analyst',
+          },
+          proposal_id: data.id,
+        }, context)
+      }).catch(e => console.warn('Failed to log proposal_created event:', e))
 
     // Auto-advance to deciding if all portfolios are now covered by proposals
     autoAdvanceToDeciding(input.trade_queue_item_id, context)

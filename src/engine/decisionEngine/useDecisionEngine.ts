@@ -236,24 +236,36 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     staleTime: 120_000,
   })
 
-  // ---- 3b. Fetch active trade_proposals (multi-portfolio proposals) ----
+  // ---- 3b. Fetch active decision_requests (multi-portfolio recommendations) ----
   const { data: tradeProposals, isLoading: tradeProposalsLoading } = useQuery({
-    queryKey: ['decision-engine-trade-proposals', userId, coverage?.portfolioIds],
+    queryKey: ['decision-engine-recommendations', userId, coverage?.portfolioIds],
     queryFn: async () => {
       if (!coverage?.portfolioIds?.length) return []
 
       const { data, error } = await supabase
-        .from('trade_proposals')
+        .from('decision_requests')
         .select(`
-          id, trade_queue_item_id, portfolio_id, weight, shares,
-          is_active,
+          id, trade_queue_item_id, portfolio_id,
+          sizing_weight, sizing_shares, submission_snapshot, status,
           portfolios:portfolio_id (id, name)
         `)
-        .eq('is_active', true)
+        .in('status', ['pending', 'under_review', 'needs_discussion'])
         .in('portfolio_id', coverage.portfolioIds)
 
       if (error) throw error
-      return data || []
+      // Map to the shape expected downstream (weight/shares from snapshot or top-level)
+      return (data || []).map((r: any) => {
+        const snap = r.submission_snapshot as Record<string, any> | null
+        return {
+          id: r.id,
+          trade_queue_item_id: r.trade_queue_item_id,
+          portfolio_id: r.portfolio_id,
+          weight: snap?.weight ?? r.sizing_weight ?? null,
+          shares: snap?.shares ?? r.sizing_shares ?? null,
+          is_active: true,
+          portfolios: r.portfolios,
+        }
+      })
     },
     enabled: !!coverage?.portfolioIds?.length,
     staleTime: 60_000,

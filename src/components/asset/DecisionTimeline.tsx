@@ -333,7 +333,7 @@ function TimelineEventRow({
           )}>
             {event.type === 'idea_created' ? 'Idea'
               : event.type === 'idea_escalated' ? 'Escalated'
-              : event.type === 'proposal_submitted' ? 'Proposal'
+              : event.type === 'proposal_submitted' ? 'Recommendation'
               : event.type === 'decision_accepted' ? 'Accepted'
               : event.type === 'decision_rejected' ? 'Rejected'
               : event.type === 'decision_deferred' ? 'Deferred'

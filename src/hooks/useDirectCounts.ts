@@ -5,7 +5,7 @@ import { useAuth } from './useAuth'
 /**
  * Returns counts for the "Direct" section of the Quick Ideas pane:
  * - openPromptCount: prompts created by or assigned to the current user that are still open
- * - pendingProposalCount: active proposals owned by the current user
+ * - pendingRecommendationCount: active decision requests owned by the current user
  *
  * Both queries are lightweight (count-only) and cached for 60s.
  */
@@ -19,14 +19,14 @@ export function useDirectCounts() {
     staleTime: 60_000,
   })
 
-  const { data: pendingProposalCount = 0 } = useQuery({
-    queryKey: ['direct-pending-proposal-count', user?.id],
-    queryFn: () => getPendingProposalCount(user!.id),
+  const { data: pendingRecommendationCount = 0 } = useQuery({
+    queryKey: ['direct-pending-recommendation-count', user?.id],
+    queryFn: () => getPendingRecommendationCount(user!.id),
     enabled: !!user?.id,
     staleTime: 60_000,
   })
 
-  return { openPromptCount, pendingProposalCount }
+  return { openPromptCount, pendingRecommendationCount }
 }
 
 /**
@@ -49,18 +49,18 @@ export async function getOpenPromptCount(userId: string): Promise<number> {
 }
 
 /**
- * Count active proposals owned by the given user.
- * Uses trade_proposals.is_active = true as the "pending" filter.
+ * Count active decision requests (pending recommendations) for the given user.
+ * Reads from decision_requests instead of trade_proposals.
  */
-export async function getPendingProposalCount(userId: string): Promise<number> {
+export async function getPendingRecommendationCount(userId: string): Promise<number> {
   const { count, error } = await supabase
-    .from('trade_proposals')
+    .from('decision_requests')
     .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('is_active', true)
+    .eq('requested_by', userId)
+    .in('status', ['pending', 'under_review', 'needs_discussion'])
 
   if (error) {
-    console.error('Failed to fetch pending proposal count:', error)
+    console.error('Failed to fetch pending recommendation count:', error)
     return 0
   }
   return count ?? 0

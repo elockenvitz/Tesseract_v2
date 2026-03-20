@@ -6,13 +6,14 @@ import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { PromptModal } from '../thoughts/PromptModal'
-import { ProposalQuickModal } from '../thoughts/ProposalQuickModal'
+import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
 import { useDirectCounts } from '../../hooks/useDirectCounts'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
 import { useSidebarStore } from '../../stores/sidebarStore'
+import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 
 interface ThoughtsSectionProps {
@@ -47,7 +48,7 @@ export function ThoughtsSection({
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const { success } = useToast()
-  const { openPromptCount, pendingProposalCount } = useDirectCounts()
+  const { openPromptCount, pendingRecommendationCount } = useDirectCounts()
 
   // Fetch recent quick ideas for the sidebar (max 5, personal only, no trade ideas)
   const { data: recentIdeas = [], invalidate: invalidateRecentIdeas, hasMore } = useRecentQuickIdeas(5)
@@ -138,6 +139,7 @@ export function ThoughtsSection({
   const handleCaptureCancel = () => {
     setCaptureMode('collapsed')
     setCapturedContext(null)
+    usePendingResearchLinksStore.getState().clear()
   }
 
   // Allow user to change context
@@ -341,7 +343,7 @@ export function ThoughtsSection({
                   className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 border-2 border-amber-300 dark:border-amber-500 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all"
                 >
                   <FileText className="h-4 w-4" />
-                  <span>Proposal</span>
+                  <span>Recommend</span>
                 </button>
                 <button
                   onClick={() => {
@@ -351,7 +353,7 @@ export function ThoughtsSection({
                   }}
                   className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
                 >
-                  <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingProposalCount}</span> proposals pending
+                  <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingRecommendationCount}</span> pending review
                 </button>
               </div>
             </div>
@@ -436,10 +438,10 @@ export function ThoughtsSection({
         {captureMode === 'proposal' && (
           <div className="pt-3">
             <p className="mb-3 text-xs text-gray-400">
-              Select a trade idea to formalize into a recommendation.
+              Select a trade idea to submit a recommendation.
             </p>
 
-            <ProposalQuickModal
+            <RecommendationQuickModal
               isOpen={true}
               embedded
               onClose={() => {

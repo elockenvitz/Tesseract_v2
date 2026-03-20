@@ -21,9 +21,9 @@ export type LinkableEntityType =
   | 'trade_idea' | 'trade' | 'trade_sheet'
   | 'workflow' | 'project' | 'calendar_event'
   | 'user'
-  | 'quick_thought' | 'trade_proposal'
+  | 'quick_thought' | 'trade_proposal' | 'trade_idea_thesis'
 
-export type LinkRelationshipType = 'references' | 'supports' | 'results_in' | 'related_to' | 'opposes'
+export type LinkRelationshipType = 'references' | 'supports' | 'results_in' | 'related_to' | 'opposes' | 'informs' | 'derived_from'
 
 export interface ExtractedReference {
   targetType: LinkableEntityType

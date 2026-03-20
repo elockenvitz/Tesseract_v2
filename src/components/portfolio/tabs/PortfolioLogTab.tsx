@@ -101,7 +101,7 @@ const CATEGORY: Record<EntryCategory, CategoryConfig> = {
     labelBg: 'bg-teal-50 dark:bg-teal-900/30',
   },
   proposal: {
-    label: 'Proposal', icon: Send,
+    label: 'Recommendation', icon: Send,
     border: 'border-l-emerald-400 dark:border-l-emerald-500',
     dot: 'bg-emerald-400 dark:bg-emerald-500',
     labelColor: 'text-emerald-700 dark:text-emerald-300',
@@ -149,7 +149,7 @@ const FILTERS: FilterDef[] = [
   { key: 'research',     label: 'Research',     category: 'research' },
   { key: 'observations', label: 'Observations', category: 'observation' },
   { key: 'questions',    label: 'Questions',    category: 'question' },
-  { key: 'proposals',    label: 'Proposals',    category: 'proposal' },
+  { key: 'proposals',    label: 'Recommendations', category: 'proposal' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -211,13 +211,13 @@ async function fetchPortfolioLog(portfolioId: string): Promise<LogEntry[]> {
       .order('created_at', { ascending: false })
       .limit(50),
     supabase
-      .from('trade_proposals')
+      .from('decision_requests')
       .select(`
-        id, trade_queue_item_id, user_id, weight, shares, notes, created_at,
-        trade_queue_items:trade_queue_item_id (asset_id, action)
+        id, trade_queue_item_id, requested_by, requested_action, submission_snapshot, created_at,
+        trade_queue_item:trade_queue_item_id (asset_id, action)
       `)
       .eq('portfolio_id', portfolioId)
-      .eq('is_active', true)
+      .in('status', ['pending', 'under_review', 'needs_discussion'])
       .order('created_at', { ascending: false })
       .limit(25),
   ])
@@ -227,10 +227,10 @@ async function fetchPortfolioLog(portfolioId: string): Promise<LogEntry[]> {
     ...(qtRes.data || []), ...(tpRes.data || []),
   ]
   const userIds = [...new Set(
-    allRows.flatMap((r: any) => [r.created_by, r.updated_by, r.user_id]).filter(Boolean),
+    allRows.flatMap((r: any) => [r.created_by, r.updated_by, r.user_id, r.requested_by]).filter(Boolean),
   )]
   const assetIds = [...new Set(
-    allRows.map((r: any) => r.asset_id || (r as any).trade_queue_items?.asset_id).filter(Boolean),
+    allRows.map((r: any) => r.asset_id || (r as any).trade_queue_items?.asset_id || (r as any).trade_queue_item?.asset_id).filter(Boolean),
   )]
 
   const [usersRes, assetsRes] = await Promise.all([
@@ -292,16 +292,21 @@ async function fetchPortfolioLog(portfolioId: string): Promise<LogEntry[]> {
   }
 
   for (const r of tpRes.data || []) {
-    const tqi = (r as any).trade_queue_items
+    const tqi = (r as any).trade_queue_item
+    const snap = (r as any).submission_snapshot as Record<string, any> | null
     const asset = tqi?.asset_id ? assetMap.get(tqi.asset_id) : null
-    const action = tqi?.action ? capitalize(tqi.action) : 'Trade'
-    const sizing = r.weight != null ? `${r.weight}% weight` : r.shares != null ? `${r.shares} shares` : null
+    const action = snap?.action ? capitalize(snap.action) : tqi?.action ? capitalize(tqi.action) : 'Trade'
+    const weight = snap?.weight ?? null
+    const shares = snap?.shares ?? null
+    const sizing = weight != null ? `${weight}% weight` : shares != null ? `${shares} shares` : null
+    const notes = snap?.notes ?? null
     entries.push({
-      id: `tp-${r.id}`, sourceObjectType: 'trade_proposal', sourceObjectId: r.id,
+      id: `dr-${r.id}`, sourceObjectType: 'decision_request', sourceObjectId: r.id,
       category: 'proposal', subLabel: sizing,
-      title: `${action} ${asset?.symbol || 'Unknown'}${sizing ? ` — ${sizing}` : ''}`,
-      body: truncate(r.notes, 180), assetSymbols: asset ? [asset.symbol] : [],
-      actorName: userMap.get(r.user_id) || null, occurredAt: r.created_at, sentiment: null,
+      title: `${action} ${snap?.symbol || asset?.symbol || 'Unknown'}${sizing ? ` — ${sizing}` : ''}`,
+      body: truncate(notes, 180), assetSymbols: asset ? [asset.symbol] : snap?.symbol ? [snap.symbol] : [],
+      actorName: snap?.requester_name || userMap.get((r as any).requested_by) || null,
+      occurredAt: r.created_at, sentiment: null,
     })
   }
 
@@ -369,6 +374,7 @@ export function PortfolioLogTab({ portfolio, portfolioId }: PortfolioLogTabProps
         openInspector('trade_idea', entry.sourceObjectId)
         break
       case 'trade_proposal':
+      case 'decision_request':
         openInspector('trade_idea', entry.sourceObjectId)
         break
     }

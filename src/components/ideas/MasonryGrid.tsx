@@ -36,6 +36,8 @@ interface MasonryGridProps {
   showCharts?: boolean
   // Map of trade idea ID -> lab inclusion info
   labInclusionsMap?: Map<string, LabInclusionInfo>
+  // Map of trade idea ID -> set of portfolio IDs with accepted_trades
+  committedPortfolioIdsMap?: Map<string, Set<string>>
 
   // ===== NEW PROPS FOR UX SPEC =====
   /**
@@ -77,6 +79,7 @@ export function MasonryGrid({
   showBookmarks = true,
   showCharts = true,
   labInclusionsMap,
+  committedPortfolioIdsMap,
   // New props
   scope,
   isFilteredToSingleType = false,
@@ -208,6 +211,7 @@ export function MasonryGrid({
             item={item as any}
             onLabClick={onLabClick}
             labInclusions={labInclusionsMap?.get(item.id)}
+            committedPortfolioIds={committedPortfolioIdsMap?.get(item.id)}
             {...commonProps}
           />
         )
@@ -288,7 +292,7 @@ export function MasonryGrid({
     }
 
     return cardContent
-  }, [onItemClick, onAuthorClick, onAssetClick, onPortfolioClick, onLabClick, onSourceClick, onTagClick, onGenerateIdea, showReactions, showBookmarks, showCharts, flippedCards, toggleFlip, expandedCards, toggleExpand, labInclusionsMap, scope, isFilteredToSingleType, currentUserId, onPromote, onBookmark, onEdit, onArchive, onSetRevisit, onCopyLink, onPromotedClick])
+  }, [onItemClick, onAuthorClick, onAssetClick, onPortfolioClick, onLabClick, onSourceClick, onTagClick, onGenerateIdea, showReactions, showBookmarks, showCharts, flippedCards, toggleFlip, expandedCards, toggleExpand, labInclusionsMap, committedPortfolioIdsMap, scope, isFilteredToSingleType, currentUserId, onPromote, onBookmark, onEdit, onArchive, onSetRevisit, onCopyLink, onPromotedClick])
 
   if (isLoading) {
     return (
