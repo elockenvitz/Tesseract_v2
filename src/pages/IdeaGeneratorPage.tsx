@@ -22,11 +22,12 @@ import {
   type IdeasTimeRange,
   type IdeasInitialFilters,
 } from '../hooks/useIdeasRouting'
+import { IdeasFeedPage } from '../components/ideas/feed'
 
 // ============================================================================
 // IDEAS GENERATOR PAGE
-// URL-driven filtering with deep-link support
-// URL is the source of truth for all filter state
+// New default: single-column infinite feed (IdeasFeedPage)
+// Legacy masonry/discovery view preserved as LegacyIdeaGeneratorPage
 // ============================================================================
 
 interface IdeaGeneratorPageProps {
@@ -34,6 +35,19 @@ interface IdeaGeneratorPageProps {
   /** Initial filters passed from tab data (e.g., from "View all" navigation) */
   initialFilters?: IdeasInitialFilters
 }
+
+/**
+ * Primary export: renders the new feed-first Ideas experience.
+ */
+export function IdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGeneratorPageProps) {
+  return <IdeasFeedPage onItemSelect={onItemSelect} />
+}
+
+export default IdeaGeneratorPage
+
+// ============================================================================
+// LEGACY IDEA GENERATOR (preserved for rollback / alternate view)
+// ============================================================================
 
 // Filter option configs
 const filterOptions: { value: IdeasTypeFilter; label: string }[] = [
@@ -59,7 +73,7 @@ const scopeOptions: { value: IdeasScope; label: string; icon: typeof User }[] = 
   { value: 'all', label: 'All', icon: Globe },
 ]
 
-export function IdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGeneratorPageProps) {
+export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGeneratorPageProps) {
   // ============================================================================
   // TAB STATE (source of truth)
   // Filter state persisted via TabStateManager
@@ -701,5 +715,3 @@ export function IdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGenerato
     </div>
   )
 }
-
-export default IdeaGeneratorPage

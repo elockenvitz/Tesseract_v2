@@ -74,7 +74,8 @@ export function IdeaReactions({
       ? Object.keys(reactionConfig) as ReactionType[]
       : ['like', 'love', 'insightful', 'bullish'] as ReactionType[]
 
-  const handleReaction = (reaction: ReactionType) => {
+  const handleReaction = (e: React.MouseEvent, reaction: ReactionType) => {
+    e.stopPropagation()
     if (!isToggling) {
       toggleReaction(reaction)
     }
@@ -93,7 +94,7 @@ export function IdeaReactions({
           return (
             <button
               key={reaction}
-              onClick={() => handleReaction(reaction)}
+              onClick={(e) => handleReaction(e, reaction)}
               disabled={isToggling}
               className={clsx(
                 'flex items-center gap-2 transition-all',
@@ -132,7 +133,7 @@ export function IdeaReactions({
         return (
           <button
             key={reaction}
-            onClick={() => handleReaction(reaction)}
+            onClick={(e) => handleReaction(e, reaction)}
             disabled={isToggling}
             className={clsx(
               'flex items-center gap-0.5 transition-all rounded',

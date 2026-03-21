@@ -161,27 +161,21 @@ export function ThoughtsSection({
     }
   }, [onOpenInspector])
 
-  // Handle viewing all ideas - dispatches event to open Ideas tab with Quick Thoughts filter
+  // Handle viewing all ideas - opens Ideas tab without pre-filtering
   const handleViewAllIdeas = useCallback(() => {
     if (onViewAllIdeas) {
       // Custom handler provided
       onViewAllIdeas()
     } else {
-      // Build filters with context
-      const context = initialContextType && initialContextId
-        ? { type: initialContextType as 'asset' | 'portfolio' | 'theme', id: initialContextId }
-        : undefined
-      const filters = buildQuickThoughtsFilters(context)
-
-      // Dispatch event for DashboardPage to open Ideas tab with filters
+      // Open Ideas tab unfiltered so the user sees everything, not just recent
       window.dispatchEvent(new CustomEvent('openIdeasTab', {
-        detail: { filters }
+        detail: {}
       }))
 
       // Close the sidebar
       onClose?.()
     }
-  }, [onViewAllIdeas, initialContextType, initialContextId, onClose])
+  }, [onViewAllIdeas, onClose])
 
   // ESC key handler - in inspect mode, go back to capture; in capture mode, close sidebar
   useEffect(() => {
