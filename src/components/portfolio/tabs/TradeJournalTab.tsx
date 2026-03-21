@@ -143,7 +143,7 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
             <h3 className="text-[13px] font-semibold text-gray-900">Trade Journal</h3>
           </div>
           <p className="text-[10px] text-gray-400 mt-0.5 ml-6">
-            Actual portfolio actions, rationale capture, and trade accountability
+            Portfolio trade events and execution history
           </p>
         </div>
         <div className="border border-dashed border-gray-200 rounded-lg py-16 px-6">
@@ -175,9 +175,17 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
             <span className="text-[10px] text-gray-400 tabular-nums">{events.length} events</span>
           </div>
           <p className="text-[10px] text-gray-400 mt-0.5 ml-6">
-            Actual portfolio actions, rationale capture, and trade accountability
+            Portfolio trade events and execution history
           </p>
         </div>
+      </div>
+
+      {/* Post-mortem redirect — Outcomes is the canonical review workspace */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 mb-3 shrink-0 text-[10px]">
+        <BookText className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+        <span className="text-blue-700 dark:text-blue-400">
+          Post-mortem reviews are now captured in <span className="font-semibold">Outcomes</span>. This tab shows trade event history.
+        </span>
       </div>
 
       {/* ── SUMMARY STRIP ──────────────────────────────────────── */}

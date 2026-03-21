@@ -264,6 +264,10 @@ export interface AccountabilitySummary {
   topPositiveSymbol: string | null
   /** Top negative impact row symbol */
   topNegativeSymbol: string | null
+  /** Executed decisions without a completed post-mortem */
+  needsReviewCount: number
+  /** Executed decisions with post-mortem captured */
+  reviewCapturedCount: number
 }
 
 // ============================================================

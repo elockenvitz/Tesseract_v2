@@ -850,6 +850,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       sizedDecisionCount,
       topPositiveSymbol,
       topNegativeSymbol,
+      // Review workflow counts
+      needsReviewCount: executed.filter(r => !r.matched_executions.some(e => e.has_rationale)).length,
+      reviewCapturedCount: executed.filter(r => r.matched_executions.some(e => e.has_rationale)).length,
     }
   }, [filteredRows, unmatchedExecutions])
 

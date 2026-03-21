@@ -132,7 +132,7 @@ const SIZE_BASIS_LABEL: Record<string, string> = {
 // ============================================================
 
 // Date | Asset | Dir | Decision | Execution | Move | Impact | Delay | Lag | Portfolio | Owner
-const MAIN_GRID = 'grid-cols-[64px_1fr_42px_62px_70px_56px_58px_50px_36px_64px_54px]'
+const MAIN_GRID = 'grid-cols-[64px_1fr_42px_62px_70px_56px_58px_50px_36px_28px_64px_54px]'
 const UNMATCHED_GRID = 'grid-cols-[88px_1fr_72px_110px_80px_80px]'
 
 // ============================================================
@@ -375,6 +375,7 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
       tooltip: 'Executed or matched / approved decisions',
     },
     { label: 'Pending', value: summary.pendingCount, icon: Clock, color: summary.pendingCount > 0 ? 'text-amber-600' : 'text-gray-400' },
+    { label: 'Needs Review', value: summary.needsReviewCount, icon: Pencil, color: summary.needsReviewCount > 0 ? 'text-red-600' : 'text-gray-400', tooltip: 'Executed decisions without post-mortem' },
     {
       label: 'Avg Lag',
       value: summary.avgLagDays !== null ? `${summary.avgLagDays}d` : '\u2014',
@@ -594,6 +595,17 @@ function DecisionRow({
         )}
       </div>
 
+      {/* Review status dot */}
+      <div className="px-0.5 py-[7px] flex items-center justify-center">
+        {row.execution_status === 'executed' ? (
+          row.matched_executions.some(e => e.has_rationale)
+            ? <span className="w-2 h-2 rounded-full bg-emerald-500" title="Review captured" />
+            : row.matched_executions.some(e => e.rationale_status === 'draft_rationale')
+              ? <span className="w-2 h-2 rounded-full bg-amber-400" title="Draft" />
+              : <span className="w-2 h-2 rounded-full bg-red-400" title="Needs review" />
+        ) : null}
+      </div>
+
       {/* Portfolio */}
       <div className="px-1.5 py-[7px] flex items-center">
         <span className="text-[9px] text-gray-400 truncate">{row.portfolio_name || '\u2014'}</span>
@@ -667,16 +679,23 @@ function RationaleField({ label, value }: { label: string; value: string | null 
 //   risk_context      → Lessons learned (key takeaway)
 // =============================================================================
 
-const PM_FIELDS: Array<{ key: string; label: string; placeholder: string; rows?: number }> = [
-  { key: 'reason_for_action', label: 'Outcome Assessment', placeholder: 'What happened with this trade? How did it perform?', rows: 3 },
-  { key: 'thesis_context', label: 'Thesis vs Reality', placeholder: 'Was the original thesis correct? What played out differently?', rows: 2 },
-  { key: 'what_changed', label: 'What Changed', placeholder: 'What information or circumstances changed between the decision and the outcome?', rows: 2 },
-  { key: 'sizing_logic', label: 'Sizing Reflection', placeholder: 'Was the position size appropriate? Would you size it differently?', rows: 2 },
-  { key: 'execution_context', label: 'Execution Reflection', placeholder: 'Was the timing and execution quality adequate? Any process issues?', rows: 2 },
-  { key: 'why_now', label: 'What Was Right', placeholder: 'What should be repeated in future decisions?', rows: 2 },
-  { key: 'catalyst_trigger', label: 'What Was Wrong', placeholder: 'What should be avoided or done differently?', rows: 2 },
-  { key: 'risk_context', label: 'Lessons Learned', placeholder: 'Key takeaway from this decision.', rows: 2 },
+// Primary prompts — always visible, the core of the retrospective
+const PM_PRIMARY: Array<{ key: string; label: string; placeholder: string; rows?: number }> = [
+  { key: 'reason_for_action', label: 'Outcome Assessment', placeholder: 'What happened? How did this trade perform?', rows: 3 },
+  { key: 'thesis_context', label: 'Thesis vs Reality', placeholder: 'Was the thesis correct? What played out differently?', rows: 2 },
+  { key: 'what_changed', label: 'What Changed', placeholder: 'What shifted between the decision and the outcome?', rows: 2 },
+  { key: 'risk_context', label: 'Lessons Learned', placeholder: 'Key takeaway. What to repeat or avoid.', rows: 2 },
 ]
+
+// Secondary prompts — available but collapsed by default for deeper reflection
+const PM_SECONDARY: Array<{ key: string; label: string; placeholder: string; rows?: number }> = [
+  { key: 'sizing_logic', label: 'Sizing Reflection', placeholder: 'Was the size appropriate?', rows: 2 },
+  { key: 'execution_context', label: 'Execution Reflection', placeholder: 'Timing, fills, process issues?', rows: 2 },
+  { key: 'why_now', label: 'What Was Right', placeholder: 'What to repeat?', rows: 2 },
+  { key: 'catalyst_trigger', label: 'What Was Wrong', placeholder: 'What to avoid?', rows: 2 },
+]
+
+const PM_ALL_FIELDS = [...PM_PRIMARY, ...PM_SECONDARY]
 
 function PostMortemSection({ story, row, executionEventId }: {
   story: import('../hooks/useDecisionAccountability').DecisionStory | null | undefined
@@ -684,6 +703,7 @@ function PostMortemSection({ story, row, executionEventId }: {
   executionEventId: string | null
 }) {
   const [editing, setEditing] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [diverged, setDiverged] = useState(false)
   const [divergeExplanation, setDivergeExplanation] = useState('')
@@ -692,14 +712,15 @@ function PostMortemSection({ story, row, executionEventId }: {
   const existing = story?.executionRationale
 
   const startEdit = () => {
-    // Prefill from existing rationale if any
     const init: Record<string, string> = {}
     if (existing) {
-      PM_FIELDS.forEach(f => { init[f.key] = (existing as any)[f.key] || '' })
+      PM_ALL_FIELDS.forEach(f => { init[f.key] = (existing as any)[f.key] || '' })
     }
     setDraft(init)
     setDiverged(existing?.divergence_from_plan ?? false)
     setDivergeExplanation(existing?.divergence_explanation || '')
+    // Auto-expand "more" if secondary fields have content
+    setShowMore(PM_SECONDARY.some(f => (existing as any)?.[f.key]))
     setEditing(true)
   }
 
@@ -709,7 +730,7 @@ function PostMortemSection({ story, row, executionEventId }: {
       divergence_from_plan: diverged,
       divergence_explanation: diverged ? divergeExplanation : null,
     }
-    PM_FIELDS.forEach(f => { params[f.key] = draft[f.key]?.trim() || null })
+    PM_ALL_FIELDS.forEach(f => { params[f.key] = draft[f.key]?.trim() || null })
     saveM.mutate(params, { onSuccess: () => setEditing(false) })
   }
 
@@ -737,13 +758,11 @@ function PostMortemSection({ story, row, executionEventId }: {
         <EmptyField text="No matched execution event — post-mortem requires an execution record" />
       ) : editing ? (
         /* ── Edit Mode ── */
-        <div className="space-y-3">
-          <p className="text-[10px] text-gray-500 leading-relaxed">
-            Retrospective review: look back at the decision and capture what happened, what you learned, and what to do differently.
-          </p>
-          {PM_FIELDS.map(f => (
+        <div className="space-y-2.5">
+          {/* Primary prompts — always visible */}
+          {PM_PRIMARY.map(f => (
             <div key={f.key}>
-              <label className="block text-[10px] font-semibold text-gray-600 mb-1">{f.label}</label>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">{f.label}</label>
               <textarea
                 value={draft[f.key] || ''}
                 onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
@@ -754,56 +773,62 @@ function PostMortemSection({ story, row, executionEventId }: {
             </div>
           ))}
 
-          {/* Divergence checkbox */}
-          <div className="flex items-start gap-2 mt-1">
-            <input
-              type="checkbox"
-              checked={diverged}
-              onChange={e => setDiverged(e.target.checked)}
-              className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-            />
-            <div className="flex-1">
-              <span className="text-[10px] font-medium text-gray-600">Diverged from original plan</span>
-              {diverged && (
-                <textarea
-                  value={divergeExplanation}
-                  onChange={e => setDivergeExplanation(e.target.value)}
-                  placeholder="Explain how and why the execution diverged..."
-                  rows={2}
-                  className="w-full mt-1 text-[11px] px-2.5 py-1.5 rounded-md border border-amber-200 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 leading-relaxed resize-none"
-                />
-              )}
+          {/* Secondary prompts — expandable */}
+          <button
+            onClick={() => setShowMore(!showMore)}
+            className="flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            {showMore ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            {showMore ? 'Less detail' : 'More detail'}
+          </button>
+          {showMore && (
+            <div className="space-y-2.5 pl-1 border-l-2 border-gray-100 dark:border-gray-700 ml-1">
+              {PM_SECONDARY.map(f => (
+                <div key={f.key}>
+                  <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">{f.label}</label>
+                  <textarea
+                    value={draft[f.key] || ''}
+                    onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    rows={f.rows || 2}
+                    className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 leading-relaxed resize-none"
+                  />
+                </div>
+              ))}
+              {/* Divergence */}
+              <div className="flex items-start gap-2">
+                <input type="checkbox" checked={diverged} onChange={e => setDiverged(e.target.checked)}
+                  className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                <div className="flex-1">
+                  <span className="text-[10px] font-medium text-gray-600">Diverged from plan</span>
+                  {diverged && (
+                    <textarea value={divergeExplanation} onChange={e => setDivergeExplanation(e.target.value)}
+                      placeholder="How and why..." rows={2}
+                      className="w-full mt-1 text-[11px] px-2.5 py-1.5 rounded-md border border-amber-200 bg-amber-50/50 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 leading-relaxed resize-none" />
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={() => handleSave('complete')}
-              disabled={saveM.isPending}
-              className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50"
-            >
+            <button onClick={() => handleSave('complete')} disabled={saveM.isPending}
+              className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50">
               {saveM.isPending ? 'Saving...' : 'Save Review'}
             </button>
-            <button
-              onClick={() => handleSave('draft')}
-              disabled={saveM.isPending}
-              className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-            >
-              Save as Draft
+            <button onClick={() => handleSave('draft')} disabled={saveM.isPending}
+              className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+              Save Draft
             </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="px-3 py-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              Cancel
-            </button>
+            <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-[11px] text-gray-500 hover:text-gray-700">Cancel</button>
           </div>
         </div>
       ) : existing ? (
         /* ── View Mode (content exists) ── */
         <div>
-          {PM_FIELDS.map(f => {
+          {/* Primary fields */}
+          {PM_PRIMARY.map(f => {
             const val = (existing as any)[f.key]
             if (!val) return null
             return (
@@ -813,6 +838,22 @@ function PostMortemSection({ story, row, executionEventId }: {
               </div>
             )
           })}
+          {/* Secondary fields — only show if any have content */}
+          {PM_SECONDARY.some(f => (existing as any)[f.key]) && (
+            <>
+              <div className="my-2 border-t border-gray-100" />
+              {PM_SECONDARY.map(f => {
+                const val = (existing as any)[f.key]
+                if (!val) return null
+                return (
+                  <div key={f.key} className="mb-2">
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{f.label}</div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">{val}</p>
+                  </div>
+                )
+              })}
+            </>
+          )}
           {existing.divergence_from_plan && (
             <div className="mt-2 px-2.5 py-2 rounded bg-amber-50 border border-amber-200">
               <div className="text-[9px] font-semibold text-amber-700 mb-1">Diverged from plan</div>
@@ -1603,6 +1644,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                 <SortableColHeader active={sortBy === 'lag'} desc={sortDesc} onClick={() => handleSort('lag')} align="right">
                   Lag
                 </SortableColHeader>
+                <ColHeader></ColHeader>{/* Review dot */}
                 <ColHeader>Portfolio</ColHeader>
                 <ColHeader>Owner</ColHeader>
               </div>
