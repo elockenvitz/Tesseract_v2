@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, BookOpen, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, BookOpen, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity, Flag } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -771,7 +771,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       case 'tdf-list': return <Clock className="h-3.5 w-3.5" />
       case 'asset-allocation': return <PieChart className="h-3.5 w-3.5" />
       case 'calendar': return <Calendar className="h-3.5 w-3.5" />
-      case 'priorities': return <Target className="h-3.5 w-3.5" />
+      case 'priorities': return <Flag className="h-3.5 w-3.5" />
       case 'coverage': return <Users className="h-3.5 w-3.5" />
       case 'organization': return <Building2 className="h-3.5 w-3.5" />
       case 'outcomes': return <Target className="h-3.5 w-3.5" />

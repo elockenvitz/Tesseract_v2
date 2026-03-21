@@ -32,6 +32,7 @@ import {
   useDecisionAccountability,
   useDecisionStory,
   useSavePostMortem,
+  useMarkAsReviewed,
   usePortfoliosForFilter,
   useUsersForFilter,
 } from '../hooks/useDecisionAccountability'
@@ -42,6 +43,7 @@ import type {
   ExecutionMatchStatus,
   MatchedExecution,
   ResultDirection,
+  ReviewFilter,
   SizeBasis,
 } from '../types/decision-accountability'
 
@@ -131,8 +133,17 @@ const SIZE_BASIS_LABEL: Record<string, string> = {
 // Grid template constants
 // ============================================================
 
-// Date | Asset | Dir | Decision | Execution | Move | Impact | Delay | Lag | Portfolio | Owner
-const MAIN_GRID = 'grid-cols-[64px_1fr_42px_62px_70px_56px_58px_50px_36px_28px_64px_54px]'
+// Date | Symbol | Name | Type | Decision | Execution | Lag | Review | Portfolio | Owner
+const MAIN_GRID = 'grid-cols-[72px_72px_minmax(100px,220px)_64px_80px_88px_48px_76px_132px_112px]'
+
+/** Derive the review state for a row. Used consistently for borders, dots, and filters. */
+function getRowReviewState(row: AccountabilityRow): 'needs_review' | 'in_progress' | 'captured' | 'reviewed' | null {
+  if (row.execution_status !== 'executed') return null
+  if (row.matched_executions.some(e => e.rationale_status === 'reviewed')) return 'reviewed'
+  if (row.matched_executions.some(e => e.rationale_status === 'complete')) return 'captured'
+  if (row.matched_executions.some(e => e.has_rationale)) return 'in_progress'
+  return 'needs_review'
+}
 const UNMATCHED_GRID = 'grid-cols-[88px_1fr_72px_110px_80px_80px]'
 
 // ============================================================
@@ -188,14 +199,14 @@ function FilterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2.5">
       {/* Date pills */}
       <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
         {[7, 30, 90].map(d => (
           <button
             key={d}
             onClick={() => handleDateRange(d)}
-            className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+            className={`px-2.5 py-1 text-[12px] font-medium rounded-md transition-colors ${
               activeDays === d ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -209,12 +220,12 @@ function FilterBar({
         <select
           value={filters.portfolioIds?.[0] || ''}
           onChange={e => onChange({ ...filters, portfolioIds: e.target.value ? [e.target.value] : [] })}
-          className="text-[11px] border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 appearance-none pr-6 focus:outline-none focus:ring-1 focus:ring-primary-400"
+          className="text-[12px] border border-gray-200 rounded px-2.5 py-1 bg-white text-gray-700 appearance-none pr-6 focus:outline-none focus:ring-1 focus:ring-primary-400"
         >
           <option value="">All Portfolios</option>
           {portfolios.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+        <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
       </div>
 
       {/* Analyst */}
@@ -222,7 +233,7 @@ function FilterBar({
         <select
           value={filters.ownerUserIds?.[0] || ''}
           onChange={e => onChange({ ...filters, ownerUserIds: e.target.value ? [e.target.value] : [] })}
-          className="text-[11px] border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 appearance-none pr-6 focus:outline-none focus:ring-1 focus:ring-primary-400"
+          className="text-[12px] border border-gray-200 rounded px-2.5 py-1 bg-white text-gray-700 appearance-none pr-6 focus:outline-none focus:ring-1 focus:ring-primary-400"
         >
           <option value="">All Analysts</option>
           {users.map(u => (
@@ -231,40 +242,40 @@ function FilterBar({
             </option>
           ))}
         </select>
-        <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+        <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
       </div>
 
       {/* Asset search */}
       <div className="relative">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
         <input
           type="text"
           placeholder="Search asset..."
           value={filters.assetSearch || ''}
           onChange={e => onChange({ ...filters, assetSearch: e.target.value })}
-          className="pl-7 pr-3 py-1 text-[11px] border border-gray-200 rounded w-32 bg-white text-gray-700 placeholder:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+          className="pl-7 pr-3 py-1 text-[12px] border border-gray-200 rounded w-36 bg-white text-gray-700 placeholder:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
         />
       </div>
 
       <div className="w-px h-4 bg-gray-200" />
 
       {/* Stage toggles */}
-      <div className="flex items-center gap-2">
-        <label className="flex items-center gap-1 text-[11px] text-gray-500">
+      <div className="flex items-center gap-2.5">
+        <label className="flex items-center gap-1 text-[12px] text-gray-500">
           <input
             type="checkbox"
             checked={filters.showRejected || false}
             onChange={e => onChange({ ...filters, showRejected: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3 h-3"
+            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
           />
           Rejected
         </label>
-        <label className="flex items-center gap-1 text-[11px] text-gray-500">
+        <label className="flex items-center gap-1 text-[12px] text-gray-500">
           <input
             type="checkbox"
             checked={filters.showCancelled || false}
             onChange={e => onChange({ ...filters, showCancelled: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3 h-3"
+            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
           />
           Cancelled
         </label>
@@ -294,7 +305,7 @@ function FilterBar({
                   toggleExecStatus(opt.status!)
                 }
               }}
-              className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
                 active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -319,7 +330,7 @@ function FilterBar({
             <button
               key={opt.label}
               onClick={() => onChange({ ...filters, directionFilter: opt.dirs as any })}
-              className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
                 active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -339,7 +350,7 @@ function FilterBar({
           <button
             key={opt.value}
             onClick={() => onChange({ ...filters, resultFilter: opt.value })}
-            className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+            className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
               (filters.resultFilter || 'all') === opt.value
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -348,6 +359,36 @@ function FilterBar({
             {opt.label}
           </button>
         ))}
+      </div>
+
+      {/* ── Review workflow filter (visually separated) ── */}
+      <div className="w-px h-5 bg-gray-300" />
+
+      <div className="flex items-center gap-1.5">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Review</span>
+        <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
+          {([
+            { value: 'all' as ReviewFilter, label: 'All' },
+            { value: 'needs_review' as ReviewFilter, label: 'Missing', dot: 'bg-red-400' },
+            { value: 'in_progress' as ReviewFilter, label: 'Draft', dot: 'bg-amber-400' },
+            { value: 'captured' as ReviewFilter, label: 'Captured', dot: 'bg-emerald-500' },
+            { value: 'reviewed' as ReviewFilter, label: 'Reviewed', dot: 'bg-blue-500' },
+          ]).map(opt => {
+            const active = (filters.reviewFilter || 'all') === opt.value
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onChange({ ...filters, reviewFilter: opt.value })}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors flex items-center gap-1 ${
+                  active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {opt.dot && <span className={`w-1.5 h-1.5 rounded-full ${opt.dot}`} />}
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -358,14 +399,28 @@ function FilterBar({
 // ============================================================
 
 function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
-  // Two sections: Process (4 tiles) + Result (4 tiles)
-  const processTiles: Array<{
+  const reviewQueueCount = summary.needsReviewCount + summary.reviewInProgressCount
+  const hasReviewWork = reviewQueueCount > 0
+
+  const tiles: Array<{
     label: string
     value: string | number
     color: string
     icon: typeof CheckCircle2
     tooltip?: string
+    highlight?: boolean
+    sub?: string
   }> = [
+    // Review Queue — first position, visually primary when actionable
+    {
+      label: 'Review Queue',
+      value: reviewQueueCount,
+      icon: Pencil,
+      color: hasReviewWork ? 'text-red-600' : 'text-gray-400',
+      tooltip: `${summary.needsReviewCount} missing, ${summary.reviewInProgressCount} draft`,
+      highlight: hasReviewWork,
+      sub: hasReviewWork ? `${summary.needsReviewCount} missing \u00B7 ${summary.reviewInProgressCount} draft` : undefined,
+    },
     { label: 'Decisions', value: summary.approvedCount, icon: Target, color: 'text-gray-700' },
     {
       label: 'Exec Rate',
@@ -374,23 +429,12 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
       color: summary.executionRate !== null && summary.executionRate >= 80 ? 'text-emerald-600' : 'text-amber-600',
       tooltip: 'Executed or matched / approved decisions',
     },
-    { label: 'Pending', value: summary.pendingCount, icon: Clock, color: summary.pendingCount > 0 ? 'text-amber-600' : 'text-gray-400' },
-    { label: 'Needs Review', value: summary.needsReviewCount, icon: Pencil, color: summary.needsReviewCount > 0 ? 'text-red-600' : 'text-gray-400', tooltip: 'Executed decisions without post-mortem' },
     {
       label: 'Avg Lag',
       value: summary.avgLagDays !== null ? `${summary.avgLagDays}d` : '\u2014',
       icon: Timer,
       color: summary.avgLagDays !== null && summary.avgLagDays > 7 ? 'text-amber-600' : 'text-gray-600',
     },
-  ]
-
-  const resultTiles: Array<{
-    label: string
-    value: string | number
-    color: string
-    icon: typeof CheckCircle2
-    tooltip?: string
-  }> = [
     {
       label: 'Since Decision',
       value: summary.avgMoveSinceDecision !== null ? formatMovePct(summary.avgMoveSinceDecision) : '\u2014',
@@ -407,10 +451,10 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
       color: summary.netImpactProxy !== null
         ? summary.netImpactProxy >= 0 ? 'text-emerald-600' : 'text-red-600'
         : 'text-gray-400',
-      tooltip: `Size-weighted net impact proxy (${summary.sizedDecisionCount} sized decisions). Not exact P&L.`,
+      tooltip: `Size-weighted net impact proxy (${summary.sizedDecisionCount} sized). Not exact P&L.`,
     },
     {
-      label: 'Delay Cost $',
+      label: 'Delay Cost',
       value: summary.totalWeightedDelayCost !== null ? formatDollarCompact(-summary.totalWeightedDelayCost) : '\u2014',
       icon: Timer,
       color: summary.totalWeightedDelayCost !== null
@@ -429,26 +473,31 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
     },
   ]
 
-  const allTiles = [...processTiles, ...resultTiles]
-
   return (
-    <div className="space-y-0">
-      <div className="grid grid-cols-8 gap-px bg-gray-200 rounded overflow-hidden border border-gray-200">
-        {allTiles.map((t, i) => {
-          const Icon = t.icon
-          return (
-            <div key={t.label} className={`bg-white px-2.5 py-2 ${i === 3 ? 'border-r-2 border-r-gray-300' : ''}`} title={t.tooltip}>
-              <div className="flex items-center gap-1">
-                <Icon className={`w-3 h-3 ${t.color} opacity-60`} />
-                <span className="text-[8px] font-bold uppercase tracking-wider text-gray-400">{t.label}</span>
-              </div>
-              <p className={`text-[16px] font-semibold mt-0.5 tabular-nums leading-none ${t.color}`}>
-                {t.value}
-              </p>
+    <div className="grid grid-cols-8 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+      {tiles.map((t, i) => {
+        const Icon = t.icon
+        return (
+          <div
+            key={t.label}
+            className={`px-3 py-2.5 ${
+              t.highlight ? 'bg-red-50/60' : 'bg-white'
+            } ${i === 0 ? 'border-r-2 border-r-gray-300' : ''}`}
+            title={t.tooltip}
+          >
+            <div className="flex items-center gap-1">
+              <Icon className={`w-3.5 h-3.5 ${t.color} opacity-60`} />
+              <span className={`text-[9px] font-bold uppercase tracking-wider ${t.highlight ? 'text-red-400' : 'text-gray-400'}`}>{t.label}</span>
             </div>
-          )
-        })}
-      </div>
+            <p className={`text-[18px] font-semibold mt-0.5 tabular-nums leading-none ${t.color}`}>
+              {t.value}
+            </p>
+            {t.sub && (
+              <p className="text-[9px] text-red-400/80 mt-0.5 leading-none tabular-nums">{t.sub}</p>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -460,7 +509,7 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
 function ExecStatusPill({ status }: { status: ExecutionMatchStatus }) {
   const cfg = EXEC_STATUS_CONFIG[status]
   return (
-    <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded ${cfg.color} ${cfg.bgColor}`}>
+    <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded ${cfg.color} ${cfg.bgColor}`}>
       {cfg.label}
     </span>
   )
@@ -483,137 +532,119 @@ function DecisionRow({
 }) {
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600', bgColor: 'bg-gray-100' }
   const stageCfg = STAGE_CONFIG[row.stage] || STAGE_CONFIG.approved
-  const resultCfg = row.result_direction ? RESULT_CONFIG[row.result_direction] : null
+  const reviewState = getRowReviewState(row)
 
-  // Move since decision takes priority, falls back to move since execution
-  const displayMove = row.move_since_decision_pct ?? row.move_since_execution_pct
-  const hasMove = displayMove !== null
+  // Left border: selected > review state (executed rows) > execution state (non-executed) > none
+  const borderClass = isSelected
+    ? 'bg-primary-50/70 border-l-[3px] border-l-primary-500'
+    : reviewState === 'needs_review'
+      ? `${isEven ? 'bg-red-50/20' : 'bg-red-50/10'} hover:bg-red-50/30 border-l-[3px] border-l-red-400`
+      : reviewState === 'in_progress'
+        ? `${isEven ? 'bg-amber-50/15' : 'bg-amber-50/8'} hover:bg-amber-50/25 border-l-[3px] border-l-amber-400`
+        : row.execution_status === 'unmatched'
+          ? `${isEven ? 'bg-red-50/15' : 'bg-red-50/8'} hover:bg-red-50/30 border-l-[3px] border-l-red-300`
+          : row.execution_status === 'pending'
+            ? `${isEven ? 'bg-amber-50/10' : 'bg-amber-50/5'} hover:bg-amber-50/20 border-l-[3px] border-l-amber-300`
+            : `${isEven ? 'bg-white' : 'bg-gray-50/40'} hover:bg-gray-50 border-l-[3px] border-l-transparent`
+
+  // Lag display value
+  const lagValue = row.execution_lag_days !== null && row.execution_lag_days >= 0
+    ? row.execution_lag_days
+    : row.days_since_decision !== null && row.execution_status === 'pending'
+      ? row.days_since_decision
+      : null
+  const lagWarn = lagValue !== null && (
+    (row.execution_status === 'pending' && lagValue > 14) ||
+    (row.execution_status !== 'pending' && lagValue > 7)
+  )
 
   return (
     <div
       onClick={onSelect}
-      className={`grid ${MAIN_GRID} cursor-pointer transition-colors border-b border-gray-100 ${
-        isSelected
-          ? 'bg-primary-50/60 border-l-2 border-l-primary-500'
-          : row.execution_status === 'unmatched'
-            ? `${isEven ? 'bg-red-50/20' : 'bg-red-50/10'} hover:bg-red-50/40 border-l-2 border-l-red-300`
-            : row.execution_status === 'pending'
-              ? `${isEven ? 'bg-amber-50/15' : 'bg-amber-50/8'} hover:bg-amber-50/30 border-l-2 border-l-amber-300`
-              : `${isEven ? 'bg-white' : 'bg-gray-50/40'} hover:bg-gray-50 border-l-2 border-l-transparent`
-      }`}
+      className={`grid ${MAIN_GRID} cursor-pointer transition-colors border-b border-gray-100 ${borderClass}`}
     >
       {/* Date */}
-      <div className="px-2 py-[7px] flex items-center">
-        <span className="text-[10px] text-gray-500 tabular-nums">
+      <div className="px-2 py-2 flex items-center">
+        <span className="text-[11px] text-gray-500 tabular-nums">
           {row.approved_at ? format(new Date(row.approved_at), 'MMM d') : format(new Date(row.created_at), 'MMM d')}
         </span>
       </div>
 
-      {/* Asset */}
-      <div className="px-2 py-[7px] flex items-center gap-1.5 min-w-0">
-        <span className="text-[11px] font-semibold text-gray-900">{row.asset_symbol || '?'}</span>
-        <span className="text-[9px] text-gray-400 truncate">{row.asset_name || ''}</span>
+      {/* Symbol */}
+      <div className="px-2 py-2 flex items-center">
+        <span className="text-[12px] font-semibold text-gray-900">{row.asset_symbol || '?'}</span>
       </div>
 
-      {/* Direction */}
-      <div className="px-1 py-[7px] flex items-center">
-        <span className={`text-[7px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
+      {/* Name */}
+      <div className="px-2 py-2 flex items-center min-w-0">
+        <span className="text-[11px] text-gray-400 truncate">{row.asset_name || ''}</span>
+      </div>
+
+      {/* Type */}
+      <div className="px-2 py-2 flex items-center">
+        <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
           {row.direction}
         </span>
       </div>
 
-      {/* Decision Stage */}
-      <div className="px-1.5 py-[7px] flex items-center">
-        <span className={`text-[7px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${stageCfg.color} ${stageCfg.bgColor}`}>
+      {/* Decision */}
+      <div className="px-2 py-2 flex items-center">
+        <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${stageCfg.color} ${stageCfg.bgColor}`}>
           {stageCfg.label}
         </span>
       </div>
 
-      {/* Execution Status */}
-      <div className="px-1.5 py-[7px] flex items-center gap-1">
+      {/* Execution */}
+      <div className="px-2 py-2 flex items-center">
         <ExecStatusPill status={row.execution_status} />
       </div>
 
-      {/* Move (since decision or execution) */}
-      <div className="px-1.5 py-[7px] flex items-center justify-end gap-0.5">
-        {hasMove && resultCfg ? (
-          <>
-            <resultCfg.icon className={`w-3 h-3 ${resultCfg.color}`} />
-            <span className={`text-[10px] font-semibold tabular-nums ${resultCfg.color}`}>
-              {formatMovePct(displayMove)}
-            </span>
-          </>
-        ) : (
-          <span className="text-[10px] text-gray-300">{'\u2014'}</span>
-        )}
-      </div>
-
-      {/* Impact (size-weighted proxy) */}
-      <div className="px-1 py-[7px] flex items-center justify-end">
-        {row.impact_proxy !== null ? (
-          <span className={`text-[10px] font-semibold tabular-nums ${
-            row.impact_proxy >= 0 ? 'text-emerald-600' : 'text-red-600'
-          }`} title={row.size_basis ? SIZE_BASIS_LABEL[row.size_basis] : undefined}>
-            {formatDollarCompact(row.impact_proxy)}
-          </span>
-        ) : row.trade_notional !== null ? (
-          <span className="text-[9px] text-gray-300" title="Trade sized but no price move data">{'\u2014'}</span>
-        ) : (
-          <span className="text-[10px] text-gray-300">{'\u2014'}</span>
-        )}
-      </div>
-
-      {/* Delay Cost */}
-      <div className="px-1 py-[7px] flex items-center justify-end">
-        {row.delay_cost_pct !== null ? (
-          <span className={`text-[10px] font-medium tabular-nums ${
-            row.delay_cost_pct > 0.5 ? 'text-red-600' : row.delay_cost_pct < -0.5 ? 'text-emerald-600' : 'text-gray-400'
-          }`}>
-            {formatDelayCost(row.delay_cost_pct)}
-          </span>
-        ) : (
-          <span className="text-[10px] text-gray-300">{'\u2014'}</span>
-        )}
-      </div>
-
       {/* Lag */}
-      <div className="px-1 py-[7px] flex items-center justify-end">
-        {row.execution_lag_days !== null && row.execution_lag_days >= 0 ? (
-          <span className={`text-[10px] tabular-nums ${
-            row.execution_lag_days > 7 ? 'text-amber-600 font-semibold' : 'text-gray-400'
-          }`}>
-            {row.execution_lag_days}d
-          </span>
-        ) : row.days_since_decision !== null && row.execution_status === 'pending' ? (
-          <span className={`text-[10px] tabular-nums ${
-            row.days_since_decision > 14 ? 'text-amber-600 font-semibold' : 'text-gray-400'
-          }`}>
-            {row.days_since_decision}d
+      <div className="px-2 py-2 flex items-center justify-end">
+        {lagValue !== null ? (
+          <span className={`text-[11px] tabular-nums ${lagWarn ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>
+            {lagValue}d
           </span>
         ) : (
-          <span className="text-[10px] text-gray-300">{'\u2014'}</span>
+          <span className="text-[11px] text-gray-300">{'\u2014'}</span>
         )}
       </div>
 
-      {/* Review status dot */}
-      <div className="px-0.5 py-[7px] flex items-center justify-center">
-        {row.execution_status === 'executed' ? (
-          row.matched_executions.some(e => e.has_rationale)
-            ? <span className="w-2 h-2 rounded-full bg-emerald-500" title="Review captured" />
-            : row.matched_executions.some(e => e.rationale_status === 'draft_rationale')
-              ? <span className="w-2 h-2 rounded-full bg-amber-400" title="Draft" />
-              : <span className="w-2 h-2 rounded-full bg-red-400" title="Needs review" />
+      {/* Review */}
+      <div className="px-2 py-2 flex items-center">
+        {reviewState === 'reviewed' ? (
+          <span className="inline-flex items-center text-[9px] font-medium text-blue-600 px-1.5 py-0.5 rounded-full bg-blue-50" title="Reviewed">
+            <CheckCircle2 className="w-3 h-3" />
+          </span>
+        ) : reviewState === 'captured' ? (
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" title="Captured" />
+        ) : reviewState === 'in_progress' ? (
+          <button
+            onClick={e => { e.stopPropagation(); onSelect() }}
+            className="text-[9px] font-semibold text-amber-700 hover:text-amber-800 px-1.5 py-[3px] rounded bg-amber-50 hover:bg-amber-100 transition-colors leading-none"
+            title="Continue draft review"
+          >
+            Draft
+          </button>
+        ) : reviewState === 'needs_review' ? (
+          <button
+            onClick={e => { e.stopPropagation(); onSelect() }}
+            className="text-[9px] font-semibold text-red-600 hover:text-red-700 px-1.5 py-[3px] rounded bg-red-50 hover:bg-red-100 transition-colors leading-none"
+            title="Start post-mortem review"
+          >
+            Review
+          </button>
         ) : null}
       </div>
 
       {/* Portfolio */}
-      <div className="px-1.5 py-[7px] flex items-center">
-        <span className="text-[9px] text-gray-400 truncate">{row.portfolio_name || '\u2014'}</span>
+      <div className="px-2 py-2 flex items-center min-w-0">
+        <span className="text-[11px] text-gray-400 truncate">{row.portfolio_name || '\u2014'}</span>
       </div>
 
       {/* Owner */}
-      <div className="px-1.5 py-[7px] flex items-center">
-        <span className="text-[9px] text-gray-400 truncate">{row.owner_name || '\u2014'}</span>
+      <div className="px-2 py-2 flex items-center min-w-0">
+        <span className="text-[11px] text-gray-400 truncate">{row.owner_name || '\u2014'}</span>
       </div>
     </div>
   )
@@ -624,26 +655,27 @@ function DecisionRow({
 // ============================================================
 
 /** Collapsible section for the Decision Story */
-function StorySection({ icon: Icon, title, children, defaultOpen = true, badge }: {
+function StorySection({ icon: Icon, title, children, defaultOpen = true, badge, accentBorder }: {
   icon: React.ElementType
   title: string
   children: React.ReactNode
   defaultOpen?: boolean
   badge?: React.ReactNode
+  accentBorder?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="border-b border-gray-100 dark:border-gray-800">
+    <div className={`border-b border-gray-100 dark:border-gray-800 ${accentBorder ? `border-l-2 ${accentBorder}` : ''}`}>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-4 py-2.5 flex items-center gap-2 hover:bg-gray-50/50 transition-colors text-left"
+        className="w-full px-4 py-3 flex items-center gap-2 hover:bg-gray-50/50 transition-colors text-left"
       >
-        {open ? <ChevronDown className="w-3 h-3 text-gray-400" /> : <ChevronRight className="w-3 h-3 text-gray-400" />}
-        <Icon className="w-3.5 h-3.5 text-gray-400" />
-        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex-1">{title}</span>
+        {open ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+        <Icon className="w-4 h-4 text-gray-400" />
+        <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 flex-1">{title}</span>
         {badge}
       </button>
-      {open && <div className="px-4 pb-3">{children}</div>}
+      {open && <div className="px-4 pb-3.5">{children}</div>}
     </div>
   )
 }
@@ -709,6 +741,7 @@ function PostMortemSection({ story, row, executionEventId }: {
   const [divergeExplanation, setDivergeExplanation] = useState('')
 
   const saveM = useSavePostMortem(row.decision_id, executionEventId)
+  const markReviewedM = useMarkAsReviewed(row.decision_id, executionEventId)
   const existing = story?.executionRationale
 
   const startEdit = () => {
@@ -751,11 +784,17 @@ function PostMortemSection({ story, row, executionEventId }: {
   }[reviewStatus]
 
   return (
-    <StorySection icon={Pencil} title="Post-Mortem" defaultOpen={reviewStatus === 'missing' || editing} badge={statusBadge}>
+    <StorySection
+      icon={Pencil}
+      title="Post-Mortem"
+      defaultOpen={reviewStatus === 'missing' || reviewStatus === 'draft' || editing}
+      badge={statusBadge}
+      accentBorder={reviewStatus === 'missing' ? 'border-l-red-300' : reviewStatus === 'draft' ? 'border-l-amber-300' : undefined}
+    >
       {row.execution_status !== 'executed' ? (
-        <EmptyField text="Post-mortem available after execution" />
+        <EmptyField text="Available after execution" />
       ) : !executionEventId ? (
-        <EmptyField text="No matched execution event — post-mortem requires an execution record" />
+        <EmptyField text="No matched execution — review requires an execution record" />
       ) : editing ? (
         /* ── Edit Mode ── */
         <div className="space-y-2.5">
@@ -863,30 +902,44 @@ function PostMortemSection({ story, row, executionEventId }: {
           <div className="mt-3 flex items-center justify-between">
             <div className="flex items-center gap-3 text-[10px] text-gray-400">
               {existing.authored_by_name && <span>by {existing.authored_by_name}</span>}
+              {reviewStatus === 'reviewed' && existing.reviewed_by_name && (
+                <span>reviewed by {existing.reviewed_by_name}</span>
+              )}
               <span className="capitalize">{existing.status}</span>
             </div>
-            <button
-              onClick={startEdit}
-              className="flex items-center gap-1 text-[10px] font-medium text-primary-600 hover:text-primary-700 transition-colors"
-            >
-              <Pencil className="w-3 h-3" />
-              Edit Review
-            </button>
+            <div className="flex items-center gap-2">
+              {reviewStatus === 'complete' && (
+                <button
+                  onClick={() => markReviewedM.mutate()}
+                  disabled={markReviewedM.isPending}
+                  className="flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  {markReviewedM.isPending ? 'Saving...' : 'Mark as Reviewed'}
+                </button>
+              )}
+              <button
+                onClick={startEdit}
+                className="flex items-center gap-1 text-[10px] font-medium text-primary-600 hover:text-primary-700 transition-colors"
+              >
+                <Pencil className="w-3 h-3" />
+                Edit
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         /* ── Empty State (no review yet) ── */
-        <div className="text-center py-5">
-          <Pencil className="w-7 h-7 text-gray-300 mx-auto mb-2" />
-          <p className="text-[12px] font-medium text-gray-600 mb-1">No post-mortem captured</p>
-          <p className="text-[10px] text-gray-400 mb-3 max-w-xs mx-auto leading-relaxed">
-            Review what happened with this decision and capture lessons for future reference.
+        <div className="rounded-md bg-red-50/40 border border-red-100 px-3 py-3">
+          <p className="text-[11px] font-medium text-gray-700 mb-0.5">Post-mortem needed</p>
+          <p className="text-[10px] text-gray-400 mb-2.5 leading-relaxed">
+            Decision executed. Capture what happened and lessons learned.
           </p>
           <button
             onClick={startEdit}
-            className="px-4 py-2 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors"
+            className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors"
           >
-            Add Post-Mortem
+            Start Review
           </button>
         </div>
       )}
@@ -919,13 +972,13 @@ function DetailPanel({
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
+      <div className="px-5 py-3.5 border-b border-gray-200 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-[3px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
             {row.direction}
           </span>
-          <span className="text-[13px] font-semibold text-gray-900 truncate">{row.asset_symbol}</span>
-          <span className="text-[11px] text-gray-400 truncate">{row.asset_name}</span>
+          <span className="text-[14px] font-semibold text-gray-900 truncate">{row.asset_symbol}</span>
+          <span className="text-[12px] text-gray-400 truncate">{row.asset_name}</span>
           {reviewBadge}
         </div>
         <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
@@ -940,7 +993,7 @@ function DetailPanel({
             ════════════════════════════════════════════════════════════ */}
 
         {/* ── 1. Idea & Thesis ── */}
-        <StorySection icon={Lightbulb} title="Idea & Thesis" badge={
+        <StorySection icon={Lightbulb} title="Idea & Thesis" defaultOpen={false} badge={
           story?.theses && story.theses.length > 0
             ? <span className="text-[8px] text-gray-400">{story.theses.length} thesis{story.theses.length !== 1 ? 'es' : ''}</span>
             : undefined
@@ -1068,16 +1121,14 @@ function DetailPanel({
         {/* ── 4. Execution ── */}
         <StorySection icon={ArrowRight} title="Execution" badge={<ExecStatusPill status={row.execution_status} />}>
           {row.execution_status === 'not_applicable' ? (
-            <p className="text-[11px] text-gray-400">
-              Decision was {row.stage} — execution not expected.
-            </p>
+            <EmptyField text={`${row.stage === 'rejected' ? 'Rejected' : 'Cancelled'} — execution not expected`} />
           ) : row.matched_executions.length === 0 ? (
             <div className="flex items-start gap-2">
               <ExecStatusPill status={row.execution_status} />
               <p className="text-[11px] text-gray-500">
                 {row.execution_status === 'pending'
-                  ? `No matching trade event yet. ${row.days_since_decision !== null ? `${row.days_since_decision}d since decision.` : ''}`
-                  : 'No matching trade event found within the expected window.'}
+                  ? `Not executed${row.days_since_decision !== null ? ` \u00B7 ${row.days_since_decision}d since decision` : ''}`
+                  : 'No matching execution found'}
               </p>
             </div>
           ) : (
@@ -1090,7 +1141,7 @@ function DetailPanel({
         </StorySection>
 
         {/* ── 5. Outcome ── */}
-        <StorySection icon={DollarSign} title="Outcome" badge={
+        <StorySection icon={DollarSign} title="Outcome" defaultOpen={false} badge={
           row.result_direction ? (
             <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
               row.result_direction === 'positive' ? 'text-emerald-700 bg-emerald-50' :
@@ -1100,7 +1151,7 @@ function DetailPanel({
           ) : undefined
         }>
           {row.execution_status === 'not_applicable' ? (
-            <p className="text-[11px] text-gray-400">Not applicable for {row.stage} decisions.</p>
+            <EmptyField text={`Not applicable — decision was ${row.stage}`} />
           ) : (
             <div className="space-y-1.5">
               {/* Price journey: decision → execution → current */}
@@ -1256,13 +1307,11 @@ function DetailPanel({
 
               {/* No price data at all */}
               {row.move_since_decision_pct === null && row.move_since_execution_pct === null && (
-                <div className="text-[10px] text-gray-400 italic mt-1">
-                  {row.current_price === null && row.execution_price === null && !row.has_decision_price
-                    ? 'Price data not available for this asset.'
-                    : row.matched_executions.length === 0
-                      ? 'No execution yet — result pending.'
-                      : 'Execution price could not be derived from trade event data.'}
-                </div>
+                <EmptyField text={
+                  row.matched_executions.length === 0
+                    ? 'Result pending — not yet executed'
+                    : 'Outcome not yet measurable'
+                } />
               )}
             </div>
           )}
@@ -1442,7 +1491,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showUnmatched, setShowUnmatched] = useState(false)
-  const [sortBy, setSortBy] = useState<'date' | 'move' | 'impact' | 'lag' | 'delay'>('date')
+  const [sortBy, setSortBy] = useState<'date' | 'lag'>('date')
   const [sortDesc, setSortDesc] = useState(true)
 
   const { rows, unmatchedExecutions, summary, isLoading, isError, refetch } = useDecisionAccountability({ filters })
@@ -1453,16 +1502,6 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     sorted.sort((a, b) => {
       let cmp = 0
       switch (sortBy) {
-        case 'move':
-          cmp = (a.move_since_decision_pct ?? a.move_since_execution_pct ?? -999) -
-                (b.move_since_decision_pct ?? b.move_since_execution_pct ?? -999)
-          break
-        case 'impact':
-          cmp = (a.impact_proxy ?? -Infinity) - (b.impact_proxy ?? -Infinity)
-          break
-        case 'delay':
-          cmp = (a.delay_cost_pct ?? -999) - (b.delay_cost_pct ?? -999)
-          break
         case 'lag':
           cmp = (a.execution_lag_days ?? a.days_since_decision ?? -1) - (b.execution_lag_days ?? b.days_since_decision ?? -1)
           break
@@ -1484,7 +1523,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     [sortedRows, selectedId],
   )
 
-  const handleSort = (col: 'date' | 'move' | 'impact' | 'lag' | 'delay') => {
+  const handleSort = (col: 'date' | 'lag') => {
     if (sortBy === col) {
       setSortDesc(!sortDesc)
     } else {
@@ -1503,8 +1542,8 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
               <Target className="w-4 h-4 text-teal-600" />
             </div>
             <div>
-              <h1 className="text-[15px] font-semibold text-gray-900">Decision Outcomes</h1>
-              <p className="text-[10px] text-gray-400">Decisions, execution, and what happened after</p>
+              <h1 className="text-[16px] font-semibold text-gray-900">Decision Outcomes</h1>
+              <p className="text-[11px] text-gray-400">Decisions, execution, and what happened after</p>
             </div>
           </div>
 
@@ -1543,7 +1582,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
       </div>
 
       {/* ── CONTENT ────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 px-6 pb-4">
+      <div className="flex-1 min-h-0 px-6">
         {showUnmatched ? (
           /* ── Unmatched Executions View ── */
           <div className="h-full flex flex-col border border-gray-200 rounded overflow-hidden bg-white">
@@ -1620,31 +1659,19 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
           </div>
         ) : (
           /* ── Main Decision Table + Detail ── */
-          <div className="h-full flex border border-gray-200 rounded overflow-hidden">
+          <div className="h-full flex border-x border-t border-gray-200 rounded-t overflow-hidden">
             {/* Table */}
             <div className="flex-1 min-w-0 flex flex-col bg-white">
               {/* Column headers */}
               <div className={`grid ${MAIN_GRID} bg-gray-50 border-b border-gray-200 shrink-0`}>
-                <SortableColHeader active={sortBy === 'date'} desc={sortDesc} onClick={() => handleSort('date')}>
-                  Date
-                </SortableColHeader>
-                <ColHeader>Asset</ColHeader>
-                <ColHeader>Dir</ColHeader>
+                <ColHeader sortable sortActive={sortBy === 'date'} sortDesc={sortDesc} onSort={() => handleSort('date')}>Date</ColHeader>
+                <ColHeader>Symbol</ColHeader>
+                <ColHeader>Name</ColHeader>
+                <ColHeader>Type</ColHeader>
                 <ColHeader>Decision</ColHeader>
                 <ColHeader>Execution</ColHeader>
-                <SortableColHeader active={sortBy === 'move'} desc={sortDesc} onClick={() => handleSort('move')} align="right">
-                  Move
-                </SortableColHeader>
-                <SortableColHeader active={sortBy === 'impact'} desc={sortDesc} onClick={() => handleSort('impact')} align="right">
-                  Impact
-                </SortableColHeader>
-                <SortableColHeader active={sortBy === 'delay'} desc={sortDesc} onClick={() => handleSort('delay')} align="right">
-                  Delay
-                </SortableColHeader>
-                <SortableColHeader active={sortBy === 'lag'} desc={sortDesc} onClick={() => handleSort('lag')} align="right">
-                  Lag
-                </SortableColHeader>
-                <ColHeader></ColHeader>{/* Review dot */}
+                <ColHeader sortable sortActive={sortBy === 'lag'} sortDesc={sortDesc} onSort={() => handleSort('lag')}>Lag</ColHeader>
+                <ColHeader>Review</ColHeader>
                 <ColHeader>Portfolio</ColHeader>
                 <ColHeader>Owner</ColHeader>
               </div>
@@ -1686,7 +1713,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
 
             {/* Detail Panel */}
             {selectedRow && (
-              <div className="w-[380px] shrink-0 border-l border-gray-200 overflow-hidden">
+              <div className="w-[440px] shrink-0 border-l-2 border-l-primary-500 overflow-hidden">
                 <DetailPanel
                   row={selectedRow}
                   onClose={() => setSelectedId(null)}
@@ -1705,12 +1732,25 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
 // Column headers
 // ============================================================
 
-function ColHeader({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' | 'center' }) {
+function ColHeader({ children, align = 'left', sortable, sortActive, sortDesc, onSort }: {
+  children: React.ReactNode
+  align?: 'left' | 'right' | 'center'
+  sortable?: boolean
+  sortActive?: boolean
+  sortDesc?: boolean
+  onSort?: () => void
+}) {
   return (
-    <div className={`px-1.5 py-[7px] ${
-      align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
-    }`}>
-      <span className="text-[8px] font-bold uppercase tracking-wider text-gray-400 select-none">{children}</span>
+    <div
+      onClick={sortable ? onSort : undefined}
+      className={`px-2 py-2 ${sortable ? 'cursor-pointer' : ''} ${
+        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
+      }`}
+    >
+      <span className={`text-[9px] font-bold uppercase tracking-wider select-none ${sortActive ? 'text-gray-700' : 'text-gray-400'}`}>
+        {children}
+        {sortActive && <span className="ml-0.5">{sortDesc ? '\u25BC' : '\u25B2'}</span>}
+      </span>
     </div>
   )
 }
@@ -1731,11 +1771,11 @@ function SortableColHeader({
   return (
     <div
       onClick={onClick}
-      className={`px-1.5 py-[7px] cursor-pointer select-none ${
+      className={`px-2 py-2 cursor-pointer select-none ${
         align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
       }`}
     >
-      <span className={`text-[8px] font-bold uppercase tracking-wider ${
+      <span className={`text-[9px] font-bold uppercase tracking-wider ${
         active ? 'text-gray-700' : 'text-gray-400'
       }`}>
         {children}

@@ -33,6 +33,7 @@ const STATIC_PAGES = [
   { id: 'templates', title: 'Templates', type: 'page' as const, subtitle: 'Model and text templates', keywords: ['models', 'spreadsheets'] },
   { id: 'organization', title: 'Organization', type: 'page' as const, subtitle: 'Team and settings', keywords: ['team', 'settings', 'users', 'members'] },
   { id: 'audit', title: 'Activity History', type: 'page' as const, subtitle: 'Track all changes and actions', keywords: ['audit', 'activity', 'history', 'log', 'trail', 'changes', 'compliance'] },
+  { id: 'coverage', title: 'Coverage', type: 'page' as const, subtitle: 'Analyst coverage assignments', keywords: ['analysts', 'coverage', 'assignments', 'team', 'responsibilities'] },
 ]
 
 interface SearchResult {

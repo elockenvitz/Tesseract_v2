@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart, BookOpen, Activity, Plus, Shield } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Orbit, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -262,7 +262,7 @@ export function Header({
                       className="flex flex-col items-center p-3 rounded-lg hover:bg-rose-50 dark:hover:bg-gray-700 transition-colors group/tile ring-1 ring-rose-200 bg-rose-50/30"
                     >
                       <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-1 bg-rose-100">
-                        <Target className="h-6 w-6 text-rose-600" />
+                        <Flag className="h-6 w-6 text-rose-600" />
                       </div>
                       <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 text-center leading-tight">Priorities</span>
                       <span className="text-[10px] text-gray-500 mt-0.5">Start here</span>
@@ -270,7 +270,7 @@ export function Header({
 
                     {/* Other Core tiles */}
                     {[
-                      { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ShoppingCart, color: 'text-amber-500', bg: 'bg-amber-50' },
+                      { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
                       { id: 'trade-book', title: 'Trade Book', type: 'trade-book', icon: BookOpen, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
                       { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },
@@ -300,7 +300,7 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'lists', title: 'Lists', type: 'lists', icon: List, color: 'text-violet-500', bg: 'bg-violet-50' },
-                      { id: 'workflows', title: 'Process', type: 'workflows', icon: Workflow, color: 'text-cyan-500', bg: 'bg-cyan-50' },
+                      { id: 'workflows', title: 'Process', type: 'workflows', icon: Orbit, color: 'text-cyan-500', bg: 'bg-cyan-50' },
                       { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'coverage', title: 'Coverage', type: 'coverage', icon: Users, color: 'text-sky-500', bg: 'bg-sky-50' },
                     ].map(item => (

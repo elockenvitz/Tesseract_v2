@@ -7,10 +7,8 @@ import {
 import {
   useTradeJournalEvents,
   useTradeJournalSummary,
-  useSaveRationale,
   useUpdateTradeEventStatus,
 } from '../../../hooks/useTradeJournal'
-import { RationaleEditor } from './RationaleEditor'
 import type {
   TradeEventWithDetails,
   TradeEventAction,
@@ -82,7 +80,6 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
   // Data
   const { data: events, isLoading } = useTradeJournalEvents({ portfolioId })
   const { data: summary } = useTradeJournalSummary(portfolioId)
-  const saveRationaleMutation = useSaveRationale(portfolioId)
   const updateStatusMutation = useUpdateTradeEventStatus(portfolioId)
 
   // Filtered events
@@ -151,8 +148,8 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
             <BookText className="w-8 h-8 text-gray-300 mx-auto mb-3" />
             <p className="text-[13px] font-semibold text-gray-700 mb-1">No trade events recorded</p>
             <p className="text-[11px] text-gray-400 leading-relaxed mb-3">
-              When holdings changes are detected or manually recorded, they appear here as trade events.
-              Each event captures what changed and prompts for structured rationale to maintain accountability.
+              Trade events appear here when holdings change or trades are recorded.
+              Use <span className="font-medium text-gray-500">Outcomes</span> to review decisions and capture post-mortems.
             </p>
             <p className="text-[10px] text-gray-400">
               Looking for ideas, research, or portfolio commentary? See the <span className="font-medium text-gray-500">Portfolio Log</span> tab.
@@ -333,17 +330,59 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
           </div>
         </div>
 
-        {/* Rationale Editor Panel */}
+        {/* Event Detail Panel (read-only — post-mortem authoring is in Outcomes) */}
         {selectedEvent && (
-          <div className="w-[420px] shrink-0 border-l border-gray-200">
-            <RationaleEditor
-              event={selectedEvent}
-              onSave={(params) => {
-                saveRationaleMutation.mutate(params)
-              }}
-              onClose={() => setSelectedEventId(null)}
-              isSaving={saveRationaleMutation.isPending}
-            />
+          <div className="w-[380px] shrink-0 border-l border-gray-200 flex flex-col bg-white">
+            <div className="px-3 py-2.5 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                  ACTION_CONFIG[selectedEvent.action_type]?.color || 'bg-gray-100 text-gray-600'
+                }`}>{selectedEvent.action_type}</span>
+                <span className="text-[12px] font-semibold text-gray-900 truncate">{selectedEvent.asset_symbol || '?'}</span>
+              </div>
+              <button onClick={() => setSelectedEventId(null)} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2.5 space-y-2.5">
+              {/* Event details */}
+              <div className="space-y-1 text-[11px]">
+                <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="text-gray-700">{fmtDate(selectedEvent.event_date)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Source</span><span className="text-gray-700">{SOURCE_LABELS[selectedEvent.source_type] || selectedEvent.source_type}</span></div>
+                {selectedEvent.quantity_delta != null && (
+                  <div className="flex justify-between"><span className="text-gray-500">Shares Δ</span><span className="text-gray-700 tabular-nums">{fmtDelta(selectedEvent.quantity_delta)}</span></div>
+                )}
+                {selectedEvent.weight_delta != null && (
+                  <div className="flex justify-between"><span className="text-gray-500">Weight Δ</span><span className="text-gray-700 tabular-nums">{fmtDelta(selectedEvent.weight_delta, '%')}</span></div>
+                )}
+              </div>
+
+              {/* Existing rationale (read-only) */}
+              {selectedEvent.rationale ? (
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Rationale</div>
+                  {selectedEvent.rationale.reason_for_action && (
+                    <div><div className="text-[9px] text-gray-400 mb-0.5">Assessment</div><p className="text-[11px] text-gray-600 leading-relaxed">{selectedEvent.rationale.reason_for_action}</p></div>
+                  )}
+                  {selectedEvent.rationale.what_changed && (
+                    <div><div className="text-[9px] text-gray-400 mb-0.5">What changed</div><p className="text-[11px] text-gray-600 leading-relaxed">{selectedEvent.rationale.what_changed}</p></div>
+                  )}
+                  {selectedEvent.rationale.risk_context && (
+                    <div><div className="text-[9px] text-gray-400 mb-0.5">Lessons</div><p className="text-[11px] text-gray-600 leading-relaxed">{selectedEvent.rationale.risk_context}</p></div>
+                  )}
+                  <div className="text-[10px] text-gray-400 capitalize">{selectedEvent.rationale.status}</div>
+                </div>
+              ) : (
+                <div className="pt-2 border-t border-gray-100 text-center py-4">
+                  <p className="text-[10px] text-gray-400">No rationale captured for this event.</p>
+                </div>
+              )}
+
+              {/* Direct to Outcomes */}
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-[10px] text-gray-400 mb-1.5">Post-mortem reviews are authored in Outcomes.</p>
+              </div>
+            </div>
           </div>
         )}
       </div>

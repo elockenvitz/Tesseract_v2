@@ -269,16 +269,16 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           created_by_user:created_by (id, email, first_name, last_name)
         `)
 
-      // Status filters
+      // Status filters — 'executed' is the legacy status for inbox-accepted decisions
       const statuses: string[] = []
-      if (filters?.showApproved !== false) statuses.push('approved')
+      if (filters?.showApproved !== false) statuses.push('approved', 'executed')
       if (filters?.showRejected) statuses.push('rejected')
       if (filters?.showCancelled) statuses.push('cancelled')
 
       if (statuses.length > 0) {
         query = query.in('status', statuses)
       } else {
-        query = query.eq('status', 'approved')
+        query = query.in('status', ['approved', 'executed'])
       }
 
       // Date range
@@ -554,7 +554,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           created_at: item.created_at,
           approved_at: item.approved_at,
           direction,
-          stage: item.status as any,
+          stage: (item.status === 'executed' ? 'approved' : item.status) as any,
           rationale_text: item.rationale || null,
           asset_id: item.asset_id,
           asset_symbol: item.assets?.symbol || null,
@@ -662,7 +662,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         created_at: item.created_at,
         approved_at: item.approved_at,
         direction,
-        stage: item.status,
+        stage: (item.status === 'executed' ? 'approved' : item.status) as any,
         rationale_text: item.rationale || null,
         asset_id: item.asset_id,
         asset_symbol: item.assets?.symbol || null,
@@ -721,8 +721,23 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       result = result.filter(r => filters.directionFilter!.includes(r.direction))
     }
 
+    // Review status filter
+    if (filters?.reviewFilter && filters.reviewFilter !== 'all') {
+      result = result.filter(r => {
+        const isExecuted = r.execution_status === 'executed'
+        const hasAny = r.matched_executions.some(e => e.has_rationale)
+        const hasComplete = r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
+        const hasReviewed = r.matched_executions.some(e => e.rationale_status === 'reviewed')
+        if (filters.reviewFilter === 'needs_review') return isExecuted && !hasAny
+        if (filters.reviewFilter === 'in_progress') return isExecuted && hasAny && !hasComplete
+        if (filters.reviewFilter === 'captured') return isExecuted && hasComplete && !hasReviewed
+        if (filters.reviewFilter === 'reviewed') return isExecuted && hasReviewed
+        return true
+      })
+    }
+
     return result
-  }, [rows, filters?.assetSearch, filters?.executionStatus, filters?.resultFilter, filters?.directionFilter])
+  }, [rows, filters?.assetSearch, filters?.executionStatus, filters?.resultFilter, filters?.directionFilter, filters?.reviewFilter])
 
   // ── Step 8: Compute unmatched executions ──────────────────────
   const unmatchedExecutions: UnmatchedExecution[] = useMemo(() => {
@@ -850,9 +865,15 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       sizedDecisionCount,
       topPositiveSymbol,
       topNegativeSymbol,
-      // Review workflow counts
+      // Review workflow counts (rationale_status-aware)
       needsReviewCount: executed.filter(r => !r.matched_executions.some(e => e.has_rationale)).length,
-      reviewCapturedCount: executed.filter(r => r.matched_executions.some(e => e.has_rationale)).length,
+      reviewInProgressCount: executed.filter(r =>
+        r.matched_executions.some(e => e.has_rationale) &&
+        !r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
+      ).length,
+      reviewCapturedCount: executed.filter(r =>
+        r.matched_executions.some(e => e.rationale_status === 'complete' || e.rationale_status === 'reviewed')
+      ).length,
     }
   }, [filteredRows, unmatchedExecutions])
 
@@ -1106,7 +1127,7 @@ export function useDecisionStory(decisionId: string | null, executionEventId?: s
 // Reuses trade_event_rationales via saveRationale() from trade-event-service.
 // =============================================================================
 
-import { saveRationale } from '../lib/services/trade-event-service'
+import { saveRationale, markRationaleAsReviewed } from '../lib/services/trade-event-service'
 import type { SaveRationaleParams } from '../types/trade-journal'
 
 export function useSavePostMortem(decisionId: string | null, executionEventId: string | null) {
@@ -1119,6 +1140,27 @@ export function useSavePostMortem(decisionId: string | null, executionEventId: s
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-story', decisionId, executionEventId] })
+      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+    },
+  })
+}
+
+/**
+ * Mark a completed post-mortem as reviewed.
+ * Promotes status: complete → reviewed, sets reviewed_by/reviewed_at.
+ * Editing a reviewed post-mortem naturally demotes via useSavePostMortem (draft or complete).
+ */
+export function useMarkAsReviewed(decisionId: string | null, executionEventId: string | null) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!executionEventId) throw new Error('No execution event')
+      return markRationaleAsReviewed(executionEventId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decision-story', decisionId, executionEventId] })
+      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
     },
   })
 }

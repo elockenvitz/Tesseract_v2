@@ -8,17 +8,23 @@ import {
   List,
   Lightbulb,
   FolderKanban,
-  Workflow,
-  ShoppingCart,
+  Orbit,
+  ListTodo,
   Plus,
   StickyNote,
   PieChart,
   Users,
   Calendar,
   Target,
-  FileBox,
-  LayoutTemplate,
-  Activity
+  Flag,
+  FolderOpen,
+  FileText as TemplateIcon,
+  Activity,
+  BookOpen,
+  Beaker,
+  LineChart,
+  Clock,
+  Building2,
 } from 'lucide-react'
 import { GlobalSearch } from '../search/GlobalSearch'
 
@@ -29,6 +35,51 @@ interface BlankTabProps {
 // Section configuration
 const PRIMARY_SURFACES = [
   {
+    id: 'priorities',
+    title: 'All Priorities',
+    type: 'priorities',
+    description: 'What needs attention',
+    icon: Flag,
+    gradient: 'from-rose-100 to-red-100',
+    iconColor: 'text-rose-600'
+  },
+  {
+    id: 'trade-queue',
+    title: 'Trade Queue',
+    type: 'trade-queue',
+    description: 'Pending decisions',
+    icon: ListTodo,
+    gradient: 'from-amber-100 to-orange-100',
+    iconColor: 'text-amber-600'
+  },
+  {
+    id: 'trade-book',
+    title: 'Trade Book',
+    type: 'trade-book',
+    description: 'Accepted trades',
+    icon: BookOpen,
+    gradient: 'from-indigo-100 to-blue-100',
+    iconColor: 'text-indigo-600'
+  },
+  {
+    id: 'trade-lab',
+    title: 'Trade Lab',
+    type: 'trade-lab',
+    description: 'Simulation & sizing',
+    icon: Beaker,
+    gradient: 'from-cyan-100 to-blue-100',
+    iconColor: 'text-cyan-600'
+  },
+  {
+    id: 'outcomes',
+    title: 'Outcomes',
+    type: 'outcomes',
+    description: 'Decision review',
+    icon: Target,
+    gradient: 'from-teal-100 to-emerald-100',
+    iconColor: 'text-teal-600'
+  },
+  {
     id: 'idea-generator',
     title: 'Ideas',
     type: 'idea-generator',
@@ -37,51 +88,6 @@ const PRIMARY_SURFACES = [
     gradient: 'from-purple-100 to-pink-100',
     iconColor: 'text-purple-600'
   },
-  {
-    id: 'projects-list',
-    title: 'Projects',
-    type: 'projects-list',
-    description: 'One-off tasks',
-    icon: FolderKanban,
-    gradient: 'from-violet-100 to-purple-100',
-    iconColor: 'text-violet-600'
-  },
-  {
-    id: 'workflows',
-    title: 'Process',
-    type: 'workflows',
-    description: 'Recurring investment processes',
-    icon: Workflow,
-    gradient: 'from-blue-100 to-cyan-100',
-    iconColor: 'text-blue-600'
-  },
-  {
-    id: 'trade-queue',
-    title: 'Trade Queue',
-    type: 'trade-queue',
-    description: 'Pending decisions',
-    icon: ShoppingCart,
-    gradient: 'from-amber-100 to-orange-100',
-    iconColor: 'text-amber-600'
-  },
-  {
-    id: 'priorities',
-    title: 'All Priorities',
-    type: 'priorities',
-    description: 'What needs attention',
-    icon: Target,
-    gradient: 'from-rose-100 to-red-100',
-    iconColor: 'text-rose-600'
-  },
-  {
-    id: 'calendar',
-    title: 'Calendar',
-    type: 'calendar',
-    description: 'Events & deadlines',
-    icon: Calendar,
-    gradient: 'from-teal-100 to-emerald-100',
-    iconColor: 'text-teal-600'
-  }
 ]
 
 const CREATE_ACTIONS = [
@@ -99,18 +105,27 @@ const CREATE_ACTIONS = [
     title: 'New Project',
     action: 'new-project',
     description: 'Start a project',
-    icon: Plus,
+    icon: FolderKanban,
     gradient: 'from-violet-100 to-purple-100',
     iconColor: 'text-violet-600'
   },
   {
-    id: 'new-asset',
-    title: 'Add Asset',
-    action: 'new-asset',
-    description: 'Track a new stock',
-    icon: TrendingUp,
-    gradient: 'from-primary-100 to-blue-100',
-    iconColor: 'text-primary-600'
+    id: 'new-workflow',
+    title: 'New Process',
+    action: 'new-workflow',
+    description: 'Start a recurring process',
+    icon: Orbit,
+    gradient: 'from-blue-100 to-cyan-100',
+    iconColor: 'text-blue-600'
+  },
+  {
+    id: 'new-note',
+    title: 'New Note',
+    action: 'new-note',
+    description: 'Write a research note',
+    icon: FileText,
+    gradient: 'from-slate-100 to-gray-100',
+    iconColor: 'text-slate-600'
   },
   {
     id: 'new-list',
@@ -170,22 +185,40 @@ const UTILITY_SURFACES = [
     iconColor: 'text-purple-600'
   },
   {
-    id: 'templates',
-    title: 'Templates',
-    type: 'templates',
-    description: 'Reusable templates',
-    icon: LayoutTemplate,
-    gradient: 'from-cyan-100 to-blue-100',
-    iconColor: 'text-cyan-600'
+    id: 'workflows',
+    title: 'Process',
+    type: 'workflows',
+    description: 'Recurring processes',
+    icon: Orbit,
+    gradient: 'from-blue-100 to-cyan-100',
+    iconColor: 'text-blue-600'
   },
   {
-    id: 'files',
-    title: 'Files',
-    type: 'files',
-    description: 'Documents & models',
-    icon: FileBox,
-    gradient: 'from-orange-100 to-amber-100',
-    iconColor: 'text-orange-600'
+    id: 'projects-list',
+    title: 'Projects',
+    type: 'projects-list',
+    description: 'One-off tasks',
+    icon: FolderKanban,
+    gradient: 'from-violet-100 to-purple-100',
+    iconColor: 'text-violet-600'
+  },
+  {
+    id: 'coverage',
+    title: 'Coverage',
+    type: 'coverage',
+    description: 'Analyst coverage',
+    icon: Users,
+    gradient: 'from-sky-100 to-blue-100',
+    iconColor: 'text-sky-600'
+  },
+  {
+    id: 'charting',
+    title: 'Charting',
+    type: 'charting',
+    description: 'Technical charts',
+    icon: LineChart,
+    gradient: 'from-gray-100 to-slate-100',
+    iconColor: 'text-gray-600'
   },
   {
     id: 'asset-allocation',
@@ -197,11 +230,47 @@ const UTILITY_SURFACES = [
     iconColor: 'text-emerald-600'
   },
   {
+    id: 'tdf-list',
+    title: 'TDF',
+    type: 'tdf-list',
+    description: 'Target date funds',
+    icon: Clock,
+    gradient: 'from-orange-100 to-amber-100',
+    iconColor: 'text-orange-600'
+  },
+  {
+    id: 'calendar',
+    title: 'Calendar',
+    type: 'calendar',
+    description: 'Events & deadlines',
+    icon: Calendar,
+    gradient: 'from-teal-100 to-emerald-100',
+    iconColor: 'text-teal-600'
+  },
+  {
+    id: 'templates',
+    title: 'Templates',
+    type: 'templates',
+    description: 'Reusable templates',
+    icon: TemplateIcon,
+    gradient: 'from-cyan-100 to-blue-100',
+    iconColor: 'text-cyan-600'
+  },
+  {
+    id: 'files',
+    title: 'Files',
+    type: 'files',
+    description: 'Documents & models',
+    icon: FolderOpen,
+    gradient: 'from-orange-100 to-amber-100',
+    iconColor: 'text-orange-600'
+  },
+  {
     id: 'organization',
     title: 'Organization',
     type: 'organization',
     description: 'Team & structure',
-    icon: Users,
+    icon: Building2,
     gradient: 'from-sky-100 to-blue-100',
     iconColor: 'text-sky-600'
   },
@@ -213,7 +282,7 @@ const UTILITY_SURFACES = [
     icon: Activity,
     gradient: 'from-indigo-100 to-violet-100',
     iconColor: 'text-indigo-600'
-  }
+  },
 ]
 
 export function BlankTab({ onSearchResult }: BlankTabProps) {
@@ -253,12 +322,20 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
           data: { createNew: true }
         })
         break
-      case 'new-asset':
-        // Navigate to assets with create intent
+      case 'new-workflow':
+        // Navigate to processes with create intent
         onSearchResult({
-          id: 'assets-list',
-          title: 'All Assets',
-          type: 'assets-list',
+          id: 'workflows',
+          title: 'Process',
+          type: 'workflows',
+          data: { createNew: true }
+        })
+        break
+      case 'new-note':
+        onSearchResult({
+          id: 'notes-list',
+          title: 'Notes',
+          type: 'notes-list',
           data: { createNew: true }
         })
         break
@@ -325,22 +402,19 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
           <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1">
             Create
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {CREATE_ACTIONS.map((item) => {
               const Icon = item.icon
               return (
                 <button
                   key={item.id}
                   onClick={() => handleAction(item.action)}
-                  className="flex items-center gap-3 p-4 rounded-xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group"
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group"
                 >
-                  <div className={`w-10 h-10 bg-gradient-to-r ${item.gradient} rounded-lg flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
-                    <Icon className={`h-5 w-5 ${item.iconColor}`} />
+                  <div className={`w-9 h-9 bg-gradient-to-r ${item.gradient} rounded-lg flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
+                    <Icon className={`h-4.5 w-4.5 ${item.iconColor}`} />
                   </div>
-                  <div className="text-left">
-                    <span className="text-sm font-medium text-gray-700 block">{item.title}</span>
-                    <span className="text-xs text-gray-400">{item.description}</span>
-                  </div>
+                  <span className="text-xs font-medium text-gray-600">{item.title}</span>
                 </button>
               )
             })}

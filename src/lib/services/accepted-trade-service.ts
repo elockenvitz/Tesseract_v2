@@ -264,7 +264,7 @@ export async function acceptFromInboxToAcceptedTrade(
     try {
       await moveTradeIdea({
         tradeId: decisionRequest.trade_queue_item_id,
-        target: { stage: 'deciding', outcome: 'accepted' },
+        target: { stage: 'deciding', outcome: 'executed' },
         context,
         note: 'Trade accepted via Decision Inbox → Trade Book',
       })

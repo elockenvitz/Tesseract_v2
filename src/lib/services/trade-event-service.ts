@@ -245,6 +245,41 @@ export async function saveRationale(
   }
 }
 
+/**
+ * Mark the latest rationale for a trade event as reviewed.
+ * Sets status → 'reviewed', reviewed_by → current user, reviewed_at → now.
+ * Syncs parent trade event status.
+ */
+export async function markRationaleAsReviewed(tradeEventId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data: latest, error: fetchErr } = await supabase
+    .from('trade_event_rationales')
+    .select('id, status')
+    .eq('trade_event_id', tradeEventId)
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (fetchErr || !latest) throw new Error('No rationale found for this event')
+  if (latest.status !== 'complete') throw new Error(`Cannot mark as reviewed: current status is "${latest.status}"`)
+
+  const { error: updateErr } = await supabase
+    .from('trade_event_rationales')
+    .update({
+      status: 'reviewed',
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', latest.id)
+
+  if (updateErr) throw updateErr
+
+  await syncEventStatus(tradeEventId, 'reviewed')
+}
+
 async function syncEventStatus(tradeEventId: string, rationaleStatus: string): Promise<void> {
   const eventStatus =
     rationaleStatus === 'reviewed' ? 'reviewed' :
