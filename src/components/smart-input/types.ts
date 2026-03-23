@@ -1,6 +1,6 @@
 import { EntityType } from '../../hooks/useEntitySearch'
 
-export type TriggerType = 'mention' | 'hashtag' | 'cashtag' | 'template' | 'data' | 'ai' | 'ai-model' | 'capture' | 'screenshot' | 'embed' | 'visibility'
+export type TriggerType = 'mention' | 'hashtag' | 'cashtag' | 'template' | 'data' | 'chart' | 'ai' | 'ai-model' | 'capture' | 'screenshot' | 'embed' | 'visibility'
 
 // Visibility types for inline content restrictions
 export type VisibilityType = 'private' | 'team' | 'portfolio'
@@ -119,6 +119,15 @@ export function formatDataSnapshot(dataType: DataFunctionType, value: string, da
 export function formatDataLive(dataType: DataFunctionType, assetId: string): string {
   return `.data[${dataType}:live:${assetId}]`
 }
+
+// Chart types and format
+export type ChartCommandType = 'price' | 'volume' | 'performance' | 'comparison' | 'technicals'
+
+export function formatChart(chartType: ChartCommandType, symbol: string): string {
+  return `.chart[${chartType}:${symbol}]`
+}
+
+export const CHART_REGEX = /\.chart\[(\w+):([A-Z0-9.]+)\]/g
 
 export function formatAIContent(prompt: string, content: string): string {
   return `.AI[${prompt}]{${content}}`

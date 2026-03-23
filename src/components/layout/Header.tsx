@@ -103,8 +103,9 @@ export function Header({
       return false
     },
     enabled: !!user?.id,
-    refetchInterval: 30000, // Check every 30 seconds
-    staleTime: 0 // Always consider data stale to refetch on invalidation
+    refetchInterval: 5000, // Check every 5 seconds for near-instant notification
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   })
 
   // Stable ref for refetch to avoid re-creating realtime subscription on every render
@@ -124,7 +125,9 @@ export function Header({
   useEffect(() => {
     if (!user?.id) return
 
-    // Subscribe to new conversation messages
+    // Subscribe to new conversation messages for immediate notification.
+    // Uses broadcast channel as a reliable fallback alongside postgres_changes,
+    // since RLS can prevent realtime events from reaching the subscriber.
     const channel = supabase
       .channel('header-messages')
       .on(
@@ -135,7 +138,8 @@ export function Header({
           table: 'conversation_messages'
         },
         () => {
-          refetchDMRef.current()
+          // Small delay to ensure DB write is committed before refetch
+          setTimeout(() => refetchDMRef.current(), 500)
         }
       )
       .on(

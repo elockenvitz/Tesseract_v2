@@ -120,24 +120,28 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   // ── Handlers ──
   const handleCardClick = useCallback((item: ScoredFeedItem) => {
     setSelectedItem(item)
-    // Navigate to detail view
-    if (onItemSelect) {
-      if (item.type === 'quick_thought') {
-        onItemSelect({ id: item.id, title: 'Quick Thought', type: 'quick-thought-detail', data: item })
-      } else if (item.type === 'trade_idea' && 'asset' in item && item.asset) {
-        onItemSelect({ id: item.id, title: item.asset.symbol, type: 'trade-queue', data: item })
-      } else if (item.type === 'note' && 'source' in item) {
-        const noteItem = item as any
-        if (noteItem.source?.type === 'asset') {
-          onItemSelect({ id: noteItem.source.id, title: noteItem.source.name, type: 'asset', data: { defaultTab: 'notes' } })
-        }
-      }
+    if (!onItemSelect) return
+
+    const asset = 'asset' in item ? (item as any).asset : null
+
+    if (item.type === 'trade_idea' && asset) {
+      // Open the asset page with trade queue context
+      onItemSelect({ id: asset.id, title: asset.symbol, type: 'asset', data: { symbol: asset.symbol, defaultTab: 'trade-queue' } })
+    } else if (item.type === 'note' && asset) {
+      onItemSelect({ id: asset.id, title: asset.symbol, type: 'asset', data: { symbol: asset.symbol, defaultTab: 'notes' } })
+    } else if (item.type === 'thesis_update' && asset) {
+      onItemSelect({ id: asset.id, title: asset.symbol, type: 'asset', data: { symbol: asset.symbol, defaultTab: 'thesis' } })
+    } else if (asset) {
+      // Quick thought or other type with an asset — open asset page
+      onItemSelect({ id: asset.id, title: asset.symbol, type: 'asset', data: { symbol: asset.symbol } })
     }
+    // Items without an asset: no navigation (stay on feed)
   }, [onItemSelect])
 
   const handleSignalClick = useCallback((signal: any) => {
     if (signal.relatedAssets?.[0] && onItemSelect) {
-      onItemSelect({ id: signal.relatedAssets[0].id, title: signal.relatedAssets[0].symbol, type: 'asset' })
+      const a = signal.relatedAssets[0]
+      onItemSelect({ id: a.id, title: a.symbol, type: 'asset', data: { symbol: a.symbol } })
     }
   }, [onItemSelect])
 
@@ -146,7 +150,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   }, [])
 
   const handleAssetClick = useCallback((assetId: string, symbol: string) => {
-    onItemSelect?.({ id: assetId, title: symbol, type: 'asset' })
+    onItemSelect?.({ id: assetId, title: symbol, type: 'asset', data: { symbol } })
   }, [onItemSelect])
 
   const handleExpandChart = useCallback((symbol: string) => {

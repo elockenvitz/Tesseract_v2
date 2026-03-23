@@ -1,6 +1,6 @@
 import React, { forwardRef, useImperativeHandle, useRef } from 'react'
 import { clsx } from 'clsx'
-import { Loader2, Sparkles, AlertCircle, FileText } from 'lucide-react'
+import { Loader2, Sparkles, AlertCircle, FileText, BarChart3, TrendingUp, LineChart, Activity, Lock, Users, Building2, type LucideIcon } from 'lucide-react'
 import { useSmartInput } from '../../hooks/useSmartInput'
 import { SmartInputDropdown } from './SmartInputDropdown'
 import { MentionSuggestions } from './MentionSuggestions'
@@ -97,6 +97,11 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       assetSuggestions,
       templateSuggestions,
       isLoadingSuggestions,
+      symbolModeCommand,
+      symbolSearchQuery,
+      symbolAssetResults,
+      isLoadingSymbolAssets,
+      selectSymbolAsset,
       handleChange,
       handleKeyDown: internalKeyDown,
       selectMention,
@@ -122,9 +127,12 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       assetContext
     })
 
-    // Sync external value changes
+    const valueRef = useRef(value)
+    valueRef.current = value
+
+    // Sync external value changes (e.g., parent clears the input after send).
     React.useEffect(() => {
-      if (externalValue !== value) {
+      if (externalValue !== valueRef.current) {
         setValue(externalValue)
       }
     }, [externalValue])
@@ -135,10 +143,6 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
         onChange(value, metadata)
       }
     }, [value, metadata])
-
-    // AI is now handled inline - no modal needed
-    // The hint dropdown shows when user types .ai (without space)
-    // When user adds a space, isAIPromptMode activates for inline typing
 
     // Expose methods via ref
     useImperativeHandle(ref, () => ({
@@ -177,10 +181,12 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       }
     }))
 
-    // Combined key down handler
+    // Combined key down handler — skip external if internal already handled the event
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       internalKeyDown(e)
-      externalKeyDown?.(e)
+      if (!e.defaultPrevented) {
+        externalKeyDown?.(e)
+      }
     }
 
     // Handle data function selection
@@ -196,72 +202,45 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       closeDropdown()
     }
 
-    // Render styled content with colored mentions, cashtags, hashtags
-    // This overlay matches the textarea text exactly, just with colors applied
-    // Note: We only style simple tokens that don't change text length (@, $, #)
-    // Markdown formatting (==, **, etc.) is not styled here to avoid alignment issues
+    // Render styled content overlay. The textarea text is transparent so this
+    // overlay is what the user sees. For embed tokens we render actual badges
+    // instead of the raw bracket syntax.
     const renderStyledContent = (text: string) => {
-      // Pattern to match:
-      // - $SYMBOL (cashtags - green) - uppercase letters/numbers
-      // - @PascalCase (mentions - blue) - starts with capital, mixed case
-      // - #PascalCase (references - yellow) - starts with capital, mixed case
-      const pattern = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)/g
-
+      const pattern = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)|(\.chart\[(\w+):([A-Z0-9.]+)\])|(\.data\[(\w+):(?:snapshot|live):([^\]]+)\])/g
       const parts: React.ReactNode[] = []
       let lastIndex = 0
       let match
 
       while ((match = pattern.exec(text)) !== null) {
-        // Add text before the match (normal black text)
         if (match.index > lastIndex) {
-          parts.push(
-            <span key={`text-${lastIndex}`}>
-              {text.substring(lastIndex, match.index)}
-            </span>
-          )
+          parts.push(<span key={`t-${lastIndex}`}>{text.substring(lastIndex, match.index)}</span>)
         }
-
-        // Style the matched element
+        const i = match.index
         if (match[1]) {
-          // Cashtag: $SYMBOL in green
-          parts.push(
-            <span key={`cashtag-${match.index}`} className="text-green-600 font-medium">
-              {match[1]}
-            </span>
-          )
+          parts.push(<span key={`c-${i}`} className="text-green-600 font-medium">{match[1]}</span>)
         } else if (match[2]) {
-          // Mention: @PascalCase in blue
-          parts.push(
-            <span key={`mention-${match.index}`} className="text-blue-600 font-medium">
-              {match[2]}
-            </span>
-          )
+          parts.push(<span key={`m-${i}`} className="text-blue-600 font-medium">{match[2]}</span>)
         } else if (match[3]) {
-          // Hashtag: #PascalCase in yellow
+          parts.push(<span key={`h-${i}`} className="text-yellow-600 font-medium">{match[3]}</span>)
+        } else if (match[4]) {
+          // .chart[type:SYMBOL] → exact raw text with badge styling
           parts.push(
-            <span key={`hashtag-${match.index}`} className="text-yellow-600 font-medium">
-              {match[3]}
-            </span>
+            <span key={`ch-${i}`} className="bg-cyan-100 text-cyan-800 rounded-sm">{match[4]}</span>
+          )
+        } else if (match[7]) {
+          // .data[type:mode:ref] → exact raw text with badge styling
+          parts.push(
+            <span key={`d-${i}`} className="bg-emerald-100 text-emerald-800 rounded-sm">{match[7]}</span>
           )
         }
-
         lastIndex = match.index + match[0].length
       }
-
-      // Add remaining text
-      if (lastIndex < text.length) {
-        parts.push(
-          <span key={`text-end`}>
-            {text.substring(lastIndex)}
-          </span>
-        )
-      }
-
+      if (lastIndex < text.length) parts.push(<span key="end">{text.substring(lastIndex)}</span>)
       return parts.length > 0 ? parts : <span>{text}</span>
     }
 
-    // Check if content has any styled elements
-    const hasStyledContent = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)/.test(value)
+    const hasStyledContent = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)|(\.chart\[)|(\.data\[)/.test(value)
+
 
     return (
       <div className={clsx('relative cursor-text', className)}>
@@ -314,16 +293,16 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
 
         {/* Textarea Container with Highlight Overlay */}
         <div className="relative">
-          {/* Smart Input Overlay - shows styled mentions, cashtags, hashtags */}
+          {/* Smart Input Overlay - shows styled mentions, cashtags, hashtags, embeds */}
           {!isAIPromptMode && hasStyledContent && (
             <div
-              className="absolute inset-0 p-3 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-gray-900"
+              className={clsx(
+                'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-gray-900',
+                textareaClassName || 'p-3',
+              )}
               style={{
                 minHeight,
                 paddingTop: isTemplateFillMode ? '48px' : undefined,
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-                lineHeight: 'inherit',
               }}
               aria-hidden="true"
             >
@@ -405,6 +384,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
           />
         </div>
 
+
         {/* Dropdowns */}
         {activeDropdown === 'mention' && (
           <SmartInputDropdown
@@ -473,19 +453,56 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
           </SmartInputDropdown>
         )}
 
-        {activeDropdown === 'data' && assetContext && (
+        {/* Data/Chart command dropdown — unified for all states */}
+        {(activeDropdown === 'chart' || activeDropdown === 'data') && (
           <SmartInputDropdown
             isOpen={true}
             type="data"
             position={dropdownPosition}
             onClose={closeDropdown}
           >
-            <DataFunctionPicker
-              query={dropdownQuery}
-              assetContext={assetContext}
-              onSelect={handleDataSelect}
-              onClose={closeDropdown}
-            />
+            {symbolModeCommand ? (
+              /* Symbol search mode — user typed .chart. or .price. and is entering a ticker */
+              <div className="min-w-[260px] max-h-[280px] overflow-y-auto py-1">
+                {isLoadingSymbolAssets ? (
+                  <div className="px-3 py-3 text-xs text-gray-400 text-center">Searching...</div>
+                ) : symbolAssetResults.length > 0 ? (
+                  symbolAssetResults.map((asset, index) => (
+                    <button
+                      key={asset.id}
+                      onClick={() => selectSymbolAsset(asset)}
+                      className={clsx(
+                        'w-full px-3 py-1.5 text-left flex items-center gap-2.5 transition-colors',
+                        index === selectedIndex ? 'bg-primary-50' : 'hover:bg-gray-50'
+                      )}
+                    >
+                      <span className={clsx(
+                        'w-14 text-center py-0.5 rounded text-[11px] font-bold shrink-0',
+                        index === selectedIndex ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-700'
+                      )}>
+                        {asset.title}
+                      </span>
+                      <span className="text-sm text-gray-600 truncate">{asset.subtitle}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-xs text-gray-400 text-center">
+                    {symbolSearchQuery ? 'No matches' : 'Type a ticker symbol'}
+                  </div>
+                )}
+              </div>
+            ) : assetContext && activeDropdown === 'data' ? (
+              /* Has asset context on data command — show the existing data function picker */
+              <DataFunctionPicker
+                query={dropdownQuery}
+                assetContext={assetContext}
+                onSelect={handleDataSelect}
+                onClose={closeDropdown}
+              />
+            ) : (
+              /* Dot command menu — matches the TipTap notes editor dropdown exactly */
+              <DotCommandMenu query={dropdownQuery} selectedIndex={selectedIndex} />
+            )}
           </SmartInputDropdown>
         )}
 
@@ -570,3 +587,90 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
     )
   }
 )
+
+// ─── Dot Command Menu (matches TipTap notes editor dropdown) ─────────────────
+
+interface DotCmd {
+  id: string
+  name: string
+  description: string
+  icon: LucideIcon
+  color: string
+  category: 'ai' | 'data' | 'chart' | 'visibility'
+}
+
+const DOT_COMMANDS: DotCmd[] = [
+  { id: 'ai', name: '.AI', description: 'Generate content with AI', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
+
+  { id: 'price', name: '.price', description: 'Current stock price', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'volume', name: '.volume', description: 'Trading volume', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'marketcap', name: '.marketcap', description: 'Market capitalization', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'change', name: '.change', description: 'Price change %', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'pe', name: '.pe', description: 'P/E ratio', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'dividend', name: '.dividend', description: 'Dividend yield', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+
+  { id: 'chart', name: '.chart', description: 'Insert an embedded chart', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.price', name: '.chart.price', description: 'Price chart', icon: TrendingUp, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.volume', name: '.chart.volume', description: 'Volume chart', icon: BarChart3, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.performance', name: '.chart.performance', description: 'Performance chart (%)', icon: Activity, color: 'text-cyan-600', category: 'chart' },
+
+  { id: 'private', name: '.private', description: 'Mark as private (only you)', icon: Lock, color: 'text-amber-600', category: 'visibility' },
+  { id: 'team', name: '.team', description: 'Visible to team only', icon: Users, color: 'text-blue-600', category: 'visibility' },
+  { id: 'portfolio', name: '.portfolio', description: 'Visible to portfolio members', icon: Building2, color: 'text-purple-600', category: 'visibility' },
+]
+
+const CATEGORY_ORDER = ['ai', 'data', 'chart', 'visibility'] as const
+const CATEGORY_LABELS: Record<string, string> = { ai: 'AI', data: 'Data', chart: 'Charts', visibility: 'Visibility' }
+
+function DotCommandMenu({ query, selectedIndex }: { query: string; selectedIndex: number }) {
+  const q = query.toLowerCase()
+  const filtered = DOT_COMMANDS.filter(cmd => {
+    const name = cmd.name.toLowerCase().slice(1) // remove leading dot
+    return !q || name.startsWith(q) || name.includes(q) || cmd.description.toLowerCase().includes(q)
+  })
+
+  if (filtered.length === 0) {
+    return <div className="p-3 text-sm text-gray-500">No commands found</div>
+  }
+
+  let globalIndex = 0
+
+  return (
+    <div className="py-1 min-w-[280px] max-h-[320px] overflow-y-auto">
+      {CATEGORY_ORDER.map(category => {
+        const items = filtered.filter(cmd => cmd.category === category)
+        if (items.length === 0) return null
+        return (
+          <div key={category}>
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+              {CATEGORY_LABELS[category]}
+            </div>
+            {items.map(item => {
+              const itemIndex = globalIndex++
+              const Icon = item.icon
+              return (
+                <div
+                  key={item.id}
+                  className={clsx(
+                    'w-full px-3 py-2 flex items-center gap-3 transition-colors',
+                    itemIndex === selectedIndex ? 'bg-primary-50' : 'hover:bg-gray-50'
+                  )}
+                >
+                  <div className={clsx('w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center', item.color)}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className={clsx('text-sm font-medium', itemIndex === selectedIndex ? 'text-primary-700' : 'text-gray-900')}>
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">{item.description}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}

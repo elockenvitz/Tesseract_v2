@@ -53,7 +53,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [messageContent, setMessageContent] = useState('')
-  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
 
@@ -560,9 +560,9 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
               minHeight="56px"
               enableMentions={true}
               enableHashtags={true}
-              enableTemplates={false}
-              enableDataFunctions={false}
-              enableAI={false}
+              enableTemplates={true}
+              enableDataFunctions={true}
+              enableAI={true}
             />
           </div>
           <button

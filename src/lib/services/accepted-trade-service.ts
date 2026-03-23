@@ -324,7 +324,7 @@ export async function bulkPromoteFromSimulation(
       try {
         await moveTradeIdea({
           tradeId: variant.trade_queue_item_id,
-          target: { stage: 'deciding', outcome: 'accepted' },
+          target: { stage: 'deciding', outcome: 'executed' },
           context,
           note: 'Trade promoted from simulation → Trade Book',
         })
@@ -334,12 +334,35 @@ export async function bulkPromoteFromSimulation(
     }
   }
 
-  // Delete promoted variants from simulation
+  // Delete promoted variants and their simulation_trades from simulation.
+  // This removes them from the Trade Lab view so the simulation reverts
+  // to baseline for those assets. Committed trades live in Trade Book.
+  const promotedAssetIds = variants.map(v => v.asset_id)
   for (const variantId of variantIds) {
     try {
       await deleteVariant(variantId, context)
     } catch (e) {
       console.warn(`[AcceptedTrade] Failed to delete variant ${variantId}:`, e)
+    }
+  }
+
+  // Clean up simulation_trades for promoted assets
+  if (promotedAssetIds.length > 0) {
+    // Find the simulation_id from the lab's simulation
+    const { data: simData } = await supabase
+      .from('simulations')
+      .select('id')
+      .eq('trade_lab_id', variants[0]?.lab_id)
+      .eq('is_active', true)
+      .limit(1)
+      .single()
+
+    if (simData?.id) {
+      await supabase
+        .from('simulation_trades')
+        .delete()
+        .eq('simulation_id', simData.id)
+        .in('asset_id', promotedAssetIds)
     }
   }
 

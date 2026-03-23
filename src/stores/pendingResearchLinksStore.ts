@@ -18,6 +18,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import type { LinkableEntityType } from '../lib/object-links'
+import { grantEvidenceReadAccess } from '../lib/services/evidence-access-service'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,6 +91,9 @@ export const usePendingResearchLinksStore = create<PendingResearchLinksState>((s
     if (targets.length === 0) return 0
 
     let linked = 0
+    // Find the trade idea target so we can grant evidence access
+    const ideaTarget = targets.find(t => t.targetType === 'trade_idea')
+
     for (const target of targets) {
       try {
         const { error } = await supabase
@@ -111,6 +115,16 @@ export const usePendingResearchLinksStore = create<PendingResearchLinksState>((s
       } catch (err) {
         console.error('[pendingResearchLinks] Failed to create link:', err)
       }
+    }
+
+    // Grant read access on evidence notes to trade idea stakeholders
+    if (linked > 0 && ideaTarget) {
+      await grantEvidenceReadAccess({
+        sourceType,
+        sourceId,
+        ideaId: ideaTarget.targetId,
+        currentUserId: userId,
+      })
     }
 
     set({ targets: [], context: null })

@@ -1164,17 +1164,16 @@ export function HoldingsSimulationTable({
         if (!delRow) break
         e.preventDefault()
         if (delRow.baseline && !delRow.isNew) {
-          // Existing position: set sim weight to 0 (full exit)
+          // Existing position: remove variant + simulation_trade to revert to baseline.
+          // To sell to 0%, the user should explicitly enter 0 in the sizing input.
           if (delRow.variant) {
-            onUpdateVariant(delRow.variant.id, { sizingInput: '0' })
-          } else {
-            // No variant yet — create one with 0 sizing
-            onCreateVariant(delRow.asset_id, 'sell')
-            // The variant will be created, then we need to set sizing to 0
-            // Use pending edit pattern: the variant creation will trigger an edit
+            // Remove both simulation_trade and variant so row reverts fully to baseline
+            if (onRemoveAsset) onRemoveAsset(delRow.asset_id)
+            onDeleteVariant(delRow.variant.id)
           }
+          // If no variant exists, row is already at baseline — nothing to do
         } else if (delRow.variant) {
-          // Idea/recommendation (new position): remove from simulation entirely
+          // New position (no baseline): remove from simulation entirely
           if (onRemoveAsset) {
             onRemoveAsset(delRow.asset_id)
           } else {

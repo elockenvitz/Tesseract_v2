@@ -118,6 +118,7 @@ function getInitialState(propSimulationId?: string, tabId?: string) {
         selectedSimulationId: savedState.selectedSimulationId || propSimulationId || null,
         showIdeasPanel: savedState.showIdeasPanel ?? true,
         impactView,
+        savedPortfolioId: savedState.selectedPortfolioId || null,
       }
     }
   }
@@ -125,6 +126,7 @@ function getInitialState(propSimulationId?: string, tabId?: string) {
     selectedSimulationId: propSimulationId || null,
     showIdeasPanel: true,
     impactView: 'simulation' as const,
+    savedPortfolioId: null as string | null,
   }
 }
 
@@ -387,8 +389,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     initialState.current.impactView as any || 'simulation'
   )
 
-  // New: Portfolio-first workflow state
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(initialPortfolioId || null)
+  // New: Portfolio-first workflow state — restore from tab state, then prop, then null
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(
+    initialPortfolioId || initialState.current.savedPortfolioId || null
+  )
   const [selectedViewType, setSelectedViewType] = useState<'private' | 'lists'>('private')
   const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false)
   const [portfolioSearchQuery, setPortfolioSearchQuery] = useState('')
@@ -460,9 +464,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         selectedSimulationId,
         showIdeasPanel,
         impactView,
+        selectedPortfolioId,
       })
     }
-  }, [tabId, selectedSimulationId, showIdeasPanel, impactView])
+  }, [tabId, selectedSimulationId, showIdeasPanel, impactView, selectedPortfolioId])
 
   // Listen for navigation events
   useEffect(() => {
@@ -1108,6 +1113,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     },
     onSuccess: (_data, idea) => {
       toast.success(`${idea.assets?.symbol || 'Trade'} committed to Trade Book`)
+      // Refresh simulation data so the promoted trade disappears from the sim
+      queryClient.invalidateQueries({ queryKey: ['simulation'] })
+      queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
     },
     onError: (err: any) => {
       toast.error('Execute failed', err.message)
@@ -4895,7 +4903,30 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <div className="h-full">
                     {impactView === 'simulation' ? (
                       /* Holdings Simulation Table + Suggestion Review Panel */
-                      <div className="h-full flex gap-0">
+                      <div className="h-full flex flex-col gap-0">
+                      {/* Pending accepted trades banner */}
+                      {(() => {
+                        const pending = (acceptedTrades || []).filter(t => t.execution_status !== 'complete' && t.execution_status !== 'cancelled')
+                        if (pending.length === 0) return null
+                        return (
+                          <div className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-lg bg-blue-50 border border-blue-200 text-[11px]">
+                            <span className="font-semibold text-blue-700">
+                              {pending.length} committed trade{pending.length !== 1 ? 's' : ''} pending execution
+                            </span>
+                            <span className="text-blue-500">
+                              {pending.map(t => (t as any).asset?.symbol || '?').join(', ')}
+                            </span>
+                            <button
+                              onClick={() => window.dispatchEvent(new CustomEvent('navigate-to-asset', {
+                                detail: { id: 'trade-book', title: 'Trade Book', type: 'trade-book', data: { portfolioId: selectedPortfolioId } }
+                              }))}
+                              className="ml-auto text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                              View in Trade Book →
+                            </button>
+                          </div>
+                        )
+                      })()}
                       <div className="flex-1 min-w-0 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
                         <HoldingsSimulationTable
                           rows={simulationRows.rows}
@@ -5403,7 +5434,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           setShowAddTradeIdeaModal(false)
           refetchTradeIdeas()
         }}
-        preselectedPortfolioId={simulation?.portfolio_id}
       />
 
       {/* Proposal Editor Modal */}

@@ -105,6 +105,10 @@ export function useSmartInput({
   const [isAILoading, setIsAILoading] = useState(false)
   const [aiError, setAIError] = useState<string | null>(null)
 
+  // Symbol mode state — for .chart.AAPL, .price.MSFT etc.
+  const [symbolModeCommand, setSymbolModeCommand] = useState<string | null>(null) // e.g., 'chart', 'chart.price', 'price'
+  const [symbolSearchQuery, setSymbolSearchQuery] = useState('')
+
   // Template Fill Mode state - for navigating through {{placeholders}}
   const [isTemplateFillMode, setIsTemplateFillMode] = useState(false)
   const [templatePlaceholders, setTemplatePlaceholders] = useState<{ start: number; end: number; name: string }[]>([])
@@ -132,6 +136,13 @@ export function useSmartInput({
     query: dropdownQuery,
     types: ['asset'],
     enabled: activeDropdown === 'cashtag' && enableHashtags
+  })
+
+  // Symbol mode asset search (for .chart.AA, .price.MS etc.)
+  const { results: symbolAssetResults, isLoading: isLoadingSymbolAssets } = useEntitySearch({
+    query: symbolSearchQuery,
+    types: ['asset'],
+    enabled: !!symbolModeCommand && symbolSearchQuery.length >= 1
   })
 
   // # for other entities (not assets)
@@ -215,20 +226,43 @@ export function useSmartInput({
       }
     }
 
-    // Check .commands
-    if (lastDot > lastSpace && lastDot !== -1) {
-      const cmd = beforeCursor.substring(lastDot + 1).toLowerCase()
+    // Check .commands — find the command-starting dot (after whitespace or at start),
+    // not the last dot, so multi-dot commands like .chart.aapl work correctly.
+    // Scan backwards from cursor to find a dot preceded by whitespace or at position 0.
+    let cmdDot = -1
+    for (let i = beforeCursor.length - 1; i >= 0; i--) {
+      const ch = beforeCursor[i]
+      if (ch === ' ' || ch === '\n') break // hit whitespace before finding a dot
+      if (ch === '.' && (i === 0 || /\s/.test(beforeCursor[i - 1]))) {
+        cmdDot = i
+        break
+      }
+    }
+    if (cmdDot === -1 && lastDot > lastSpace && lastDot !== -1) {
+      cmdDot = lastDot // fallback for simple single-dot commands
+    }
+
+    if (cmdDot !== -1 && cmdDot > lastSpace) {
+      const cmd = beforeCursor.substring(cmdDot + 1).toLowerCase()
 
       // .template or .t
       if (enableTemplates && (cmd.startsWith('template') || cmd === 't')) {
         const query = cmd.replace(/^template\s*/, '').replace(/^t\s*/, '')
-        return { type: 'template', query, position: lastDot }
+        return { type: 'template', query, position: cmdDot }
       }
 
       // .visibility commands - .private, .team, .portfolio (check BEFORE data commands since 'p' matches both 'private' and 'price')
       const visibilityCommands = ['private', 'team', 'portfolio']
       if (cmd.length > 0 && visibilityCommands.some(v => v.startsWith(cmd) || cmd.startsWith(v))) {
-        return { type: 'visibility', query: cmd, position: lastDot }
+        return { type: 'visibility', query: cmd, position: cmdDot }
+      }
+
+      // .chart commands — work with or without assetContext via .chart.SYMBOL syntax
+      if (enableDataFunctions) {
+        const chartPrefixes = ['chart', 'chart.price', 'chart.volume', 'chart.performance', 'chart.comparison', 'chart.technicals']
+        if (cmd.length > 0 && (chartPrefixes.some(c => c.startsWith(cmd) || cmd.startsWith(c)))) {
+          return { type: 'chart', query: cmd, position: cmdDot }
+        }
       }
 
       // .data functions - show suggestions as user types
@@ -236,7 +270,15 @@ export function useSmartInput({
         const dataCommands = ['price', 'volume', 'marketcap', 'change', 'pe', 'dividend', 'data']
         // Show data picker if typing any prefix that could match a data command
         if (cmd.length > 0 && dataCommands.some(d => d.startsWith(cmd) || cmd.startsWith(d))) {
-          return { type: 'data', query: cmd, position: lastDot }
+          return { type: 'data', query: cmd, position: cmdDot }
+        }
+      }
+
+      // .data functions without asset context — allow .price.AAPL syntax
+      if (enableDataFunctions && !assetContext) {
+        const dataCommands = ['price', 'volume', 'marketcap', 'change', 'pe', 'dividend', 'data']
+        if (cmd.length > 0 && dataCommands.some(d => d.startsWith(cmd) || cmd.startsWith(d))) {
+          return { type: 'data', query: cmd, position: cmdDot }
         }
       }
 
@@ -247,17 +289,22 @@ export function useSmartInput({
         if (cmd.startsWith('embed')) {
           const embedMatch = beforeCursor.match(/\.embed\s+(https?:\/\/[^\s]*)?$/i)
           if (embedMatch) {
-            return { type: 'embed', query: embedMatch[1] || '', position: lastDot }
+            return { type: 'embed', query: embedMatch[1] || '', position: cmdDot }
           }
           // Just .embed without space yet
-          return { type: 'embed', query: '', position: lastDot }
+          return { type: 'embed', query: '', position: cmdDot }
         }
         // .screenshot
         if (cmd.startsWith('screen')) {
-          return { type: 'screenshot', query: cmd, position: lastDot }
+          return { type: 'screenshot', query: cmd, position: cmdDot }
         }
         // .capture
-        return { type: 'capture', query: cmd, position: lastDot }
+        return { type: 'capture', query: cmd, position: cmdDot }
+      }
+
+      // Fallback: show dot command menu for any unrecognized prefix (including empty)
+      if (enableDataFunctions) {
+        return { type: 'chart', query: cmd, position: cmdDot }
       }
     }
 
@@ -372,6 +419,70 @@ export function useSmartInput({
         return
       }
 
+      // Check for .chart.SYMBOL or .chart.type.SYMBOL pattern followed by space
+      const chartMatch = beforeSpace.match(/\.(chart(?:\.(?:price|volume|performance|comparison|technicals))?)\.([A-Z0-9.]+)$/i)
+      if (chartMatch && enableDataFunctions) {
+        const chartCmd = chartMatch[1].toLowerCase()
+        const symbol = chartMatch[2].toUpperCase()
+        const dotPos = beforeSpace.length - chartMatch[0].length
+        const chartType = chartCmd === 'chart' ? 'price' : chartCmd.replace('chart.', '')
+        const formatted = `.chart[${chartType}:${symbol}]`
+
+        const before = newValue.substring(0, dotPos)
+        const after = newValue.substring(newCursorPos)
+        const newContent = before + formatted + ' ' + after
+        const insertCursorPos = before.length + formatted.length + 1
+
+        setValue(newContent)
+        setCursorPosition(insertCursorPos)
+        setActiveDropdown(null)
+        setDropdownQuery('')
+        setSymbolModeCommand(null)
+        setSymbolSearchQuery('')
+
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+            textareaRef.current.setSelectionRange(insertCursorPos, insertCursorPos)
+          }
+        }, 0)
+        return
+      }
+
+      // Check for .price.SYMBOL, .pe.SYMBOL etc. (data command with inline symbol)
+      const dataSymbolMatch = beforeSpace.match(/\.(price|volume|marketcap|change|pe|dividend)\.([A-Z0-9.]+)$/i)
+      if (dataSymbolMatch && enableDataFunctions) {
+        const dataType = dataSymbolMatch[1].toLowerCase()
+        const symbol = dataSymbolMatch[2].toUpperCase()
+        const dotPos = beforeSpace.length - dataSymbolMatch[0].length
+
+        // Look up asset to get ID for live format
+        lookupAssetBySymbol(symbol).then(asset => {
+          if (asset) {
+            const dtMap: Record<string, string> = { pe: 'pe_ratio', dividend: 'dividend_yield' }
+            const formatted = `.data[${dtMap[dataType] || dataType}:live:${asset.id}]`
+            const currentVal = textareaRef.current?.value || ''
+            const before = currentVal.substring(0, dotPos)
+            const after = currentVal.substring(dotPos + dataSymbolMatch[0].length + 1) // +1 for space
+            const newContent = before + formatted + ' ' + after
+            const newPos = before.length + formatted.length + 1
+
+            setValue(newContent)
+            setCursorPosition(newPos)
+            setTimeout(() => {
+              if (textareaRef.current) {
+                textareaRef.current.focus()
+                textareaRef.current.setSelectionRange(newPos, newPos)
+              }
+            }, 0)
+          }
+        })
+
+        setActiveDropdown(null)
+        setDropdownQuery('')
+        return
+      }
+
       // Look for $SYMBOL pattern at the end (symbol is uppercase letters/numbers)
       const cashtagMatch = beforeSpace.match(/\$([A-Z0-9.]+)$/)
 
@@ -443,6 +554,36 @@ export function useSmartInput({
         if (isAIPromptMode) {
           setIsAIPromptMode(false)
         }
+
+        // Detect symbol mode for chart/data commands (e.g., "chart.aa" or "price.ms")
+        const SYMBOL_COMMANDS = ['chart', 'chart.price', 'chart.volume', 'chart.performance', 'chart.comparison', 'chart.technicals', 'price', 'volume', 'marketcap', 'change', 'pe', 'dividend', 'data']
+        if ((trigger.type === 'chart' || trigger.type === 'data') && trigger.query) {
+          // Sort longest first so chart.price matches before chart
+          const sorted = [...SYMBOL_COMMANDS].sort((a, b) => b.length - a.length)
+          for (const cmd of sorted) {
+            const prefix = cmd + '.'
+            if (trigger.query.toLowerCase().startsWith(prefix) || trigger.query.toLowerCase() === cmd + '.') {
+              const symQuery = trigger.query.slice(prefix.length)
+              setSymbolModeCommand(cmd)
+              setSymbolSearchQuery(symQuery)
+              setActiveDropdown(trigger.type)
+              setDropdownQuery(trigger.query)
+              setTriggerPosition(trigger.position)
+              setSelectedIndex(0)
+              if (textareaRef.current) {
+                setDropdownPosition(calculateDropdownPosition(textareaRef.current, trigger.position))
+              }
+              return // handled
+            }
+          }
+        }
+
+        // Not in symbol mode — clear it
+        if (symbolModeCommand) {
+          setSymbolModeCommand(null)
+          setSymbolSearchQuery('')
+        }
+
         setActiveDropdown(trigger.type)
         setDropdownQuery(trigger.query)
         setTriggerPosition(trigger.position)
@@ -699,6 +840,44 @@ export function useSmartInput({
     }
   }, [value, triggerPosition, cursorPosition])
 
+  // Select an asset from symbol mode search results (.chart.AAPL, .price.MSFT)
+  const selectSymbolAsset = useCallback((asset: EntitySearchResult) => {
+    if (!symbolModeCommand) return
+
+    const CHART_CMDS = ['chart', 'chart.price', 'chart.volume', 'chart.performance', 'chart.comparison', 'chart.technicals']
+    const isChart = CHART_CMDS.includes(symbolModeCommand)
+
+    let formatted: string
+    if (isChart) {
+      const chartType = symbolModeCommand === 'chart' ? 'price' : symbolModeCommand.replace('chart.', '')
+      formatted = `.chart[${chartType}:${asset.title}]`
+    } else {
+      // Data command
+      const dtMap: Record<string, string> = { pe: 'pe_ratio', dividend: 'dividend_yield' }
+      const dataType = dtMap[symbolModeCommand] || symbolModeCommand
+      formatted = `.data[${dataType}:live:${asset.id}]`
+    }
+
+    const before = value.substring(0, triggerPosition)
+    const after = value.substring(cursorPosition)
+    const newValue = before + formatted + ' ' + after
+    const newCursorPos = before.length + formatted.length + 1
+
+    setValue(newValue)
+    setCursorPosition(newCursorPos)
+    setActiveDropdown(null)
+    setDropdownQuery('')
+    setSymbolModeCommand(null)
+    setSymbolSearchQuery('')
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 0)
+  }, [symbolModeCommand, value, triggerPosition, cursorPosition])
+
   // Get current AI prompt text (text after ".AI " up to cursor)
   const aiPromptText = useMemo(() => {
     if (!isAIPromptMode) return ''
@@ -908,6 +1087,32 @@ export function useSmartInput({
 
     if (!activeDropdown) return
 
+    // Symbol mode keyboard handling (for .chart.AA, .price.MS etc.)
+    if (symbolModeCommand && symbolAssetResults.length > 0) {
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          setSelectedIndex(prev => Math.min(prev + 1, symbolAssetResults.length - 1))
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          setSelectedIndex(prev => Math.max(prev - 1, 0))
+          return
+        case 'Enter':
+        case 'Tab':
+          e.preventDefault()
+          const asset = symbolAssetResults[selectedIndex]
+          if (asset) selectSymbolAsset(asset)
+          return
+        case 'Escape':
+          e.preventDefault()
+          closeDropdown()
+          setSymbolModeCommand(null)
+          setSymbolSearchQuery('')
+          return
+      }
+    }
+
     // Get filtered AI models for ai-model dropdown
     const filteredAIModels = AI_MODELS.filter(m =>
       m.id.toLowerCase().includes(dropdownQuery.toLowerCase())
@@ -932,8 +1137,10 @@ export function useSmartInput({
 
       case 'Enter':
       case 'Tab':
+        // Always prevent Enter/Tab when a dropdown is active so it doesn't
+        // propagate to external handlers (e.g., send message in DMs).
+        e.preventDefault()
         if (suggestions.length > 0) {
-          e.preventDefault()
           const selected = suggestions[selectedIndex]
           if (activeDropdown === 'mention') {
             selectMention(selected as EntitySearchResult)
@@ -974,7 +1181,10 @@ export function useSmartInput({
     cancelAIPrompt,
     isTemplateFillMode,
     goToNextPlaceholder,
-    exitTemplateFillMode
+    exitTemplateFillMode,
+    symbolModeCommand,
+    symbolAssetResults,
+    selectSymbolAsset
   ])
 
   return {
@@ -1006,6 +1216,13 @@ export function useSmartInput({
     assetSuggestions: assetResults,
     templateSuggestions,
     isLoadingSuggestions: isLoadingUsers || isLoadingEntities || isLoadingAssets,
+
+    // Symbol mode (for .chart.AAPL, .price.MSFT etc.)
+    symbolModeCommand,
+    symbolSearchQuery,
+    symbolAssetResults,
+    isLoadingSymbolAssets,
+    selectSymbolAsset,
 
     // Actions
     handleChange,

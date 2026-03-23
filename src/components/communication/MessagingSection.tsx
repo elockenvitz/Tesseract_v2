@@ -60,7 +60,7 @@ export function MessagingSection({
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [messageContent, setMessageContent] = useState('')
-  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   const [searchQuery, setSearchQuery] = useState('')
   const [filterBy, setFilterBy] = useState<'all' | 'pinned' | 'replies'>('all')
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
@@ -963,7 +963,7 @@ export function MessagingSection({
               enableMentions={true}
               enableHashtags={true}
               enableTemplates={true}
-              enableDataFunctions={false}
+              enableDataFunctions={true}
               enableAI={true}
             />
           </div>

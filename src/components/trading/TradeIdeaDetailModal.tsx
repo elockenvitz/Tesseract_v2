@@ -117,7 +117,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   }, [isOpen, initialTab])
 
   const [discussionMessage, setDiscussionMessage] = useState('')
-  const [, setDiscussionMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [, setDiscussionMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   const discussionLastSeenRef = useRef<string | null>(null)
   const [replyToMessage, setReplyToMessage] = useState<string | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
@@ -992,28 +992,41 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     }
   }, [labLinks])
 
-  // Build portfolio contexts from labLinks and portfolioHoldings for proposals tab
+  // Build portfolio contexts from labLinks and portfolioHoldings for proposals tab.
+  // Only include portfolios the current user is a member of — users should not
+  // see sizing/decision sections for portfolios they don't belong to.
+  const userPortfolioIds = useMemo(() => {
+    if (!user?.id || !linkedPortfolioMembers) return new Set<string>()
+    return new Set(linkedPortfolioMembers.filter(m => m.user_id === user.id).map(m => m.portfolio_id))
+  }, [user?.id, linkedPortfolioMembers])
+
   useEffect(() => {
     if (labLinks.length > 0 && portfolioHoldings) {
-      const contexts: PortfolioContext[] = labLinks.map(link => {
-        const portfolioId = link.trade_lab?.portfolio_id
-        const portfolioName = link.trade_lab?.portfolio?.name || 'Unknown Portfolio'
-        const benchmark = (link.trade_lab?.portfolio as any)?.benchmark || null
-        const holdingData = portfolioHoldings.find(h => h.portfolioId === portfolioId)
+      const contexts: PortfolioContext[] = labLinks
+        .filter(link => {
+          const portfolioId = link.trade_lab?.portfolio_id
+          // Only show portfolios the current user is a member of
+          return portfolioId && userPortfolioIds.has(portfolioId)
+        })
+        .map(link => {
+          const portfolioId = link.trade_lab?.portfolio_id
+          const portfolioName = link.trade_lab?.portfolio?.name || 'Unknown Portfolio'
+          const benchmark = (link.trade_lab?.portfolio as any)?.benchmark || null
+          const holdingData = portfolioHoldings.find(h => h.portfolioId === portfolioId)
 
-        return {
-          id: portfolioId || '',
-          name: portfolioName,
-          benchmark,
-          currentShares: holdingData?.shares || 0,
-          currentPrice: holdingData?.price || 0,
-          currentValue: holdingData?.marketValue || 0,
-          currentWeight: holdingData?.weight || 0,
-          benchmarkWeight: null, // TODO: fetch from benchmark_holdings when available
-          activeWeight: null,
-          portfolioTotalValue: holdingData?.totalPortfolioValue || 0,
-        }
-      }).filter(c => c.id)
+          return {
+            id: portfolioId || '',
+            name: portfolioName,
+            benchmark,
+            currentShares: holdingData?.shares || 0,
+            currentPrice: holdingData?.price || 0,
+            currentValue: holdingData?.marketValue || 0,
+            currentWeight: holdingData?.weight || 0,
+            benchmarkWeight: null,
+            activeWeight: null,
+            portfolioTotalValue: holdingData?.totalPortfolioValue || 0,
+          }
+        }).filter(c => c.id)
 
       setPortfolioContexts(contexts)
 
@@ -1059,22 +1072,28 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   })
 
   // Fetch all available trade labs for portfolio management
+  // Fetch trade labs the current user has portfolio membership for
   const { data: allLabs = [] } = useQuery({
-    queryKey: ['all-trade-labs'],
+    queryKey: ['user-trade-labs', user?.id],
     queryFn: async () => {
+      if (!user?.id) return []
+      // Get portfolios user is a member of
+      const { data: memberships } = await supabase
+        .from('portfolio_memberships')
+        .select('portfolio_id')
+        .eq('user_id', user.id)
+      const memberPortfolioIds = (memberships || []).map(m => m.portfolio_id)
+      if (memberPortfolioIds.length === 0) return []
+
       const { data, error } = await supabase
         .from('trade_labs')
-        .select(`
-          id,
-          name,
-          portfolio_id,
-          portfolios:portfolio_id (id, name)
-        `)
+        .select('id, name, portfolio_id, portfolios:portfolio_id (id, name)')
+        .in('portfolio_id', memberPortfolioIds)
         .order('name')
       if (error) throw error
       return data || []
     },
-    enabled: isOpen && isManagingPortfolios,
+    enabled: isOpen && isManagingPortfolios && !!user?.id,
   })
 
   // Mutation for linking idea to a portfolio
@@ -1310,10 +1329,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   })
 
   // Filter discussion messages based on portfolio filter
-  // null = Shared (messages with no portfolio_id), string = portfolio-specific
+  // null = All messages (default), string = portfolio-specific only
   const filteredDiscussionMessages = useMemo(() => {
     if (discussionPortfolioFilter === null) {
-      return discussionMessages.filter((m: any) => !m.portfolio_id)
+      return discussionMessages // Show all messages in the default view
     }
     return discussionMessages.filter((m: any) => m.portfolio_id === discussionPortfolioFilter)
   }, [discussionMessages, discussionPortfolioFilter])
@@ -2069,66 +2088,58 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                 <span className="text-gray-500 dark:text-gray-400">
                   {trade.assets?.company_name}
                 </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <div className="relative">
+                {/* Portfolio pills + add button */}
+                <div className="relative flex items-center gap-1.5">
+                  {labLinks.map((link: any) => {
+                    const name = link.trade_lab?.portfolio?.name || link.trade_lab?.name || 'Unknown'
+                    return (
+                      <span key={link.id} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                        <Briefcase className="w-3 h-3 text-gray-400" />
+                        {name}
+                        {isManagingPortfolios && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); unlinkFromLabMutation.mutate(link.trade_lab_id) }}
+                            disabled={unlinkFromLabMutation.isPending}
+                            className="text-gray-400 hover:text-red-500 transition-colors ml-0.5"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                      </span>
+                    )
+                  })}
                   <button
                     onClick={() => setIsManagingPortfolios(!isManagingPortfolios)}
-                    className="text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                    className={clsx(
+                      'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors',
+                      labLinks.length === 0
+                        ? 'text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700',
+                    )}
                   >
-                    {labLinks.length === 0
-                      ? '+ Add to portfolio'
-                      : labLinks.length === 1
-                        ? (labLinks[0] as any).trade_lab?.portfolio?.name || (labLinks[0] as any).trade_lab?.name || '1 portfolio'
-                        : `${labLinks.length} portfolios`}
+                    <Plus className="w-3 h-3" />
+                    {labLinks.length === 0 ? 'Add portfolio' : 'Add'}
                   </button>
                   {isManagingPortfolios && (
                     <>
                     <div className="fixed inset-0 z-40" onClick={() => { setIsManagingPortfolios(false); setShowAddPortfolio(false) }} />
-                    <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[200px] max-h-64 overflow-y-auto">
-                      {/* Current portfolios */}
-                      {labLinks.map((link: any) => {
-                        const name = link.trade_lab?.portfolio?.name || link.trade_lab?.name || 'Unknown'
-                        return (
-                          <div key={link.id} className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700">
-                            <span className="text-sm text-gray-700 dark:text-gray-300">{name}</span>
-                            <button
-                              onClick={() => unlinkFromLabMutation.mutate(link.trade_lab_id)}
-                              disabled={unlinkFromLabMutation.isPending}
-                              className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )
-                      })}
-                      {/* Add button → expands available list */}
-                      {!showAddPortfolio ? (
-                        <button
-                          onClick={() => setShowAddPortfolio(true)}
-                          className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          <Plus className="h-3 w-3" />
-                          Add to portfolio
-                        </button>
+                    <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[220px] max-h-64 overflow-y-auto">
+                      {allLabs.filter((lab: any) => !labLinks.some((l: any) => l.trade_lab_id === lab.id)).length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-gray-400">Already in all portfolios</div>
                       ) : (
-                        <>
-                          <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
-                          {allLabs
-                            .filter((lab: any) => !labLinks.some((l: any) => l.trade_lab_id === lab.id))
-                            .map((lab: any) => (
-                              <button
-                                key={lab.id}
-                                onClick={() => linkToLabMutation.mutate(lab.id)}
-                                disabled={linkToLabMutation.isPending}
-                                className="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                              >
-                                {lab.portfolios?.name || lab.name}
-                              </button>
-                            ))}
-                          {allLabs.filter((lab: any) => !labLinks.some((l: any) => l.trade_lab_id === lab.id)).length === 0 && (
-                            <div className="px-3 py-2 text-xs text-gray-400 italic">Added to all portfolios</div>
-                          )}
-                        </>
+                        allLabs
+                          .filter((lab: any) => !labLinks.some((l: any) => l.trade_lab_id === lab.id))
+                          .map((lab: any) => (
+                            <button
+                              key={lab.id}
+                              onClick={() => { linkToLabMutation.mutate(lab.id); setIsManagingPortfolios(false) }}
+                              disabled={linkToLabMutation.isPending}
+                              className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            >
+                              <Briefcase className="w-3.5 h-3.5 text-gray-400" />
+                              {lab.portfolios?.name || lab.name}
+                            </button>
+                          ))
                       )}
                     </div>
                     </>
@@ -3070,13 +3081,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   : null
                 const ptEmptyHeading = ptActiveScopeLabel
                   ? `No discussion yet for ${ptActiveScopeLabel}`
-                  : 'No shared discussion yet'
+                  : 'No discussion yet'
                 const ptEmptySubtext = ptActiveScopeLabel
                   ? `Start the conversation about this pair trade in the context of ${ptActiveScopeLabel}.`
                   : 'Use this space for quick questions, working notes, and informal collaboration.'
                 const ptComposerPlaceholder = ptActiveScopeLabel
                   ? `Add a note for ${ptActiveScopeLabel}...`
-                  : 'Share a thought in shared discussion...'
+                  : 'Add to the discussion...'
 
                 return (
                 <div className="flex flex-col h-full">
@@ -3097,7 +3108,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             )}
                           >
                             <Globe className="h-3 w-3" />
-                            Shared
+                            All
                           </button>
                           {discussionPortfolios.map(p => (
                             <button
@@ -3227,7 +3238,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     )}
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <UniversalSmartInput ref={discussionInputRef} value={discussionMessage} onChange={(value, metadata) => { setDiscussionMessage(value); setDiscussionMetadata(metadata) }} onKeyDown={handleDiscussionKeyDown} placeholder={ptComposerPlaceholder} textareaClassName="text-sm" rows={2} minHeight="60px" enableMentions={true} enableHashtags={true} enableTemplates={false} enableDataFunctions={false} enableAI={false} />
+                        <UniversalSmartInput ref={discussionInputRef} value={discussionMessage} onChange={(value, metadata) => { setDiscussionMessage(value); setDiscussionMetadata(metadata) }} onKeyDown={handleDiscussionKeyDown} placeholder={ptComposerPlaceholder} textareaClassName="text-sm" rows={2} minHeight="60px" enableMentions={true} enableHashtags={true} enableTemplates={true} enableDataFunctions={true} enableAI={true} />
                       </div>
                       <button onClick={handleSendDiscussionMessage} disabled={!discussionMessage.trim() || sendDiscussionMessageMutation.isPending} className={clsx("self-end p-2 rounded-lg transition-colors", discussionMessage.trim() ? "bg-primary-600 text-white hover:bg-primary-700" : "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed")}><Send className="h-4 w-4" /></button>
                     </div>
@@ -4828,13 +4839,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   : null
                 const emptyHeading = activeScopeLabel
                   ? `No discussion yet for ${activeScopeLabel}`
-                  : 'No shared discussion yet'
+                  : 'No discussion yet'
                 const emptySubtext = activeScopeLabel
                   ? `Start the conversation about this idea in the context of ${activeScopeLabel}.`
                   : 'Use this space for quick questions, working notes, and informal collaboration.'
                 const composerPlaceholder = activeScopeLabel
                   ? `Add a note for ${activeScopeLabel}...`
-                  : 'Share a thought in shared discussion...'
+                  : 'Add to the discussion...'
 
                 return (
                 <div className="flex flex-col h-full">
@@ -4855,7 +4866,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             )}
                           >
                             <Globe className="h-3 w-3" />
-                            Shared
+                            All
                           </button>
                           {discussionPortfolios.map(p => (
                             <button
@@ -5003,20 +5014,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       </div>
                     )}
                     <div className="flex gap-2">
-                      <input
-                        ref={discussionInputRef as any}
-                        type="text"
-                        value={discussionMessage}
-                        onChange={(e) => setDiscussionMessage(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendDiscussionMessage() }}}
-                        placeholder={composerPlaceholder}
-                        className="flex-1 h-9 px-3 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-                      />
+                      <div className="flex-1">
+                        <UniversalSmartInput ref={discussionInputRef} value={discussionMessage} onChange={(value, metadata) => { setDiscussionMessage(value); setDiscussionMetadata(metadata) }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendDiscussionMessage() }}} placeholder={composerPlaceholder} textareaClassName="text-sm" rows={2} minHeight="60px" enableMentions={true} enableHashtags={true} enableTemplates={true} enableDataFunctions={true} enableAI={true} />
+                      </div>
                       <button
                         onClick={handleSendDiscussionMessage}
                         disabled={!discussionMessage.trim() || sendDiscussionMessageMutation.isPending}
                         className={clsx(
-                          "h-9 px-3 rounded-lg flex items-center justify-center gap-1.5 text-xs font-medium transition-colors",
+                          "h-9 px-3 rounded-lg flex items-center justify-center gap-1.5 text-xs font-medium transition-colors self-end mb-1",
                           discussionMessage.trim()
                             ? "bg-primary-600 text-white hover:bg-primary-700"
                             : "bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed"

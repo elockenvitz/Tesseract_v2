@@ -284,13 +284,14 @@ function buildPrimaryAction(
 
     case 'SIMULATION':
       return {
-        label: 'Simulate',
-        onClick: () => navigate({
-          type: 'trade-lab',
-          id: 'trade-lab',
-          title: 'Trade Lab',
-          data: { assetId: item.context.assetId },
-        }),
+        label: 'Open',
+        onClick: () => {
+          if (item.context.tradeIdeaId) {
+            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Trade Queue', data: { selectedTradeId: item.context.tradeIdeaId } })
+          } else {
+            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Trade Queue' })
+          }
+        },
       }
 
     case 'THESIS':

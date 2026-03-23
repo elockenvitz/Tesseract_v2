@@ -270,14 +270,25 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   }
 
   const handleCreateEvent = () => {
+    // Build timezone-aware datetime strings so Postgres TIMESTAMPTZ stores
+    // the correct moment. Without a timezone suffix, the DB interprets
+    // the string as UTC which shifts the date for users west of UTC.
+    const tzOffset = (() => {
+      const off = new Date().getTimezoneOffset()
+      const sign = off <= 0 ? '+' : '-'
+      const h = Math.floor(Math.abs(off) / 60).toString().padStart(2, '0')
+      const m = (Math.abs(off) % 60).toString().padStart(2, '0')
+      return `${sign}${h}:${m}`
+    })()
+
     const startDateTime = eventForm.all_day
-      ? `${eventForm.start_date}T00:00:00`
-      : `${eventForm.start_date}T${eventForm.start_time || '00:00'}`
+      ? `${eventForm.start_date}T00:00:00${tzOffset}`
+      : `${eventForm.start_date}T${eventForm.start_time || '09:00'}:00${tzOffset}`
 
     const endDateTime = eventForm.end_date
       ? (eventForm.all_day
-          ? `${eventForm.end_date}T23:59:59`
-          : `${eventForm.end_date}T${eventForm.end_time || '23:59'}`)
+          ? `${eventForm.end_date}T23:59:59${tzOffset}`
+          : `${eventForm.end_date}T${eventForm.end_time || '10:00'}:00${tzOffset}`)
       : undefined
 
     const eventData: Partial<CalendarEvent> = {
@@ -812,6 +823,14 @@ function TimePicker({
   const hourRef = useRef<HTMLDivElement>(null)
   const minRef = useRef<HTMLDivElement>(null)
 
+  // When opening with no value, set a sensible default immediately
+  const handleOpen = () => {
+    if (!value) {
+      onChange('09:00')
+    }
+    setIsOpen(true)
+  }
+
   const parseValue = (val: string) => {
     if (!val) return { hour: 9, minute: 0, period: 'AM' as const }
     const [h, m] = val.split(':').map(Number)
@@ -973,14 +992,14 @@ function TimePicker({
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => isOpen ? setIsOpen(false) : handleOpen()}
         className={clsx(
-          'inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+          'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
           'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700',
           value ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
         )}
       >
-        <Clock className="h-4 w-4 opacity-50" />
+        <Clock className="h-3.5 w-3.5 opacity-50" />
         <span className="tabular-nums">{getLabel()}</span>
       </button>
 

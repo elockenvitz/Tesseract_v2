@@ -57,6 +57,18 @@ import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../components/common/Toast'
 
+/** Clean loading state for asset tabs while data is being fetched */
+function AssetLoadingState() {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-gray-400">Loading asset...</p>
+      </div>
+    </div>
+  )
+}
+
 // Helper to get initial tab state synchronously (avoids flash on refresh)
 function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
   const savedState = TabStateManager.loadMainTabState()
@@ -290,6 +302,31 @@ export function DashboardPage() {
 
   // Keep navigate ref in sync with latest handleSearchResult
   navigateRef.current = handleSearchResult
+
+  // Auto-enrich asset tabs that have only symbol/id but no full asset data.
+  // This happens when navigating from Ideas feed, signals, etc.
+  useEffect(() => {
+    const assetTabsToEnrich = tabs.filter(
+      t => t.type === 'asset' && t.data && !t.data.company_name && (t.data.symbol || t.id)
+    )
+    if (assetTabsToEnrich.length === 0) return
+
+    for (const tab of assetTabsToEnrich) {
+      const fetchAsset = async () => {
+        const { data: asset } = await supabase
+          .from('assets')
+          .select('*')
+          .eq('id', tab.id)
+          .single()
+        if (asset) {
+          setTabs(prev => prev.map(t =>
+            t.id === tab.id ? { ...t, data: { ...t.data, ...asset }, title: asset.symbol || t.title } : t
+          ))
+        }
+      }
+      fetchAsset()
+    }
+  }, [tabs.map(t => t.id).join(',')])
 
   // Decision engine action dispatch → tab navigation
   useEffect(() => {
@@ -602,7 +639,7 @@ export function DashboardPage() {
 
     switch (activeTab.type) {
       case 'asset':
-        return activeTab.data ? <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading asset...</div>
+        return activeTab.data ? <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} /> : <AssetLoadingState />
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':
@@ -628,7 +665,7 @@ export function DashboardPage() {
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':
-        return <TradeBookPage />
+        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} />
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':

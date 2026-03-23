@@ -215,7 +215,7 @@ export function ContributionSection({
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [stableButtonText, setStableButtonText] = useState<string | null>(null)
-  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   const [isDraftMode, setIsDraftMode] = useState(false) // When true, save goes to draft instead of publish
   const [viewingDraft, setViewingDraft] = useState(false) // When true, show draft content instead of published
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false) // Show discard draft confirmation dialog

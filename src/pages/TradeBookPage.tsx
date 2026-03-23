@@ -31,7 +31,11 @@ type BookView = 'trades' | 'batches'
 // Component
 // ---------------------------------------------------------------------------
 
-export function TradeBookPage() {
+interface TradeBookPageProps {
+  initialPortfolioId?: string
+}
+
+export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   const { user } = useAuth()
   const [view, setView] = useState<BookView>('trades')
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null)
@@ -49,7 +53,7 @@ export function TradeBookPage() {
     staleTime: 60_000,
   })
 
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(undefined)
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(initialPortfolioId)
   const portfolioId = selectedPortfolioId || portfolios[0]?.id
   const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false)
   const [portfolioSearch, setPortfolioSearch] = useState('')

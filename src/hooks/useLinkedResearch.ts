@@ -9,6 +9,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { LinkableEntityType } from '../lib/object-links'
+import { grantEvidenceReadAccess } from '../lib/services/evidence-access-service'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -220,6 +221,7 @@ export function useCreateResearchLink() {
       targetId,
       linkType = 'supports',
       userId,
+      ideaId,
     }: {
       sourceType: LinkableEntityType
       sourceId: string
@@ -227,6 +229,9 @@ export function useCreateResearchLink() {
       targetId: string
       linkType?: string
       userId: string
+      /** Trade idea ID — used to grant read access to stakeholders. Pass explicitly
+       *  when targetType is 'trade_idea_thesis'; for 'trade_idea' it defaults to targetId. */
+      ideaId?: string
     }) => {
       const { data, error } = await supabase
         .from('object_links')
@@ -245,6 +250,18 @@ export function useCreateResearchLink() {
         .single()
 
       if (error) throw error
+
+      // Grant read access on evidence notes to all trade idea stakeholders
+      const resolvedIdeaId = ideaId || (targetType === 'trade_idea' ? targetId : undefined)
+      if (resolvedIdeaId) {
+        await grantEvidenceReadAccess({
+          sourceType,
+          sourceId,
+          ideaId: resolvedIdeaId,
+          currentUserId: userId,
+        })
+      }
+
       return data
     },
     onSuccess: () => {

@@ -86,7 +86,11 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
-  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiContent: [] })
+  const [showGroupMenu, setShowGroupMenu] = useState(false)
+  const [showAddMember, setShowAddMember] = useState(false)
+  const [addMemberSearch, setAddMemberSearch] = useState('')
+  const [showGroupInfo, setShowGroupInfo] = useState(false)
+  const [inputMetadata, setInputMetadata] = useState<SmartInputMetadata>({ mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const { user } = useAuth()
@@ -122,8 +126,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   const { data: rawConversations, isLoading: conversationsLoading, isFetching: conversationsFetching, error: conversationsError } = useQuery({
     queryKey: ['conversations', currentOrgId],
     enabled: !!user?.id,
-    staleTime: 60000, // Keep data fresh for 60 seconds
+    staleTime: 15000, // Consider fresh for 15 seconds
     gcTime: 300000, // Keep in cache for 5 minutes
+    refetchInterval: isOpen ? 10000 : false, // Poll every 10s when DM panel is open
     queryFn: async () => {
       if (!user?.id) return []
 
@@ -208,8 +213,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       return conversationsWithMessages as Conversation[]
     },
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   })
 
   // Create a stable, memoized version of conversations to prevent flashing
@@ -257,10 +261,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   // Fetch messages for selected conversation
   const { data: messages, isLoading: messagesLoading, error: messagesError } = useQuery({
     queryKey: ['conversation-messages', selectedConversationId],
-    enabled: !!selectedConversationId, // Don't disable when pane closes - rely on staleTime instead
-    staleTime: 60000, // Consider data fresh for 60 seconds
-    refetchOnMount: false, // Don't refetch when switching back to this view
-    refetchOnWindowFocus: false, // Don't refetch on window focus
+    enabled: !!selectedConversationId,
+    staleTime: 5000, // Short stale time — messages should feel live
     queryFn: async () => {
       if (!selectedConversationId) return []
 
@@ -538,40 +540,17 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     }
   })
 
-  // Create group conversation mutation
+  // Create group conversation mutation — uses SECURITY DEFINER RPC to bypass RLS
   const createGroupMutation = useMutation({
     mutationFn: async ({ name, description, userIds }: { name: string; description: string; userIds: string[] }) => {
-      // Create the group conversation
-      const { data: conversation, error: convError } = await supabase
-        .from('conversations')
-        .insert([{
-          name,
-          description,
-          is_group: true,
-          created_by: user?.id
-        }])
-        .select()
-        .single()
+      const { data, error } = await supabase.rpc('create_group_conversation', {
+        group_name: name,
+        group_description: description || '',
+        member_ids: userIds,
+      })
 
-      if (convError) throw convError
-
-      // Add creator as admin participant
-      const participants = [
-        { conversation_id: conversation.id, user_id: user?.id, is_admin: true },
-        ...userIds.map(userId => ({
-          conversation_id: conversation.id,
-          user_id: userId,
-          is_admin: false
-        }))
-      ]
-
-      const { error: participantsError } = await supabase
-        .from('conversation_participants')
-        .insert(participants)
-
-      if (participantsError) throw participantsError
-
-      return conversation.id
+      if (error) throw error
+      return data as string
     },
     onSuccess: (conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
@@ -581,6 +560,37 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       setGroupDescription('')
       setSelectedUsers([])
     }
+  })
+
+  // Add member to existing group conversation
+  const addMemberMutation = useMutation({
+    mutationFn: async ({ conversationId, userId }: { conversationId: string; userId: string }) => {
+      const { error } = await supabase
+        .from('conversation_participants')
+        .insert({ conversation_id: conversationId, user_id: userId, is_admin: false })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      queryClient.invalidateQueries({ queryKey: ['conversation-messages', selectedConversationId] })
+      setShowAddMember(false)
+      setAddMemberSearch('')
+    },
+  })
+
+  // Fetch users for add-member picker (reuse allUsers query but also enable when adding)
+  const { data: addMemberUsers } = useQuery({
+    queryKey: ['all-users-messaging'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .neq('id', user?.id)
+        .order('first_name', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+    enabled: showAddMember,
   })
 
   const handleSendMessage = () => {
@@ -905,8 +915,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div>
+        <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
+          <div className="flex-shrink-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
             <input
               type="text"
@@ -916,21 +926,21 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
-          
-          <div>
+
+          <div className="flex-shrink-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">Description (optional)</label>
             <textarea
               value={groupDescription}
               onChange={(e) => setGroupDescription(e.target.value)}
               placeholder="Describe the group purpose..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              rows={3}
+              rows={2}
             />
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Add Members</label>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+
+          <div className="flex-1 flex flex-col min-h-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2 flex-shrink-0">Add Members</label>
+            <div className="flex-1 overflow-y-auto space-y-1">
               {allUsers?.map((otherUser) => (
                 <div
                   key={otherUser.id}
@@ -1031,11 +1041,120 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               </p>
             </div>
           </div>
-          <button className="text-gray-400 hover:text-gray-600 transition-colors">
-            <MoreVertical className="h-5 w-5" />
-          </button>
+          {selectedConversation?.is_group && (
+            <div className="relative">
+              <button
+                onClick={() => setShowGroupMenu(!showGroupMenu)}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+              {showGroupMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]">
+                    <button
+                      onClick={() => { setShowAddMember(true); setShowGroupMenu(false) }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Plus className="h-4 w-4 text-gray-400" />
+                      Add member
+                    </button>
+                    <button
+                      onClick={() => { setShowGroupInfo(!showGroupInfo); setShowGroupMenu(false) }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Info className="h-4 w-4 text-gray-400" />
+                      {showGroupInfo ? 'Hide group info' : 'Group info'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Add Member Panel */}
+      {showAddMember && selectedConversation?.is_group && (() => {
+        const existingIds = new Set(selectedConversation.participants?.map(p => p.user_id) || [])
+        const available = (addMemberUsers || []).filter(u =>
+          !existingIds.has(u.id) &&
+          (addMemberSearch.length < 2 || getUserDisplayName(u).toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email.toLowerCase().includes(addMemberSearch.toLowerCase()))
+        )
+        return (
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Add member</span>
+              <button onClick={() => { setShowAddMember(false); setAddMemberSearch('') }} className="text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={addMemberSearch}
+                onChange={e => setAddMemberSearch(e.target.value)}
+                placeholder="Search users..."
+                autoFocus
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+            <div className="max-h-40 overflow-y-auto space-y-0.5">
+              {available.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2 text-center">{addMemberSearch.length < 2 ? 'Type to search...' : 'No users found'}</p>
+              ) : (
+                available.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => addMemberMutation.mutate({ conversationId: selectedConversationId!, userId: u.id })}
+                    disabled={addMemberMutation.isPending}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-white rounded transition-colors"
+                  >
+                    <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary-600 text-[10px] font-semibold">{getUserInitials(u)}</span>
+                    </div>
+                    <span className="truncate">{getUserDisplayName(u)}</span>
+                    <span className="text-xs text-gray-400 truncate ml-auto">{u.email}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Group Info Panel */}
+      {showGroupInfo && selectedConversation?.is_group && (
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">Members ({selectedConversation.participants?.length || 0})</span>
+            <button onClick={() => setShowGroupInfo(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {selectedConversation.description && (
+            <p className="text-xs text-gray-500">{selectedConversation.description}</p>
+          )}
+          <div className="max-h-48 overflow-y-auto space-y-0.5">
+            {selectedConversation.participants?.map(p => (
+              <div key={p.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded">
+                <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-primary-600 text-[10px] font-semibold">{getUserInitials(p.user)}</span>
+                </div>
+                <span className="text-sm text-gray-700 truncate">{getUserDisplayName(p.user)}</span>
+                {p.is_admin && (
+                  <span className="text-[10px] text-gray-400 font-medium ml-auto">Admin</span>
+                )}
+                {p.user_id === user?.id && (
+                  <span className="text-[10px] text-primary-500 font-medium ml-auto">You</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Messages - Scrollable area between header and input */}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -1124,7 +1243,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                           )}
 
                           <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                            <SmartInputRenderer content={message.content} inline />
+                            <SmartInputRenderer content={message.content} />
                           </div>
 
                           {isSelected && (
@@ -1176,7 +1295,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                           )}
 
                           <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                            <SmartInputRenderer content={message.content} inline />
+                            <SmartInputRenderer content={message.content} />
                           </div>
 
                           {isSelected && (
@@ -1285,7 +1404,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               enableMentions={true}
               enableHashtags={true}
               enableTemplates={true}
-              enableDataFunctions={false}
+              enableDataFunctions={true}
               enableAI={true}
             />
           </div>

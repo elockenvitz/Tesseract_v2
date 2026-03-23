@@ -23,6 +23,7 @@ import {
   DATA_SNAPSHOT_REGEX,
   DATA_LIVE_REGEX,
   AI_CONTENT_REGEX,
+  CHART_REGEX,
   VISIBILITY_PRIVATE_REGEX,
   VISIBILITY_TEAM_REGEX,
   VISIBILITY_PORTFOLIO_REGEX,
@@ -43,7 +44,7 @@ export interface SmartInputRendererProps {
 }
 
 interface ParsedSegment {
-  type: 'text' | 'mention' | 'reference' | 'data-snapshot' | 'data-live' | 'ai-content' | 'visibility-private' | 'visibility-team' | 'visibility-portfolio'
+  type: 'text' | 'mention' | 'reference' | 'data-snapshot' | 'data-live' | 'chart' | 'ai-content' | 'visibility-private' | 'visibility-team' | 'visibility-portfolio'
   content: string
   data?: any
 }
@@ -99,6 +100,7 @@ function parseContent(
     { regex: /\.data\[(\w+):snapshot:([^:]+):([^\]]+)\]/g, type: 'data-snapshot' as const },
     { regex: /\.data\[(\w+):live:([a-f0-9-]+)\]/g, type: 'data-live' as const },
     { regex: /\.AI\[([^\]]*)\]\{([^}]*)\}/g, type: 'ai-content' as const },
+    { regex: /\.chart\[(\w+):([A-Z0-9.]+)\]/g, type: 'chart' as const },
     // Visibility patterns
     { regex: /\[PRIVATE:([a-f0-9-]+)\]([\s\S]*?)\[\/PRIVATE\]/g, type: 'visibility-private' as const },
     { regex: /\[TEAM:([a-f0-9-]*):([^\]]*)\]([\s\S]*?)\[\/TEAM\]/g, type: 'visibility-team' as const },
@@ -142,6 +144,10 @@ function parseContent(
         case 'data-live':
           data.dataType = match[1]
           data.assetId = match[2]
+          break
+        case 'chart':
+          data.chartType = match[1]
+          data.symbol = match[2]
           break
         case 'ai-content':
           data.prompt = match[1]
@@ -296,6 +302,14 @@ function SegmentRenderer({
         />
       )
 
+    case 'chart':
+      return (
+        <ChartEmbed
+          chartType={segment.data.chartType}
+          symbol={segment.data.symbol}
+        />
+      )
+
     case 'ai-content':
       return (
         <AIContentBlock
@@ -431,6 +445,31 @@ function DataLiveChip({ dataType, assetId }: DataLiveChipProps) {
 }
 
 // AI content block
+// Chart embed — renders an actual chart for a symbol
+function ChartEmbed({ chartType, symbol }: { chartType: string; symbol: string }) {
+  // Lazy-load SimpleChart to avoid circular deps
+  const [SimpleChart, setSimpleChart] = React.useState<React.ComponentType<any> | null>(null)
+
+  React.useEffect(() => {
+    import('../charts/SimpleChart').then(mod => setSimpleChart(() => mod.SimpleChart))
+  }, [])
+
+  return (
+    <div className="my-2 rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-50 border-b border-cyan-100">
+        <BarChart3 className="w-3.5 h-3.5 text-cyan-600" />
+        <span className="text-xs font-semibold text-cyan-800">{symbol}</span>
+        <span className="text-[10px] text-cyan-500">{chartType} chart</span>
+      </div>
+      {SimpleChart ? (
+        <SimpleChart symbol={symbol} height={200} />
+      ) : (
+        <div className="h-[200px] flex items-center justify-center text-xs text-gray-400">Loading chart...</div>
+      )}
+    </div>
+  )
+}
+
 interface AIContentBlockProps {
   prompt: string
   content: string

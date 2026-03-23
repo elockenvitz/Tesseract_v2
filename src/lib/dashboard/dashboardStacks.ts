@@ -32,7 +32,7 @@ interface StackConfig {
 const STACK_CONFIG: Record<CockpitStackKind, StackConfig> = {
   proposal:    { title: 'Proposals Awaiting Decision', icon: 'Scale',          accentColor: 'red',   ctaLabel: 'Review All' },
   execution:   { title: 'Execution Confirmations',     icon: 'CheckCircle2',   accentColor: 'red',   ctaLabel: 'Confirm' },
-  simulation:  { title: 'Ideas Being Worked On',        icon: 'FlaskConical',   accentColor: 'amber', ctaLabel: 'Open Trade Lab' },
+  simulation:  { title: 'Ideas Being Worked On',        icon: 'FlaskConical',   accentColor: 'amber', ctaLabel: 'Open Trade Queue' },
   thesis:      { title: 'Stale Thesis',                icon: 'FileText',       accentColor: 'amber', ctaLabel: 'Review Assets' },
   deliverable: { title: 'Overdue Deliverables',        icon: 'ListTodo',       accentColor: 'amber', ctaLabel: 'Open Projects' },
   rating:      { title: 'Rating Changes',              icon: 'AlertTriangle',  accentColor: 'blue',  ctaLabel: 'Create Ideas' },

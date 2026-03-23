@@ -17,6 +17,7 @@ import { useArgumentResearchCounts } from '../../hooks/useLinkedResearch'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { ThesisWithUser, ThesisConviction, ThesisDirection } from '../../types/trading'
 import type { LinkableEntityType } from '../../lib/object-links'
+import { grantEvidenceReadAccess } from '../../lib/services/evidence-access-service'
 
 const CONTEXT_DIRECTIONS = new Set<ThesisDirection>(['catalyst', 'risk', 'context'])
 
@@ -185,8 +186,19 @@ function AddResearchMenu({
 
   const linkExistingMutation = useMutation({
     mutationFn: async (item: { id: string; type: LinkableEntityType }) => {
+      // 1. Create the object_links
       for (const row of buildLinkRows(item.type, item.id)) {
         await supabase.from('object_links').upsert(row as any, { onConflict: 'source_type,source_id,target_type,target_id,link_type' })
+      }
+
+      // 2. Grant read access to trade idea stakeholders so they can see the evidence
+      if (user?.id) {
+        await grantEvidenceReadAccess({
+          sourceType: item.type,
+          sourceId: item.id,
+          ideaId,
+          currentUserId: user.id,
+        })
       }
     },
     onSuccess: () => { invalidateAll(); onClose() },
@@ -524,76 +536,72 @@ function InlineArgumentComposer({
     : 'What supports the bear case? Risks, headwinds, or deteriorating fundamentals.'
 
   return (
-    <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 space-y-2">
+    <div className={clsx(
+      'rounded-md border p-2.5 space-y-2',
+      isBull ? 'border-emerald-200 bg-emerald-50/30 dark:border-emerald-800 dark:bg-emerald-900/10' : 'border-red-200 bg-red-50/30 dark:border-red-800 dark:bg-red-900/10',
+    )}>
       <textarea
         value={rationale}
         onChange={e => setRationale(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-20 px-2.5 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 resize-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 placeholder:text-gray-400"
+        rows={2}
+        className="w-full px-2.5 py-1.5 text-[12px] rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 resize-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 placeholder:text-gray-400 leading-relaxed"
         autoFocus
+        onKeyDown={e => { if (e.key === 'Enter' && e.metaKey && rationale.trim()) handleSubmit() }}
       />
 
-      {/* Conviction radio */}
-      <div className="space-y-1.5">
-        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Conviction</span>
-        <div className="flex items-center gap-3">
+      {/* Conviction + scope + actions — all on one row */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           {(['low', 'medium', 'high'] as const).map(c => (
-            <label key={c} className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                name="conviction"
-                checked={conviction === c}
-                onChange={() => setConviction(c)}
-                className="h-3 w-3 accent-gray-600 dark:accent-gray-400"
-              />
-              <span className={clsx(
-                'text-xs capitalize',
-                conviction === c ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-400'
-              )}>
-                {c}
-              </span>
-            </label>
+            <button
+              key={c}
+              onClick={() => setConviction(c)}
+              className={clsx(
+                'px-2 py-0.5 text-[10px] font-medium rounded transition-colors capitalize',
+                conviction === c
+                  ? 'bg-gray-700 text-white dark:bg-gray-300 dark:text-gray-900'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700',
+              )}
+            >
+              {c}
+            </button>
           ))}
         </div>
-      </div>
 
-      {/* Scope (only if multiple portfolios) */}
-      {portfolios.length > 1 && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Scope</span>
+        {portfolios.length > 1 && (
           <select
             value={scope ?? '__shared__'}
             onChange={e => setScope(e.target.value === '__shared__' ? null : e.target.value)}
-            className="text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500"
           >
             <option value="__shared__">Shared</option>
             {portfolios.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-        </div>
-      )}
+        )}
 
-      {/* Actions */}
-      <div className="flex items-center justify-end gap-1.5">
-        <button onClick={onClose} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={createMutation.isPending || !rationale.trim()}
-          className={clsx(
-            'px-3 py-1 text-xs font-medium rounded-md text-white transition-colors',
-            isBull ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700',
-            (createMutation.isPending || !rationale.trim()) && 'opacity-50 cursor-not-allowed'
-          )}
-        >
-          {createMutation.isPending ? 'Saving...' : isBull ? 'Add Bull Case' : 'Add Bear Case'}
-        </button>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <button onClick={onClose} className="px-2 py-0.5 text-[11px] text-gray-400 hover:text-gray-600">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={createMutation.isPending || !rationale.trim()}
+            className={clsx(
+              'px-2.5 py-1 text-[11px] font-semibold rounded text-white transition-colors',
+              isBull ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700',
+              (createMutation.isPending || !rationale.trim()) && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            {createMutation.isPending ? 'Saving...' : 'Save'}
+          </button>
+        </div>
       </div>
 
       {createMutation.isError && (
-        <p className="text-xs text-red-600">Failed to save. Please try again.</p>
+        <p className="text-[10px] text-red-600">Failed to save. Please try again.</p>
       )}
     </div>
   )
