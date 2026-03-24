@@ -76,7 +76,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
       case 'trade_queue_item':
         onNavigate({
           id: 'trade-queue',
-          title: 'Trade Queue',
+          title: 'Idea Pipeline',
           type: 'trade-queue',
           data: { selectedTradeId: source_id }
         })
@@ -127,7 +127,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
       contextId = item.context?.project_id || item.source_id
       contextTitle = item.title
     } else if (item.source_type === 'trade_queue_item') {
-      onNavigate({ id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', data: { selectedTradeId: item.source_id } })
+      onNavigate({ id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', data: { selectedTradeId: item.source_id } })
       return
     } else if (item.context?.asset_id) {
       contextType = 'asset'

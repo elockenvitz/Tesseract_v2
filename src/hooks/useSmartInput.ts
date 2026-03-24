@@ -245,6 +245,11 @@ export function useSmartInput({
     if (cmdDot !== -1 && cmdDot > lastSpace) {
       const cmd = beforeCursor.substring(cmdDot + 1).toLowerCase()
 
+      // Require at least one letter after the dot — a bare "." is punctuation, not a command
+      if (cmd.length === 0 || !/^[a-zA-Z]/.test(cmd)) {
+        return null
+      }
+
       // .template or .t
       if (enableTemplates && (cmd.startsWith('template') || cmd === 't')) {
         const query = cmd.replace(/^template\s*/, '').replace(/^t\s*/, '')
@@ -311,49 +316,30 @@ export function useSmartInput({
     return null
   }, [enableMentions, enableHashtags, enableTemplates, enableAI, enableDataFunctions, assetContext])
 
-  // Calculate dropdown position based on cursor - returns viewport coordinates for fixed positioning
-  const calculateDropdownPosition = useCallback((textarea: HTMLTextAreaElement, triggerPos: number) => {
+  // Calculate dropdown position relative to the textarea.
+  // Always positions above the textarea to never cover what the user is typing.
+  const calculateDropdownPosition = useCallback((textarea: HTMLTextAreaElement, _triggerPos: number) => {
+    const dropdownHeight = 220
+    const dropdownWidth = 288
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
     const textareaRect = textarea.getBoundingClientRect()
     const computed = getComputedStyle(textarea)
     const paddingLeft = parseInt(computed.paddingLeft) || 0
 
-    // Fixed dropdown dimensions for consistent positioning
-    const dropdownHeight = 220 // Header (36px) + content (192px)
-    const dropdownWidth = 288 // w-72 = 18rem = 288px
-    const viewportHeight = window.innerHeight
-    const viewportWidth = window.innerWidth
+    // Always show above the textarea so we never cover the text being typed
+    let top = textareaRect.top - dropdownHeight - 6
 
-    // Calculate available space above and below the ENTIRE textarea
-    const spaceAboveTextarea = textareaRect.top
-    const spaceBelowTextarea = viewportHeight - textareaRect.bottom
-
-    let top: number
-    if (spaceBelowTextarea >= dropdownHeight + 8) {
-      // Enough space below textarea - position below it
-      top = textareaRect.bottom + 4
-    } else if (spaceAboveTextarea >= dropdownHeight + 8) {
-      // Not enough below but enough above - position above textarea
-      top = textareaRect.top - dropdownHeight - 4
-    } else {
-      // Limited space - prefer above to not cover typing
-      top = Math.max(8, textareaRect.top - dropdownHeight - 4)
+    // If not enough room above, show below the textarea as fallback
+    if (top < 8) {
+      top = textareaRect.bottom + 6
     }
 
-    // Ensure top stays within viewport bounds
     top = Math.max(8, Math.min(top, viewportHeight - dropdownHeight - 8))
 
-    // Calculate horizontal position - align with start of textarea for cleaner look
     let left = textareaRect.left + paddingLeft
-
-    // If dropdown would go off right edge, move it left
-    if (left + dropdownWidth > viewportWidth - 16) {
-      left = viewportWidth - dropdownWidth - 16
-    }
-
-    // Ensure left is not negative
-    if (left < 8) {
-      left = 8
-    }
+    if (left + dropdownWidth > viewportWidth - 16) left = viewportWidth - dropdownWidth - 16
+    if (left < 8) left = 8
 
     return { top, left }
   }, [])

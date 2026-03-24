@@ -2350,6 +2350,61 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     { value: 'low', label: 'Low Priority' },
   ]
 
+  // ---------------------------------------------------------------------------
+  // Coordinated loading gate — show a single skeleton until all critical data
+  // for the initial render is ready, so the page appears all-at-once.
+  // ---------------------------------------------------------------------------
+  const pageReady = !layoutLoading && !contributionsLoading
+
+  if (!pageReady) {
+    return (
+      <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
+        <div className="px-8 pt-6 space-y-4 animate-pulse">
+          {/* Header skeleton */}
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="flex items-baseline gap-4">
+                <div className="h-9 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                <div className="h-6 w-16 bg-gray-100 dark:bg-gray-800 rounded" />
+              </div>
+              <div className="h-5 w-48 bg-gray-100 dark:bg-gray-800 rounded mt-2" />
+            </div>
+            <div className="ml-auto flex items-center gap-3">
+              <div className="h-8 w-28 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+              <div className="h-8 w-28 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+            </div>
+          </div>
+          {/* State chips skeleton */}
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded-full" />
+            ))}
+          </div>
+          {/* Tab bar skeleton */}
+          <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 pb-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-8 w-24 bg-gray-100 dark:bg-gray-800 rounded-t-lg" />
+            ))}
+          </div>
+          {/* Content skeleton */}
+          <div className="space-y-3 pt-2">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                <div className="h-5 w-1/4 bg-gray-200 dark:bg-gray-700 rounded mb-4" />
+                <div className="space-y-2">
+                  <div className="h-3 w-3/4 bg-gray-100 dark:bg-gray-800 rounded" />
+                  <div className="h-3 w-1/2 bg-gray-100 dark:bg-gray-800 rounded" />
+                  <div className="h-3 w-2/3 bg-gray-100 dark:bg-gray-800 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
       {/* Sticky Header Section */}
@@ -2694,10 +2749,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </button>
                   {researchAnalysts.map(analyst => {
                     const isCurrentUser = analyst.id === user?.id
+                    const isPrimary = analyst.isCovering && analyst.role === 'primary'
+                    const roleLabel = analyst.isCovering
+                      ? `${analyst.name} — ${analyst.role ? analyst.role.charAt(0).toUpperCase() + analyst.role.slice(1) : 'Covering'} analyst`
+                      : `${analyst.name} — Contributor`
                     return (
                       <button
                         key={analyst.id}
                         onClick={() => setResearchViewFilter(analyst.id)}
+                        title={roleLabel}
                         className={clsx(
                           'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                           researchViewFilter === analyst.id
@@ -2707,8 +2767,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                         )}
                       >
-                        {analyst.isCovering && (
+                        {isPrimary && (
                           <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                        )}
+                        {analyst.isCovering && !isPrimary && (
+                          <Star className="w-3 h-3 text-yellow-500" />
                         )}
                         {analyst.shortName}
                       </button>
@@ -2724,10 +2787,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 >
                   <option value="aggregated">Our View (All Analysts)</option>
                   {researchAnalysts.map(analyst => {
-                    const prefix = analyst.isCovering ? '★ ' : ''
+                    const roleTag = analyst.isCovering
+                      ? analyst.role === 'primary' ? '★ ' : '☆ '
+                      : ''
                     return (
                       <option key={analyst.id} value={analyst.id}>
-                        {prefix}{analyst.name}
+                        {roleTag}{analyst.name}
                       </option>
                     )
                   })}
@@ -2950,22 +3015,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             {/* Decision Engine — filtered view for this asset */}
             <AssetDecisionView assetId={asset.id} />
 
-            {/* Show loading skeleton while layout or contributions load/fetch */}
-            {(layoutLoading || (isAggregatedView && (contributionsLoading || contributionsFetching))) ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map(i => (
-                  <Card key={i} padding="none">
-                    <div className="px-6 py-4 animate-pulse">
-                      <div className="h-5 bg-gray-200 rounded w-1/4 mb-3" />
-                      <div className="space-y-2">
-                        <div className="h-3 bg-gray-100 rounded w-3/4" />
-                        <div className="h-3 bg-gray-100 rounded w-1/2" />
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            ) : thesisViewMode === 'summary' ? (
+            {thesisViewMode === 'summary' ? (
               /* AI Summary View - shows unified summary */
               <Card padding="md">
                 <ThesisUnifiedSummary
@@ -3138,6 +3188,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                     currentPrice={currentQuote?.price}
                                     viewScope={ratingViewScope}
                                     accessibleUserIds={ratingAccessibleUserIds}
+                                    showConsensus={false}
+                                    embedded
                                   />
                                 </div>
                               )
@@ -3314,6 +3366,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   currentPrice={currentQuote?.price}
                                   viewScope={ratingViewScope}
                                   accessibleUserIds={ratingAccessibleUserIds}
+                                  showConsensus={false}
+                                  embedded
                                 />
                               </div>
                             )
@@ -3899,7 +3953,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         }}
                         className="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors"
                       >
-                        View Trade Queue
+                        View Idea Pipeline
                       </button>
                       <button
                         onClick={() => {
@@ -3990,7 +4044,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             }}
                             className="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
                           >
-                            Open Trade Queue
+                            Open Idea Pipeline
                           </button>
                         </div>
                       )}

@@ -16,7 +16,7 @@ export function dispatchDecisionAction(
         detail: {
           type: 'trade-queue',
           id: 'trade-queue',
-          title: 'Trade Queue',
+          title: 'Idea Pipeline',
           data: { selectedTradeId: payload.tradeIdeaId },
         },
       }))
@@ -27,7 +27,7 @@ export function dispatchDecisionAction(
         detail: {
           type: 'trade-queue',
           id: 'trade-queue',
-          title: 'Trade Queue',
+          title: 'Idea Pipeline',
           data: { selectedTradeId: payload.tradeIdeaId },
         },
       }))
@@ -89,7 +89,7 @@ export function dispatchDecisionAction(
         detail: {
           type: 'trade-queue',
           id: 'trade-queue',
-          title: 'Trade Queue',
+          title: 'Idea Pipeline',
           data: { filter: payload.filter },
         },
       }))
@@ -113,7 +113,7 @@ export function dispatchDecisionAction(
         detail: {
           type: 'trade-queue',
           id: 'trade-queue',
-          title: 'Trade Queue',
+          title: 'Idea Pipeline',
           data: { filter: payload.filter },
         },
       }))

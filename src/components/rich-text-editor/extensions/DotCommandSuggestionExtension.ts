@@ -284,6 +284,8 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       popupElement = null
       triggerPos = 0
       selectedIndex = 0
+      currentView = null
+      currentDotPos = 0
     }
 
     const renderPopup = (items: DotCommandItem[], onSelect: (item: DotCommandItem) => void) => {
@@ -309,47 +311,53 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       )
     }
 
+    // Ref to the current editor view so getReferenceClientRect can always
+    // read the latest cursor position dynamically.
+    let currentView: EditorView | null = null
+    let currentDotPos: number = 0
+
+    const getDotRect = (): DOMRect => {
+      if (!currentView) {
+        return new DOMRect(0, 0, 0, 0)
+      }
+      // Use the dot position for horizontal placement so the popup
+      // anchors to where the command starts, not where the cursor is now.
+      const coords = currentView.coordsAtPos(currentDotPos)
+
+      // Fallback: if coordsAtPos returns zeros (element not in view),
+      // use the DOM selection range instead.
+      if (coords.top === 0 && coords.left === 0) {
+        const domSel = window.getSelection()
+        if (domSel && domSel.rangeCount > 0) {
+          const range = domSel.getRangeAt(0)
+          const rect = range.getBoundingClientRect()
+          if (rect.top !== 0 || rect.left !== 0) {
+            return rect
+          }
+        }
+      }
+
+      return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top)
+    }
+
     const showPopup = (view: EditorView, pos: number, items: DotCommandItem[], onSelect: (item: DotCommandItem) => void) => {
-      console.log('[DotCommand] showPopup called with', items.length, 'items')
+      currentView = view
+      currentDotPos = pos
+
       if (popup) {
-        // Update existing popup position and content
-        const coords = view.coordsAtPos(pos)
-        popup.setProps({
-          getReferenceClientRect: () => ({
-            top: coords.top,
-            bottom: coords.bottom,
-            left: coords.left,
-            right: coords.left,
-            width: 0,
-            height: coords.bottom - coords.top,
-            x: coords.left,
-            y: coords.top,
-            toJSON: () => ({})
-          })
-        })
+        // Update existing popup — getReferenceClientRect reads currentView/currentDotPos dynamically
+        popup.popperInstance?.update()
         renderPopup(items, onSelect)
         return
       }
-      console.log('[DotCommand] creating new popup')
 
       // Create new popup
       popupElement = document.createElement('div')
       reactRoot = ReactDOM.createRoot(popupElement)
       renderPopup(items, onSelect)
 
-      const coords = view.coordsAtPos(pos)
       popup = tippy(document.body, {
-        getReferenceClientRect: () => ({
-          top: coords.top,
-          bottom: coords.bottom,
-          left: coords.left,
-          right: coords.left,
-          width: 0,
-          height: coords.bottom - coords.top,
-          x: coords.left,
-          y: coords.top,
-          toJSON: () => ({})
-        }),
+        getReferenceClientRect: getDotRect,
         appendTo: () => document.body,
         content: popupElement,
         showOnCreate: true,
@@ -370,8 +378,9 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       const $pos = state.doc.resolve(pos)
       const textBefore = $pos.parent.textBetween(0, $pos.parentOffset, '')
 
-      // Find dot command pattern at end of text
-      const match = textBefore.match(/\.([a-zA-Z0-9.]*)$/)
+      // Find dot command pattern at end of text — require at least one letter after the dot
+      // so a bare "." (punctuation) doesn't trigger the popup
+      const match = textBefore.match(/\.([a-zA-Z][a-zA-Z0-9.]*)$/)
       if (!match) {
         return null
       }
@@ -379,12 +388,10 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       // Check that the dot is at start or after whitespace
       const dotIndex = textBefore.length - match[0].length
       if (dotIndex > 0 && !/\s/.test(textBefore[dotIndex - 1])) {
-        console.log('[DotCommand] dot not at start or after whitespace, textBefore:', textBefore)
         return null
       }
 
       const nodeStart = pos - $pos.parentOffset
-      console.log('[DotCommand] found command query:', match[1], 'at position:', nodeStart + dotIndex)
       return {
         query: match[1],
         start: nodeStart + dotIndex

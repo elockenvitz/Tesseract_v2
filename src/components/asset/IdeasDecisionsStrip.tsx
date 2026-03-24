@@ -79,7 +79,7 @@ export function IdeasDecisionsStrip({
     // Open the trade queue with this idea selected
     onNavigate?.({
       id: 'trade-queue',
-      title: 'Trade Queue',
+      title: 'Idea Pipeline',
       type: 'trade-queue',
       data: { selectedTradeId: idea.id },
     })
@@ -88,7 +88,7 @@ export function IdeasDecisionsStrip({
   const handleOpenDecision = useCallback((decision: AssetRecentDecision) => {
     onNavigate?.({
       id: 'trade-queue',
-      title: 'Trade Queue',
+      title: 'Idea Pipeline',
       type: 'trade-queue',
       data: { selectedTradeId: decision.id },
     })
@@ -97,7 +97,7 @@ export function IdeasDecisionsStrip({
   const handleViewAllIdeas = useCallback(() => {
     onNavigate?.({
       id: 'trade-queue',
-      title: 'Trade Queue',
+      title: 'Idea Pipeline',
       type: 'trade-queue',
       data: {},
     })
@@ -106,7 +106,7 @@ export function IdeasDecisionsStrip({
   const handleViewAllDecisions = useCallback(() => {
     onNavigate?.({
       id: 'trade-queue',
-      title: 'Trade Queue',
+      title: 'Idea Pipeline',
       type: 'trade-queue',
       data: {},
     })

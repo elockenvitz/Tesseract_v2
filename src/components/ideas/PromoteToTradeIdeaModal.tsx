@@ -425,7 +425,7 @@ export function PromoteToTradeIdeaModal({
               </div>
               <h3 className="text-lg font-medium text-gray-900 mb-1">Trade Idea Created</h3>
               <p className="text-sm text-gray-500 mb-6">
-                Your thought has been promoted to the Trade Queue.
+                Your thought has been promoted to the Idea Pipeline.
               </p>
 
               <div className="flex gap-3">
@@ -439,7 +439,7 @@ export function PromoteToTradeIdeaModal({
                   onClick={handleViewInTradeQueue}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
                 >
-                  View in Trade Queue
+                  View in Idea Pipeline
                   <ExternalLink className="h-4 w-4" />
                 </button>
               </div>
@@ -950,7 +950,7 @@ export function PromoteToTradeIdeaModal({
                       : 'Relevant teammates will see this.'}
                   </span>
                   <span>
-                    Adds to Trade Queue as "Idea" stage
+                    Adds to Idea Pipeline as "Idea" stage
                   </span>
                 </div>
               </div>

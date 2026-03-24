@@ -356,7 +356,7 @@ export function ThesisContainer({
             <ContributionSection
               assetId={assetId}
               section="where_different"
-              title="Where We Differ"
+              title="Where Our Thesis Differs"
               description="How our view differs from market consensus"
               icon={Sparkles}
               activeTab={activeTab}

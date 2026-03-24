@@ -46,7 +46,7 @@ export function dispatchAction(actionKey: string, ctx: ActionContext): void {
     case 'OPEN_CONFIRM_EXECUTION':
       ctx.onNavigate?.({
         id: 'trade-queue',
-        title: 'Trade Queue',
+        title: 'Idea Pipeline',
         type: 'trade-queue',
         data: { assetId: ctx.assetId },
       })

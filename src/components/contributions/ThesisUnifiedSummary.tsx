@@ -343,7 +343,7 @@ function ExecutiveSummary({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Where We're Different</span>
+            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Where Our Thesis Differs</span>
           </div>
           <p className="text-sm text-gray-600 leading-relaxed pl-5">{differentiatorsSummary}</p>
         </div>
@@ -675,7 +675,7 @@ function IndividualViews({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                <span className="text-xs font-semibold text-gray-700">Where We're Different</span>
+                <span className="text-xs font-semibold text-gray-700">Where Our Thesis Differs</span>
               </div>
               {filteredDiff.map((c) => {
                 const isCovering = coveringAnalystIds.has(c.created_by)

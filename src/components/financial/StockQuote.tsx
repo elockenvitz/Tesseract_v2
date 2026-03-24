@@ -40,9 +40,7 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
   if (loading) {
     if (showOnlyPrice || showOnlyChange) {
       return (
-        <div className={`animate-pulse ${className}`}>
-          <div className="h-4 bg-gray-200 rounded w-16"></div>
-        </div>
+        <span className={`${className} invisible`}>0.00</span>
       )
     }
 

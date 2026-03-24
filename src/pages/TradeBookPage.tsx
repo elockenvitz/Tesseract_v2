@@ -168,51 +168,14 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center px-6 py-3 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3">
           <BookOpen className="w-5 h-5 text-primary-600 dark:text-primary-400" />
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Trade Book</h1>
 
-          {/* View toggle */}
-          <div className="flex items-center ml-4 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-            <button
-              onClick={() => setView('trades')}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                view === 'trades'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              )}
-            >
-              <List className="w-3.5 h-3.5" />
-              Trades
-            </button>
-            <button
-              onClick={() => setView('batches')}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                view === 'batches'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              )}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Batches
-              {batches.length > 0 && (
-                <span className={clsx(
-                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
-                  view === 'batches'
-                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
-                    : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                )}>
-                  {batches.length}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
+          {/* Separator */}
+          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
 
-        <div className="flex items-center gap-3">
           {/* Portfolio selector */}
           <div className="relative" ref={portfolioDropdownRef}>
             <button
@@ -227,7 +190,7 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
             </button>
 
             {portfolioDropdownOpen && (
-              <div className="absolute top-full right-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+              <div className="absolute top-full left-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
                 {/* Search */}
                 <div className="p-2 border-b border-gray-100 dark:border-gray-700">
                   <div className="relative">
@@ -276,6 +239,47 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Separator */}
+          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+
+          {/* View toggle */}
+          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setView('trades')}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                view === 'trades'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              )}
+            >
+              <List className="w-3.5 h-3.5" />
+              Trades
+            </button>
+            <button
+              onClick={() => setView('batches')}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                view === 'batches'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              )}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Batches
+              {batches.length > 0 && (
+                <span className={clsx(
+                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
+                  view === 'batches'
+                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
+                    : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                )}>
+                  {batches.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </div>

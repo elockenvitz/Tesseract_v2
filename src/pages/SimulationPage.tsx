@@ -4328,7 +4328,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     ) : tradeIdeasWithStatus.length === 0 && itemsByCategory.proposals.length === 0 ? (
                       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                         <p className="text-sm">No trade ideas available</p>
-                        <p className="text-xs mt-1">Add ideas from the Trade Queue</p>
+                        <p className="text-xs mt-1">Add ideas from the Idea Pipeline</p>
                       </div>
                     ) : (
                       <div className="space-y-3">

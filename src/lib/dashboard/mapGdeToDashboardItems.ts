@@ -257,7 +257,7 @@ function buildPrimaryAction(
           onClick: () => navigate({
             type: 'trade-queue',
             id: 'trade-queue',
-            title: 'Trade Queue',
+            title: 'Idea Pipeline',
             data: { selectedTradeId: item.context.tradeIdeaId },
           }),
         }
@@ -268,7 +268,7 @@ function buildPrimaryAction(
           onClick: () => navigate({
             type: 'trade-queue',
             id: 'trade-queue',
-            title: 'Trade Queue',
+            title: 'Idea Pipeline',
             data: { selectedTradeId: item.context.tradeIdeaId },
           }),
         }
@@ -277,7 +277,7 @@ function buildPrimaryAction(
         label: 'Open',
         onClick: () => {
           if (item.context.tradeIdeaId) {
-            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Trade Queue', data: { selectedTradeId: item.context.tradeIdeaId } })
+            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Idea Pipeline', data: { selectedTradeId: item.context.tradeIdeaId } })
           }
         },
       }
@@ -287,9 +287,9 @@ function buildPrimaryAction(
         label: 'Open',
         onClick: () => {
           if (item.context.tradeIdeaId) {
-            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Trade Queue', data: { selectedTradeId: item.context.tradeIdeaId } })
+            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Idea Pipeline', data: { selectedTradeId: item.context.tradeIdeaId } })
           } else {
-            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Trade Queue' })
+            navigate({ type: 'trade-queue', id: 'trade-queue', title: 'Idea Pipeline' })
           }
         },
       }
@@ -378,7 +378,7 @@ function buildAttentionPrimaryAction(
       onClick: () => navigate({
         type: 'trade-queue',
         id: 'trade-queue',
-        title: 'Trade Queue',
+        title: 'Idea Pipeline',
         data: { selectedTradeId: item.source_id },
       }),
     }

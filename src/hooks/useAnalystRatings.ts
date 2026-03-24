@@ -21,12 +21,15 @@ export interface RatingScale {
   created_at: string
 }
 
+export type ConvictionLevel = 'low' | 'medium' | 'high'
+
 export interface AnalystRating {
   id: string
   asset_id: string
   user_id: string
   rating_value: string
   rating_scale_id: string
+  conviction: ConvictionLevel | null
   notes: string | null
   source: 'manual' | 'excel_sync' | 'api'
   source_file_id: string | null
@@ -145,12 +148,14 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
     mutationFn: async ({
       ratingValue,
       ratingScaleId,
+      conviction,
       notes,
       source = 'manual',
       sourceFileId
     }: {
       ratingValue: string
       ratingScaleId: string
+      conviction?: ConvictionLevel | null
       notes?: string
       source?: 'manual' | 'excel_sync' | 'api'
       sourceFileId?: string
@@ -168,6 +173,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
       const ratingData = {
         rating_value: ratingValue,
         rating_scale_id: ratingScaleId,
+        conviction: conviction ?? null,
         notes: notes || null,
         source,
         source_file_id: sourceFileId || null,

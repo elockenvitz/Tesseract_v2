@@ -274,7 +274,7 @@ export function Header({
 
                     {/* Other Core tiles */}
                     {[
-                      { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
+                      { id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
                       { id: 'trade-book', title: 'Trade Book', type: 'trade-book', icon: BookOpen, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
                       { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },

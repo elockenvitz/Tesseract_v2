@@ -2067,7 +2067,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full h-[80vh] max-h-[700px] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full h-[85vh] max-h-[900px] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
@@ -3321,6 +3321,20 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               <Briefcase className="h-4 w-4 text-gray-400" />
                               <span className="font-medium text-sm text-gray-900 dark:text-white">{portfolioName}</span>
                               <span className="text-xs text-gray-500">({allPortfolioProposals.length} recommendation{allPortfolioProposals.length !== 1 ? 's' : ''})</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('openTradeLab', {
+                                    detail: { portfolioId }
+                                  }))
+                                  onClose()
+                                }}
+                                className="ml-auto flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors"
+                                title={`Open Trade Lab for ${portfolioName}`}
+                              >
+                                <FlaskConical className="h-3 w-3" />
+                                Open Trade Lab
+                              </button>
                             </div>
 
                             {/* Proposals for this portfolio */}
@@ -5539,6 +5553,20 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 dark:bg-gray-700/30 border-b border-gray-100 dark:border-gray-700/50">
                                 <Briefcase className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                                 <span className="text-sm font-semibold text-gray-900 dark:text-white">{portfolio.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    window.dispatchEvent(new CustomEvent('openTradeLab', {
+                                      detail: { portfolioId: portfolio.id }
+                                    }))
+                                    onClose()
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors"
+                                  title={`Open Trade Lab for ${portfolio.name}`}
+                                >
+                                  <FlaskConical className="h-3 w-3" />
+                                  Trade Lab
+                                </button>
                                 <span className="ml-auto flex items-center gap-3 text-[11px] tabular-nums">
                                   <span><span className="text-gray-400">Current</span> <span className="font-semibold text-gray-700 dark:text-gray-200">{portfolio.currentWeight.toFixed(2)}%</span></span>
                                   {portfolio.benchmarkWeight !== null && (

@@ -184,7 +184,7 @@ export function getProvenanceDisplayText(provenance: Provenance): string | null 
       return 'Captured from Trade Lab'
 
     case 'trade_queue':
-      return 'Captured from Trade Queue'
+      return 'Captured from Idea Pipeline'
 
     case 'search':
       if (origin_metadata.search_query) {

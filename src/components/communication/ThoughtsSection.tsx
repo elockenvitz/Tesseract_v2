@@ -1,5 +1,10 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { formatDistanceToNow } from 'date-fns'
+import { clsx } from 'clsx'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecentQuickIdeas } from '../thoughts/RecentQuickIdeas'
@@ -47,6 +52,7 @@ export function ThoughtsSection({
 }: ThoughtsSectionProps) {
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
+  const [showPromptList, setShowPromptList] = useState(false)
   const { success } = useToast()
   const { openPromptCount, pendingRecommendationCount } = useDirectCounts()
 
@@ -177,23 +183,17 @@ export function ThoughtsSection({
     }
   }, [onViewAllIdeas, onClose])
 
-  // ESC key handler - in inspect mode, go back to capture; in capture mode, close sidebar
+  // ESC key handler - in inspect mode, go back to capture
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (sidebarMode === 'inspect' && onBackToCapture) {
-          // In inspect mode, ESC goes back to capture mode
-          onBackToCapture()
-        } else {
-          // In capture mode, ESC closes the sidebar
-          onClose?.()
-        }
+      if (event.key === 'Escape' && sidebarMode === 'inspect' && onBackToCapture) {
+        onBackToCapture()
       }
     }
 
     document.addEventListener('keydown', handleEscKey)
     return () => document.removeEventListener('keydown', handleEscKey)
-  }, [sidebarMode, onBackToCapture, onClose])
+  }, [sidebarMode, onBackToCapture])
 
   // If in inspect mode with a selected item, show the detail view
   if (sidebarMode === 'inspect' && selectedItem) {
@@ -234,6 +234,36 @@ export function ThoughtsSection({
               <p>Detail view for {selectedItem.type} coming soon</p>
             </div>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Open Prompts list view ──
+  if (showPromptList) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => setShowPromptList(false)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Back to Quick Ideas</span>
+          </button>
+        </div>
+        <div className="px-3 py-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Open Prompts</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
+          <OpenPromptList
+            onSelectPrompt={(id) => {
+              setShowPromptList(false)
+              if (onOpenInspector) {
+                onOpenInspector('prompt', id)
+              }
+            }}
+          />
         </div>
       </div>
     )
@@ -314,19 +344,14 @@ export function ThoughtsSection({
                   <HelpCircle className="h-4 w-4" />
                   <span>Prompt</span>
                 </button>
-                <button
-                  onClick={() => {
-                    // TODO: Navigate to filtered prompts list when dedicated view exists
-                    const filters = buildQuickThoughtsFilters()
-                    window.dispatchEvent(new CustomEvent('openIdeasTab', {
-                      detail: { filters: { ...filters, idea_type: 'prompt' } }
-                    }))
-                    onClose?.()
-                  }}
-                  className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
-                >
-                  <span className="font-semibold text-gray-600 dark:text-gray-300">{openPromptCount}</span> open prompts
-                </button>
+                {openPromptCount > 0 && (
+                  <button
+                    onClick={() => setShowPromptList(true)}
+                    className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
+                  >
+                    <span className="font-semibold text-gray-600 dark:text-gray-300">{openPromptCount}</span> open prompts
+                  </button>
+                )}
               </div>
 
               {/* Proposal column */}
@@ -447,6 +472,96 @@ export function ThoughtsSection({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Inline Open Prompts List ──────────────────────────────────────────────
+
+function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => void }) {
+  const { user } = useAuth()
+
+  const { data: prompts = [], isLoading } = useQuery({
+    queryKey: ['open-prompts-list', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('quick_thoughts')
+        .select('id, content, tags, created_at, created_by')
+        .eq('created_by', user!.id)
+        .eq('idea_type', 'prompt')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!user?.id,
+    staleTime: 30_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-14 bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (prompts.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <MessageCircleQuestion className="h-8 w-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">No open prompts</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {prompts.map(prompt => {
+        // Extract assignee name from tags
+        const assigneeTag = prompt.tags?.find((t: string) => t.startsWith('assignee_name:'))
+        const assigneeName = assigneeTag ? assigneeTag.replace('assignee_name:', '') : null
+        // Extract context from tags
+        const ctxTag = prompt.tags?.find((t: string) => t.startsWith('ctx:'))
+        const ctxTitle = ctxTag ? ctxTag.replace(/^ctx:[^:]+:[^:]+:/, '') : null
+        const timeAgo = formatDistanceToNow(new Date(prompt.created_at), { addSuffix: true })
+
+        return (
+          <button
+            key={prompt.id}
+            onClick={() => onSelectPrompt(prompt.id)}
+            className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-violet-300 dark:hover:border-violet-600 hover:bg-violet-50/50 dark:hover:bg-violet-900/10 transition-colors group"
+          >
+            <div className="flex items-start gap-2">
+              <MessageCircleQuestion className="h-3.5 w-3.5 text-violet-500 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-900 dark:text-white line-clamp-2 leading-snug">
+                  {prompt.content || 'Untitled prompt'}
+                </p>
+                <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                  {assigneeName && (
+                    <>
+                      <span>To: <span className="font-medium text-gray-500 dark:text-gray-400">{assigneeName}</span></span>
+                      <span>·</span>
+                    </>
+                  )}
+                  {ctxTitle && (
+                    <>
+                      <span className="truncate max-w-[100px]">{ctxTitle}</span>
+                      <span>·</span>
+                    </>
+                  )}
+                  <span>{timeAgo}</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 group-hover:text-violet-400 shrink-0 mt-0.5" />
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }

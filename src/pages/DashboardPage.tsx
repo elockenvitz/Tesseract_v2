@@ -604,11 +604,11 @@ export function DashboardPage() {
   useEffect(() => {
     const handleOpenTradeQueue = (event: CustomEvent) => {
       const { selectedTradeId } = event.detail || {}
-      console.log('📋 Opening Trade Queue:', { selectedTradeId })
+      console.log('📋 Opening Idea Pipeline:', { selectedTradeId })
 
       handleSearchResult({
         id: 'trade-queue',
-        title: 'Trade Queue',
+        title: 'Idea Pipeline',
         type: 'trade-queue',
         data: selectedTradeId ? { selectedTradeId } : undefined
       })
@@ -849,7 +849,7 @@ export function DashboardPage() {
   const handleOpenTradeQueue = (filter?: string) => {
     handleSearchResult({
       id: 'trade-queue',
-      title: 'Trade Queue',
+      title: 'Idea Pipeline',
       type: 'trade-queue',
       data: filter ? { stageFilter: filter } : undefined,
     })

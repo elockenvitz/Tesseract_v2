@@ -475,7 +475,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
       case 'thoughts':
         return { type: 'thoughts', title: 'Thoughts' }
       case 'trade-ideas':
-        return { type: 'trade-queue', title: 'Trade Queue' }
+        return { type: 'trade-queue', title: 'Idea Pipeline' }
       case 'notes':
         return { type: 'notes-list', title: 'Notes' }
       default:

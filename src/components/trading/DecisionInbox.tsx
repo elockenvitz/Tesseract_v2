@@ -811,6 +811,19 @@ function PortfolioRow({
       <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
         <Briefcase className="h-3 w-3" />
         <span className="font-medium">{request.portfolio?.name || 'Unknown'}</span>
+        {request.portfolio_id && (
+          <button
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('openTradeLab', {
+                detail: { portfolioId: request.portfolio_id },
+              }))
+            }}
+            className="flex items-center gap-0.5 ml-1 text-[10px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+          >
+            <ArrowUpRight className="h-2.5 w-2.5" />
+            Trade Lab
+          </button>
+        )}
       </div>
 
       {/* 3. Analyst + time */}
@@ -1184,20 +1197,6 @@ function PortfolioRow({
         <p className="text-[10px] text-gray-400 italic mt-1">PM: {request.decision_note}</p>
       )}
 
-      {/* Trade Lab link on accepted cards */}
-      {(request.status === 'accepted' || request.status === 'accepted_with_modification') && (
-        <button
-          onClick={() => {
-            window.dispatchEvent(new CustomEvent('openTradeLab', {
-              detail: { portfolioId: request.portfolio_id },
-            }))
-          }}
-          className="flex items-center gap-1 mt-1.5 text-[10px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
-        >
-          <ArrowUpRight className="h-2.5 w-2.5" />
-          View in Trade Lab
-        </button>
-      )}
 
       {/* Deferral info on deferred tab */}
       {request.status === 'deferred' && (request.deferred_until || request.deferred_trigger) && (

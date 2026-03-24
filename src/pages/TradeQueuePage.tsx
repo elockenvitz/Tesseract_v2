@@ -107,10 +107,10 @@ const ACTION_CONFIG: Record<TradeAction, { label: string; color: string; icon: R
   trim: { label: 'Reduce', color: 'text-orange-600 dark:text-orange-400', icon: TrendingDown },
 }
 
-const CONVICTION_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  low: { label: 'Low', color: 'text-gray-500 dark:text-gray-400', dot: 'bg-gray-400' },
-  medium: { label: 'Med', color: 'text-blue-600 dark:text-blue-400', dot: 'bg-blue-500' },
-  high: { label: 'High', color: 'text-green-600 dark:text-green-400', dot: 'bg-green-500' },
+const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
+  low: { label: 'Low Conviction', color: 'text-gray-600 dark:text-gray-300', bg: 'bg-gray-100 dark:bg-gray-700/60', dot: 'bg-gray-400' },
+  medium: { label: 'Med Conviction', color: 'text-blue-700 dark:text-blue-300', bg: 'bg-blue-50 dark:bg-blue-900/30', dot: 'bg-blue-500' },
+  high: { label: 'High Conviction', color: 'text-green-700 dark:text-green-300', bg: 'bg-green-50 dark:bg-green-900/30', dot: 'bg-green-500' },
 }
 
 export function TradeQueuePage() {
@@ -1413,7 +1413,7 @@ export function TradeQueuePage() {
       <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Trade Queue</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Idea Pipeline</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Collaborate on trade ideas and run simulations
             </p>
@@ -2739,7 +2739,25 @@ function PairTradeCard({
         </button>
       )}
 
-      <div className="p-3">
+      <div className="p-3 relative">
+        {/* Missing requirement alert — upper right */}
+        {(() => {
+          const stage = firstLeg?.stage || firstLeg?.status
+          const hasThesis = legs.some(l => !!(l as any).thesis_text)
+          const hasRationale = !!pairTrade.rationale
+          const pairRecCount = legs.reduce((sum, leg) => sum + (expressionCounts?.get(leg.id)?.recommendationCount || 0), 0) || pairTradeProposals.length
+          const missing: string[] = []
+          if (!hasRationale) missing.push('Why now')
+          if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
+          if (['ready_for_decision', 'deciding'].includes(stage) && pairRecCount === 0) missing.push('Recommendation')
+          if (missing.length === 0) return null
+          return (
+            <div className="absolute top-2 right-2">
+              <MissingReqAlert missing={missing} />
+            </div>
+          )
+        })()}
+
         {/* Line 1: Chain link icon + BUY tickers / SELL tickers */}
         <div className="flex items-center gap-2 mb-1.5">
           <div className="flex items-center gap-1.5 text-sm flex-1 min-w-0">
@@ -2828,25 +2846,14 @@ function PairTradeCard({
           ) : null}
 
           {/* Conviction indicator */}
-          {firstLeg?.conviction && CONVICTION_CONFIG[firstLeg.conviction] && (
-            <span className={clsx("text-[11px] font-medium flex items-center gap-1", CONVICTION_CONFIG[firstLeg.conviction].color)}>
-              {CONVICTION_CONFIG[firstLeg.conviction].label}
-              <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", CONVICTION_CONFIG[firstLeg.conviction].dot)} />
-            </span>
-          )}
-
-          {/* Missing requirement alert */}
-          {(() => {
-            const stage = firstLeg?.stage || firstLeg?.status
-            const hasThesis = legs.some(l => !!(l as any).thesis_text)
-            const hasRationale = !!pairTrade.rationale
-            const pairRecCount = legs.reduce((sum, leg) => sum + (expressionCounts?.get(leg.id)?.recommendationCount || 0), 0) || pairTradeProposals.length
-            const missing: string[] = []
-            if (!hasRationale) missing.push('Why now')
-            if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
-            if (['ready_for_decision', 'deciding'].includes(stage) && pairRecCount === 0) missing.push('Recommendation')
-            if (missing.length === 0) return null
-            return <MissingReqAlert missing={missing} />
+          {firstLeg?.conviction && CONVICTION_CONFIG[firstLeg.conviction] && (() => {
+            const cc = CONVICTION_CONFIG[firstLeg.conviction]
+            return (
+              <span className={clsx("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold", cc.color, cc.bg)}>
+                <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", cc.dot)} />
+                {cc.label}
+              </span>
+            )
           })()}
 
           {/* Labs dropdown */}
@@ -2894,15 +2901,17 @@ function PairTradeCard({
           const hasMyRec = legs.some(leg => expressionCounts?.get(leg.id)?.hasCurrentUserRecommendation)
           const isReadyForDecision = !!onProposalClick
 
-          return (
-            <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          const du = firstLeg ? getDerivedUrgency(firstLeg.stage || firstLeg.status, firstLeg.updated_at || firstLeg.created_at) : null
+
+          return (recCount > 0 || du || (isReadyForDecision && recCount === 0)) ? (
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               {recCount > 0 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onRecommendationClick?.() }}
                   className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400 border border-teal-200 dark:border-teal-800/40 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors"
                 >
                   <FileCheck className="h-2.5 w-2.5" />
-                  {recCount} {recCount === 1 ? 'recommendation' : 'recommendations'}
+                  {recCount} {recCount === 1 ? 'recommendation' : 'recs'}
                 </button>
               )}
               {isReadyForDecision && recCount === 0 && (
@@ -2914,20 +2923,16 @@ function PairTradeCard({
                   Submit rec
                 </button>
               )}
+              {du && (() => {
+                const cfg = DERIVED_URGENCY_CONFIG[du]
+                return (
+                  <span className={clsx("text-[11px] font-medium", cfg.color)}>
+                    {cfg.icon} {cfg.label}
+                  </span>
+                )
+              })()}
             </div>
-          )
-        })()}
-
-        {/* Derived urgency alert */}
-        {(() => {
-          const du = firstLeg ? getDerivedUrgency(firstLeg.stage || firstLeg.status, firstLeg.updated_at || firstLeg.created_at) : null
-          if (!du) return null
-          const cfg = DERIVED_URGENCY_CONFIG[du]
-          return (
-            <p className={clsx("text-[11px] font-medium mb-1.5", cfg.color)}>
-              {cfg.icon} {cfg.label}
-            </p>
-          )
+          ) : null
         })()}
 
         {/* Rationale - prominent like TradeQueueCard */}
@@ -3943,10 +3948,23 @@ function TradeQueueCard({
       )}
 
       <div className="p-3 relative">
-        {/* Debate tilt bar — upper right */}
-        <div className="absolute top-2 right-2">
-          <DebateIndicatorBadge tradeIdeaId={item.id} onClick={onDebateClick} />
-        </div>
+        {/* Missing requirement alert — upper right */}
+        {(() => {
+          const stage = item.stage || item.status
+          const hasThesis = !!(item as any).thesis_text
+          const hasRationale = !!item.rationale
+          const missing: string[] = []
+          if (!hasRationale) missing.push('Why now')
+          if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
+          if (['ready_for_decision', 'deciding'].includes(stage) && recCount === 0) missing.push('Recommendation')
+          if (missing.length === 0) return null
+          return (
+            <div className="absolute top-2 right-2">
+              <MissingReqAlert missing={missing} />
+            </div>
+          )
+        })()}
+
         {/* Pair Trade Indicator */}
         {item.pair_trade_id && item.pair_trades && (
           <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-purple-50 dark:bg-purple-900/20 rounded-md border border-purple-200 dark:border-purple-800">
@@ -3969,15 +3987,15 @@ function TradeQueueCard({
 
         {/* Line 1: BUY COIN Coinbase Global */}
         <div className="flex items-center gap-2 mb-1.5">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm min-w-0">
             <span className={clsx(
-              "font-semibold",
+              "font-semibold shrink-0",
               isBuy ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
             )}>
               {actionLabel}
             </span>
             <button
-              className="font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+              className="font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline shrink-0"
               onClick={(e) => {
                 e.stopPropagation()
                 const assetId = item.assets?.id || item.asset_id
@@ -3989,11 +4007,12 @@ function TradeQueueCard({
             >
               {item.assets?.symbol}
             </button>
-            <span className="text-gray-500 dark:text-gray-400">{item.assets?.company_name}</span>
+            <span className="text-gray-500 dark:text-gray-400 truncate">{item.assets?.company_name}</span>
           </div>
         </div>
 
-        {/* Line 2: for [portfolio] + urgency badge */}
+        {/* Line 2: debate indicator + portfolio + urgency */}
+        {/* Line 2: for [portfolio] + conviction + debate + urgency */}
         <div className="flex items-center gap-2 mb-2 relative" ref={dropdownRef}>
           {labCount > 0 ? (
             // In trade labs
@@ -4101,29 +4120,17 @@ function TradeQueueCard({
             if (item.conviction && CONVICTION_CONFIG[item.conviction]) {
               const cc = CONVICTION_CONFIG[item.conviction]
               return (
-                <span className={clsx("text-[11px] font-medium flex items-center gap-1", cc.color)}>
-                  {cc.label}
+                <span className={clsx("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold", cc.color, cc.bg)}>
                   <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", cc.dot)} />
+                  {cc.label}
                 </span>
               )
             }
             return null
           })()}
 
-          {/* Missing requirement alert */}
-          {(() => {
-            const stage = item.stage || item.status
-            const hasThesis = !!(item as any).thesis_text
-            const hasRationale = !!item.rationale
-            const missing: string[] = []
-            if (!hasRationale) missing.push('Why now')
-            if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
-            if (['ready_for_decision', 'deciding'].includes(stage) && recCount === 0) missing.push('Recommendation')
-            if (missing.length === 0) return null
-            return (
-              <MissingReqAlert missing={missing} />
-            )
-          })()}
+          {/* Debate tilt indicator */}
+          <DebateIndicatorBadge tradeIdeaId={item.id} onClick={onDebateClick} />
 
           {/* Research depth indicator (1-5 dots) */}
           {item.research_depth != null && item.research_depth > 0 && (
@@ -4198,30 +4205,30 @@ function TradeQueueCard({
           />
         )}
 
-        {/* Recommendation badge — inline, not full-width */}
-        {recCount > 0 && (
-          <div className="mb-1.5">
-            <button
-              onClick={(e) => { e.stopPropagation(); onRecommendationClick?.() }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400 border border-teal-200 dark:border-teal-800/40 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors"
-            >
-              <FileCheck className="h-2.5 w-2.5" />
-              {recCount} {recCount === 1 ? 'recommendation' : 'recommendations'}
-            </button>
+        {/* Recommendation badge + urgency alert — same line */}
+        {(recCount > 0 || getDerivedUrgency(item.stage || item.status, item.updated_at || item.created_at)) && (
+          <div className="flex items-center gap-2 mb-1.5">
+            {recCount > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRecommendationClick?.() }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400 border border-teal-200 dark:border-teal-800/40 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors"
+              >
+                <FileCheck className="h-2.5 w-2.5" />
+                {recCount} {recCount === 1 ? 'recommendation' : 'recs'}
+              </button>
+            )}
+            {(() => {
+              const du = getDerivedUrgency(item.stage || item.status, item.updated_at || item.created_at)
+              if (!du) return null
+              const cfg = DERIVED_URGENCY_CONFIG[du]
+              return (
+                <span className={clsx("text-[11px] font-medium", cfg.color)}>
+                  {cfg.icon} {cfg.label}
+                </span>
+              )
+            })()}
           </div>
         )}
-
-        {/* Derived urgency alert */}
-        {(() => {
-          const du = getDerivedUrgency(item.stage || item.status, item.updated_at || item.created_at)
-          if (!du) return null
-          const cfg = DERIVED_URGENCY_CONFIG[du]
-          return (
-            <p className={clsx("text-[11px] font-medium mb-1.5", cfg.color)}>
-              {cfg.icon} {cfg.label}
-            </p>
-          )
-        })()}
 
         {/* Rationale */}
         {item.rationale && (

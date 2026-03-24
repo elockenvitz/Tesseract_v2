@@ -105,7 +105,7 @@ export function ActionLoopModule({
       case 'confirm_execution':
         onNavigate?.({
           id: 'trade-queue',
-          title: 'Trade Queue',
+          title: 'Idea Pipeline',
           type: 'trade-queue',
           data: { assetId },
         })

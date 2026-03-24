@@ -96,7 +96,7 @@ function groupIntoSessions(events: HistoryEvent[]): RevisionSession[] {
 const filterConfig: { value: HistoryFilter; label: string; color: string }[] = [
   { value: 'all', label: 'All', color: 'text-gray-600' },
   { value: 'thesis', label: 'Thesis', color: 'text-primary-600' },
-  { value: 'where_different', label: 'Different', color: 'text-purple-600' },
+  { value: 'where_different', label: 'Differs', color: 'text-purple-600' },
   { value: 'risks_to_thesis', label: 'Risks', color: 'text-amber-600' },
   { value: 'price_target', label: 'Targets', color: 'text-green-600' },
   { value: 'reference', label: 'Docs', color: 'text-blue-600' },
@@ -216,7 +216,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string | null; newCo
 function TimelineEvent({ event }: { event: HistoryEvent }) {
   const typeConfig: Record<string, { color: string; label: string }> = {
     thesis: { color: 'text-primary-600', label: 'Investment Thesis' },
-    where_different: { color: 'text-purple-600', label: 'Where Different' },
+    where_different: { color: 'text-purple-600', label: 'Where Our Thesis Differs' },
     risks_to_thesis: { color: 'text-amber-600', label: 'Risks to Thesis' },
     price_target: { color: 'text-green-600', label: 'Price Target' },
     rating: { color: 'text-indigo-600', label: 'Rating' },
@@ -280,7 +280,7 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
 
 const categoryConfig: Record<string, { label: string; color: string }> = {
   thesis: { label: 'Thesis', color: 'text-primary-600' },
-  where_different: { label: 'Where Different', color: 'text-purple-600' },
+  where_different: { label: 'Where Our Thesis Differs', color: 'text-purple-600' },
   risks_to_thesis: { label: 'Risks', color: 'text-amber-600' },
   price_target: { label: 'Valuation & Targets', color: 'text-green-600' },
   valuation_targets: { label: 'Valuation & Targets', color: 'text-green-600' },

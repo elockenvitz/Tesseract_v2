@@ -16,30 +16,47 @@ interface DebateIndicatorBadgeProps {
 }
 
 const CELLS = 8
+const MID = CELLS / 2 // 4
 
-function computeCells(bull: number, bear: number): { cells: boolean[]; direction: 'bull' | 'bear' | 'neutral' } {
+/**
+ * Single-color tilt bar that fills from the CENTER outward.
+ *   - Balanced (equal): no fill, all empty
+ *   - Bull-leaning: green cells fill leftward from center
+ *   - Bear-leaning: red cells fill rightward from center
+ *
+ * The number of filled cells = how far the dominant side exceeds the other,
+ * scaled across the available half (MID cells). One extra argument = 1 cell of tilt.
+ * Max tilt = all half cells filled = unanimous one-sided.
+ *
+ * Visual: center of bar is the neutral point, edges are max conviction.
+ *   Bull max:  [████    ]   (4 green cells on left half)
+ *   Slight:    [  ██    ]   (2 green cells from center-left)
+ *   Balanced:  [        ]   (empty)
+ *   Slight:    [    ██  ]   (2 red cells from center-right)
+ *   Bear max:  [    ████]   (4 red cells on right half)
+ */
+function computeCells(bull: number, bear: number): { cells: ('fill' | 'empty')[]; direction: 'bull' | 'bear' | 'neutral' } {
+  const cells = Array(CELLS).fill('empty') as ('fill' | 'empty')[]
   const total = bull + bear
-  const cells = Array(CELLS).fill(false) as boolean[]
 
-  if (total === 0) return { cells, direction: 'neutral' }
-
-  if (bull === bear) {
-    // Balanced: fill the middle cells (1 cell per side of center for equal counts)
-    const mid = CELLS / 2 // 4
-    cells[mid - 1] = true
-    cells[mid] = true
-    return { cells, direction: 'neutral' }
-  }
+  if (total === 0 || bull === bear) return { cells, direction: 'neutral' }
 
   const direction: 'bull' | 'bear' = bull > bear ? 'bull' : 'bear'
-  const ratio = Math.max(bull, bear) / total
-  // Map ratio to filled count: at minimum 1, scale across CELLS
-  const filled = Math.max(1, Math.round(ratio * CELLS))
+  const dominant = Math.max(bull, bear)
+  const minority = Math.min(bull, bear)
+
+  // How many cells to fill: scale the net difference relative to total arguments.
+  // net / total gives 0..1 where 0 = balanced, 1 = unanimous.
+  // Multiply by MID cells, round up so even a 1-argument edge shows at least 1 cell.
+  const net = dominant - minority
+  const filled = Math.min(MID, Math.max(1, Math.round((net / total) * MID)))
 
   if (direction === 'bull') {
-    for (let i = 0; i < filled; i++) cells[i] = true
+    // Fill leftward from center: indices MID-1 down to MID-filled
+    for (let i = 0; i < filled; i++) cells[MID - 1 - i] = 'fill'
   } else {
-    for (let i = CELLS - filled; i < CELLS; i++) cells[i] = true
+    // Fill rightward from center: indices MID up to MID+filled-1
+    for (let i = 0; i < filled; i++) cells[MID + i] = 'fill'
   }
 
   return { cells, direction }
@@ -65,7 +82,7 @@ export function DebateIndicatorBadge({ tradeIdeaId, onClick, className }: Debate
     ? 'bg-green-500 dark:bg-green-400'
     : direction === 'bear'
     ? 'bg-red-500 dark:bg-red-400'
-    : 'bg-gray-400 dark:bg-gray-500'
+    : 'bg-gray-300 dark:bg-gray-600'
 
   return (
     <div className={clsx('relative inline-flex', className)}>
@@ -75,16 +92,16 @@ export function DebateIndicatorBadge({ tradeIdeaId, onClick, className }: Debate
           setShowPopover(!showPopover)
         }}
         className="inline-flex items-center gap-1 px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-        title={tiltLabel}
+        title={`${counts.bull} bull · ${counts.bear} bear — ${tiltLabel}`}
       >
         <span className="text-[8px] font-semibold text-green-600 dark:text-green-400 uppercase leading-none">B</span>
         <div className="flex gap-px">
-          {cells.map((filled, i) => (
+          {cells.map((type, i) => (
             <div
               key={i}
               className={clsx(
                 'w-1.5 h-2 rounded-[1px] transition-colors',
-                filled ? fillColor : 'bg-gray-200 dark:bg-gray-700'
+                type === 'fill' ? fillColor : 'bg-gray-200 dark:bg-gray-700'
               )}
             />
           ))}

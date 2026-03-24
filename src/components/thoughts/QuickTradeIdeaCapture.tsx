@@ -1080,7 +1080,7 @@ export function QuickTradeIdeaCapture({
               : 'Relevant teammates will see this in What\'s New.'}
           </span>
           <span>
-            Adds this idea to the Trade Queue
+            Adds this idea to the Idea Pipeline
           </span>
         </div>
 

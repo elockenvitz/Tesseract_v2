@@ -45,7 +45,7 @@ const PRIMARY_SURFACES = [
   },
   {
     id: 'trade-queue',
-    title: 'Trade Queue',
+    title: 'Idea Pipeline',
     type: 'trade-queue',
     description: 'Pending decisions',
     icon: ListTodo,

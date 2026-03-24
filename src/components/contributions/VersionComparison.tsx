@@ -52,7 +52,7 @@ interface VersionComparisonProps {
 
 const sectionConfig = {
   thesis: { icon: Target, label: 'Investment Thesis', color: 'text-primary-600' },
-  where_different: { icon: Sparkles, label: 'Where Different', color: 'text-purple-600' },
+  where_different: { icon: Sparkles, label: 'Where Our Thesis Differs', color: 'text-purple-600' },
   risks_to_thesis: { icon: AlertTriangle, label: 'Risks to Thesis', color: 'text-amber-600' },
   price_target: { icon: DollarSign, label: 'Price Target', color: 'text-green-600' },
   reference: { icon: FileText, label: 'Supporting Docs', color: 'text-blue-600' }

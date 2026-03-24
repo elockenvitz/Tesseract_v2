@@ -53,7 +53,7 @@ const typeConfig = {
   },
   where_different: {
     icon: Sparkles,
-    label: 'Where Different',
+    label: 'Where Our Thesis Differs',
     color: 'text-purple-600',
     bgColor: 'bg-purple-50',
     borderColor: 'border-purple-200',

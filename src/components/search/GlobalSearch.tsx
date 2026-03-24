@@ -21,7 +21,7 @@ const STATIC_PAGES = [
   { id: 'workflows', title: 'Process', type: 'page' as const, subtitle: 'Recurring investment processes', keywords: ['automation', 'process', 'workflow'] },
   { id: 'calendar', title: 'Calendar', type: 'page' as const, subtitle: 'Events and schedule', keywords: ['events', 'schedule', 'meetings', 'earnings'] },
   { id: 'trade-lab', title: 'Trade Lab', type: 'page' as const, subtitle: 'Trade analysis and simulation', keywords: ['trading', 'backtest', 'simulation', 'orders'] },
-  { id: 'trade-queue', title: 'Trade Queue', type: 'page' as const, subtitle: 'Pending trades', keywords: ['orders', 'execution', 'trading'] },
+  { id: 'trade-queue', title: 'Idea Pipeline', type: 'page' as const, subtitle: 'Pending trades', keywords: ['orders', 'execution', 'trading'] },
   { id: 'trade-book', title: 'Trade Book', type: 'page' as const, subtitle: 'Accepted trades and execution tracking', keywords: ['accepted', 'execution', 'book', 'commitment', 'trading', 'plans', 'approvals'] },
   { id: 'charting', title: 'Charting', type: 'page' as const, subtitle: 'Technical charts', keywords: ['charts', 'technical', 'graphs', 'price'] },
   { id: 'asset-allocation', title: 'Asset Allocation', type: 'page' as const, subtitle: 'Portfolio allocation analysis', keywords: ['allocation', 'weights', 'rebalance'] },

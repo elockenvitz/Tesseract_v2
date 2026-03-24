@@ -29,6 +29,15 @@
  *
  * Note: Key References has its own dedicated view tab — not part of the layout.
  */
+/**
+ * Display name overrides for system fields.
+ * Applied at resolution time so the UI always shows the preferred label
+ * regardless of what's stored in the research_fields table.
+ */
+const FIELD_DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  where_different: 'Where Our Thesis Differs',
+}
+
 export const SYSTEM_DEFAULT_FIELD_SLUGS = new Set([
   'business_model',
   'thesis',
@@ -399,7 +408,7 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
 
     resolvedFields.push({
       field_id: field.id,
-      field_name: field.name,
+      field_name: FIELD_DISPLAY_NAME_OVERRIDES[field.slug] || field.name,
       field_slug: field.slug,
       field_description: field.description || null,
       field_type: field.field_type,

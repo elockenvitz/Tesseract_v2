@@ -75,7 +75,7 @@ export function PipelineStrip({
           onClick={() => onOpenTradeQueue()}
           className="text-[10px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
         >
-          Trade Queue
+          Idea Pipeline
         </button>
       </div>
 

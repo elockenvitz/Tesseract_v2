@@ -1066,7 +1066,7 @@ export const STATIC_PRESET_CATEGORIES: StaticPresetCategory[] = [
     name: 'Thesis & Analysis',
     presets: {
       thesis: { field: 'thesis', cell: '', type: 'text', label: 'Investment Thesis', isPreset: true },
-      where_different: { field: 'where_different', cell: '', type: 'text', label: 'Where We Differ', isPreset: true },
+      where_different: { field: 'where_different', cell: '', type: 'text', label: 'Where Our Thesis Differs', isPreset: true },
       risks_to_thesis: { field: 'risks_to_thesis', cell: '', type: 'text', label: 'Risks to Thesis', isPreset: true },
       key_catalysts: { field: 'key_catalysts', cell: '', type: 'text', label: 'Key Catalysts', isPreset: true },
       investment_summary: { field: 'investment_summary', cell: '', type: 'text', label: 'Investment Summary', isPreset: true },

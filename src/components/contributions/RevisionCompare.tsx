@@ -49,7 +49,7 @@ const DISPLAY_CATEGORIES: { key: string; label: string; color: string; icon: Rea
   { key: 'rating', label: 'Rating & Stance', color: 'text-indigo-600', icon: Gauge },
   { key: 'valuation_targets', label: 'Valuation & Targets', color: 'text-green-600', icon: DollarSign },
   { key: 'thesis', label: 'Thesis', color: 'text-primary-600', icon: Target },
-  { key: 'where_different', label: 'Where Different', color: 'text-purple-600', icon: Sparkles },
+  { key: 'where_different', label: 'Where Our Thesis Differs', color: 'text-purple-600', icon: Sparkles },
   { key: 'risks_to_thesis', label: 'Risks', color: 'text-amber-600', icon: AlertTriangle },
   { key: 'supporting', label: 'Supporting', color: 'text-blue-600', icon: FileText },
 ]

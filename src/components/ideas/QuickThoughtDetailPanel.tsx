@@ -216,16 +216,12 @@ export function QuickThoughtDetailPanel({
   }, [isCreator, thought])
 
   // Handle keyboard shortcuts
-  // ESC: exit edit mode (revert) or close panel
+  // ESC: exit edit mode (revert) only — does NOT close the panel
   // Cmd/Ctrl+Enter: save while editing
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (isEditing) {
-          handleCancelEdit()
-        } else {
-          onClose()
-        }
+      if (e.key === 'Escape' && isEditing) {
+        handleCancelEdit()
       }
       // Cmd/Ctrl+Enter to save while editing
       if (isEditing && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

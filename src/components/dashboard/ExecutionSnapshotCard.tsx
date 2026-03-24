@@ -89,7 +89,7 @@ export function ExecutionSnapshotCard({
           onClick={() => onOpenTradeQueue()}
           className="flex items-center gap-1 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
         >
-          Trade Queue
+          Idea Pipeline
           <ArrowRight className="w-3 h-3" />
         </button>
       </div>

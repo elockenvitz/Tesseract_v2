@@ -142,7 +142,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'bull_case', label: 'Bull Case', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'bear_case', label: 'Bear Case', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'base_case', label: 'Base Case', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
-  { id: 'where_different', label: 'Where Different', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
+  { id: 'where_different', label: 'Where Our Thesis Differs', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'risks_to_thesis', label: 'Risks to Thesis', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'notes', label: 'Notes', visible: false, width: 200, minWidth: 120, sortable: false, pinned: false, category: 'research' },
   { id: 'listNote', label: 'List Note', visible: false, width: 180, minWidth: 100, sortable: false, pinned: false, category: 'research' },
@@ -189,7 +189,7 @@ const RESEARCH_FIELDS = [
   { key: 'bull_case', label: 'Bull Case' },
   { key: 'bear_case', label: 'Bear Case' },
   { key: 'base_case', label: 'Base Case' },
-  { key: 'where_different', label: 'Where Different' },
+  { key: 'where_different', label: 'Where Our Thesis Differs' },
   { key: 'risks_to_thesis', label: 'Key Risks' },
 ] as const
 

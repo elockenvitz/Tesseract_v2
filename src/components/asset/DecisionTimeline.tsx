@@ -136,7 +136,7 @@ export function DecisionTimeline({
     if (event.sourceRef.type === 'trade_idea' || event.sourceRef.type === 'decision') {
       onNavigate({
         id: 'trade-queue',
-        title: 'Trade Queue',
+        title: 'Idea Pipeline',
         type: 'trade-queue',
         data: { selectedTradeId: event.sourceRef.id },
       })

@@ -44,7 +44,7 @@ export function DecisionReviewSection({
           onClick={() => onOpenTradeQueue()}
           className="flex items-center gap-1 text-[11px] font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-200 transition-colors"
         >
-          Trade Queue
+          Idea Pipeline
           <ArrowRight className="w-3 h-3" />
         </button>
       </div>
