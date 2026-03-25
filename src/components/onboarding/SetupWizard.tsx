@@ -664,8 +664,8 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
             )}
           </div>
 
-          {/* Progress Steps */}
-          <div className="flex items-center justify-between">
+          {/* Progress Steps — equal spacing via CSS grid */}
+          <div className="grid items-start" style={{ gridTemplateColumns: STEPS.map((_, i) => i < STEPS.length - 1 ? 'auto 1fr' : 'auto').join(' ') }}>
             {STEPS.map((step, index) => {
               const Icon = step.icon
               const isActive = index === currentStep
@@ -673,8 +673,9 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
               const isSkipped = skippedSteps.includes(step.id)
 
               return (
-                <div key={step.id} className="flex items-center flex-1">
-                  <div className="flex flex-col items-center">
+                <React.Fragment key={step.id}>
+                  {/* Step icon + label */}
+                  <div className="flex flex-col items-center" style={{ minWidth: 64 }}>
                     <div
                       className={clsx(
                         'w-10 h-10 rounded-full flex items-center justify-center transition-colors',
@@ -693,19 +694,19 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
                       )}
                     </div>
                     <span className={clsx(
-                      'text-xs mt-1 font-medium',
+                      'text-xs mt-1 font-medium text-center whitespace-nowrap',
                       isActive ? 'text-primary-600' : 'text-gray-500'
                     )}>
                       {step.label}
                     </span>
                   </div>
+                  {/* Connector line */}
                   {index < STEPS.length - 1 && (
-                    <div className={clsx(
-                      'flex-1 h-0.5 mx-2',
-                      index < currentStep ? 'bg-green-500' : 'bg-gray-200'
-                    )} />
+                    <div className="flex items-center h-10 px-2">
+                      <div className={clsx('w-full h-0.5', index < currentStep ? 'bg-green-500' : 'bg-gray-200')} />
+                    </div>
                   )}
-                </div>
+                </React.Fragment>
               )
             })}
           </div>
@@ -834,7 +835,7 @@ function ProfileStep({ profile, setProfile, user }: {
                     key={role.id}
                     onClick={() => setProfile(prev => ({ ...prev, user_type: role.id as any }))}
                     className={clsx(
-                      'p-4 rounded-lg border-2 text-left transition-all',
+                      'p-4 rounded-lg border-2 text-center transition-all flex flex-col items-center',
                       isSelected
                         ? 'border-primary-500 bg-primary-50'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
@@ -904,7 +905,7 @@ function OrgNodeItem({
   }
 
   return (
-    <div className={clsx('border-l-2', depth > 0 ? 'ml-4 border-gray-200' : 'border-transparent')}>
+    <div className={clsx('border-l-2', depth > 0 ? 'ml-4 border-gray-200' : 'border-transparent')} style={{ willChange: 'auto' }}>
       <div
         className={clsx(
           'flex items-center gap-2 p-2 rounded-lg transition-colors',
@@ -915,11 +916,11 @@ function OrgNodeItem({
         <button
           onClick={onToggle}
           className={clsx(
-            'p-1 rounded hover:bg-gray-100 transition-transform',
+            'p-1 rounded hover:bg-gray-100',
             !hasChildren && !nodeMembers.length && 'invisible'
           )}
         >
-          <ChevronRight className={clsx('h-4 w-4 text-gray-400 transition-transform', isExpanded && 'rotate-90')} />
+          <ChevronRight className={clsx('h-4 w-4 text-gray-400', isExpanded && 'rotate-90')} />
         </button>
 
         {/* Node icon and name */}

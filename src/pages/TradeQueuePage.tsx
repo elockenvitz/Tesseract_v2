@@ -169,6 +169,18 @@ export function TradeQueuePage() {
   }, [])
   const [decisionPanelCollapsed, setDecisionPanelCollapsed] = useState(true)
 
+  // Listen for openDecisionDrawer event from Quick Ideas pane
+  useEffect(() => {
+    const handleOpenDecisionDrawer = (event: CustomEvent) => {
+      const { openDecisionDrawer } = event.detail || {}
+      if (openDecisionDrawer) {
+        setDecisionPanelCollapsed(false)
+      }
+    }
+    window.addEventListener('openTradeQueue', handleOpenDecisionDrawer as EventListener)
+    return () => window.removeEventListener('openTradeQueue', handleOpenDecisionDrawer as EventListener)
+  }, [])
+
   // Proposal modal state (for moving to deciding)
   const [showProposalModal, setShowProposalModal] = useState(false)
   const [proposalTradeId, setProposalTradeId] = useState<string | null>(null)

@@ -4,7 +4,7 @@
 
 import React from 'react'
 
-function CardSkeleton() {
+function CardSkeleton({ showChart = false }: { showChart?: boolean }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 animate-pulse">
       <div className="px-4 pt-3.5 pb-2 flex items-center gap-2.5">
@@ -19,6 +19,11 @@ function CardSkeleton() {
         <div className="h-5 w-14 bg-gray-100 rounded" />
         <div className="h-5 w-20 bg-gray-100 rounded" />
       </div>
+      {showChart && (
+        <div className="px-4 pb-2">
+          <div className="h-[140px] bg-gray-50 rounded" />
+        </div>
+      )}
       <div className="px-4 pb-3 space-y-1.5">
         <div className="h-3.5 w-full bg-gray-100 rounded" />
         <div className="h-3.5 w-5/6 bg-gray-100 rounded" />
@@ -35,7 +40,7 @@ export function FeedSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="space-y-3" role="status" aria-label="Loading feed">
       {Array.from({ length: count }).map((_, i) => (
-        <CardSkeleton key={i} />
+        <CardSkeleton key={i} showChart={i % 2 === 0} />
       ))}
     </div>
   )

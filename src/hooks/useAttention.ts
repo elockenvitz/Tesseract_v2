@@ -870,6 +870,379 @@ async function collectAlignmentProjects(userId: string, windowStart: Date): Prom
   return items
 }
 
+// Collect decision requests (PM inbox)
+async function collectDecisionRequests(userId: string): Promise<AttentionItem[]> {
+  const items: AttentionItem[] = []
+
+  // Get portfolios where user is PM
+  const { data: pmPortfolios } = await supabase
+    .from('portfolio_team')
+    .select('portfolio_id')
+    .eq('user_id', userId)
+    .in('role', ['pm', 'admin'])
+
+  const pmIds = (pmPortfolios || []).map(p => p.portfolio_id)
+  if (pmIds.length === 0) return items
+
+  const { data: requests, error } = await supabase
+    .from('decision_requests')
+    .select(`
+      id, status, context_note, created_at, updated_at, portfolio_id, urgency,
+      requester:users!decision_requests_requested_by_fkey(first_name, last_name),
+      portfolio:portfolios(name),
+      trade_queue_item:trade_queue_items(id, action, assets(symbol))
+    `)
+    .in('portfolio_id', pmIds)
+    .in('status', ['pending', 'under_review', 'needs_discussion'])
+    .order('created_at', { ascending: true })
+    .limit(20)
+
+  if (error || !requests) return items
+
+  for (const r of requests) {
+    const asset = (r.trade_queue_item as any)?.assets
+    const action = (r.trade_queue_item as any)?.action
+    const req = r.requester as any
+    const reqName = req?.first_name ? `${req.first_name} ${req.last_name?.[0] || ''}.`.trim() : 'Analyst'
+    const daysSince = Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / (1000 * 60 * 60 * 24)))
+
+    const attentionId = await generateAttentionId('decision_request', r.id, 'decision_required', 'pm_decision_needed')
+
+    const urgencyMap: Record<string, AttentionSeverity> = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' }
+    const severity: AttentionSeverity = daysSince > 14 ? 'critical' : urgencyMap[r.urgency] || (daysSince > 7 ? 'high' : 'medium')
+
+    items.push({
+      attention_id: attentionId,
+      source_type: 'trade_queue_item',
+      source_id: (r.trade_queue_item as any)?.id || r.id,
+      source_url: '/trade-queue',
+      attention_type: 'decision_required',
+      reason_code: 'pm_decision_needed',
+      reason_text: daysSince > 7
+        ? `Decision waiting ${daysSince} days — from ${reqName}`
+        : `${reqName} submitted a recommendation for your review`,
+      title: `${action?.toUpperCase() || '?'} ${asset?.symbol || '?'}`,
+      subtitle: (r.portfolio as any)?.name,
+      preview: r.context_note?.substring(0, 150),
+      tags: [action, r.urgency, 'decision'].filter(Boolean) as string[],
+      icon_key: 'Scale',
+      audience: 'personal',
+      primary_owner_user_id: userId,
+      participant_user_ids: [],
+      created_by_user_id: null,
+      last_actor_user_id: null,
+      created_at: r.created_at,
+      updated_at: r.updated_at || r.created_at,
+      last_activity_at: r.updated_at || r.created_at,
+      due_at: null,
+      status: 'waiting',
+      next_action: 'Review and decide: Accept, Reject, or Defer',
+      severity,
+      score: 0,
+      context: { asset_id: null, portfolio_id: r.portfolio_id },
+    })
+  }
+  return items
+}
+
+// Collect stale trade ideas (user created, no update in 7+ days)
+async function collectStaleTradeIdeas(userId: string): Promise<AttentionItem[]> {
+  const items: AttentionItem[] = []
+  const staleThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+  const { data: ideas, error } = await supabase
+    .from('trade_queue_items')
+    .select('id, action, status, stage, urgency, created_at, updated_at, assets!inner(id, symbol, company_name), portfolios(name)')
+    .eq('created_by', userId)
+    .not('status', 'in', '("approved","rejected","executed","deleted","cancelled")')
+    .lt('updated_at', staleThreshold.toISOString())
+    .order('updated_at', { ascending: true })
+    .limit(20)
+
+  if (error || !ideas) return items
+
+  for (const t of ideas) {
+    const daysSince = Math.max(0, Math.floor((Date.now() - new Date(t.updated_at || t.created_at).getTime()) / (1000 * 60 * 60 * 24)))
+    const asset = t.assets as any
+
+    const attentionId = await generateAttentionId('trade_queue_item', t.id, 'action_required', 'idea_stale')
+
+    items.push({
+      attention_id: attentionId,
+      source_type: 'trade_queue_item',
+      source_id: t.id,
+      source_url: '/trade-queue',
+      attention_type: 'action_required',
+      reason_code: 'idea_stale',
+      reason_text: `No updates in ${daysSince} days — advance, archive, or update`,
+      title: `${t.action?.toUpperCase()} ${asset?.symbol}`,
+      subtitle: (t.portfolios as any)?.name || t.stage || t.status,
+      tags: [t.action, t.stage, 'stale'].filter(Boolean) as string[],
+      icon_key: 'TrendingUp',
+      audience: 'personal',
+      primary_owner_user_id: userId,
+      participant_user_ids: [],
+      created_by_user_id: userId,
+      last_actor_user_id: userId,
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+      last_activity_at: t.updated_at || t.created_at,
+      due_at: null,
+      status: 'stale',
+      next_action: 'Review: advance stage, update thesis, or archive',
+      severity: daysSince > 14 ? 'high' : 'medium',
+      score: 0,
+      context: { asset_id: asset?.id },
+    })
+  }
+  return items
+}
+
+// Collect neglected covered assets (assets user covers with no thesis/rating/contribution updates)
+async function collectNeglectedCoverage(userId: string): Promise<AttentionItem[]> {
+  const items: AttentionItem[] = []
+
+  // Get assets user covers
+  const { data: coverage, error: covErr } = await supabase
+    .from('coverage')
+    .select('asset_id, updated_at, assets!inner(id, symbol, company_name)')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+
+  if (covErr || !coverage || coverage.length === 0) return items
+
+  // Get latest contribution per asset
+  const assetIds = coverage.map(c => c.asset_id)
+  const { data: contributions } = await supabase
+    .from('asset_contributions')
+    .select('asset_id, updated_at')
+    .eq('created_by', userId)
+    .in('asset_id', assetIds)
+    .order('updated_at', { ascending: false })
+
+  // Build map of most recent contribution per asset
+  const latestUpdate = new Map<string, string>()
+  for (const c of contributions || []) {
+    if (!latestUpdate.has(c.asset_id)) latestUpdate.set(c.asset_id, c.updated_at)
+  }
+
+  const staleThresholdDays = 21 // 3 weeks without research update
+  const now = Date.now()
+
+  for (const c of coverage) {
+    const lastUpdate = latestUpdate.get(c.asset_id)
+    const lastDate = lastUpdate ? new Date(lastUpdate) : new Date(c.updated_at)
+    const daysSince = Math.floor((now - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (daysSince < staleThresholdDays) continue
+
+    const asset = c.assets as any
+    const attentionId = await generateAttentionId('coverage', c.asset_id, 'action_required', 'coverage_neglected')
+
+    items.push({
+      attention_id: attentionId,
+      source_type: 'coverage_change',
+      source_id: c.asset_id,
+      source_url: `/asset/${c.asset_id}`,
+      attention_type: 'action_required',
+      reason_code: 'coverage_neglected',
+      reason_text: lastUpdate
+        ? `No research update in ${daysSince} days — thesis may be stale`
+        : `Covering ${asset?.symbol} but no thesis or research on file`,
+      title: `${asset?.symbol} — Research stale`,
+      subtitle: asset?.company_name,
+      tags: ['coverage', 'stale'],
+      icon_key: 'TrendingUp',
+      audience: 'personal',
+      primary_owner_user_id: userId,
+      participant_user_ids: [],
+      created_by_user_id: userId,
+      last_actor_user_id: userId,
+      created_at: c.updated_at,
+      updated_at: lastDate.toISOString(),
+      last_activity_at: lastDate.toISOString(),
+      due_at: null,
+      status: 'stale',
+      next_action: 'Update thesis, rating, or research for this covered name',
+      severity: daysSince > 30 ? 'high' : 'medium',
+      score: 0,
+      context: { asset_id: c.asset_id },
+    })
+  }
+  return items
+}
+
+// Collect upcoming earnings for covered assets
+async function collectUpcomingEarnings(userId: string): Promise<AttentionItem[]> {
+  const items: AttentionItem[] = []
+
+  const { data: coverage } = await supabase
+    .from('coverage')
+    .select('asset_id')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+
+  const coveredIds = (coverage || []).map(c => c.asset_id)
+  if (coveredIds.length === 0) return items
+
+  const { data: earnings, error } = await supabase
+    .from('asset_earnings_dates')
+    .select('id, earnings_date, is_estimated, assets!inner(id, symbol, company_name)')
+    .in('asset_id', coveredIds)
+    .gte('earnings_date', new Date().toISOString().split('T')[0])
+    .order('earnings_date', { ascending: true })
+    .limit(10)
+
+  if (error || !earnings) return items
+
+  for (const e of earnings) {
+    const asset = e.assets as any
+    const daysUntil = Math.ceil((new Date(e.earnings_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    if (daysUntil > 14) continue // Only show within 2 weeks
+
+    const attentionId = await generateAttentionId('earnings', e.id, 'informational', 'earnings_upcoming')
+
+    items.push({
+      attention_id: attentionId,
+      source_type: 'coverage_change',
+      source_id: e.id,
+      source_url: `/asset/${asset?.id}`,
+      attention_type: 'informational',
+      reason_code: 'earnings_upcoming',
+      reason_text: daysUntil <= 1 ? `${asset?.symbol} reports earnings tomorrow` : `${asset?.symbol} earnings in ${daysUntil} days — ensure thesis is current`,
+      title: `${asset?.symbol} Earnings`,
+      subtitle: e.is_estimated ? 'Estimated date' : 'Confirmed',
+      tags: ['earnings', daysUntil <= 7 ? 'this_week' : 'upcoming'],
+      icon_key: 'TrendingUp',
+      audience: 'personal',
+      primary_owner_user_id: userId,
+      participant_user_ids: [],
+      created_by_user_id: null,
+      last_actor_user_id: null,
+      created_at: e.earnings_date,
+      updated_at: e.earnings_date,
+      last_activity_at: e.earnings_date,
+      due_at: e.earnings_date,
+      status: 'open',
+      next_action: 'Review thesis and positioning before results',
+      severity: daysUntil <= 3 ? 'high' : daysUntil <= 7 ? 'medium' : 'low',
+      score: 0,
+      context: { asset_id: asset?.id },
+    })
+  }
+  return items
+}
+
+// Collect overdue personal tasks
+async function collectOverduePersonalTasks(userId: string): Promise<AttentionItem[]> {
+  const items: AttentionItem[] = []
+
+  const { data: tasks, error } = await supabase
+    .from('personal_tasks')
+    .select('id, title, description, priority, due_date, created_at')
+    .eq('user_id', userId)
+    .eq('completed', false)
+    .not('due_date', 'is', null)
+    .lt('due_date', new Date().toISOString().split('T')[0])
+    .order('due_date', { ascending: true })
+    .limit(10)
+
+  if (error || !tasks) return items
+
+  for (const t of tasks) {
+    const daysOver = Math.floor((Date.now() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24))
+    const attentionId = await generateAttentionId('personal_task', t.id, 'action_required', 'task_overdue')
+
+    items.push({
+      attention_id: attentionId,
+      source_type: 'task',
+      source_id: t.id,
+      source_url: '/priorities',
+      attention_type: 'action_required',
+      reason_code: 'task_overdue',
+      reason_text: `${daysOver} day${daysOver !== 1 ? 's' : ''} overdue`,
+      title: t.title,
+      preview: t.description?.substring(0, 150),
+      tags: ['overdue', t.priority].filter(Boolean) as string[],
+      icon_key: 'CheckSquare',
+      audience: 'personal',
+      primary_owner_user_id: userId,
+      participant_user_ids: [],
+      created_by_user_id: userId,
+      last_actor_user_id: userId,
+      created_at: t.created_at,
+      updated_at: t.created_at,
+      last_activity_at: t.created_at,
+      due_at: t.due_date,
+      status: 'overdue',
+      next_action: 'Complete, reschedule, or remove',
+      severity: daysOver > 7 ? 'high' : 'medium',
+      score: 0,
+    })
+  }
+  return items
+}
+
+// Collect stale projects (not blocked, but no updates in 14+ days)
+async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
+  const items: AttentionItem[] = []
+  const staleThreshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+
+  const { data: assignments } = await supabase
+    .from('project_assignments')
+    .select('project_id')
+    .eq('assigned_to', userId)
+
+  const assignedIds = (assignments || []).map(a => a.project_id)
+
+  const { data: projects, error } = await supabase
+    .from('projects')
+    .select('id, title, status, priority, due_date, created_by, updated_at, created_at')
+    .is('deleted_at', null)
+    .in('status', ['planning', 'in_progress', 'review'])
+    .lt('updated_at', staleThreshold.toISOString())
+    .limit(15)
+
+  if (error || !projects) return items
+
+  const relevant = projects.filter(p => p.created_by === userId || assignedIds.includes(p.id))
+
+  for (const p of relevant) {
+    const daysSince = Math.floor((Date.now() - new Date(p.updated_at || p.created_at).getTime()) / (1000 * 60 * 60 * 24))
+
+    const attentionId = await generateAttentionId('project', p.id, 'action_required', 'project_stale')
+
+    items.push({
+      attention_id: attentionId,
+      source_type: 'project',
+      source_id: p.id,
+      source_url: `/project/${p.id}`,
+      attention_type: 'action_required',
+      reason_code: 'project_stale',
+      reason_text: `No updates in ${daysSince} days`,
+      title: p.title,
+      subtitle: `${p.status?.replace('_', ' ')} · stale`,
+      tags: [p.status, 'stale'].filter(Boolean) as string[],
+      icon_key: 'FolderKanban',
+      audience: 'personal',
+      primary_owner_user_id: p.created_by,
+      participant_user_ids: [],
+      created_by_user_id: p.created_by,
+      last_actor_user_id: null,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      last_activity_at: p.updated_at || p.created_at,
+      due_at: p.due_date,
+      status: 'stale',
+      next_action: 'Update progress or close if no longer relevant',
+      severity: daysSince > 30 ? 'high' : 'medium',
+      score: 0,
+      context: { project_id: p.id },
+    })
+  }
+  return items
+}
+
 // Main computation function
 async function computeAttention(userId: string, windowHours: number): Promise<AttentionResponse> {
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000)
@@ -886,7 +1259,12 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
   }
 
   // Collect items from all sources
-  const [deliverables, projects, tradeItems, suggestions, notifications, alignmentProjects, quickThoughts] = await Promise.all([
+  const [
+    deliverables, projects, tradeItems, suggestions, notifications,
+    alignmentProjects, quickThoughts,
+    decisionRequests, staleIdeas, neglectedCoverage,
+    upcomingEarnings, overduePersonalTasks, staleProjects,
+  ] = await Promise.all([
     collectProjectDeliverables(userId),
     collectProjects(userId),
     collectTradeQueueItems(userId),
@@ -894,6 +1272,12 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
     collectNotifications(userId, windowStart),
     collectAlignmentProjects(userId, windowStart),
     collectQuickThoughts(userId, windowStart),
+    collectDecisionRequests(userId),
+    collectStaleTradeIdeas(userId),
+    collectNeglectedCoverage(userId),
+    collectUpcomingEarnings(userId),
+    collectOverduePersonalTasks(userId),
+    collectStaleProjects(userId),
   ])
 
   let allItems: AttentionItem[] = [
@@ -904,6 +1288,12 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
     ...notifications,
     ...alignmentProjects,
     ...quickThoughts,
+    ...decisionRequests,
+    ...staleIdeas,
+    ...neglectedCoverage,
+    ...upcomingEarnings,
+    ...overduePersonalTasks,
+    ...staleProjects,
   ]
 
   // Filter dismissed/snoozed

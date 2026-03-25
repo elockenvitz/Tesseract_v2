@@ -3093,7 +3093,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               ? 'Can manage coverage assignments globally'
                               : hasNodeLevelCoverageAdmin
                               ? `Admin for ${userCoverageAdminNodes.length} node${userCoverageAdminNodes.length > 1 ? 's' : ''}`
-                              : 'Can only manage own coverage assignments'}
+                              : 'Read-only — contact a coverage admin to make changes'}
                           </p>
                         </div>
                       </div>

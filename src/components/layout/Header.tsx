@@ -261,7 +261,7 @@ export function Header({
                     <button
                       onClick={() => {
                         setShowAppMenu(false)
-                        onSearchResult({ id: 'priorities', title: 'Priorities', type: 'priorities', data: null })
+                        onSearchResult({ id: 'priorities', title: 'My Priorities', type: 'priorities', data: null })
                       }}
                       className="flex flex-col items-center p-3 rounded-lg hover:bg-rose-50 dark:hover:bg-gray-700 transition-colors group/tile ring-1 ring-rose-200 bg-rose-50/30"
                     >

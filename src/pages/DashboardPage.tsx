@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
 import { clsx } from 'clsx'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -37,10 +37,9 @@ import { TDFTab } from '../components/tabs/TDFTab'
 import { UserTab } from '../components/tabs/UserTab'
 import { TemplatesTab } from '../components/tabs/TemplatesTab'
 import { CalendarPage } from './CalendarPage'
-// PrioritizerPage removed - consolidated into All Priorities (AttentionPage)
+import { PrioritizerPage } from './PrioritizerPage'
 import { CoveragePage } from './CoveragePage'
 import { OrganizationPage } from './OrganizationPage'
-import { AttentionPage } from './AttentionPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
 import { AdminConsolePage } from './AdminConsolePage'
 import type { AttentionType } from '../types/attention'
@@ -55,6 +54,8 @@ import { SystemInsightCard } from '../components/dashboard/SystemInsightCard'
 import { useDashboardScope } from '../hooks/useDashboardScope'
 import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
+import { useOnboarding } from '../hooks/useOnboarding'
+import { SetupWizard } from '../components/onboarding/SetupWizard'
 import { useToast } from '../components/common/Toast'
 
 /** Clean loading state for asset tabs while data is being fetched */
@@ -89,6 +90,7 @@ function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
         isActive: tab.id === savedState.activeTabId,
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
+        ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
       })),
       activeTabId: savedState.activeTabId
     }
@@ -109,19 +111,38 @@ export function DashboardPage() {
   const [activeTabId, setActiveTabId] = useState(cachedInitialState.activeTabId)
   const [isInitialized, setIsInitialized] = useState(true) // Already initialized from storage
 
+  // Auth
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  // Clear stale tabs if a different user logged in
+  useEffect(() => {
+    if (user?.id) {
+      const saved = TabStateManager.loadMainTabState()
+      if (saved?.userId && saved.userId !== user.id) {
+        TabStateManager.clearAll()
+        const defaultTabs = [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }]
+        setTabs(defaultTabs as Tab[])
+        setActiveTabId('dashboard')
+      }
+    }
+  }, [user?.id])
+
   // Save tab state whenever tabs or activeTabId changes (but only after initialization)
   useEffect(() => {
     if (isInitialized) {
       // Preserve existing tabStates when saving main state
       const currentState = TabStateManager.loadMainTabState()
       const existingTabStates = currentState?.tabStates || {}
-      TabStateManager.saveMainTabState(tabs, activeTabId, existingTabStates)
+      TabStateManager.saveMainTabState(tabs, activeTabId, existingTabStates, user?.id)
     }
-  }, [tabs, activeTabId, isInitialized])
+  }, [tabs, activeTabId, isInitialized, user?.id])
 
-  // Auth
-  const { user } = useAuth()
-  const queryClient = useQueryClient()
+  // Onboarding: check if new user needs profile setup
+  const { onboardingStatus, isLoading: onboardingLoading } = useOnboarding()
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false)
+  const needsOnboarding = !onboardingLoading && !onboardingStatus?.wizard_completed && !onboardingDismissed
+
   const toast = useToast()
 
   // Listen for org auto-join event (dispatched from useAuth when domain routing auto-joins)
@@ -235,6 +256,7 @@ export function DashboardPage() {
       if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
       if (result.type === 'trade-book' && tab.type === 'trade-book') return true
       if (result.type === 'workflows' && tab.type === 'workflows') return true
+      if (result.type === 'priorities' && tab.type === 'priorities') return true
       return false
     })
 
@@ -245,12 +267,13 @@ export function DashboardPage() {
         mergedData: { ...existingTab.data, ...result.data }
       })
       // If tab exists, update its data (merge with existing) and activate it
+      // Also update the title in case it was renamed (e.g. "All Priorities" → "My Priorities")
       setTabs(tabs.map(tab => ({
         ...tab,
         isActive: tab.id === existingTab.id,
-        // Merge the new data with existing data if this is the matching tab
-        ...(tab.id === existingTab.id && result.data ? {
-          data: { ...tab.data, ...result.data }
+        ...(tab.id === existingTab.id ? {
+          title: result.title || tab.title,
+          ...(result.data ? { data: { ...tab.data, ...result.data } } : {})
         } : {})
       })))
       setActiveTabId(existingTab.id)
@@ -603,14 +626,13 @@ export function DashboardPage() {
   // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)
   useEffect(() => {
     const handleOpenTradeQueue = (event: CustomEvent) => {
-      const { selectedTradeId } = event.detail || {}
-      console.log('📋 Opening Idea Pipeline:', { selectedTradeId })
+      const { selectedTradeId, openDecisionDrawer } = event.detail || {}
 
       handleSearchResult({
         id: 'trade-queue',
         title: 'Idea Pipeline',
         type: 'trade-queue',
-        data: selectedTradeId ? { selectedTradeId } : undefined
+        data: { selectedTradeId, openDecisionDrawer }
       })
     }
 
@@ -744,11 +766,8 @@ export function DashboardPage() {
       case 'calendar':
         return <CalendarPage onItemSelect={handleSearchResult} />
       case 'prioritizer':
-        // Deprecated: redirect to All Priorities
-        // This case handles any saved tabs or deep links to the old route
-        return <AttentionPage initialFilter={activeTab.data?.filterType} onNavigate={handleSearchResult} />
       case 'priorities':
-        return <AttentionPage initialFilter={activeTab.data?.filterType} onNavigate={handleSearchResult} />
+        return <PrioritizerPage onItemSelect={handleSearchResult} />
       case 'coverage':
         return <CoveragePage initialView={activeTab.data?.initialView} />
       case 'organization':
@@ -840,7 +859,7 @@ export function DashboardPage() {
   const handleViewAll = (type: AttentionType) => {
     handleSearchResult({
       id: 'priorities',
-      title: 'All Priorities',
+      title: 'My Priorities',
       type: 'priorities' as any,
       data: { filterType: type }
     })
@@ -1036,6 +1055,19 @@ export function DashboardPage() {
   }
 
   return (
+    <>
+    {/* Onboarding wizard for new users */}
+    {needsOnboarding && (
+      <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
+        <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+          <SetupWizard
+            onComplete={() => setOnboardingDismissed(true)}
+            onSkip={() => setOnboardingDismissed(true)}
+            isModal
+          />
+        </div>
+      </div>
+    )}
     <Layout
       tabs={tabs}
       activeTabId={activeTabId}
@@ -1064,5 +1096,6 @@ export function DashboardPage() {
         />
       </>
     </Layout>
+    </>
   )
 }

@@ -36,9 +36,9 @@ interface BlankTabProps {
 const PRIMARY_SURFACES = [
   {
     id: 'priorities',
-    title: 'All Priorities',
+    title: 'My Priorities',
     type: 'priorities',
-    description: 'What needs attention',
+    description: 'What needs your attention right now',
     icon: Flag,
     gradient: 'from-rose-100 to-red-100',
     iconColor: 'text-rose-600'

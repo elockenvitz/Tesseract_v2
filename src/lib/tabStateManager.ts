@@ -7,14 +7,32 @@ export interface MainTabState {
   activeTabId: string
   tabStates: Record<string, TabState>
   version?: number
+  userId?: string  // track which user owns this state
 }
 
 const TAB_STATE_KEY = 'tesseract_tab_states'
 const CURRENT_VERSION = 2 // Increment this to clear old cached data
 
 export class TabStateManager {
+  // Clear all tab state (call on sign-out or user switch)
+  static clearAll(): void {
+    try { sessionStorage.removeItem(TAB_STATE_KEY) } catch {}
+  }
+
+  // Clear if the saved state belongs to a different user
+  static clearIfDifferentUser(currentUserId: string): void {
+    try {
+      const saved = sessionStorage.getItem(TAB_STATE_KEY)
+      if (!saved) return
+      const state = JSON.parse(saved) as MainTabState
+      if (state.userId && state.userId !== currentUserId) {
+        sessionStorage.removeItem(TAB_STATE_KEY)
+      }
+    } catch {}
+  }
+
   // Save the main tab state (tabs array and active tab)
-  static saveMainTabState(tabs: any[], activeTabId: string, tabStates: Record<string, TabState> = {}): void {
+  static saveMainTabState(tabs: any[], activeTabId: string, tabStates: Record<string, TabState> = {}, userId?: string): void {
     try {
       const state: MainTabState = {
         tabs: tabs.map(tab => ({
@@ -27,7 +45,8 @@ export class TabStateManager {
         })),
         activeTabId,
         tabStates,
-        version: CURRENT_VERSION
+        version: CURRENT_VERSION,
+        userId,
       }
       sessionStorage.setItem(TAB_STATE_KEY, JSON.stringify(state))
     } catch (error) {

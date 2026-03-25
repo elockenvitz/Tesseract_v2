@@ -126,6 +126,8 @@ export function OrgPeopleTab({
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteSelectedNodes, setInviteSelectedNodes] = useState<string[]>([])
+  const [inviteSelectedPortfolios, setInviteSelectedPortfolios] = useState<string[]>([])
   const [reactivateTarget, setReactivateTarget] = useState<OrganizationMembership | null>(null)
   const [reactivateReason, setReactivateReason] = useState('')
   const [suspendTarget, setSuspendTarget] = useState<OrganizationMembership | null>(null)
@@ -148,12 +150,29 @@ export function OrgPeopleTab({
   })
 
   const createInviteMutation = useMutation({
-    mutationFn: async (email: string) => {
+    mutationFn: async ({ email, nodeIds, portfolioIds }: { email: string; nodeIds: string[]; portfolioIds: string[] }) => {
+      // Build preassignments JSONB
+      const preassignments: any = {}
+      if (nodeIds.length > 0) {
+        preassignments.org_nodes = nodeIds.map(id => ({ node_id: id, role: 'member' }))
+      }
+      if (portfolioIds.length > 0) {
+        preassignments.portfolios = portfolioIds.map(id => ({ portfolio_id: id, role: 'analyst' }))
+      }
+
       const { data, error } = await supabase.rpc('create_org_invite', {
         p_organization_id: organization!.id,
         p_email: email.trim().toLowerCase(),
       })
       if (error) throw error
+
+      // Update the invite with preassignments if any
+      if (Object.keys(preassignments).length > 0 && data?.id) {
+        await supabase.from('organization_invites')
+          .update({ preassignments })
+          .eq('id', data.id)
+      }
+
       return data
     },
     onSuccess: () => {
@@ -168,10 +187,12 @@ export function OrgPeopleTab({
           targetType: 'invite',
           entityType: 'invite',
           actionType: 'created',
-          details: { email: inviteEmail.trim().toLowerCase() },
+          details: { email: inviteEmail.trim().toLowerCase(), preassignments: { nodeIds: inviteSelectedNodes, portfolioIds: inviteSelectedPortfolios } },
         })
       }
       setInviteEmail('')
+      setInviteSelectedNodes([])
+      setInviteSelectedPortfolios([])
       setShowInviteModal(false)
     },
     onError: (error: any) => {
@@ -681,42 +702,193 @@ export function OrgPeopleTab({
 
       {/* ── Invite Modal ── */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowInviteModal(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Invite User</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Send an invitation to join {organization?.name || 'the organization'}.
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (inviteEmail.trim()) createInviteMutation.mutate(inviteEmail)
-              }}
-            >
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="user@example.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-                autoFocus
-                required
-              />
-              <div className="flex justify-end space-x-3 mt-5">
-                <Button type="button" variant="outline" onClick={() => { setShowInviteModal(false); setInviteEmail('') }}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={!inviteEmail.trim() || createInviteMutation.isPending}>
-                  <Send className="w-3.5 h-3.5 mr-1.5" />
-                  {createInviteMutation.isPending ? 'Sending...' : 'Send Invite'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <InviteModal
+          orgName={organization?.name || 'the organization'}
+          orgId={organization?.id || ''}
+          email={inviteEmail}
+          setEmail={setInviteEmail}
+          selectedNodes={inviteSelectedNodes}
+          setSelectedNodes={setInviteSelectedNodes}
+          selectedPortfolios={inviteSelectedPortfolios}
+          setSelectedPortfolios={setInviteSelectedPortfolios}
+          isPending={createInviteMutation.isPending}
+          onSubmit={() => {
+            if (inviteEmail.trim()) createInviteMutation.mutate({ email: inviteEmail, nodeIds: inviteSelectedNodes, portfolioIds: inviteSelectedPortfolios })
+          }}
+          onClose={() => { setShowInviteModal(false); setInviteEmail(''); setInviteSelectedNodes([]); setInviteSelectedPortfolios([]) }}
+        />
       )}
+    </div>
+  )
+}
+
+// ─── InviteModal — enhanced invite with org node + portfolio preassignment ──
+
+import { Building2, Users, Briefcase, ChevronDown, ChevronRight as ChevronRightIcon, Check } from 'lucide-react'
+
+function InviteModal({ orgName, orgId, email, setEmail, selectedNodes, setSelectedNodes, selectedPortfolios, setSelectedPortfolios, isPending, onSubmit, onClose }: {
+  orgName: string; orgId: string
+  email: string; setEmail: (v: string) => void
+  selectedNodes: string[]; setSelectedNodes: (v: string[]) => void
+  selectedPortfolios: string[]; setSelectedPortfolios: (v: string[]) => void
+  isPending: boolean; onSubmit: () => void; onClose: () => void
+}) {
+  // Fetch org chart nodes
+  const { data: orgNodes = [] } = useQuery({
+    queryKey: ['invite-org-nodes', orgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_chart_nodes')
+        .select('id, name, node_type, parent_id, color')
+        .eq('organization_id', orgId)
+        .order('name')
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!orgId,
+  })
+
+  // Fetch portfolios
+  const { data: portfolios = [] } = useQuery({
+    queryKey: ['invite-portfolios', orgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolios')
+        .select('id, name, portfolio_id')
+        .order('name')
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!orgId,
+  })
+
+  const toggleNode = (id: string) => {
+    setSelectedNodes(selectedNodes.includes(id) ? selectedNodes.filter(n => n !== id) : [...selectedNodes, id])
+  }
+
+  const togglePortfolio = (id: string) => {
+    setSelectedPortfolios(selectedPortfolios.includes(id) ? selectedPortfolios.filter(p => p !== id) : [...selectedPortfolios, id])
+  }
+
+  // Group nodes by type
+  const nodesByType: Record<string, typeof orgNodes> = {}
+  for (const n of orgNodes) {
+    const type = n.node_type || 'other'
+    if (!nodesByType[type]) nodesByType[type] = []
+    nodesByType[type].push(n)
+  }
+
+  const nodeTypeLabel: Record<string, string> = { division: 'Divisions', department: 'Departments', team: 'Teams', portfolio: 'Portfolios' }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Invite User</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Send an invitation to join {orgName}. Optionally pre-assign teams and portfolios.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="user@example.com"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              autoFocus
+              required
+            />
+          </div>
+
+          {/* Org Structure */}
+          {orgNodes.length > 0 && (
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <Building2 className="w-4 h-4" />
+                Teams & Structure
+                <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
+              </label>
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg max-h-48 overflow-y-auto">
+                {Object.entries(nodesByType).map(([type, nodes]) => (
+                  <div key={type}>
+                    <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 sticky top-0">
+                      {nodeTypeLabel[type] || type}
+                    </div>
+                    {nodes.map(node => {
+                      const selected = selectedNodes.includes(node.id)
+                      return (
+                        <button
+                          key={node.id}
+                          type="button"
+                          onClick={() => toggleNode(node.id)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${selected ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}
+                        >
+                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                            {selected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          {node.color && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: node.color }} />}
+                          <span className="text-gray-900 dark:text-white truncate">{node.name}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+              {selectedNodes.length > 0 && (
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">{selectedNodes.length} selected</p>
+              )}
+            </div>
+          )}
+
+          {/* Portfolios */}
+          {portfolios.length > 0 && (
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <Briefcase className="w-4 h-4" />
+                Portfolio Access
+                <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
+              </label>
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg max-h-48 overflow-y-auto">
+                {portfolios.map(p => {
+                  const selected = selectedPortfolios.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => togglePortfolio(p.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${selected ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}
+                    >
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                        {selected && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <Briefcase className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <span className="text-gray-900 dark:text-white truncate">{p.name}</span>
+                      {p.portfolio_id && <span className="text-xs text-gray-400 ml-auto shrink-0">{p.portfolio_id}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedPortfolios.length > 0 && (
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">{selectedPortfolios.length} selected</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={onSubmit} disabled={!email.trim() || isPending}>
+            <Send className="w-3.5 h-3.5 mr-1.5" />
+            {isPending ? 'Sending...' : 'Send Invite'}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -70,12 +70,15 @@ export function useAuth() {
 
         if (fetchError && fetchError.code === 'PGRST116') {
           // User doesn't exist in public.users table - create them
-          // This happens for users who signed up before we had the users table
+          // Pull names from user_metadata if available (set during signup)
+          const meta = session.user.user_metadata || {}
           const { error: insertError } = await supabase
             .from('users')
             .insert({
               id: session.user.id,
               email: session.user.email,
+              first_name: meta.first_name || null,
+              last_name: meta.last_name || null,
             })
 
           if (insertError) {
@@ -224,6 +227,9 @@ export function useAuth() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: { first_name: titleCase(firstName), last_name: titleCase(lastName) }
+      }
     })
 
     // If signup successful, create/update user record with names
@@ -263,6 +269,11 @@ export function useAuth() {
   const signOut = async () => {
     cacheUser(null)
     try { sessionStorage.removeItem(RECOVERY_SESSION_KEY) } catch {}
+    // Clear tab state so the next user doesn't inherit stale tabs
+    try {
+      const { TabStateManager } = await import('../lib/tabStateManager')
+      TabStateManager.clearAll()
+    } catch {}
     setIsRecoverySession(false)
     const { error } = await supabase.auth.signOut()
     return { error }

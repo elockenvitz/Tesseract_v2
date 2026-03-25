@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
@@ -14,6 +14,7 @@ import { PromptModal } from '../thoughts/PromptModal'
 import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { useRecentQuickIdeas } from '../../hooks/useRecentQuickIdeas'
 import { useDirectCounts } from '../../hooks/useDirectCounts'
+import { useUpdateDecisionRequest, useAcceptFromInbox } from '../../hooks/useDecisionRequests'
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
@@ -50,11 +51,29 @@ export function ThoughtsSection({
   onBackToCapture,
   onOpenInspector,
 }: ThoughtsSectionProps) {
+  const { user } = useAuth()
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const [showPromptList, setShowPromptList] = useState(false)
+  const [showPendingReview, setShowPendingReview] = useState(false)
   const { success } = useToast()
   const { openPromptCount, pendingRecommendationCount } = useDirectCounts()
+
+  // Count active trade ideas in pipeline (not committed/rejected/deleted)
+  const { data: pipelineCount = 0 } = useQuery({
+    queryKey: ['pipeline-active-count', user?.id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('trade_queue_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('created_by', user!.id)
+        .not('status', 'in', '("approved","rejected","executed","deleted")')
+      if (error) return 0
+      return count ?? 0
+    },
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  })
 
   // Fetch recent quick ideas for the sidebar (max 5, personal only, no trade ideas)
   const { data: recentIdeas = [], invalidate: invalidateRecentIdeas, hasMore } = useRecentQuickIdeas(5)
@@ -269,6 +288,42 @@ export function ThoughtsSection({
     )
   }
 
+  // ── Pending Review list view ──
+  if (showPendingReview) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+          <button
+            onClick={() => setShowPendingReview(false)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Back to Quick Ideas</span>
+          </button>
+        </div>
+        <div className="px-3 py-2 flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Pending Review</h3>
+          <button
+            onClick={() => {
+              setShowPendingReview(false)
+              // Open Idea Pipeline with decision drawer in fullscreen
+              window.dispatchEvent(new CustomEvent('openTradeQueue', {
+                detail: { openDecisionDrawer: 'full' }
+              }))
+              onClose?.()
+            }}
+            className="text-[10px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+          >
+            View all in Idea Pipeline
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
+          <PendingReviewList />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Back button header - show when in capture mode (not collapsed) */}
@@ -305,20 +360,35 @@ export function ThoughtsSection({
               </span>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => handleOpenCapture('idea')}
-                className="flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-blue-700 transition-all shadow-sm"
-              >
-                <Lightbulb className="h-4 w-4" />
-                <span>Thought</span>
-              </button>
-              <button
-                onClick={() => handleOpenCapture('trade_idea')}
-                className="flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
-              >
-                <TrendingUp className="h-4 w-4" />
-                <span>Trade Idea</span>
-              </button>
+              <div className="flex-1">
+                <button
+                  onClick={() => handleOpenCapture('idea')}
+                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-blue-700 transition-all shadow-sm"
+                >
+                  <Lightbulb className="h-4 w-4" />
+                  <span>Thought</span>
+                </button>
+              </div>
+              <div className="flex-1">
+                <button
+                  onClick={() => handleOpenCapture('trade_idea')}
+                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  <span>Trade Idea</span>
+                </button>
+                {pipelineCount > 0 && (
+                  <button
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
+                      onClose?.()
+                    }}
+                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-green-600 dark:hover:text-green-400 hover:underline transition-colors"
+                  >
+                    <span className="font-semibold text-gray-600 dark:text-gray-300">{pipelineCount}</span> in pipeline
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Divider */}
@@ -347,7 +417,7 @@ export function ThoughtsSection({
                 {openPromptCount > 0 && (
                   <button
                     onClick={() => setShowPromptList(true)}
-                    className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
+                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
                   >
                     <span className="font-semibold text-gray-600 dark:text-gray-300">{openPromptCount}</span> open prompts
                   </button>
@@ -364,16 +434,14 @@ export function ThoughtsSection({
                   <FileText className="h-4 w-4" />
                   <span>Recommend</span>
                 </button>
-                <button
-                  onClick={() => {
-                    // TODO: Navigate to proposals list when dedicated view exists
-                    window.dispatchEvent(new CustomEvent('openTradeQueue', { detail: {} }))
-                    onClose?.()
-                  }}
-                  className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
-                >
-                  <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingRecommendationCount}</span> pending review
-                </button>
+                {pendingRecommendationCount > 0 && (
+                  <button
+                    onClick={() => setShowPendingReview(true)}
+                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
+                  >
+                    <span className="font-semibold text-gray-600 dark:text-gray-300">{pendingRecommendationCount}</span> pending review
+                  </button>
+                )}
               </div>
             </div>
 
@@ -484,7 +552,8 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
   const { data: prompts = [], isLoading } = useQuery({
     queryKey: ['open-prompts-list', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch prompts created by the current user
+      const { data: myPrompts, error: err1 } = await supabase
         .from('quick_thoughts')
         .select('id, content, tags, created_at, created_by')
         .eq('created_by', user!.id)
@@ -492,12 +561,68 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
         .order('created_at', { ascending: false })
         .limit(20)
 
-      if (error) throw error
-      return data || []
+      if (err1) throw err1
+
+      // Fetch prompts assigned to the current user (tag contains assignee:<userId>)
+      const { data: assignedToMe, error: err2 } = await supabase
+        .from('quick_thoughts')
+        .select('id, content, tags, created_at, created_by')
+        .eq('idea_type', 'prompt')
+        .neq('created_by', user!.id)
+        .contains('tags', [`assignee:${user!.id}`])
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (err2) throw err2
+
+      // Merge and deduplicate
+      const seen = new Set<string>()
+      const all = [...(myPrompts || []), ...(assignedToMe || [])].filter(p => {
+        if (seen.has(p.id)) return false
+        seen.add(p.id)
+        return true
+      })
+
+      // Sort by created_at desc
+      all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+      return all
     },
     enabled: !!user?.id,
     staleTime: 30_000,
   })
+
+  // Batch-fetch assignee names for all prompts
+  const assigneeIds = [...new Set(
+    prompts
+      .flatMap(p => (p.tags || []) as string[])
+      .filter(t => t.startsWith('assignee:'))
+      .map(t => t.replace('assignee:', ''))
+      .filter(Boolean)
+  )]
+
+  const { data: assigneeUsers } = useQuery({
+    queryKey: ['prompt-assignee-users', assigneeIds],
+    queryFn: async () => {
+      if (assigneeIds.length === 0) return []
+      const { data } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', assigneeIds)
+      return data || []
+    },
+    enabled: assigneeIds.length > 0,
+    staleTime: 5 * 60_000,
+  })
+
+  const getAssigneeName = (id: string | null) => {
+    if (!id) return null
+    const u = assigneeUsers?.find(a => a.id === id)
+    if (!u) return null
+    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name[0]}.`
+    if (u.first_name) return u.first_name
+    return u.email?.split('@')[0] || null
+  }
 
   if (isLoading) {
     return (
@@ -521,13 +646,31 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
   return (
     <div className="space-y-1.5">
       {prompts.map(prompt => {
-        // Extract assignee name from tags
-        const assigneeTag = prompt.tags?.find((t: string) => t.startsWith('assignee_name:'))
-        const assigneeName = assigneeTag ? assigneeTag.replace('assignee_name:', '') : null
+        // Extract assignee info from tags
+        const assigneeIdTag = prompt.tags?.find((t: string) => t.startsWith('assignee:'))
+        const assigneeId = assigneeIdTag ? assigneeIdTag.replace('assignee:', '') : null
+        const assigneeName = getAssigneeName(assigneeId)
         // Extract context from tags
         const ctxTag = prompt.tags?.find((t: string) => t.startsWith('ctx:'))
         const ctxTitle = ctxTag ? ctxTag.replace(/^ctx:[^:]+:[^:]+:/, '') : null
         const timeAgo = formatDistanceToNow(new Date(prompt.created_at), { addSuffix: true })
+
+        // Determine who it's waiting on
+        const isCreatedByMe = prompt.created_by === user?.id
+        const isAssignedToMe = assigneeId === user?.id
+
+        let waitingLabel: string | null = null
+        let waitingColor = ''
+        let waitingBg = ''
+        if (isAssignedToMe) {
+          waitingLabel = 'Waiting on you'
+          waitingColor = 'text-rose-700 dark:text-rose-300'
+          waitingBg = 'bg-rose-50 dark:bg-rose-900/30 px-1.5 py-0.5 rounded'
+        } else if (isCreatedByMe && assigneeName) {
+          waitingLabel = `Waiting on ${assigneeName}`
+          waitingColor = 'text-violet-700 dark:text-violet-300'
+          waitingBg = 'bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded'
+        }
 
         return (
           <button
@@ -535,31 +678,365 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
             onClick={() => onSelectPrompt(prompt.id)}
             className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-violet-300 dark:hover:border-violet-600 hover:bg-violet-50/50 dark:hover:bg-violet-900/10 transition-colors group"
           >
-            <div className="flex items-start gap-2">
+            <div className="flex items-stretch gap-2">
               <MessageCircleQuestion className="h-3.5 w-3.5 text-violet-500 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-900 dark:text-white line-clamp-2 leading-snug">
                   {prompt.content || 'Untitled prompt'}
                 </p>
-                <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                  {assigneeName && (
-                    <>
-                      <span>To: <span className="font-medium text-gray-500 dark:text-gray-400">{assigneeName}</span></span>
-                      <span>·</span>
-                    </>
+                <div className="flex items-center gap-2 mt-1">
+                  {waitingLabel && (
+                    <span className={clsx('text-[10px] font-semibold', waitingColor, waitingBg)}>
+                      {waitingLabel}
+                    </span>
                   )}
                   {ctxTitle && (
-                    <>
-                      <span className="truncate max-w-[100px]">{ctxTitle}</span>
-                      <span>·</span>
-                    </>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate max-w-[100px]">{ctxTitle}</span>
                   )}
-                  <span>{timeAgo}</span>
                 </div>
               </div>
-              <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 group-hover:text-violet-400 shrink-0 mt-0.5" />
+              <div className="flex flex-col items-end justify-between shrink-0 ml-1">
+                <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 group-hover:text-violet-400" />
+                <span className="text-[9px] text-gray-400 dark:text-gray-500">{timeAgo}</span>
+              </div>
             </div>
           </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Inline Pending Review List ────────────────────────────────────────────
+
+function PendingReviewList() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const updateDecision = useUpdateDecisionRequest()
+  const acceptFromInbox = useAcceptFromInbox()
+
+  // Fetch portfolios where current user is PM/admin
+  const { data: pmPortfolioIds = [] } = useQuery({
+    queryKey: ['user-pm-portfolios', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('portfolio_team')
+        .select('portfolio_id')
+        .eq('user_id', user!.id)
+        .in('role', ['pm', 'admin'])
+      return (data || []).map(p => p.portfolio_id)
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60_000,
+  })
+
+  // Fetch pending decisions: ones I submitted + ones for portfolios I manage
+  const { data: requests = [], isLoading } = useQuery({
+    queryKey: ['pending-review-list', user?.id, pmPortfolioIds],
+    queryFn: async () => {
+      const selectClause = `
+        id, status, context_note, created_at, requested_by, portfolio_id,
+        sizing_weight, sizing_mode,
+        trade_queue_item_id,
+        portfolio:portfolios(id, name),
+        requester:users!decision_requests_requested_by_fkey(id, first_name, last_name, email),
+        trade_queue_item:trade_queue_items(id, action, asset_id, assets(symbol, company_name))
+      `
+
+      // Fetch requests I submitted
+      const { data: myRequests, error: err1 } = await supabase
+        .from('decision_requests')
+        .select(selectClause)
+        .eq('requested_by', user!.id)
+        .in('status', ['pending', 'under_review', 'needs_discussion'])
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (err1) throw err1
+
+      // Fetch requests for portfolios I manage (including ones I submitted)
+      let pmRequests: any[] = []
+      if (pmPortfolioIds.length > 0) {
+        const { data, error: err2 } = await supabase
+          .from('decision_requests')
+          .select(selectClause)
+          .in('portfolio_id', pmPortfolioIds)
+          .in('status', ['pending', 'under_review', 'needs_discussion'])
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        if (err2) throw err2
+        pmRequests = data || []
+      }
+
+      // Merge and deduplicate
+      const seen = new Set<string>()
+      return [...(myRequests || []), ...pmRequests].filter(r => {
+        if (seen.has(r.id)) return false
+        seen.add(r.id)
+        return true
+      }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    },
+    enabled: !!user?.id,
+    staleTime: 30_000,
+  })
+
+  const pmPortfolioSet = new Set(pmPortfolioIds)
+
+  // Track which cards are in action mode
+  const [actioningId, setActioningId] = useState<string | null>(null)
+  const [actionNote, setActionNote] = useState('')
+
+  const handleAccept = async (req: any) => {
+    const sizingInput = req.sizing_weight != null ? String(req.sizing_weight) : '0'
+    await acceptFromInbox.mutateAsync({
+      decisionRequest: req as any,
+      sizingInput,
+      decisionNote: actionNote || undefined,
+      context: {
+        actorId: user!.id,
+        actorName: (user as any)?.first_name || user?.email || 'PM',
+        actorRole: 'pm',
+        requestId: `quick-accept-${Date.now()}`,
+      }
+    })
+    setActioningId(null)
+    setActionNote('')
+    queryClient.invalidateQueries({ queryKey: ['pending-review-list'] })
+    queryClient.invalidateQueries({ queryKey: ['direct-pending-recommendation-count'] })
+  }
+
+  const handleReject = async (req: any) => {
+    await updateDecision.mutateAsync({
+      requestId: req.id,
+      input: {
+        status: 'rejected',
+        decisionNote: actionNote || null,
+      }
+    })
+    setActioningId(null)
+    setActionNote('')
+    queryClient.invalidateQueries({ queryKey: ['pending-review-list'] })
+    queryClient.invalidateQueries({ queryKey: ['direct-pending-recommendation-count'] })
+  }
+
+  const handleMessageUser = (userId: string) => {
+    window.dispatchEvent(new CustomEvent('openDirectMessage', {
+      detail: { recipientId: userId }
+    }))
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-14 bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (requests.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <Scale className="h-8 w-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">No pending decisions</p>
+      </div>
+    )
+  }
+
+  const isPending = updateDecision.isPending || acceptFromInbox.isPending
+
+  return (
+    <div className="space-y-1.5">
+      {requests.map((req: any) => {
+        const asset = req.trade_queue_item?.assets
+        const symbol = asset?.symbol || '?'
+        const companyName = asset?.company_name
+        const action = req.trade_queue_item?.action
+        const portfolioName = req.portfolio?.name
+        const timeAgo = formatDistanceToNow(new Date(req.created_at), { addSuffix: true })
+        const isBuy = action === 'buy' || action === 'add'
+        const isMyRequest = req.requested_by === user?.id
+        const isPMForPortfolio = pmPortfolioSet.has(req.portfolio_id)
+        const canDecide = isPMForPortfolio
+
+        // Who submitted this
+        const requesterName = req.requester?.first_name
+          ? `${req.requester.first_name}${req.requester.last_name ? ' ' + req.requester.last_name[0] + '.' : ''}`
+          : req.requester?.email?.split('@')[0] || 'Unknown'
+
+        const isActioning = actioningId === req.id
+
+        return (
+          <div
+            key={req.id}
+            className="px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-amber-300 dark:hover:border-amber-600 transition-colors"
+          >
+            {/* Top row: action + symbol + company */}
+            <div
+              className="flex items-center gap-2 text-sm cursor-pointer"
+              onClick={() => {
+                if (req.trade_queue_item_id) {
+                  window.dispatchEvent(new CustomEvent('openTradeQueue', {
+                    detail: { selectedTradeId: req.trade_queue_item_id }
+                  }))
+                }
+              }}
+            >
+              {action && (
+                <span className={clsx(
+                  'font-semibold text-xs',
+                  isBuy ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                )}>
+                  {action.toUpperCase()}
+                </span>
+              )}
+              <span className="font-semibold text-gray-900 dark:text-white">{symbol}</span>
+              {companyName && (
+                <span className="text-gray-500 dark:text-gray-400 truncate text-xs">{companyName}</span>
+              )}
+              <ChevronRight className="h-3 w-3 text-gray-300 dark:text-gray-600 ml-auto shrink-0" />
+            </div>
+
+            {/* Middle row: portfolio + who it's waiting on */}
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {portfolioName && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.dispatchEvent(new CustomEvent('openTradeLab', {
+                      detail: { portfolioId: req.portfolio_id }
+                    }))
+                  }}
+                  className="flex items-center gap-1 text-[10px] text-primary-600 dark:text-primary-400 font-medium hover:underline"
+                >
+                  <Briefcase className="h-2.5 w-2.5" />
+                  {portfolioName}
+                </button>
+              )}
+              {canDecide ? (
+                // I'm the PM — show who submitted it
+                isMyRequest ? (
+                  <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded">
+                    Your recommendation
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[10px]">
+                    <span className="text-gray-400">From</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (req.requester?.id) handleMessageUser(req.requester.id)
+                      }}
+                      className="font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                    >
+                      {requesterName}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (req.requester?.id) handleMessageUser(req.requester.id)
+                      }}
+                      className="text-gray-400 hover:text-primary-500 transition-colors"
+                      title={`Message ${requesterName}`}
+                    >
+                      <MessageCircle className="h-3 w-3" />
+                    </button>
+                  </span>
+                )
+              ) : (
+                // I'm not the PM — show it's awaiting decision
+                <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                  Awaiting PM decision
+                </span>
+              )}
+              <span className="text-[9px] text-gray-400 dark:text-gray-500 ml-auto">{timeAgo}</span>
+            </div>
+
+            {/* Context note */}
+            {req.context_note && (
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 italic">"{req.context_note}"</p>
+            )}
+
+            {/* Action buttons — only for PM (canDecide) */}
+            {canDecide && !isActioning && (
+              <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setActioningId(req.id); setActionNote('') }}
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50 transition-colors"
+                >
+                  <Check className="h-3 w-3" /> Accept
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setActioningId(`reject-${req.id}`); setActionNote('') }}
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 transition-colors"
+                >
+                  <XIcon className="h-3 w-3" /> Reject
+                </button>
+              </div>
+            )}
+
+            {/* Accept confirmation */}
+            {isActioning && actioningId === req.id && (
+              <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5">
+                <input
+                  type="text"
+                  value={actionNote}
+                  onChange={e => setActionNote(e.target.value)}
+                  placeholder="Note (optional)"
+                  className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-green-500 focus:outline-none"
+                  onClick={e => e.stopPropagation()}
+                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleAccept(req) }}
+                    disabled={isPending}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+                  >
+                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    Confirm Accept
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActioningId(null) }}
+                    className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Reject confirmation */}
+            {actioningId === `reject-${req.id}` && (
+              <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5">
+                <input
+                  type="text"
+                  value={actionNote}
+                  onChange={e => setActionNote(e.target.value)}
+                  placeholder="Reason (optional)"
+                  className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-red-500 focus:outline-none"
+                  onClick={e => e.stopPropagation()}
+                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleReject(req) }}
+                    disabled={isPending}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <XIcon className="h-3 w-3" />}
+                    Confirm Reject
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActioningId(null) }}
+                    className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )
       })}
     </div>

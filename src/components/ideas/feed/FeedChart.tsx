@@ -74,7 +74,7 @@ export const FeedChart = React.memo(function FeedChart({
   const gradientId = `fcg-${symbol}-${timeframe}`
 
   if (isLoading) return <div className={clsx('animate-pulse bg-gray-50 rounded', className)} style={{ height }} />
-  if (!quote || chartData.length === 0) return null
+  if (!quote || chartData.length === 0) return <div className={className} style={{ height: 0 }} />
 
   return (
     <div className={clsx('group/chart relative', className)}>

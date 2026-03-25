@@ -81,7 +81,7 @@ export function AttentionDashboard({
     dismissWithReason,
   } = useAttention({ windowHours: 24 })
 
-  const headerTitle = sectionTitle ?? 'Priorities'
+  const headerTitle = sectionTitle ?? 'My Priorities'
   const headerSubtitle = sectionSubtitle ?? ''
 
   // Section order — filtered if prop provided

@@ -193,7 +193,7 @@ function MetaLine({ item }: { item: RecentItem }) {
   if (item.kind === 'prompt' && item.assigneeName) {
     parts.push(
       <span key="to-dot" className="text-[10px] text-gray-300 dark:text-gray-600">·</span>,
-      <span key="to" className="text-[10px] text-gray-400 dark:text-gray-500 truncate max-w-[80px]">
+      <span key="to" className="text-[10px] text-gray-400 dark:text-gray-500 shrink-0">
         To: {item.assigneeName}
       </span>
     )

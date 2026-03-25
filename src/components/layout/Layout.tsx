@@ -26,7 +26,7 @@ interface LayoutProps {
 }
 
 // Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'priorities']
 
 export function Layout({
   children,
@@ -403,8 +403,6 @@ export function Layout({
             <div className={clsx(
               "relative h-full flex flex-col",
               isFullWidth ? "overflow-hidden" : "overflow-auto",
-              // Only transition margin for comm pane, not padding
-              "transition-[margin] duration-300",
               !isFullWidth && "px-4 sm:px-6 lg:px-8 py-6",
               isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
               isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
