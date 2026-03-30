@@ -1,3 +1,7 @@
+// Module-level flag: false on fresh page load, true after first WorkflowsPage mount.
+// Used to distinguish hard refresh (start at home) from tab switch (restore state).
+let _workflowsHasMounted = false
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft, Square } from 'lucide-react'
@@ -49,6 +53,7 @@ import {
 } from '../components/workflow/modals'
 import { CreateWorkflowWizard } from '../components/workflow/CreateWorkflowWizard'
 import { TabStateManager } from '../lib/tabStateManager'
+import { getScopeColor } from '../utils/workflow/runHelpers'
 import { FILTER_TYPE_REGISTRY } from '../lib/universeFilters'
 import { formatVersion } from '../lib/versionUtils'
 import { useCreateRunAction } from '../hooks/workflow/useCreateRunAction'
@@ -98,8 +103,11 @@ interface WorkflowStage {
   stage_color: string
   stage_icon: string
   sort_order: number
-  standard_deadline_days: number
+  standard_deadline_days: number | null
   suggested_priorities: string[]
+  default_assignee_type?: 'person' | 'role' | null
+  default_assignee_value?: string | null
+  completion_criteria?: string | null
   created_at: string
   updated_at: string
 }
@@ -193,9 +201,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   const [selectedWorkflowForEdit, setSelectedWorkflowForEdit] = useState<string | null>(null)
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowWithStats | null>(null)
   const manualWorkflowUpdateTimeRef = useRef<number>(0) // Timestamp of last manual update
-  const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(initialWorkflowId || initialState.selectedWorkflowId || null)
-  const [pendingBranchId, setPendingBranchId] = useState<string | null>(initialBranchId || null)
-  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'scope' | 'cadence' | 'branches' | 'models'>(initialWorkflowId ? 'branches' : (initialState.activeView || 'branches'))
+  // Restore from saved state on tab switch (remount), not on hard refresh (fresh module load).
+  // _workflowsHasMounted is a module-level var: false on fresh page load, true after first mount.
+  const canRestore = _workflowsHasMounted
+  const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(
+    initialWorkflowId || (canRestore ? initialState.selectedWorkflowId : null) || null
+  )
+  const [pendingBranchId, setPendingBranchId] = useState<string | null>(
+    initialBranchId || (canRestore ? initialState.selectedBranchId : null) || null
+  )
+  useEffect(() => { _workflowsHasMounted = true }, [])
+  const [activeView, setActiveView] = useState<'overview' | 'stages' | 'admins' | 'scope' | 'cadence' | 'branches' | 'models'>(
+    canRestore ? (initialState.activeView || 'overview') : 'overview'
+  )
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false)
   const [isPersistentExpanded, setIsPersistentExpanded] = useState(true)
   const [isCadenceExpanded, setIsCadenceExpanded] = useState(true)
@@ -228,11 +246,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   // Restore the saved tab when switching workflows
   useEffect(() => {
-    if (selectedWorkflow?.id && workflowTabMemory[selectedWorkflow.id]) {
+    if (!selectedWorkflow?.id) return
+    if (workflowTabMemory[selectedWorkflow.id]) {
       setActiveView(workflowTabMemory[selectedWorkflow.id] as any)
     } else {
-      // Default to Runs tab — the operational discipline surface
-      setActiveView('branches')
+      setActiveView('overview')
     }
   }, [selectedWorkflow?.id])
 
@@ -430,7 +448,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   // Parallel queries for better performance - remove dependencies
   const { data: workflowStages, refetch: refetchStages, isLoading: stagesLoading } = useQuery({
     queryKey: ['workflow-stages', selectedWorkflow?.id],
-    enabled: !!selectedWorkflow?.id, // Only fetch when a workflow is selected
+    enabled: !!selectedWorkflow?.id,
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
@@ -475,9 +493,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
     gcTime: 10 * 60 * 1000 // 10 minutes
   })
 
-  // Query for workflow branches with detailed stats
+  // Query for workflow branches with detailed stats — fetch all statuses, filter client-side
   const { data: workflowBranches, isLoading: isLoadingBranches } = useQuery({
-    queryKey: ['workflow-branches', selectedWorkflow?.id, branchStatusFilter],
+    queryKey: ['workflow-branches', selectedWorkflow?.id],
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
@@ -499,6 +517,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           branch_suffix,
           branched_at,
           created_at,
+          updated_at,
+          ended_at,
           cadence_timeframe,
           cadence_days,
           archived,
@@ -511,15 +531,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         `)
         .eq('parent_workflow_id', selectedWorkflow.id)
 
-      // Apply status filter
-      if (branchStatusFilter === 'archived') {
-        branchQuery = branchQuery.eq('archived', true)
-      } else if (branchStatusFilter === 'deleted') {
-        branchQuery = branchQuery.eq('deleted', true)
-      } else {
-        // 'all' shows only non-deleted, non-archived branches by default
-        branchQuery = branchQuery.eq('archived', false).eq('deleted', false)
-      }
+      // Fetch all branches — filtering happens client-side for instant tab switching
 
       branchQuery = branchQuery.order('branched_at', { ascending: false })
 
@@ -558,10 +570,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         }
       }
 
-      // For each branch, get asset progress stats
+      // For each branch, get progress stats from the correct table based on scope
+      const branchScopeType = selectedWorkflow?.scope_type || 'asset'
+      const branchProgressTable = branchScopeType === 'portfolio' ? 'portfolio_workflow_progress'
+        : branchScopeType === 'general' ? 'general_workflow_progress'
+        : 'asset_workflow_progress'
+
       const branchesWithStats = await Promise.all((data || []).map(async (branch) => {
         const { data: progressData } = await supabase
-          .from('asset_workflow_progress')
+          .from(branchProgressTable)
           .select('id, current_stage_key, completed_at')
           .eq('workflow_id', branch.id)
 
@@ -587,6 +604,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           archived_by: undefined,
           deleted_at: branch.deleted_at || undefined,
           deleted_by: undefined,
+          updated_at: branch.updated_at || undefined,
+          ended_at: branch.ended_at || undefined,
           template_version_number: formatVersionNumber(branch.template_version_number),
           total_assets: totalAssets,
           active_assets: activeAssets,
@@ -848,10 +867,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         throw error
       }
 
-      // For each branch, get asset progress stats
+      // For each branch, get progress stats from the correct table based on scope
+      const branchScopeType = selectedWorkflow?.scope_type || 'asset'
+      const branchProgressTable = branchScopeType === 'portfolio' ? 'portfolio_workflow_progress'
+        : branchScopeType === 'general' ? 'general_workflow_progress'
+        : 'asset_workflow_progress'
+
       const branchesWithStats = await Promise.all((data || []).map(async (branch) => {
         const { data: progressData } = await supabase
-          .from('asset_workflow_progress')
+          .from(branchProgressTable)
           .select('id, current_stage_key, completed_at')
           .eq('workflow_id', branch.id)
 
@@ -867,7 +891,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         }
       }))
 
-      console.log('All workflow branches query result:', branchesWithStats)
       return branchesWithStats
     },
     enabled: !!selectedWorkflow?.id,
@@ -882,6 +905,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
     queryFn: async () => {
       if (!selectedWorkflow?.id) return []
 
+      // 1. Try workflow_checklist_templates table first
       const { data, error } = await supabase
         .from('workflow_checklist_templates')
         .select('*')
@@ -894,7 +918,41 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         throw error
       }
 
-      return data || []
+      if (data && data.length > 0) return data
+
+      // 2. Fallback: extract from workflow_stages.checklist_items JSONB
+      // (wizard-created processes store checklists inline in stages, not in the templates table)
+      const { data: stages } = await supabase
+        .from('workflow_stages')
+        .select('stage_key, checklist_items')
+        .eq('workflow_id', selectedWorkflow.id)
+        .order('sort_order')
+
+      if (stages && stages.length > 0) {
+        const extracted: any[] = []
+        for (const stage of stages) {
+          const items = (stage.checklist_items as any[] | null) || []
+          items.forEach((rawItem: any, idx: number) => {
+            const text = typeof rawItem === 'string' ? rawItem : rawItem?.text
+            const type = typeof rawItem === 'string' ? 'operational' : (rawItem?.item_type || 'operational')
+            if (!text?.trim()) return
+            const itemId = `${stage.stage_key}_item_${idx}`
+            extracted.push({
+              id: itemId,
+              item_id: itemId,
+              workflow_id: selectedWorkflow.id,
+              stage_id: stage.stage_key,
+              item_text: text.trim(),
+              item_type: type,
+              sort_order: idx,
+              is_required: false,
+            })
+          })
+        }
+        if (extracted.length > 0) return extracted
+      }
+
+      return []
     },
     staleTime: 0, // Always refetch when invalidated
     gcTime: 10 * 60 * 1000 // 10 minutes
@@ -1134,9 +1192,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   // Self-contained: fetches rules from DB directly to avoid race condition
   // with universeRulesState population via useEffect
   const { data: universeAssetCount } = useQuery({
-    queryKey: ['universe-asset-count', selectedWorkflow?.id],
+    queryKey: ['universe-asset-count', selectedWorkflow?.id, selectedWorkflow?.scope_type],
     queryFn: async () => {
       if (!selectedWorkflow?.id) return 0
+
+      // For portfolio-scoped processes, count portfolio selections
+      if (selectedWorkflow.scope_type === 'portfolio') {
+        const { count, error } = await supabase
+          .from('workflow_portfolio_selections')
+          .select('id', { count: 'exact', head: true })
+          .eq('workflow_id', selectedWorkflow.id)
+        if (error) return 0
+        return count || 0
+      }
 
       // Fetch rules directly from DB
       const { data: dbRules } = await supabase
@@ -1356,7 +1424,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
     gcTime: 5 * 60 * 1000
   })
 
-  // Fetch pending access requests for the workflow
+  // Fetch portfolio selections for portfolio-scoped processes
+  const { data: portfolioSelections } = useQuery({
+    queryKey: ['workflow-portfolio-selections', selectedWorkflow?.id],
+    queryFn: async () => {
+      if (!selectedWorkflow?.id || selectedWorkflow.scope_type !== 'portfolio') return []
+      const { data, error } = await supabase
+        .from('workflow_portfolio_selections')
+        .select('portfolio_id, portfolio:portfolios!workflow_portfolio_selections_portfolio_id_fkey(id, name)')
+        .eq('workflow_id', selectedWorkflow.id)
+      if (error) return []
+      return (data || []).map((s: any) => ({
+        id: s.portfolio_id,
+        name: Array.isArray(s.portfolio) ? s.portfolio[0]?.name : s.portfolio?.name || 'Unknown',
+      }))
+    },
+    enabled: !!selectedWorkflow?.id && selectedWorkflow?.scope_type === 'portfolio',
+    staleTime: 60_000,
+  })
+
   const { data: pendingAccessRequests, refetch: refetchAccessRequests } = useQuery({
     queryKey: ['workflow-access-requests', selectedWorkflow?.id],
     queryFn: async () => {
@@ -1491,9 +1577,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   // Manual save function for universe rules
   const saveUniverseRules = () => {
-    console.log('🌌 saveUniverseRules called')
-    console.log('🌌 selectedWorkflow?.id:', selectedWorkflow?.id)
-    console.log('🌌 universeRulesState:', universeRulesState)
     if (selectedWorkflow?.id) {
       saveUniverseMutation.mutate({ workflowId: selectedWorkflow.id })
     }
@@ -1501,7 +1584,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   // Handler to track universe rule changes - AUTO-SAVES immediately
   const handleUniverseRulesChange = (newRules: typeof universeRulesState) => {
-    console.log('🌌 handleUniverseRulesChange called with:', newRules)
     // Update state
     setUniverseRulesState(newRules)
 
@@ -1510,7 +1592,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
     // Auto-save immediately to database (no edit mode required for universe rules)
     if (selectedWorkflow?.id) {
-      console.log('🌌 Auto-saving universe rules for workflow:', selectedWorkflow.id)
       // Use a direct save that doesn't depend on state timing
       saveUniverseRulesDirect(selectedWorkflow.id, newRules)
     }
@@ -1586,7 +1667,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       })
 
       // Insert new rules if there are any
-      console.log('🌌 rulesToInsert:', rulesToInsert)
       if (rulesToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('workflow_universe_rules')
@@ -1596,9 +1676,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           console.error('🌌 Insert error:', insertError)
           return
         }
-        console.log('🌌 Successfully auto-saved', rulesToInsert.length, 'universe rules')
       } else {
-        console.log('🌌 Cleared all universe rules (none to insert)')
       }
 
       // Invalidate query to refresh
@@ -1743,7 +1821,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       // Build the workflows query based on filter
       let workflowQuery = supabase.from('workflows').select(`
         *,
-        users:created_by (
+        users:users!workflows_created_by_fkey (
           first_name,
           last_name,
           email
@@ -1795,7 +1873,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         const completedAssets = workflowUsage.filter(stat => stat.completed_at).length
         const totalUsage = workflowUsage.length
 
-        const creator = workflow.users
+        const rawCreator = workflow.users
+        // Supabase FK joins can return object or array — normalize
+        const creator = Array.isArray(rawCreator) ? rawCreator[0] : rawCreator
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
         const creatorEmail = creator?.email || ''
 
@@ -1905,7 +1985,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         .from('workflows')
         .select(`
           *,
-          users:created_by (
+          users:users!workflows_created_by_fkey (
             first_name,
             last_name,
             email
@@ -1945,7 +2025,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         const completedAssets = workflowUsage.filter(stat => stat.completed_at).length
         const totalUsage = workflowUsage.length
 
-        const creator = workflow.users
+        const rawCreator = workflow.users
+        const creator = Array.isArray(rawCreator) ? rawCreator[0] : rawCreator
         const creatorName = creator ? `${creator.first_name || ''} ${creator.last_name || ''}`.trim() || creator.email : ''
 
         // Determine user permission - admins can restore archived workflows
@@ -2185,7 +2266,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   const archiveWorkflowMutation = useMutation({
     mutationFn: async (workflowId: string) => {
-      console.log('🗄️ Archive mutation started for workflow:', workflowId)
       const { data: { user } } = await supabase.auth.getUser()
 
       // First, deactivate all active branches for this workflow
@@ -2211,12 +2291,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         .eq('id', workflowId)
         .select()
 
-      console.log('🗄️ Archive mutation result:', { data, error })
       if (error) throw error
       return data
     },
     onSuccess: async (data, deletedWorkflowId) => {
-      console.log('🗄️ Archive mutation onSuccess:', { data, deletedWorkflowId })
       // Find the next workflow to select
       if (workflows && workflows.length > 1) {
         const deletedIndex = workflows.findIndex(w => w.id === deletedWorkflowId)
@@ -3153,9 +3231,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   }
 
   const handleContextMenuArchive = () => {
-    console.log('🗄️ handleContextMenuArchive called, workflow:', contextMenu.workflow)
     if (contextMenu.workflow) {
-      console.log('🗄️ Setting workflowToDelete:', contextMenu.workflow.id)
       setWorkflowToDelete(contextMenu.workflow.id)
       setShowDeleteConfirmModal(true)
     }
@@ -3373,27 +3449,69 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   // Mutations for checklist item management
   const updateChecklistItemMutation = useMutation({
     mutationFn: async ({ itemId, updates }: { itemId: string, updates: any }) => {
-      const { error } = await supabase
-        .from('workflow_checklist_templates')
-        .update(updates)
-        .eq('id', itemId)
+      // Check if this is a JSONB-sourced item (synthetic ID like "stage_xxx_item_0")
+      const isJsonbItem = itemId.includes('_item_')
+      if (isJsonbItem && selectedWorkflow) {
+        // Parse stage_key and item index from the synthetic ID
+        const lastItemIdx = itemId.lastIndexOf('_item_')
+        const stageKey = itemId.substring(0, lastItemIdx)
+        const itemIdx = parseInt(itemId.substring(lastItemIdx + 6), 10)
 
-      if (error) throw error
+        // Fetch current stage data
+        const { data: stage, error: fetchErr } = await supabase
+          .from('workflow_stages')
+          .select('id, checklist_items')
+          .eq('workflow_id', selectedWorkflow.id)
+          .eq('stage_key', stageKey)
+          .single()
+        if (fetchErr || !stage) throw fetchErr || new Error('Stage not found')
+
+        const items = (stage.checklist_items as any[]) || []
+        if (itemIdx >= 0 && itemIdx < items.length) {
+          const current = items[itemIdx]
+          const currentText = typeof current === 'string' ? current : current?.text || ''
+          const currentType = typeof current === 'string' ? 'operational' : (current?.item_type || 'operational')
+          // Apply updates
+          items[itemIdx] = {
+            text: updates.item_text ?? currentText,
+            item_type: updates.item_type ?? currentType,
+          }
+          const { error: updateErr } = await supabase
+            .from('workflow_stages')
+            .update({ checklist_items: items })
+            .eq('id', stage.id)
+          if (updateErr) throw updateErr
+        }
+      } else {
+        // Standard templates table update
+        const { error } = await supabase
+          .from('workflow_checklist_templates')
+          .update(updates)
+          .eq('id', itemId)
+        if (error) throw error
+      }
       return { itemId, updates }
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['workflow-checklist-templates'] })
       queryClient.refetchQueries({ queryKey: ['workflow-checklist-templates'] })
-      const itemName = result.updates.name || 'checklist item'
+      // Find the original item to detect what actually changed
+      const original = workflowChecklistTemplates?.find(t => t.id === result.itemId)
+      const itemName = result.updates.item_text || original?.item_text || 'checklist item'
+      const typeChanged = result.updates.item_type && result.updates.item_type !== (original?.item_type || 'operational')
+      const textChanged = result.updates.item_text && result.updates.item_text !== original?.item_text
 
-      // Build detailed description of what changed
-      const changes: string[] = []
-      if (result.updates.name) changes.push(`name → "${result.updates.name}"`)
-      if (result.updates.description) changes.push('description updated')
-      if (result.updates.item_type) changes.push(`type → ${result.updates.item_type}`)
-
-      const changesText = changes.length > 0 ? `: ${changes.join(', ')}` : ''
-      trackChange('checklist_edited', `Checklist Item "${itemName}"${changesText}`, `checklist_${result.itemId}`)
+      let description = ''
+      if (typeChanged && textChanged) {
+        description = `"${itemName}" → ${result.updates.item_type === 'thinking' ? 'Analysis' : 'Task'}, renamed`
+      } else if (typeChanged) {
+        description = `"${itemName}" → ${result.updates.item_type === 'thinking' ? 'Analysis' : 'Task'}`
+      } else if (textChanged) {
+        description = `Renamed to "${itemName}"`
+      } else {
+        description = `"${itemName}" updated`
+      }
+      trackChange('checklist_edited', description, `checklist_${result.itemId}`)
     },
     onError: (error) => {
       console.error('Error updating checklist item:', error)
@@ -3912,6 +4030,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   // Mutations for automation rules management
   const addRuleMutation = useMutation({
     mutationFn: async ({ workflowId, rule }: { workflowId: string, rule: any }) => {
+      // Inject user's timezone into time-based rules so scheduling is timezone-aware
+      let conditionValue = rule.conditionValue
+      if (rule.conditionType === 'time_interval' && conditionValue && !conditionValue.timezone) {
+        const { data: userProfile } = await supabase.from('users').select('timezone').eq('id', (await supabase.auth.getUser()).data.user?.id).single()
+        const userTz = userProfile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'
+        conditionValue = { ...conditionValue, timezone: userTz }
+      }
+
       const { data, error } = await supabase
         .from('workflow_automation_rules')
         .insert([{
@@ -3920,7 +4046,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           rule_type: rule.type,
           rule_category: rule.rule_category || 'branch_creation',
           condition_type: rule.conditionType,
-          condition_value: rule.conditionValue,
+          condition_value: conditionValue,
           action_type: rule.actionType,
           action_value: rule.actionValue,
           is_active: rule.isActive || true
@@ -4064,10 +4190,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           description: sourceWorkflow.description,
           color: sourceWorkflow.color,
           cadence_days: sourceWorkflow.cadence_days,
-          status: 'active', // New branches are active by default
-          is_public: false, // Always private - users must be explicitly invited
+          cadence_timeframe: sourceWorkflow.cadence_timeframe,
+          organization_id: sourceWorkflow.organization_id,
+          status: 'active',
+          is_public: false,
           created_by: userId,
-          parent_workflow_id: rootParentId, // Always point to root template
+          parent_workflow_id: rootParentId,
           source_branch_id: sourceBranchId || null,
           branch_suffix: branchSuffix,
           branched_at: new Date().toISOString(),
@@ -4094,6 +4222,64 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       const { populateRunByScope } = await import('../lib/workflowScopePopulator')
       await populateRunByScope(newWorkflow.id, rootParentId, scopeType, universeRules || undefined)
 
+      // Carry forward: copy work product from the source run (notes, comments, custom items)
+      // but reset completion state so stages are re-done with prior context
+      if (copyProgress && sourceBranchId) {
+        // Copy checklist items with comments/notes, reset completed state
+        const { data: sourceItems } = await supabase
+          .from('asset_checklist_items')
+          .select('asset_id, stage_id, item_id, item_text, comment, is_custom, sort_order')
+          .eq('workflow_id', sourceBranchId)
+
+        if (sourceItems && sourceItems.length > 0) {
+          const carriedItems = sourceItems.map(item => ({
+            asset_id: item.asset_id,
+            workflow_id: newWorkflow.id,
+            stage_id: item.stage_id,
+            item_id: item.item_id,
+            item_text: item.item_text,
+            comment: item.comment, // Keep the notes/comments
+            is_custom: item.is_custom, // Keep custom items
+            sort_order: item.sort_order,
+            completed: false, // Reset completion
+            completed_at: null,
+            completed_by: null,
+            status: 'unchecked', // Reset status
+          }))
+
+          // Upsert in batches to avoid payload limits
+          const BATCH_SIZE = 100
+          for (let i = 0; i < carriedItems.length; i += BATCH_SIZE) {
+            const batch = carriedItems.slice(i, i + BATCH_SIZE)
+            await supabase.from('asset_checklist_items').upsert(batch, {
+              onConflict: 'asset_id,stage_id,item_id',
+              ignoreDuplicates: false, // Overwrite if exists (fresh run populated them empty)
+            })
+          }
+        }
+
+        // Reset progress to first stage for all carried-over assets
+        const { data: stages } = await supabase
+          .from('workflow_stages')
+          .select('stage_key')
+          .eq('workflow_id', rootParentId)
+          .order('sort_order', { ascending: true })
+          .limit(1)
+
+        const firstStage = stages?.[0]?.stage_key || null
+        if (firstStage) {
+          await supabase
+            .from('asset_workflow_progress')
+            .update({
+              current_stage_key: firstStage,
+              is_completed: false,
+              completed_at: null,
+              completed_by: null,
+            })
+            .eq('workflow_id', newWorkflow.id)
+        }
+      }
+
       return newWorkflow
     },
     onSuccess: () => {
@@ -4113,7 +4299,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
     mutationFn: async (branchId: string) => {
       const { data, error } = await supabase
         .from('workflows')
-        .update({ status: 'inactive' })
+        .update({ status: 'inactive', ended_at: new Date().toISOString() })
         .eq('id', branchId)
         .select()
 
@@ -4410,7 +4596,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         queryClient.invalidateQueries({ queryKey: ['rule-executions', selectedWorkflow?.id] })
         queryClient.invalidateQueries({ queryKey: ['workflow-branches'] })
       } else if (result?.status === 'skipped') {
-        console.log('[Workflow] Rule execution skipped:', result.reason)
       } else if (result?.status === 'error') {
         alert(`Rule execution failed: ${result.error || 'Unknown error'}`)
       }
@@ -4637,8 +4822,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   // Universe configuration mutation - updated for flexible filter approach
   const saveUniverseMutation = useMutation({
     mutationFn: async ({ workflowId }: { workflowId: string }) => {
-      console.log('🌌 saveUniverseMutation executing for workflow:', workflowId)
-      console.log('🌌 universeRulesState at mutation time:', universeRulesState)
 
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
@@ -4701,7 +4884,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       })
 
       // Insert new rules if there are any
-      console.log('🌌 rulesToInsert:', rulesToInsert)
       if (rulesToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('workflow_universe_rules')
@@ -4711,15 +4893,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           console.error('🌌 Insert error:', insertError)
           throw insertError
         }
-        console.log('🌌 Successfully inserted rules')
       } else {
-        console.log('🌌 No rules to insert (rulesToInsert is empty)')
       }
 
       return rulesToInsert
     },
     onSuccess: (rules) => {
-      console.log('🌌 saveUniverseMutation onSuccess, rules:', rules)
       queryClient.invalidateQueries({ queryKey: ['workflow-universe-rules', selectedWorkflow?.id] })
       queryClient.invalidateQueries({ queryKey: ['universe-asset-count', selectedWorkflow?.id] })
       // Auto-save: silent success
@@ -5206,14 +5385,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               <OrgBadge />
             </div>
             <div className="flex items-center space-x-2">
-              <Button
+              <button
                 onClick={() => setSelectedWorkflow(null)}
-                size="sm"
-                variant="outline"
                 title="Home"
+                className={!selectedWorkflow
+                  ? 'p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 ring-2 ring-amber-300 dark:ring-amber-700 ring-offset-1'
+                  : 'p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'
+                }
               >
                 <Home className="w-4 h-4" />
-              </Button>
+              </button>
               <Button onClick={handleCreateWorkflow} size="sm">
                 <Plus className="w-4 h-4" />
               </Button>
@@ -5264,15 +5445,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         {/* Workflow List */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            /* Loading skeleton for sidebar */
-            <div className="p-4 space-y-3 animate-pulse">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="p-3 border border-gray-200 rounded-lg">
+            <div className="p-4 space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="p-3">
                   <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                      <div className="h-3 bg-gray-200 rounded w-full"></div>
+                    <div className="w-3 h-3 bg-gray-200 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="h-3.5 bg-gray-100 rounded w-3/4"></div>
                     </div>
                   </div>
                 </div>
@@ -5280,101 +5459,42 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             </div>
           ) : (
             <>
-              {/* Persistent Workflows Section */}
-              {persistentWorkflows.length > 0 && (
+              {/* Processes list */}
+              {filteredWorkflows.length > 0 && (
                 <div>
-                  <button
-                    onClick={() => setIsPersistentExpanded(!isPersistentExpanded)}
-                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
-                  >
+                  <div className="px-3 py-2 border-b border-gray-200">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Continuous Processes ({persistentWorkflows.length})
+                      Processes ({filteredWorkflows.length})
                     </h3>
-                    <ChevronDown
-                      className={`w-4 h-4 text-gray-400 transition-transform ${
-                        isPersistentExpanded ? 'transform rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-                  {isPersistentExpanded && (
-                    <div className="border-b border-gray-200">
-                      {persistentWorkflows.map((workflow) => (
-                        <button
-                          key={workflow.id}
-                          onClick={() => handleSelectWorkflow(workflow)}
-                          onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, false)}
-                          className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                            selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
-                          }`}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div
-                              className="w-3 h-3 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: workflow.color }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
-                                {workflow.is_favorited && (
-                                  <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                  </div>
+                  <div className="border-b border-gray-200">
+                    {filteredWorkflows.map((workflow) => (
+                      <button
+                        key={workflow.id}
+                        onClick={() => handleSelectWorkflow(workflow)}
+                        onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, false)}
+                        className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                          selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: getScopeColor(workflow.scope_type) }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                              {workflow.is_favorited && (
+                                <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
+                              )}
                             </div>
+                            <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
                           </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Cadence Workflows Section */}
-              {cadenceWorkflows.length > 0 && (
-                <div>
-                  <button
-                    onClick={() => setIsCadenceExpanded(!isCadenceExpanded)}
-                    className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
-                  >
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Discrete Processes ({cadenceWorkflows.length})
-                    </h3>
-                    <ChevronDown
-                      className={`w-4 h-4 text-gray-400 transition-transform ${
-                        isCadenceExpanded ? 'transform rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-                  {isCadenceExpanded && (
-                    <div className="border-b border-gray-200">
-                      {cadenceWorkflows.map((workflow) => (
-                        <button
-                          key={workflow.id}
-                          onClick={() => handleSelectWorkflow(workflow)}
-                          onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, false)}
-                          className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                            selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-blue-200' : ''
-                          }`}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div
-                              className="w-3 h-3 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: workflow.color }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
-                                {workflow.is_favorited && (
-                                  <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -5417,7 +5537,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           <div className="flex items-center space-x-3">
                             <div
                               className="w-3 h-3 rounded-full flex-shrink-0 opacity-50"
-                              style={{ backgroundColor: workflow.color }}
+                              style={{ backgroundColor: getScopeColor(workflow.scope_type) }}
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2">
@@ -5586,13 +5706,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             </div>
           )
         ) : selectedWorkflow ? (
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
-            {/* Process Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div key={selectedWorkflow.id} className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* Process Header — color accent bar + breadcrumb to distinguish from home */}
+            <div className="border-b border-gray-200 dark:border-gray-700" style={{ borderTopWidth: 3, borderTopStyle: 'solid', borderTopColor: selectedWorkflow.color }}>
+              <div className="bg-white dark:bg-gray-800 px-6 py-4">
               <div className="flex items-center space-x-4">
                 <div
                   className="w-8 h-8 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: selectedWorkflow.color }}
+                  style={{ backgroundColor: getScopeColor(selectedWorkflow.scope_type) }}
                 />
                 <div className="flex-1 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -5742,19 +5863,36 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                     {selectedWorkflow.user_permission === 'admin' && (
                       <>
                         {selectedWorkflow.archived ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setWorkflowToUnarchive(selectedWorkflow.id)}
-                          >
-                            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                            Restore
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setWorkflowToUnarchive(selectedWorkflow.id)}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                              Restore
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setWorkflowToPermanentlyDelete(selectedWorkflow.id)
+                                setShowPermanentDeleteModal(true)
+                              }}
+                              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                              Delete
+                            </Button>
+                          </>
                         ) : (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setWorkflowToDelete(selectedWorkflow.id)}
+                            onClick={() => {
+                              setWorkflowToDelete(selectedWorkflow.id)
+                              setShowDeleteConfirmModal(true)
+                            }}
                           >
                             <Archive className="w-3.5 h-3.5 mr-1.5" />
                             Archive
@@ -5765,6 +5903,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   </div>
                 </div>
               </div>
+            </div>
             </div>
 
             {/* Run Status Strip */}
@@ -5793,6 +5932,33 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               })()}
               stakeholderCount={workflowStakeholders?.length || 0}
               isArchived={selectedWorkflow.archived ?? false}
+              endCondition={(() => {
+                const endings = (automationRules || []).filter((r: any) => r.rule_category === 'branch_ending' && r.is_active)
+                if (endings.length === 0) return null
+                const rule = endings[0]
+                const cv = rule.condition_value || {}
+                const activeB = (workflowBranches || []).find((b: any) => !b.is_placeholder && !b.is_archived && !b.is_deleted && b.is_active)
+                const runCreatedAt = activeB?.created_at || activeB?.branched_at
+                switch (rule.condition_type) {
+                  case 'all_assets_completed': return 'Ends when all items completed'
+                  case 'time_after_creation': {
+                    if (runCreatedAt && cv.amount && cv.unit) {
+                      const created = new Date(runCreatedAt)
+                      const ms = cv.unit === 'hours' ? cv.amount * 3600000 : cv.amount * 86400000
+                      const endDate = new Date(created.getTime() + ms)
+                      if (cv.atSpecificTime && cv.triggerTime) { const [h, m] = cv.triggerTime.split(':').map(Number); endDate.setHours(h, m, 0, 0) }
+                      const now = new Date()
+                      if (endDate <= now) return `Overdue — should have ended ${endDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                      return `Ends ${endDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${cv.triggerTime ? ` at ${cv.triggerTime}` : ''}`
+                    }
+                    return `Ends ${cv.amount || ''} ${cv.unit || 'days'} after start`
+                  }
+                  case 'time_interval': return `Ends on schedule`
+                  case 'specific_date': return `Ends ${cv.date ? new Date(cv.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'on date'}`
+                  case 'manual': return 'Ends manually'
+                  default: return rule.rule_name || null
+                }
+              })()}
               onViewRun={() => {
                 const active = (workflowBranches || []).find((b: any) =>
                   !b.is_placeholder && !b.is_archived && !b.is_deleted && b.is_active
@@ -5834,7 +6000,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                 {/* Configure dropdown */}
                 {(() => {
                   const configTabs = [
-                    { id: 'scope', label: 'Scope', icon: Globe },
+                    ...(selectedWorkflow.scope_type !== 'general' ? [{ id: 'scope', label: 'Scope', icon: Globe }] : []),
                     { id: 'stages', label: 'Stages', icon: Target },
                     { id: 'cadence', label: 'Scheduling', icon: Calendar },
                     { id: 'models', label: 'Files', icon: FileText },
@@ -5881,7 +6047,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             </div>
 
             {/* Tab Content */}
-            <div className={`flex-1 bg-gray-50 overflow-y-auto ${activeView === 'stages' ? '' : 'p-6'}`}>
+            <div key={`${selectedWorkflow.id}-${activeView}`} className={`flex-1 bg-gray-50 overflow-y-auto animate-in fade-in duration-150 ${activeView === 'stages' ? '' : 'p-6'}`}>
               {activeView === 'overview' && (
                 <OverviewView
                   workflow={selectedWorkflow}
@@ -5912,8 +6078,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                     (r: any) => r.workflow_id === selectedWorkflow.id
                   )}
                   branches={workflowBranches || []}
-                  scopeCount={universeAssetCount ?? undefined}
-                  onViewScope={() => handleTabChange('scope')}
+                  scopeCount={selectedWorkflow.scope_type === 'general' ? (getEffectiveStages()?.length || 0) : (universeAssetCount ?? undefined)}
+                  onViewScope={selectedWorkflow.scope_type === 'general' ? undefined : () => handleTabChange('scope')}
                   onViewRun={() => {
                     const active = (workflowBranches || []).find((b: any) =>
                       !b.is_placeholder && !b.is_archived && !b.is_deleted && b.is_active
@@ -6054,14 +6220,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                       reorderChecklistItemsMutation.mutate({ items, stageId })
                     }
                   }}
-                  renderContentTiles={(stageId) => (
-                    <ContentTileManager
-                      workflowId={selectedWorkflow.id}
-                      stageId={stageId}
-                      isEditable={isTemplateEditMode}
-                      onTileChange={(description, elementId) => trackChange('checklist_edited', description, elementId)}
-                    />
-                  )}
                   // Template edit mode controls
                   onEnterEditMode={enterTemplateEditMode}
                   onExitEditMode={exitTemplateEditMode}
@@ -6087,8 +6245,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               {activeView === 'admins' && (
                 <AdminsView
                   creatorId={selectedWorkflow.created_by}
-                  creatorName={selectedWorkflow.creator_name || 'Unknown User'}
-                  creatorEmail={selectedWorkflow.creator_email || ''}
+                  creatorName={(() => {
+                    // Prefer the joined name from the workflow query
+                    const joinedName = selectedWorkflow.creator_name
+                    if (joinedName && !joinedName.includes('@')) return joinedName
+                    // Fall back to current user's profile name if they're the creator
+                    if (selectedWorkflow.created_by === user?.id) {
+                      const fn = (user as any)?.first_name
+                      const ln = (user as any)?.last_name
+                      if (fn || ln) return [fn, ln].filter(Boolean).join(' ')
+                      // Try user_metadata from auth
+                      const meta = (user as any)?.user_metadata
+                      if (meta?.first_name || meta?.last_name) return [meta.first_name, meta.last_name].filter(Boolean).join(' ')
+                      // Try raw_user_meta_data
+                      const raw = (user as any)?.raw_user_meta_data
+                      if (raw?.first_name || raw?.last_name) return [raw.first_name, raw.last_name].filter(Boolean).join(' ')
+                    }
+                    return joinedName || 'Unknown User'
+                  })()}
+                  creatorEmail={selectedWorkflow.creator_email || (selectedWorkflow.created_by === user?.id ? (user as any)?.email : '') || ''}
                   currentUserId={user?.id}
                   collaborators={workflowCollaborators}
                   stakeholders={workflowStakeholders}
@@ -6125,11 +6300,28 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   isEditMode={isTemplateEditMode}
                   canEdit={selectedWorkflow.user_permission === 'admin'}
                   analysts={analysts?.map(a => ({ value: a.user_id, label: a.analyst_name })) || []}
-                  lists={assetLists.map(l => ({ value: l.id, label: l.name }))}
-                  themes={themes.map(t => ({ value: t.id, label: t.name }))}
+                  lists={(assetLists || []).map(l => ({ value: l.id, label: l.name }))}
+                  themes={(themes || []).map(t => ({ value: t.id, label: t.name }))}
                   portfolios={portfolios?.map(p => ({ value: p.id, label: p.name })) || []}
                   onRulesChange={handleUniverseRulesChange}
                   onSave={saveUniverseRules}
+                  scopeType={selectedWorkflow.scope_type as any}
+                  selectedPortfolios={portfolioSelections || []}
+                  availablePortfolios={portfolios?.map(p => ({ id: p.id, name: p.name })) || []}
+                  onAddPortfolio={async (portfolioId) => {
+                    await supabase.from('workflow_portfolio_selections').insert({ workflow_id: selectedWorkflow.id, portfolio_id: portfolioId })
+                    queryClient.invalidateQueries({ queryKey: ['workflow-portfolio-selections', selectedWorkflow.id] })
+                    queryClient.invalidateQueries({ queryKey: ['universe-asset-count', selectedWorkflow.id] })
+                  }}
+                  onRemovePortfolio={async (portfolioId) => {
+                    await supabase.from('workflow_portfolio_selections').delete().eq('workflow_id', selectedWorkflow.id).eq('portfolio_id', portfolioId)
+                    queryClient.invalidateQueries({ queryKey: ['workflow-portfolio-selections', selectedWorkflow.id] })
+                    queryClient.invalidateQueries({ queryKey: ['universe-asset-count', selectedWorkflow.id] })
+                  }}
+                  activeRunAssetCount={(() => {
+                    const active = (workflowBranches || []).find((b: any) => !b.is_placeholder && !b.is_archived && !b.is_deleted && b.is_active)
+                    return active?.total_assets || undefined
+                  })()}
                 />
               )}
 
@@ -6240,6 +6432,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                     isLoadingExecutions={isLoadingExecutions}
                     universeAssetCount={universeAssetCount ?? undefined}
                     onViewUniverseAssets={() => setActiveView('scope')}
+                    scopeType={selectedWorkflow.scope_type as any}
                   />
               )}
 
@@ -6250,8 +6443,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                 const showLoading = selectedBranch && !branchIsValid // Stale branch, waiting for new data
 
                 return showLoading ? (
-                  <div className="flex-1 flex items-center justify-center py-20">
-                    <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+                  <div className="flex items-center justify-center py-16">
+                    <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
                   </div>
                 ) : branchIsValid ? (
                   <RunDetailPanel
@@ -6272,6 +6465,41 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                     onViewRun={(branch) => setSelectedBranch(branch)}
                     onEndBranch={(branch) => setBranchToEnd({ id: branch.id, name: branch.branch_suffix || branch.name })}
                     onArchiveBranch={(branch) => setBranchToArchive({ id: branch.id, name: branch.branch_suffix || branch.name })}
+                    onDeleteBranch={(branch) => setBranchToDelete({ id: branch.id, name: branch.branch_suffix || branch.name })}
+                    onRestoreBranch={(branch) => {
+                      // Restore = undelete (set deleted=false)
+                      supabase.from('workflows').update({ deleted: false, deleted_at: null }).eq('id', branch.id)
+                        .then(() => queryClient.invalidateQueries({ queryKey: ['workflow-branches'] }))
+                    }}
+                    currentFilter={branchStatusFilter === 'history' ? 'all' : branchStatusFilter as any}
+                    onFilterChange={(filter) => setBranchStatusFilter(filter)}
+                    endCondition={(() => {
+                      const endings = (automationRules || []).filter((r: any) => r.rule_category === 'branch_ending' && r.is_active)
+                      if (endings.length === 0) return null
+                      const rule = endings[0]
+                      const cv = rule.condition_value || {}
+                      const activeB = (workflowBranches || []).find((b: any) => !b.is_placeholder && !b.is_archived && !b.is_deleted && b.is_active)
+                      const runCreatedAt = activeB?.created_at || activeB?.branched_at
+                      switch (rule.condition_type) {
+                        case 'all_assets_completed': return 'Ends when all items completed'
+                        case 'time_after_creation': {
+                          if (runCreatedAt && cv.amount && cv.unit) {
+                            const created = new Date(runCreatedAt)
+                            const ms = cv.unit === 'hours' ? cv.amount * 3600000 : cv.amount * 86400000
+                            const endDate = new Date(created.getTime() + ms)
+                            if (cv.atSpecificTime && cv.triggerTime) { const [h, m] = cv.triggerTime.split(':').map(Number); endDate.setHours(h, m, 0, 0) }
+                            const now = new Date()
+                            if (endDate <= now) return `Overdue — should have ended ${endDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                            return `Ends ${endDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${cv.triggerTime ? ` at ${cv.triggerTime}` : ''}`
+                          }
+                          return `Ends ${cv.amount || ''} ${cv.unit || 'days'} after start`
+                        }
+                        case 'time_interval': return `Ends on schedule`
+                        case 'specific_date': return `Ends ${cv.date ? new Date(cv.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'on date'}`
+                        case 'manual': return 'Ends manually'
+                        default: return rule.rule_name || null
+                      }
+                    })()}
                   />
                 )
               })()}
@@ -6499,6 +6727,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         <AddAdminModal
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
+          scopeType={selectedWorkflow.scope_type as any}
           onClose={() => setShowInviteModal(false)}
           onAdd={async (userIds) => {
             try {
@@ -6543,6 +6772,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         <AddStakeholderModal
           workflowId={selectedWorkflow.id}
           workflowName={selectedWorkflow.name}
+          scopeType={selectedWorkflow.scope_type as any}
           onClose={() => setShowAddStakeholderModal(false)}
           onAdd={async (userIds) => {
             try {
@@ -6568,11 +6798,27 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           existingBranches={workflowBranches || []}
           preselectedSourceBranch={preselectedSourceBranch}
           defaultSuffixFormat={selectedWorkflow.auto_branch_name}
+          endingRules={(automationRules || [])
+            .filter((r: any) => r.rule_category === 'branch_ending' && r.is_active)
+            .map((r: any) => ({
+              id: r.id,
+              name: r.rule_name,
+              description: r.condition_type === 'time_after_creation'
+                ? `End run after ${r.condition_value?.amount || 30} ${r.condition_value?.unit || 'days'}`
+                : r.condition_type === 'all_assets_completed'
+                ? 'End when all assets complete'
+                : r.condition_type === 'specific_date'
+                ? `End on ${r.condition_value?.date ? new Date(r.condition_value.date).toLocaleDateString() : 'specific date'}`
+                : r.rule_name,
+              conditionType: r.condition_type,
+              conditionValue: r.condition_value,
+              actionType: r.action_type,
+            }))}
           onClose={() => {
             setShowCreateBranchModal(false)
             setPreselectedSourceBranch(null)
           }}
-          onSubmit={(branchName, branchSuffix, copyProgress, sourceBranchId) => {
+          onSubmit={(branchName, branchSuffix, copyProgress, sourceBranchId, endingRuleId) => {
             createBranchMutation.mutate({
               workflowId: selectedWorkflow.id,
               branchName,
@@ -6580,6 +6826,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               copyProgress,
               sourceBranchId
             })
+            // TODO: Schedule the ending rule for this run when backend supports it
+            // For now, the endingRuleId is captured but enforcement requires a scheduler
+            if (endingRuleId) {
+            }
             setPreselectedSourceBranch(null)
           }}
         />
@@ -6632,6 +6882,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             ruleCount: getEffectiveAutomationRules().length
           }}
           changes={templateChanges}
+          activeRunCount={(workflowBranches || []).filter((b: any) => !b.is_placeholder && !b.is_archived && !b.is_deleted && b.is_active).length}
         />
       )}
 
@@ -7055,45 +7306,55 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       )}
 
       {/* Archive Workflow Confirmation Modal */}
-      {showDeleteConfirmModal && workflowToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="p-6">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mr-4">
-                  <Trash2 className="w-6 h-6 text-orange-600" />
+      {showDeleteConfirmModal && workflowToDelete && (() => {
+        const wfName = workflows?.find(w => w.id === workflowToDelete)?.name || selectedWorkflow?.name || 'this process'
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+              <div className="px-6 pt-6 pb-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center shrink-0">
+                    <Archive className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">Archive Process</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Are you sure you want to archive <span className="font-semibold text-gray-900 dark:text-white">{wfName}</span>?
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Archive Workflow</h3>
-                  <p className="text-sm text-gray-500">Data will be preserved</p>
+                <div className="mt-4 ml-14 space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <p>This will:</p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>Pause all active runs</li>
+                    <li>Hide the process from the main list</li>
+                    <li>Preserve all data and run history</li>
+                  </ul>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">You can restore this process at any time from the archived section.</p>
                 </div>
               </div>
-              <p className="text-gray-700 mb-6">
-                Are you sure you want to archive <span className="font-semibold">{workflows?.find(w => w.id === workflowToDelete)?.name}</span>?
-                Archiving this workflow will pause all active branches. The workflow will be hidden from the UI but all data will be preserved.
-              </p>
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700">
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    setShowDeleteConfirmModal(false)
-                    setWorkflowToDelete(null)
-                  }}
+                  size="sm"
+                  onClick={() => { setShowDeleteConfirmModal(false); setWorkflowToDelete(null) }}
                 >
                   Cancel
                 </Button>
                 <Button
-                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                  size="sm"
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
                   onClick={() => archiveWorkflowMutation.mutate(workflowToDelete)}
                   disabled={archiveWorkflowMutation.isPending}
                 >
-                  {archiveWorkflowMutation.isPending ? 'Archiving...' : 'Yes, Archive'}
+                  <Archive className="w-3.5 h-3.5 mr-1.5" />
+                  {archiveWorkflowMutation.isPending ? 'Archiving...' : 'Archive Process'}
                 </Button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Delete Workflow Confirmation Modal */}
       {showPermanentDeleteModal && workflowToPermanentlyDelete && (

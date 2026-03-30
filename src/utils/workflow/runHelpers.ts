@@ -250,10 +250,22 @@ export function getScopeRemainingLabel(run: {
  */
 export function getScopeBadgeLabel(scopeType: string | null | undefined): string | null {
   switch (scopeType) {
-    case 'portfolio': return 'Portfolios'
-    case 'general': return 'General'
-    case 'asset':
-    default: return null // Don't show a badge for the default scope
+    case 'portfolio': return 'Portfolio'
+    case 'general': return 'Standalone'
+    case 'asset': return 'Asset'
+    default: return null
+  }
+}
+
+/**
+ * Returns a fixed color for a process based on its scope type.
+ */
+export function getScopeColor(scopeType: string | null | undefined): string {
+  switch (scopeType) {
+    case 'asset': return '#3b82f6'      // blue-500
+    case 'portfolio': return '#8b5cf6'  // violet-500
+    case 'general': return '#f59e0b'    // amber-500
+    default: return '#6b7280'           // gray-500
   }
 }
 

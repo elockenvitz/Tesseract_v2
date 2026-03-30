@@ -414,11 +414,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
                               {asset.sector}
                             </Badge>
                           )}
-                          {asset.priority && (
-                            <Badge variant="secondary" size="xs" className="text-xs">
-                              {asset.priority}
-                            </Badge>
-                          )}
                         </div>
                       </div>
                     </div>

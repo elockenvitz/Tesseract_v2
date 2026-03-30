@@ -71,9 +71,11 @@ export function StageCard({
               <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
               <p className="text-sm text-gray-500">{stage.stage_description}</p>
               <div className="flex items-center space-x-4 mt-1">
-                <span className="text-xs text-gray-400">
-                  Deadline: {stage.standard_deadline_days} days
-                </span>
+                {stage.standard_deadline_days != null && (
+                  <span className="text-xs text-gray-400">
+                    Target: {stage.standard_deadline_days} days
+                  </span>
+                )}
                 <div
                   className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: stage.stage_color }}

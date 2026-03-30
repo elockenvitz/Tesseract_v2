@@ -8,8 +8,8 @@
  * Extracted from WorkflowsPage.tsx during Phase 3 refactoring.
  */
 
-import React from 'react'
-import { Plus, Pencil, Save, X, AlertCircle, ChevronDown } from 'lucide-react'
+import React, { useState } from 'react'
+import { Plus, Pencil, Save, X, AlertCircle, ChevronDown, ChevronsUpDown, ChevronsDownUp } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { WorkflowWithStats } from '../../../types/workflow/workflow.types'
 import { StageWithChecklists } from '../shared/StageWithChecklists'
@@ -117,6 +117,12 @@ export function StagesView({
   const hasStages = stages.length > 0
   const showControls = canEdit && isEditMode
 
+  // Expand/collapse all state
+  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set())
+  const allCollapsed = hasStages && collapsedStages.size === stages.length
+  const collapseAll = () => setCollapsedStages(new Set(stages.map(s => s.id)))
+  const expandAll = () => setCollapsedStages(new Set())
+
   // Helper to get checklist items for a specific stage
   const getChecklistItemsForStage = (stageKey: string): ChecklistItem[] => {
     return checklistItems.filter(item => item.stage_id === stageKey)
@@ -142,6 +148,15 @@ export function StagesView({
               Workflow Stages
               <span className="ml-2 text-sm font-normal text-gray-500">({stages.length})</span>
             </h3>
+            {hasStages && (
+              <button
+                onClick={allCollapsed ? expandAll : collapseAll}
+                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+                title={allCollapsed ? 'Expand all' : 'Collapse all'}
+              >
+                {allCollapsed ? <ChevronsUpDown className="w-4 h-4" /> : <ChevronsDownUp className="w-4 h-4" />}
+              </button>
+            )}
           </div>
 
           {/* Right side buttons */}
@@ -290,7 +305,14 @@ export function StagesView({
                   }
                 }}
                 onReorder={onReorderItems}
-                contentTilesComponent={renderContentTiles?.(stage.id)}
+                forceCollapsed={collapsedStages.has(stage.id)}
+                onToggleCollapsed={() => {
+                  setCollapsedStages(prev => {
+                    const next = new Set(prev)
+                    next.has(stage.id) ? next.delete(stage.id) : next.add(stage.id)
+                    return next
+                  })
+                }}
               />
             )
           })}

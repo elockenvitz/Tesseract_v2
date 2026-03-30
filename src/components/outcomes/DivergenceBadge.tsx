@@ -32,8 +32,11 @@ export function DivergenceBadge({ breakdown }: DivergenceBadgeProps) {
     if (rect) {
       let x = rect.left
       let y = rect.bottom + 4
-      if (x + 280 > window.innerWidth) x = window.innerWidth - 290
+      // Clamp to viewport to prevent horizontal scroll
+      if (x + 288 > window.innerWidth - 8) x = window.innerWidth - 296
+      if (x < 8) x = 8
       if (y + 200 > window.innerHeight) y = rect.top - 204
+      if (y < 8) y = 8
       setPosition({ x, y })
       setIsOpen((prev) => !prev)
     }
@@ -75,7 +78,7 @@ export function DivergenceBadge({ breakdown }: DivergenceBadgeProps) {
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed z-50 w-72 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+            className="fixed z-50 w-72 max-w-[calc(100vw-16px)] bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
             style={{ left: position.x, top: position.y }}
           >
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">

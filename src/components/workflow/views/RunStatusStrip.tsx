@@ -46,10 +46,13 @@ export interface RunStatusStripProps {
   isArchived: boolean
   /** Called when user clicks the active run to view it */
   onViewRun?: () => void
+  /** Human-readable end condition text */
+  endCondition?: string | null
 }
 
 export function RunStatusStrip({
   activeRun,
+  endCondition,
   schedule,
   stakeholderCount,
   isArchived,
@@ -105,12 +108,14 @@ export function RunStatusStrip({
             <span className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
               {runLabel}
             </span>
-            <span
-              className="text-[10px] font-medium px-1.5 py-0 rounded bg-gray-100 text-gray-500 leading-4"
-              title={`Process definition ${versionLabel}`}
-            >
-              {versionLabel}
-            </span>
+            {activeRun.template_version_number && (
+              <span
+                className="text-[10px] font-medium px-1.5 py-0 rounded bg-gray-100 text-gray-500 leading-4"
+                title={`Process definition ${versionLabel}`}
+              >
+                {versionLabel}
+              </span>
+            )}
             <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500" />
           </button>
 
@@ -148,6 +153,14 @@ export function RunStatusStrip({
             <Clock className="w-3.5 h-3.5" />
             <span>{safeRelativeTime(startedAt)}</span>
           </div>
+
+          {/* End condition */}
+          {endCondition && (
+            <>
+              <div className="h-5 w-px bg-gray-200" />
+              <span className="text-xs text-gray-500">{endCondition}</span>
+            </>
+          )}
 
           {/* Schedule */}
           {schedule?.next_run_at && (

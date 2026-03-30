@@ -94,8 +94,8 @@ export function AddBranchEndingRuleModal({
 
   const outcomeSummary = (() => {
     switch (formData.actionType) {
-      case 'archive_branch': return 'archive run'
-      case 'mark_complete': return 'mark run as complete'
+      case 'archive_branch': return 'end run & archive'
+      case 'mark_complete': return 'end run'
       case 'notify_only': return 'send notification only'
       default: return '...'
     }
@@ -458,30 +458,7 @@ export function AddBranchEndingRuleModal({
         </div>
 
         <div className="space-y-2">
-          {/* Archive run */}
-          <label className={`flex items-start px-3.5 py-3 rounded-lg cursor-pointer transition-all ${
-            formData.actionType === 'archive_branch'
-              ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
-              : 'border border-gray-200 hover:border-gray-300'
-          }`}>
-            <input
-              type="radio"
-              name="actionType"
-              checked={formData.actionType === 'archive_branch'}
-              onChange={() => setFormData({ ...formData, actionType: 'archive_branch', actionValue: {} })}
-              className="mt-0.5 mr-3 accent-blue-600"
-            />
-            <div>
-              <div className={`text-[13px] font-medium ${formData.actionType === 'archive_branch' ? 'text-blue-900' : 'text-gray-800'}`}>
-                Archive run
-              </div>
-              <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
-                Move to archived state. Can be restored later.
-              </p>
-            </div>
-          </label>
-
-          {/* Mark as complete */}
+          {/* End run */}
           <label className={`flex items-start px-3.5 py-3 rounded-lg cursor-pointer transition-all ${
             formData.actionType === 'mark_complete'
               ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
@@ -496,10 +473,33 @@ export function AddBranchEndingRuleModal({
             />
             <div>
               <div className={`text-[13px] font-medium ${formData.actionType === 'mark_complete' ? 'text-blue-900' : 'text-gray-800'}`}>
-                Mark as complete
+                End run
               </div>
               <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
-                Close as successfully completed.
+                Close this cycle. The run stays visible in history.
+              </p>
+            </div>
+          </label>
+
+          {/* End run & archive */}
+          <label className={`flex items-start px-3.5 py-3 rounded-lg cursor-pointer transition-all ${
+            formData.actionType === 'archive_branch'
+              ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
+              : 'border border-gray-200 hover:border-gray-300'
+          }`}>
+            <input
+              type="radio"
+              name="actionType"
+              checked={formData.actionType === 'archive_branch'}
+              onChange={() => setFormData({ ...formData, actionType: 'archive_branch', actionValue: {} })}
+              className="mt-0.5 mr-3 accent-blue-600"
+            />
+            <div>
+              <div className={`text-[13px] font-medium ${formData.actionType === 'archive_branch' ? 'text-blue-900' : 'text-gray-800'}`}>
+                End run & archive
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
+                Close this cycle and move to archive. Can be restored if needed.
               </p>
             </div>
           </label>

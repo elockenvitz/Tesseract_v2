@@ -1374,7 +1374,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                       <input type="radio" checked={formData.actionType === 'branch_copy'} readOnly className="text-blue-600" />
                       <span className="text-sm font-medium text-gray-900">Carry forward</span>
                     </div>
-                    <p className="text-xs text-gray-500 ml-6">Keep progress from the previous run</p>
+                    <p className="text-xs text-gray-500 ml-6">Reset stages but keep notes, comments, and custom items from the prior run</p>
                   </div>
                 </div>
               </div>

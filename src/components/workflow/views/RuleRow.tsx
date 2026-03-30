@@ -61,27 +61,31 @@ export function RuleRow({
       role="listitem"
       aria-label={`Rule: ${name}`}
     >
-      {/* Col 1: status pill (replaces trigger icon) + name + summary */}
-      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+      {/* Col 1: status pill + name (line 1) + summary (line 2) */}
+      <div className="flex items-start gap-1.5 flex-1 min-w-0">
         {/* Status pill — leading position, doubles as toggle for editors */}
-        {canEdit && onToggleActive ? (
-          <button
-            onClick={onToggleActive}
-            className={`inline-flex items-center gap-0.5 h-[18px] px-1.5 rounded-full text-[10px] font-medium leading-none border cursor-pointer transition-all hover:shadow-sm focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-blue-400 flex-shrink-0 ${status.className}`}
-            title={isActive ? 'Click to disable' : 'Click to enable'}
-            aria-label={`Toggle rule: currently ${status.label}`}
-          >
-            {status.icon}
-            {status.label}
-          </button>
-        ) : (
-          <span className={`inline-flex items-center gap-0.5 h-[18px] px-1.5 rounded-full text-[10px] font-medium leading-none border flex-shrink-0 ${status.className}`}>
-            {status.icon}
-            {status.label}
-          </span>
-        )}
-        <span className="text-[13px] font-semibold text-gray-900 whitespace-nowrap">{name}</span>
-        <span className="text-[12px] text-gray-400 truncate leading-tight">{summary}</span>
+        <div className="mt-0.5 shrink-0">
+          {canEdit && onToggleActive ? (
+            <button
+              onClick={onToggleActive}
+              className={`inline-flex items-center gap-0.5 h-[18px] px-1.5 rounded-full text-[10px] font-medium leading-none border cursor-pointer transition-all hover:shadow-sm focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-blue-400 ${status.className}`}
+              title={isActive ? 'Click to disable' : 'Click to enable'}
+              aria-label={`Toggle rule: currently ${status.label}`}
+            >
+              {status.icon}
+              {status.label}
+            </button>
+          ) : (
+            <span className={`inline-flex items-center gap-0.5 h-[18px] px-1.5 rounded-full text-[10px] font-medium leading-none border ${status.className}`}>
+              {status.icon}
+              {status.label}
+            </span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold text-gray-900 truncate">{name}</div>
+          <div className="text-[11px] text-gray-400 truncate leading-tight">{summary}</div>
+        </div>
       </div>
 
       {/* Col 2: meta (fixed) */}
@@ -106,9 +110,9 @@ export function RuleRow({
         {(runCount ?? 0) > 0 && <span>{runCount}&times;</span>}
       </div>
 
-      {/* Col 4: actions (fixed, hover-reveal) */}
+      {/* Col 4: actions */}
       {canEdit && (
-        <div className="flex items-center gap-px opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex-shrink-0">
+        <div className="flex items-center gap-px flex-shrink-0">
           {onEdit && (
             <button
               onClick={onEdit}

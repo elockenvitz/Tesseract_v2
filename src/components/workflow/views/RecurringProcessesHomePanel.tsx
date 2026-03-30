@@ -7,7 +7,6 @@
  * Sections:
  *   - Attention chips (computed from existing data)
  *   - Active Runs (grouped by process, parent-gated)
- *   - Continuous Processes
  *   - Upcoming Cycles (parent-gated)
  *   - Processes (catalog with optional archived toggle)
  */
@@ -17,7 +16,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Plus,
   Activity,
-  Orbit,
   Calendar,
   Clock,
   List,
@@ -40,6 +38,7 @@ import {
   safeFutureRelativeTime,
   groupRunsByProcess,
   getScopeBadgeLabel,
+  getScopeColor,
 } from '../../../utils/workflow/runHelpers'
 
 // Minimal type matching WorkflowWithStats shape from WorkflowsPage
@@ -76,7 +75,8 @@ function getCadenceBadge(workflow: WorkflowItem): string {
   if (workflow.cadence_timeframe) {
     return workflow.cadence_timeframe.charAt(0).toUpperCase() + workflow.cadence_timeframe.slice(1)
   }
-  if (workflow.cadence_days === 0) return 'Continuous'
+  // No cadence_timeframe and no cadence_days = manual process
+  if (!workflow.cadence_days || workflow.cadence_days === 0) return 'Manual'
   if (workflow.cadence_days <= 1) return 'Daily'
   if (workflow.cadence_days <= 7) return 'Weekly'
   if (workflow.cadence_days <= 30) return 'Monthly'
@@ -159,16 +159,6 @@ export function RecurringProcessesHomePanel({
     return groups.filter(g => g.duplicates.length > 0).length
   }, [parentGatedActiveRuns])
 
-  // Continuous processes (persistent workflows)
-  const continuousProcesses = workflows.filter(
-    w => w.cadence_timeframe === 'persistent' || (!w.cadence_timeframe && w.cadence_days === 0)
-  )
-
-  // Discrete processes only (for the catalog)
-  const discreteProcesses = workflows.filter(
-    w => w.cadence_timeframe !== 'persistent' && (w.cadence_timeframe || w.cadence_days > 0)
-  )
-
   // Catalog list: active processes + optionally archived
   const catalogProcesses = useMemo(() => {
     if (showArchived && archivedWorkflows.length > 0) {
@@ -236,26 +226,40 @@ export function RecurringProcessesHomePanel({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Process</h1>
-            <p className="text-sm text-gray-500">
-              Track active runs, upcoming cycles, and process definitions.
-              <span className="text-gray-400 ml-1">
-                Runs only count as active when their process is active.
-              </span>
-            </p>
+      {/* ═══ HOME HERO — completely different from process detail ═══ */}
+      <div className="bg-gray-100 dark:bg-gray-900 px-6 py-6 border-b border-gray-200 dark:border-gray-700">
+        {/* Large stat tiles — the dominant visual that says "you're at the hub" */}
+        <div className="grid grid-cols-4 gap-3">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-4 shadow-sm">
+            <div className={`text-3xl font-extrabold tabular-nums ${activeCount > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-300 dark:text-gray-600'}`}>{activeCount}</div>
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">Active Runs</div>
+            {activeCount > 0 && <div className="mt-2 h-1 rounded-full bg-green-500/20"><div className="h-1 rounded-full bg-green-500" style={{ width: '100%' }} /></div>}
           </div>
-          <Button size="sm" onClick={onCreateWorkflow}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Process
-          </Button>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-4 shadow-sm">
+            <div className="text-3xl font-extrabold tabular-nums text-gray-800 dark:text-gray-200">{workflows.length}</div>
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">Processes</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-4 shadow-sm">
+            <div className={`text-3xl font-extrabold tabular-nums ${upcomingCycles.length > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-300 dark:text-gray-600'}`}>{upcomingCycles.length}</div>
+            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">Upcoming Cycles</div>
+          </div>
+          {hasAttention ? (
+            <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 px-5 py-4 shadow-sm">
+              <div className="text-3xl font-extrabold tabular-nums text-amber-600 dark:text-amber-400">{notStartedCount + multipleRunsCount + orphanActiveRuns.length}</div>
+              <div className="text-xs font-medium text-amber-700 dark:text-amber-400 mt-1">Need Attention</div>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-4 shadow-sm flex items-center justify-center">
+              <Button size="sm" onClick={onCreateWorkflow}>
+                <Plus className="w-4 h-4 mr-1.5" />
+                New Process
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 p-6 bg-gray-50 overflow-y-auto space-y-6">
+      <div className="flex-1 p-6 bg-gray-100 dark:bg-gray-900 overflow-y-auto space-y-6">
         {/* ─── Data integrity banner: orphan active runs ─── */}
         {orphanActiveRuns.length > 0 && (
           <div className="flex items-start space-x-2 text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
@@ -336,38 +340,7 @@ export function RecurringProcessesHomePanel({
           </div>
         </Card>
 
-        {/* ─── B) Continuous Processes ─── */}
-        {continuousProcesses.length > 0 && (
-          <Card>
-            <div className="px-5 py-3 border-b border-gray-200 flex items-center space-x-2">
-              <Orbit className="w-4 h-4 text-gray-500" />
-              <h3 className="text-sm font-semibold text-gray-900">Continuous Processes</h3>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {continuousProcesses.map(workflow => (
-                <button
-                  key={workflow.id}
-                  onClick={() => onSelectWorkflow(workflow)}
-                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors text-left group"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: workflow.color }}
-                    />
-                    <span className="text-sm font-medium text-gray-900">{workflow.name}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-gray-500">{workflow.active_assets} active</span>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {/* ─── C + D: Two-column layout ─── */}
+        {/* ─── B + C: Two-column layout ─── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* C) Upcoming Cycles */}
           <Card>
@@ -393,7 +366,7 @@ export function RecurringProcessesHomePanel({
                         <div className="flex items-center space-x-2 min-w-0">
                           <div
                             className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: wf?.color || '#6b7280' }}
+                            style={{ backgroundColor: getScopeColor(wf?.scope_type) }}
                           />
                           <span className="text-sm text-gray-700 truncate">
                             {wf?.name || 'Unknown'}
@@ -445,9 +418,9 @@ export function RecurringProcessesHomePanel({
             </div>
             <div className="p-4">
               {isLoadingWorkflows ? (
-                <div className="animate-pulse space-y-2">
+                <div className="space-y-2 opacity-40">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="h-6 bg-gray-200 rounded w-3/4" />
+                    <div key={i} className="h-6 bg-gray-100 rounded w-3/4" />
                   ))}
                 </div>
               ) : catalogProcesses.length === 0 ? (
@@ -472,9 +445,9 @@ export function RecurringProcessesHomePanel({
                         <div className="flex items-center space-x-2 min-w-0">
                           <div
                             className={`w-2 h-2 rounded-full flex-shrink-0 ${isArchived ? 'opacity-40' : ''}`}
-                            style={{ backgroundColor: workflow.color }}
+                            style={{ backgroundColor: getScopeColor(workflow.scope_type) }}
                           />
-                          <span className={`text-sm truncate max-w-[140px] ${isArchived ? 'text-gray-400' : 'text-gray-700'}`}>
+                          <span className={`text-sm truncate ${isArchived ? 'text-gray-400' : 'text-gray-700'}`}>
                             {workflow.name}
                           </span>
                           {isArchived && (
@@ -501,6 +474,17 @@ export function RecurringProcessesHomePanel({
           </Card>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Stat Tile ─────────────────────────────────────────────────────────
+
+function StatTile({ value, label, color, bg }: { value: number; label: string; color: string; bg: string }) {
+  return (
+    <div className={`flex-1 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 ${bg}`}>
+      <div className={`text-2xl font-bold tabular-nums ${color}`}>{value}</div>
+      <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mt-0.5">{label}</div>
     </div>
   )
 }

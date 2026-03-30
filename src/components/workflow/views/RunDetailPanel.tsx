@@ -53,17 +53,18 @@ export function RunDetailPanel({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('workflows')
-        .select('scope_type')
+        .select('scope_type, status')
         .eq('id', branchId)
         .single()
       if (error) throw error
       return data
     },
     enabled: !!branchId,
-    staleTime: 1000 * 60 * 30, // Scope never changes
+    staleTime: 1000 * 60 * 5,
   })
 
   const scopeType: ScopeType = (scopeData?.scope_type || 'asset') as ScopeType
+  const isRunEnded = scopeData?.status === 'inactive'
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -107,12 +108,17 @@ export function RunDetailPanel({
           <PortfolioRunDetailPanel
             branchId={branchId}
             workflowStages={workflowStages}
+            isRunEnded={isRunEnded}
+            onNavigateToPortfolio={onNavigate ? (portfolioId, portfolioName, portfolioMnemonic) => {
+              onNavigate({ id: portfolioId, title: portfolioName, type: 'portfolio', data: { id: portfolioId, name: portfolioName, portfolio_id: portfolioMnemonic, initialTab: 'processes', _navTs: Date.now() } })
+            } : undefined}
           />
         ) : scopeType === 'general' ? (
           <GeneralRunDetailPanel
             branchId={branchId}
             workflowStages={workflowStages}
             userId={userId}
+            isRunEnded={isRunEnded}
           />
         ) : (
           <AssetRunDetailPanel
@@ -120,6 +126,7 @@ export function RunDetailPanel({
             workflowStages={workflowStages}
             userId={userId}
             onNavigate={onNavigate}
+            isRunEnded={isRunEnded}
           />
         )}
       </div>

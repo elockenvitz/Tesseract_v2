@@ -30,22 +30,32 @@ export function useDirectCounts() {
 }
 
 /**
- * Count open prompts created by the given user.
- * Prompts are stored as quick_thoughts with idea_type='prompt'.
- * "Open" = not archived (no explicit closed flag exists, so we count all).
+ * Count open prompts relevant to the given user.
+ * Includes prompts created by the user AND prompts assigned to them.
+ * "Open" = not archived.
  */
 export async function getOpenPromptCount(userId: string): Promise<number> {
-  const { count, error } = await supabase
+  // Prompts created by user
+  const { count: createdCount, error: err1 } = await supabase
     .from('quick_thoughts')
     .select('id', { count: 'exact', head: true })
     .eq('created_by', userId)
     .eq('idea_type', 'prompt')
+    .eq('is_archived', false)
 
-  if (error) {
-    console.error('Failed to fetch open prompt count:', error)
-    return 0
-  }
-  return count ?? 0
+  // Prompts assigned to user (assignee tag contains their ID)
+  const { count: assignedCount, error: err2 } = await supabase
+    .from('quick_thoughts')
+    .select('id', { count: 'exact', head: true })
+    .eq('idea_type', 'prompt')
+    .eq('is_archived', false)
+    .neq('created_by', userId)
+    .contains('tags', [`assignee:${userId}`])
+
+  if (err1) console.error('Failed to fetch created prompt count:', err1)
+  if (err2) console.error('Failed to fetch assigned prompt count:', err2)
+
+  return (createdCount ?? 0) + (assignedCount ?? 0)
 }
 
 /**

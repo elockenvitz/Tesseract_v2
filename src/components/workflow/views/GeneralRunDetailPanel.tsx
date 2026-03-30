@@ -6,12 +6,16 @@
  * Advance through stages when all checklist items are done.
  */
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Circle, ChevronRight, Inbox } from 'lucide-react'
+import { CheckCircle, Circle, ChevronRight, Inbox, Check } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
+import { DecisionItemCard } from '../../ui/checklist/DecisionItemCard'
+import { OperationalItemCard } from '../../ui/checklist/OperationalItemCard'
+import type { ChecklistItemData } from '../../ui/checklist/types'
+import { useAuth } from '../../../hooks/useAuth'
 
 interface WorkflowStage {
   id: string
@@ -25,14 +29,18 @@ export interface GeneralRunDetailPanelProps {
   branchId: string
   workflowStages: WorkflowStage[]
   userId: string
+  isRunEnded?: boolean
 }
 
 export function GeneralRunDetailPanel({
   branchId,
   workflowStages,
   userId,
+  isRunEnded = false,
 }: GeneralRunDetailPanelProps) {
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuth()
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   const sortedStages = useMemo(
     () => [...workflowStages].sort((a, b) => a.sort_order - b.sort_order),
@@ -93,16 +101,32 @@ export function GeneralRunDetailPanel({
     ? currentStageItems.every(i => i.completed)
     : true // No items = can advance
 
-  // Toggle checklist item
+  // Cycle: unchecked → completed → na → unchecked
+  const handleToggleItem = (item: any) => {
+    const currentStatus = item.status || (item.completed ? 'completed' : 'unchecked')
+    let newStatus: 'unchecked' | 'completed' | 'na'
+    if (currentStatus === 'unchecked') newStatus = 'completed'
+    else if (currentStatus === 'completed') newStatus = 'na'
+    else newStatus = 'unchecked'
+    const isDone = newStatus === 'completed' || newStatus === 'na'
+    toggleItemMutation.mutate({
+      itemId: item.id, status: newStatus, completed: newStatus === 'completed',
+      completedAt: isDone ? new Date().toISOString() : null,
+      completedBy: isDone ? userId : null,
+    })
+  }
+
   const toggleItemMutation = useMutation({
-    mutationFn: async ({ itemId, completed }: { itemId: string; completed: boolean }) => {
+    mutationFn: async ({ itemId, status, completed, completedAt, completedBy }: {
+      itemId: string; status: string; completed: boolean; completedAt: string | null; completedBy: string | null
+    }) => {
       const { error } = await supabase
         .from('general_checklist_items')
         .update({
           completed,
-          completed_at: completed ? new Date().toISOString() : null,
-          completed_by: completed ? userId : null,
-          status: completed ? 'checked' : 'unchecked',
+          completed_at: completedAt,
+          completed_by: completedBy,
+          status,
           updated_at: new Date().toISOString(),
         })
         .eq('id', itemId)
@@ -171,136 +195,126 @@ export function GeneralRunDetailPanel({
 
   return (
     <>
-      {/* Stage progress metric */}
-      <Card className="bg-white">
-        <div className="p-6 text-center">
+      {/* Progress header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-3">
           {isCompleted ? (
             <>
-              <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-2" />
-              <div className="text-sm font-medium text-green-700">Run Complete</div>
-              <div className="text-xs text-gray-400 mt-1">All stages have been completed.</div>
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              <span className="text-sm font-medium text-green-700">Run Complete</span>
             </>
           ) : (
             <>
-              <div className="text-4xl font-bold text-gray-900">
-                Stage {currentStageIndex + 1} of {totalStages}
-              </div>
-              <div className="text-sm text-gray-500 mt-1">
-                {sortedStages[currentStageIndex]?.stage_label || 'Unknown'}
-              </div>
-              <div className="mt-3 max-w-xs mx-auto">
-                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all"
-                    style={{ width: `${totalStages > 0 ? Math.round(((currentStageIndex + 1) / totalStages) * 100) : 0}%` }}
-                  />
-                </div>
-              </div>
+              <span className="text-sm text-gray-500">Stage {currentStageIndex + 1} of {totalStages}</span>
+              <span className="text-gray-300">·</span>
+              <span className="text-sm font-medium text-gray-900">{sortedStages[currentStageIndex]?.stage_label}</span>
             </>
           )}
         </div>
-      </Card>
+        {!isCompleted && totalStages > 0 && (
+          <div className="flex items-center gap-1">
+            {sortedStages.map((stage, idx) => (
+              <div key={stage.stage_key} className={`h-1.5 flex-1 rounded-full ${
+                idx < currentStageIndex ? 'bg-emerald-500'
+                : idx === currentStageIndex ? 'bg-blue-500'
+                : 'bg-gray-200'
+              }`} />
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* Stage stepper */}
-      <Card>
-        <div className="p-4">
-          <div className="flex items-center space-x-1 overflow-x-auto pb-2">
-            {sortedStages.map((stage, idx) => {
-              const isPast = idx < currentStageIndex
-              const isCurrent = idx === currentStageIndex && !isCompleted
-              const isFuture = idx > currentStageIndex || isCompleted
+      {/* All stages with checklists */}
+      {sortedStages.map((stage, idx) => {
+        const isPast = idx < currentStageIndex
+        const isCurrent = idx === currentStageIndex && !isCompleted
+        const isFuture = idx > currentStageIndex && !isCompleted
+        const stageItems = itemsByStage.get(stage.stage_key) || []
+        const stageComplete = stageItems.length > 0 && stageItems.every(i => i.completed)
+        const stageDone = stageItems.filter(i => i.completed).length
 
-              return (
-                <React.Fragment key={stage.stage_key}>
-                  <div
-                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                      isCurrent
-                        ? 'bg-blue-100 text-blue-800 ring-2 ring-blue-300'
-                        : isPast
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-400'
-                    }`}
-                  >
-                    {isPast ? (
-                      <CheckCircle className="w-3.5 h-3.5" />
-                    ) : isCurrent ? (
-                      <Circle className="w-3.5 h-3.5" />
-                    ) : (
-                      <Circle className="w-3.5 h-3.5" />
-                    )}
-                    <span>{stage.stage_label}</span>
-                  </div>
-                  {idx < sortedStages.length - 1 && (
-                    <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 ${isPast ? 'text-green-400' : 'text-gray-300'}`} />
+        return (
+          <Card key={stage.stage_key} className={isCurrent ? 'ring-2 ring-blue-200' : ''}>
+            <div className="px-5 py-3 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {isPast || (isCompleted && true) ? (
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                  ) : isCurrent ? (
+                    <Circle className="w-4 h-4 text-blue-500" />
+                  ) : (
+                    <Circle className="w-4 h-4 text-gray-300" />
                   )}
-                </React.Fragment>
-              )
-            })}
-          </div>
-        </div>
-      </Card>
-
-      {/* Current stage checklist */}
-      {!isCompleted && currentStageKey && (
-        <Card>
-          <div className="px-5 py-3 border-b border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-900">
-              {sortedStages[currentStageIndex]?.stage_label} Checklist
-            </h4>
-          </div>
-          <div className="p-4">
-            {currentStageItems.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">
-                No checklist items for this stage.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {currentStageItems.map(item => (
-                  <label
-                    key={item.id}
-                    className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                      item.completed ? 'bg-green-50' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={item.completed}
-                      onChange={() => toggleItemMutation.mutate({ itemId: item.id, completed: !item.completed })}
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className={`text-sm ${item.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                      {item.item_text || item.item_id}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {/* Advance button */}
-            <div className="mt-4 pt-3 border-t border-gray-200">
-              <Button
-                size="sm"
-                onClick={() => advanceStageMutation.mutate()}
-                disabled={!allCurrentComplete || advanceStageMutation.isPending}
-              >
-                {currentStageIndex + 1 >= totalStages ? (
-                  <>
-                    <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
-                    Mark Complete
-                  </>
-                ) : (
-                  <>
-                    <ChevronRight className="w-3.5 h-3.5 mr-1.5" />
-                    Advance to Next Stage
-                  </>
+                  <h4 className="text-sm font-semibold text-gray-900">{stage.stage_label}</h4>
+                  {isCurrent && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Current</span>}
+                </div>
+                {stageItems.length > 0 && (
+                  <span className="text-xs text-gray-400">{stageDone}/{stageItems.length}</span>
                 )}
-              </Button>
-              {!allCurrentComplete && currentStageItems.length > 0 && (
-                <p className="text-xs text-gray-400 mt-2">
-                  Complete all checklist items to advance.
-                </p>
+              </div>
+            </div>
+            <div className="p-4">
+              {stageItems.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-2">No checklist items</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {stageItems.map(item => {
+                    const cardItem: ChecklistItemData = {
+                      id: item.item_id || item.id,
+                      text: item.item_text || item.item_id,
+                      completed: item.completed,
+                      status: item.status || (item.completed ? 'completed' : 'unchecked'),
+                      completedAt: item.completed_at,
+                      completedBy: item.completed_by,
+                      dbId: item.id,
+                      item_type: item.item_type || 'operational',
+                    }
+                    const cardProps = {
+                      item: cardItem,
+                      stageId: stage.stage_key,
+                      assetId: branchId,
+                      workflowId: branchId,
+                      isEditable: !isFuture && !isRunEnded,
+                      isExpanded: expandedItemId === item.id,
+                      onToggleExpand: () => setExpandedItemId(expandedItemId === item.id ? null : item.id),
+                      onToggleStatus: () => handleToggleItem(item),
+                      currentUser: currentUser,
+                    }
+                    return (item.item_type || 'operational') === 'thinking'
+                      ? <DecisionItemCard key={item.id} {...cardProps} />
+                      : <OperationalItemCard key={item.id} {...cardProps} />
+                  })}
+                </div>
+              )}
+
+              {/* Advance button — only on current stage */}
+              {isCurrent && !isRunEnded && (
+                <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
+                  <span className="text-xs text-gray-400">
+                    {allCurrentComplete && stageItems.length > 0 ? 'All items complete' : stageItems.length > 0 ? `${stageDone} of ${stageItems.length} complete` : ''}
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => advanceStageMutation.mutate()}
+                    disabled={!allCurrentComplete || advanceStageMutation.isPending}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {currentStageIndex + 1 >= totalStages ? 'Complete Process ✓' : 'Advance Stage →'}
+                  </Button>
+                </div>
               )}
             </div>
+          </Card>
+        )
+      })}
+
+      {/* Completed state */}
+      {isCompleted && (
+        <Card>
+          <div className="p-6 text-center">
+            <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-2" />
+            <div className="text-sm font-medium text-green-700">Process Complete</div>
+            <div className="text-xs text-gray-400 mt-1">All stages finished.</div>
           </div>
         </Card>
       )}

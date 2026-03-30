@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from 'react'
-import { Play, Archive, Eye, AlertCircle } from 'lucide-react'
+import { Play, Archive, Eye, AlertCircle, Trash2 } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { Badge } from '../../ui/Badge'
@@ -22,6 +22,11 @@ export interface RunHistoryTableProps {
   onViewRun: (branch: any) => void
   onEndBranch: (branch: any) => void
   onArchiveBranch: (branch: any) => void
+  onDeleteBranch?: (branch: any) => void
+  onRestoreBranch?: (branch: any) => void
+  onFilterChange?: (filter: 'all' | 'archived' | 'deleted') => void
+  currentFilter?: 'all' | 'archived' | 'deleted'
+  endCondition?: string | null
 }
 
 export function RunHistoryTable({
@@ -31,6 +36,11 @@ export function RunHistoryTable({
   onViewRun,
   onEndBranch,
   onArchiveBranch,
+  onDeleteBranch,
+  onRestoreBranch,
+  onFilterChange,
+  currentFilter = 'all',
+  endCondition,
 }: RunHistoryTableProps) {
   // Separate active vs past runs
   // Branch data uses is_active/is_archived/is_deleted (mapped from DB status/archived/deleted)
@@ -38,29 +48,28 @@ export function RunHistoryTable({
     () => branches.filter(b => !b.is_placeholder && b.is_active && !b.is_archived && !b.is_deleted),
     [branches]
   )
-  const pastBranches = useMemo(
-    () => branches.filter(b => !b.is_placeholder && (b.is_archived || b.is_deleted || !b.is_active)),
-    [branches]
-  )
+  // Client-side filter for past runs based on selected tab
+  const pastBranches = useMemo(() => {
+    const nonPlaceholder = branches.filter(b => !b.is_placeholder && !b.is_active)
+    switch (currentFilter) {
+      case 'archived':
+        return nonPlaceholder.filter(b => b.is_archived && !b.is_deleted)
+      case 'deleted':
+        return nonPlaceholder.filter(b => b.is_deleted)
+      default: // 'all' = ended (not archived, not deleted)
+        return nonPlaceholder.filter(b => !b.is_archived && !b.is_deleted)
+    }
+  }, [branches, currentFilter])
+  // Check if there are any non-active branches at all (for showing the section)
+  const hasAnyPastBranches = branches.some(b => !b.is_placeholder && !b.is_active)
 
   const activeRun = activeBranches.length > 0 ? activeBranches[0] : null
   const hasMultipleActive = activeBranches.length > 1
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6 animate-pulse">
-        <Card>
-          <div className="p-6 space-y-3">
-            <div className="h-6 bg-gray-200 rounded w-1/3" />
-            <div className="h-4 bg-gray-200 rounded w-2/3" />
-            <div className="h-8 bg-gray-200 rounded w-24 mt-4" />
-          </div>
-        </Card>
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-12 bg-gray-200 rounded" />
-          ))}
-        </div>
+      <div className="flex items-center justify-center py-12">
+        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
       </div>
     )
   }
@@ -80,12 +89,14 @@ export function RunHistoryTable({
                 <h4 className="font-semibold text-gray-900">
                   {activeRun.branch_suffix || activeRun.name}
                 </h4>
-                <span
-                  className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4"
-                  title={getRunVersionTooltip(activeRun)}
-                >
-                  {getRunVersionLabel(activeRun)}
-                </span>
+                {activeRun.template_version_number && (
+                  <span
+                    className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4"
+                    title={getRunVersionTooltip(activeRun)}
+                  >
+                    {getRunVersionLabel(activeRun)}
+                  </span>
+                )}
                 <Badge variant="default" className="text-xs">Active</Badge>
                 {getScopeBadgeLabel(activeRun.scope_type) && (
                   <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
@@ -110,8 +121,14 @@ export function RunHistoryTable({
                 )}
               </div>
             </div>
-            <div className="text-sm text-gray-600">
-              Started {safeRelativeTime(activeRun.branched_at || activeRun.created_at)}
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <span>Started {safeRelativeTime(activeRun.branched_at || activeRun.created_at)}</span>
+              {endCondition && (
+                <>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-500">{endCondition}</span>
+                </>
+              )}
             </div>
           </div>
         </Card>
@@ -160,11 +177,35 @@ export function RunHistoryTable({
       ))}
 
       {/* Past Runs Table */}
-      {pastBranches.length > 0 && (
+      {(hasAnyPastBranches || currentFilter !== 'all') && (
         <div>
-          <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
-            Past Runs ({pastBranches.length})
-          </h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+              Past Runs {pastBranches.length > 0 && `(${pastBranches.length})`}
+            </h4>
+            {onFilterChange && (
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 text-xs">
+                {(['all', 'archived', 'deleted'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => onFilterChange(f)}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors capitalize ${
+                      currentFilter === f
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {f === 'all' ? 'Ended' : f}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {pastBranches.length === 0 ? (
+            <div className="text-center py-8 text-sm text-gray-400">
+              No {currentFilter === 'all' ? 'ended' : currentFilter} runs
+            </div>
+          ) : (
           <Card>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -175,6 +216,7 @@ export function RunHistoryTable({
                     <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
                     <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Ended</th>
                     <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    {canEdit && <th className="py-2.5 px-4 w-20" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -188,18 +230,22 @@ export function RunHistoryTable({
                         {branch.branch_suffix || branch.name}
                       </td>
                       <td className="py-2.5 px-4">
-                        <span
-                          className="text-gray-500 text-xs"
-                          title={getRunVersionTooltip(branch)}
-                        >
-                          {getRunVersionLabel(branch)}
-                        </span>
+                        {branch.template_version_number ? (
+                          <span
+                            className="text-gray-500 text-xs"
+                            title={getRunVersionTooltip(branch)}
+                          >
+                            {getRunVersionLabel(branch)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-gray-500">
                         {safeFormatDate(branch.branched_at || branch.created_at)}
                       </td>
                       <td className="py-2.5 px-4 text-gray-500">
-                        {safeFormatDate(branch.archived_at || branch.deleted_at || branch.updated_at)}
+                        {safeFormatDate(branch.ended_at || branch.archived_at || branch.deleted_at || branch.updated_at)}
                       </td>
                       <td className="py-2.5 px-4">
                         {branch.is_deleted ? (
@@ -210,12 +256,46 @@ export function RunHistoryTable({
                           <Badge variant="outline" className="text-xs text-blue-500 border-blue-200">Ended</Badge>
                         )}
                       </td>
+                      {canEdit && (
+                        <td className="py-2.5 px-4">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!branch.is_archived && !branch.is_deleted && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onArchiveBranch(branch) }}
+                                className="p-1 hover:bg-amber-100 rounded transition-colors"
+                                title="Archive"
+                              >
+                                <Archive className="w-3.5 h-3.5 text-amber-600" />
+                              </button>
+                            )}
+                            {!branch.is_deleted && onDeleteBranch && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onDeleteBranch(branch) }}
+                                className="p-1 hover:bg-red-100 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                              </button>
+                            )}
+                            {branch.is_deleted && onRestoreBranch && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onRestoreBranch(branch) }}
+                                className="p-1 hover:bg-green-100 rounded transition-colors"
+                                title="Restore"
+                              >
+                                <Play className="w-3.5 h-3.5 text-green-600" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </Card>
+          )}
         </div>
       )}
     </div>

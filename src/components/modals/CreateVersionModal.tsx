@@ -24,6 +24,8 @@ interface CreateVersionModalProps {
   }
   /** List of changes to auto-populate version notes */
   changes?: TemplateChange[]
+  /** Number of currently active runs */
+  activeRunCount?: number
 }
 
 export function CreateVersionModal({
@@ -34,7 +36,8 @@ export function CreateVersionModal({
   detectedVersionType,
   onCreateVersion,
   previewData,
-  changes = []
+  changes = [],
+  activeRunCount = 0,
 }: CreateVersionModalProps) {
   const [versionType, setVersionType] = useState<'major' | 'minor'>(detectedVersionType)
   const [description, setDescription] = useState('')
@@ -193,6 +196,21 @@ export function CreateVersionModal({
                 </div>
               </div>
             </div>
+
+            {/* Active run notice */}
+            {activeRunCount > 0 && (
+              <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-900">
+                    {activeRunCount === 1 ? '1 run is' : `${activeRunCount} runs are`} currently active
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Active runs will continue using their current template version. These changes will only apply to runs started after this version is saved.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Version Type - Auto-detected, Read-only */}
             <div>

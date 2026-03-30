@@ -18,6 +18,7 @@ import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksS
 import { PendingResearchBanner } from '../common/PendingResearchBanner'
 import { useToast } from '../common/Toast'
 import type { CapturedContext } from './ContextSelector'
+import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
 
 // -- Types --
 
@@ -81,9 +82,11 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
 
   // Form state
   const [title, setTitle] = useState('')
+  const [category, setCategory] = useState<RequestType>('question')
   const [question, setQuestion] = useState('')
   const [assigneeId, setAssigneeId] = useState('')
   const [audience, setAudience] = useState<AudienceMember[]>([])
+  const [primaryContextCleared, setPrimaryContextCleared] = useState(false)
   const [additionalContexts, setAdditionalContexts] = useState<CapturedContext[]>([])
   const [contextSearchOpen, setContextSearchOpen] = useState(false)
   const [contextSearch, setContextSearch] = useState('')
@@ -97,9 +100,11 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
   useEffect(() => {
     if (isOpen) {
       setTitle(context?.title ? `Question on ${context.title}` : '')
+      setCategory('question')
       setQuestion('')
       setAssigneeId('')
       setAudience([])
+      setPrimaryContextCleared(false)
       setAdditionalContexts([])
       setContextSearchOpen(false)
       setContextSearch('')
@@ -244,9 +249,9 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [contextSearchOpen])
 
-  // All contexts: primary (from prop) + additional
+  // All contexts: primary (from prop, unless cleared) + additional
   const allContexts: CapturedContext[] = []
-  if (context?.id) allContexts.push(context)
+  if (context?.id && !primaryContextCleared) allContexts.push(context)
   allContexts.push(...additionalContexts.filter(c => c.id !== context?.id))
 
   // -- Context handlers --
@@ -334,6 +339,7 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
       const tags: string[] = [
         `title:${title.trim() || `Question on ${context?.title || 'context'}`}`,
         `assignee:${assigneeId}`,
+        `category:${category}`,
       ]
       for (const a of audience) {
         tags.push(`audience:${a.kind}:${a.id}`)
@@ -465,15 +471,20 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
               >
                 <Icon className="h-3 w-3" />
                 <span>{ctx.title || 'Untitled'}</span>
-                {ctx.id !== context?.id && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveContext(ctx.id!)}
-                    className="hover:opacity-70 -mr-0.5"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (ctx.id === context?.id) {
+                      setPrimaryContextCleared(true)
+                      if (title === `Question on ${context?.title}`) setTitle('')
+                    } else {
+                      handleRemoveContext(ctx.id!)
+                    }
+                  }}
+                  className="hover:opacity-70 -mr-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </span>
             )
           })}
@@ -582,6 +593,19 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
           placeholder={titlePlaceholder}
           className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
         />
+      </div>
+
+      {/* Category */}
+      <div>
+        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+        <div className="flex flex-wrap gap-1.5">
+          {(Object.entries(REQUEST_TYPE_META) as [RequestType, typeof REQUEST_TYPE_META[RequestType]][]).map(([key, meta]) => (
+            <button key={key} type="button" onClick={() => setCategory(key)}
+              className={clsx('px-2.5 py-1 text-xs font-medium rounded-md border transition-colors',
+                category === key ? 'bg-gray-900 text-white border-gray-900' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-gray-400'
+              )}>{meta.label}</button>
+          ))}
+        </div>
       </div>
 
       {/* Question */}

@@ -63,6 +63,9 @@ async function populateAssetRun(branchId: string, universeRules?: any[]) {
       case 'priority':
         values = config.levels || []
         break
+      case 'portfolio':
+        values = config.values || config.portfolio_ids || []
+        break
       default:
         values = config.values || []
     }
@@ -156,20 +159,25 @@ async function populateGeneralRun(branchId: string, templateId: string) {
       stage_id: string
       item_id: string
       item_text: string
+      item_type?: string
       sort_order: number
       completed: boolean
       status: string
     }[] = []
 
     for (const stage of stages) {
-      const items: string[] = (stage.checklist_items as string[]) || []
-      items.forEach((text, idx) => {
-        if (!text.trim()) return // skip blank items
+      const rawItems: any[] = (stage.checklist_items as any[]) || []
+      rawItems.forEach((item, idx) => {
+        // Handle both string format and object format {text, item_type}
+        const text = typeof item === 'string' ? item : item?.text
+        const itemType = typeof item === 'object' ? (item?.item_type || 'operational') : 'operational'
+        if (!text || !text.trim()) return
         checklistRows.push({
           workflow_id: branchId,
           stage_id: stage.stage_key,
           item_id: `item_${idx}`,
           item_text: text.trim(),
+          item_type: itemType,
           sort_order: idx,
           completed: false,
           status: 'unchecked',

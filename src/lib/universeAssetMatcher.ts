@@ -2,7 +2,7 @@ import { supabase } from './supabase'
 
 export interface UniverseRule {
   id: string
-  type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority' | 'stage'
+  type: 'analyst' | 'list' | 'theme' | 'sector' | 'priority' | 'stage' | 'portfolio'
   values: string[] | string
   operator?: 'AND' | 'OR'
 }
@@ -62,6 +62,15 @@ async function getAssetIdsForRule(rule: UniverseRule): Promise<string[]> {
           .in('priority', rule.values)
         console.log(`✅ Priority filter found ${priorityAssets?.length || 0} assets`)
         return priorityAssets?.map(a => a.id) || []
+
+      case 'portfolio':
+        const { data: portfolioHoldings } = await supabase
+          .from('portfolio_holdings')
+          .select('asset_id')
+          .in('portfolio_id', rule.values)
+        const uniqueAssetIds = [...new Set((portfolioHoldings || []).map(h => h.asset_id))]
+        console.log(`✅ Portfolio filter found ${uniqueAssetIds.length} assets from ${rule.values.length} portfolio(s)`)
+        return uniqueAssetIds
 
       default:
         console.warn('⚠️ Unknown rule type:', rule.type)

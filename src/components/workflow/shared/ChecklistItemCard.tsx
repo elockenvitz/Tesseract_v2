@@ -8,7 +8,7 @@
  */
 
 import React from 'react'
-import { GripVertical, Edit3, Trash2 } from 'lucide-react'
+import { GripVertical, Edit3, Trash2, BrainCircuit, Settings2 } from 'lucide-react'
 import { Button } from '../../ui/Button'
 
 export interface ChecklistItem {
@@ -21,6 +21,7 @@ export interface ChecklistItem {
   estimated_hours?: number
   tags?: string[]
   sort_order: number
+  item_type?: 'thinking' | 'operational'
 }
 
 export interface ChecklistItemCardProps {
@@ -110,6 +111,15 @@ export function ChecklistItemCard({
             <div className="flex-1">
               <div className="flex items-center space-x-2">
                 <span className="font-medium text-gray-900">{item.item_text}</span>
+                {item.item_type === 'thinking' ? (
+                  <span className="flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-semibold rounded bg-purple-50 text-purple-600 border border-purple-200">
+                    <BrainCircuit className="w-2.5 h-2.5" />Analysis
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-semibold rounded bg-gray-100 text-gray-500 border border-gray-200">
+                    <Settings2 className="w-2.5 h-2.5" />Task
+                  </span>
+                )}
                 {item.is_required && (
                   <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
                     Required

@@ -21,6 +21,7 @@ import type { CapturedContext } from '../thoughts/ContextSelector'
 import { useSidebarStore } from '../../stores/sidebarStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
+import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
 
 interface ThoughtsSectionProps {
   onClose?: () => void
@@ -221,11 +222,19 @@ export function ThoughtsSection({
         {/* Back button header */}
         <div className="px-3 py-2 border-b border-gray-100">
           <button
-            onClick={onBackToCapture}
+            onClick={() => {
+              if (selectedItem.type === 'prompt') {
+                // Go back to Open Prompts list, not main Quick Ideas
+                setShowPromptList(true)
+                onBackToCapture?.()
+              } else {
+                onBackToCapture?.()
+              }
+            }}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Back to Quick Ideas</span>
+            <span>{selectedItem.type === 'prompt' ? 'Back to Open Prompts' : 'Back to Quick Ideas'}</span>
           </button>
         </div>
 
@@ -236,16 +245,15 @@ export function ThoughtsSection({
               quickThoughtId={selectedItem.id}
               onClose={onBackToCapture}
               onNavigateToTradeIdea={(tradeIdeaId) => {
-                // TODO: Navigate to trade idea
                 console.log('Navigate to trade idea:', tradeIdeaId)
               }}
-              embedded // Use embedded mode (no fixed positioning)
+              embedded
             />
           )}
           {selectedItem.type === 'prompt' && (
             <PromptDetailView
               promptId={selectedItem.id}
-              onClose={onBackToCapture}
+              onClose={() => { setShowPromptList(true); onBackToCapture?.() }}
             />
           )}
           {selectedItem.type !== 'quick_thought' && selectedItem.type !== 'prompt' && (
@@ -558,6 +566,7 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
         .select('id, content, tags, created_at, created_by')
         .eq('created_by', user!.id)
         .eq('idea_type', 'prompt')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false })
         .limit(20)
 
@@ -568,6 +577,7 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
         .from('quick_thoughts')
         .select('id, content, tags, created_at, created_by')
         .eq('idea_type', 'prompt')
+        .eq('is_archived', false)
         .neq('created_by', user!.id)
         .contains('tags', [`assignee:${user!.id}`])
         .order('created_at', { ascending: false })
@@ -653,6 +663,9 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
         // Extract context from tags
         const ctxTag = prompt.tags?.find((t: string) => t.startsWith('ctx:'))
         const ctxTitle = ctxTag ? ctxTag.replace(/^ctx:[^:]+:[^:]+:/, '') : null
+        const categoryTag = prompt.tags?.find((t: string) => t.startsWith('category:'))
+        const category = categoryTag ? categoryTag.replace('category:', '') as RequestType : null
+        const categoryMeta = category ? REQUEST_TYPE_META[category] : null
         const timeAgo = formatDistanceToNow(new Date(prompt.created_at), { addSuffix: true })
 
         // Determine who it's waiting on
@@ -685,6 +698,11 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
                   {prompt.content || 'Untitled prompt'}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
+                  {categoryMeta && (
+                    <span className={clsx('text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700/60', categoryMeta.color)}>
+                      {categoryMeta.label}
+                    </span>
+                  )}
                   {waitingLabel && (
                     <span className={clsx('text-[10px] font-semibold', waitingColor, waitingBg)}>
                       {waitingLabel}

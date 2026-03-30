@@ -90,6 +90,7 @@ export interface CadenceViewProps {
   // Next run summary
   universeAssetCount?: number
   onViewUniverseAssets?: () => void
+  scopeType?: 'asset' | 'portfolio' | 'general'
 }
 
 // ─── Status helpers ─────────────────────────────────────────────────────────
@@ -103,9 +104,11 @@ function computeRuleStatus(rule: AutomationRule): RuleStatus {
     if (hoursSinceRun < 24) return 'erroring'
   }
 
-  // Time-interval rules without a schedule
+  // Time-interval rules without a schedule AND no valid config
   if (rule.condition_type === 'time_interval' && !rule.next_run_at) {
-    return 'active_unscheduled'
+    const cv = rule.condition_value as any
+    if (!cv?.pattern_type && !cv?.interval) return 'active_unscheduled'
+    // Has valid config but next_run_at not computed yet — treat as active
   }
 
   return 'active'
@@ -183,6 +186,7 @@ export function CadenceView({
   isLoadingExecutions = false,
   universeAssetCount,
   onViewUniverseAssets,
+  scopeType = 'asset',
 }: CadenceViewProps) {
   const [showHistory, setShowHistory] = useState(false)
   const [selectedExecution, setSelectedExecution] = useState<RuleExecution | null>(null)
@@ -314,7 +318,7 @@ export function CadenceView({
     const { action_type, action_value } = rule
     const av = action_value || {}
     switch (action_type) {
-      case 'branch_copy': return av.branch_suffix ? `Start run "${av.branch_suffix}" carrying forward progress` : 'Start a new run carrying forward progress'
+      case 'branch_copy': return av.branch_suffix ? `Start run "${av.branch_suffix}" with notes carried forward` : 'Start a new run with notes carried forward'
       case 'branch_nocopy': return av.branch_suffix ? `Start fresh run "${av.branch_suffix}"` : 'Start a fresh run from scratch'
       case 'move_stage': return av.target_stage ? `Move assets to the "${av.target_stage}" stage` : 'Move assets to a target stage'
       case 'advance_stage': return 'Advance assets to their next stage'
@@ -417,7 +421,7 @@ export function CadenceView({
   const nextRunDate = nextRunRule?.next_run_at ? new Date(nextRunRule.next_run_at) : null
 
   const isConfigValid = branchCreationRules.length > 0
-    && assetPopulationRules.length > 0
+    && (scopeType === 'portfolio' || scopeType === 'general' || assetPopulationRules.length > 0)
     && branchEndingRules.length > 0
 
   return (
@@ -427,33 +431,20 @@ export function CadenceView({
         {/* Title + cadence selector */}
         <div className="flex items-center gap-3">
           <h3 className="text-[15px] font-semibold text-gray-900">Scheduling</h3>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500">Cadence:</span>
-            {canEdit && onChangeCadence ? (
-              <select
-                value={cadenceTimeframe}
-                onChange={(e) => onChangeCadence(e.target.value as CadenceTimeframe)}
-                className="px-2 py-0.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-xs bg-white"
-              >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="semi-annually">Semi-Annually</option>
-                <option value="annually">Annually</option>
-                <option value="persistent">Persistent</option>
-              </select>
-            ) : (
-              <span className="text-xs font-medium text-gray-700">
-                {getCadenceLabel(cadenceTimeframe)}
-              </span>
-            )}
-          </div>
+          {branchCreationRules.length > 0 && (
+            <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+              {branchCreationRules[0].rule_name || 'Scheduled'}
+            </span>
+          )}
         </div>
 
         {/* Microcopy */}
         <p className="text-xs text-gray-500 mt-1.5 mb-2">
-          These rules define how recurring runs start, which assets are included, and when they complete.
+          {scopeType === 'general'
+            ? 'These rules define how runs start and when they complete.'
+            : scopeType === 'portfolio'
+            ? 'These rules define how runs start, which portfolios are included, and when they complete.'
+            : 'These rules define how recurring runs start, which assets are included, and when they complete.'}
         </p>
 
         {/* Metrics + validity warning (only shown when incomplete) */}
@@ -463,7 +454,7 @@ export function CadenceView({
               {automationRules.length} {automationRules.length === 1 ? 'rule' : 'rules'}
             </span>
 
-            {universeAssetCount !== undefined && universeAssetCount > 0 && (
+            {scopeType === 'asset' && universeAssetCount !== undefined && universeAssetCount > 0 && (
               <>
                 <span className="text-gray-300">&middot;</span>
                 {onViewUniverseAssets ? (
@@ -478,6 +469,12 @@ export function CadenceView({
                     {universeAssetCount} {universeAssetCount === 1 ? 'asset' : 'assets'}
                   </span>
                 )}
+              </>
+            )}
+            {scopeType === 'portfolio' && universeAssetCount !== undefined && universeAssetCount > 0 && (
+              <>
+                <span className="text-gray-300">&middot;</span>
+                <span>{universeAssetCount} {universeAssetCount === 1 ? 'portfolio' : 'portfolios'}</span>
               </>
             )}
 
@@ -518,23 +515,25 @@ export function CadenceView({
           {branchCreationRules.map(r => renderRule(r, onEditRule, onDeleteRule))}
         </RuleSection>
 
-        <RuleSection
-          step={2}
-          icon={<Users className="w-4 h-4 text-orange-600" />}
-          title="Inclusion Logic"
-          subtitle="Which assets should be added to a run?"
-          summaryText={getSectionSummary(assetPopulationRules)}
-          addLabel="Add inclusion rule"
-          canEdit={canEdit}
-          isLoading={isLoadingRules}
-          ruleCount={assetPopulationRules.length}
-          onAdd={onAddAssetPopulationRule}
-        >
-          {assetPopulationRules.map(r => renderRule(r, onEditAssetPopulationRule, onDeleteAssetPopulationRule))}
-        </RuleSection>
+        {scopeType === 'asset' && (
+          <RuleSection
+            step={2}
+            icon={<Users className="w-4 h-4 text-orange-600" />}
+            title="Inclusion Logic"
+            subtitle="Which assets should be added to a run?"
+            summaryText={getSectionSummary(assetPopulationRules)}
+            addLabel="Add inclusion rule"
+            canEdit={canEdit}
+            isLoading={isLoadingRules}
+            ruleCount={assetPopulationRules.length}
+            onAdd={onAddAssetPopulationRule}
+          >
+            {assetPopulationRules.map(r => renderRule(r, onEditAssetPopulationRule, onDeleteAssetPopulationRule))}
+          </RuleSection>
+        )}
 
         <RuleSection
-          step={3}
+          step={scopeType === 'asset' ? 3 : 2}
           icon={<XCircle className="w-4 h-4 text-red-600" />}
           title="Completion Conditions"
           subtitle="When should a run end?"

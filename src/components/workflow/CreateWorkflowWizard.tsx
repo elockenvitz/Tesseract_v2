@@ -41,6 +41,8 @@ import {
   Lock,
   Info,
   GripVertical,
+  BrainCircuit,
+  Settings2,
 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
@@ -48,6 +50,7 @@ import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { CadenceTimeframe, WorkflowScopeType } from '../../types/workflow'
+import { getScopeColor } from '../../utils/workflow/runHelpers'
 import {
   FILTER_TYPE_REGISTRY,
   OPERATOR_LABELS,
@@ -87,10 +90,16 @@ interface WizardStage {
   stage_color: string
   stage_icon: string
   sort_order: number
-  standard_deadline_days: number
+  standard_deadline_days: number | null
   suggested_priorities: string[]
-  checklist_items: string[]
+  checklist_items: (string | { text: string; item_type: 'thinking' | 'operational' })[]
+  default_assignee_type?: 'person' | 'role' | null
+  default_assignee_value?: string | null
 }
+
+type WizardChecklistItem = string | { text: string; item_type: 'thinking' | 'operational' }
+function itemText(item: WizardChecklistItem): string { return typeof item === 'string' ? item : item.text }
+function itemType(item: WizardChecklistItem): 'thinking' | 'operational' { return typeof item === 'string' ? 'operational' : item.item_type }
 
 interface AutomationRuleData {
   id: string
@@ -436,9 +445,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       stage_color: '#3b82f6',
       stage_icon: '',
       sort_order: stages.length + 1,
-      standard_deadline_days: 7,
+      standard_deadline_days: null,
       suggested_priorities: [],
       checklist_items: [],
+      default_assignee_type: null,
+      default_assignee_value: null,
     }
     setStages([...stages, newStage])
     setExpandedStages(prev => new Set(prev).add(newStage.stage_key))
@@ -453,9 +464,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       stage_color: '#3b82f6',
       stage_icon: '',
       sort_order: position + 1,
-      standard_deadline_days: 7,
+      standard_deadline_days: null,
       suggested_priorities: [],
       checklist_items: [],
+      default_assignee_type: null,
+      default_assignee_value: null,
     }
     const newStages = [...stages]
     newStages.splice(position, 0, newStage)
@@ -1131,16 +1144,40 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     setIsSubmitting(true)
     setSubmitError(null)
     try {
+      // Derive cadence from automation rules (branch creation rules determine the cycle)
+      const branchCreationRule = automationRules.find(r => r.rule_category === 'branch_creation')
+      let derivedCadence: CadenceTimeframe = 'persistent'
+      let derivedDays = 0
+
+      if (branchCreationRule?.conditionType === 'time_interval' && branchCreationRule.conditionValue) {
+        const intervalDays = branchCreationRule.conditionValue.interval_days
+          || branchCreationRule.conditionValue.intervalDays
+          || 0
+        derivedDays = Number(intervalDays)
+        if (derivedDays === 1) derivedCadence = 'daily'
+        else if (derivedDays === 7) derivedCadence = 'weekly'
+        else if (derivedDays === 14) derivedCadence = 'biweekly'
+        else if (derivedDays >= 28 && derivedDays <= 31) derivedCadence = 'monthly'
+        else if (derivedDays >= 89 && derivedDays <= 92) derivedCadence = 'quarterly'
+        else if (derivedDays >= 180 && derivedDays <= 183) derivedCadence = 'semi_annually'
+        else if (derivedDays >= 364 && derivedDays <= 366) derivedCadence = 'annually'
+        else if (derivedDays > 0) derivedCadence = 'custom'
+      } else if (branchCreationRule?.conditionType === 'manual') {
+        // Manual trigger — still discrete but no fixed cadence
+        derivedCadence = 'custom'
+        derivedDays = 0
+      }
+
       // 1. Create the workflow
       const { data: workflow, error: workflowError } = await supabase
         .from('workflows')
         .insert({
           name: basicInfo.name,
           description: basicInfo.description,
-          color: basicInfo.color,
+          color: getScopeColor(scopeType),
           is_public: false, // Always private, access is based on team
-          cadence_timeframe: basicInfo.cadence_timeframe,
-          cadence_days: getCadenceDays(basicInfo.cadence_timeframe),
+          cadence_timeframe: derivedCadence,
+          cadence_days: derivedDays,
           created_by: user.id,
           scope_type: scopeType,
         })
@@ -1151,12 +1188,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
       const workflowId = workflow.id
 
-      // 2. Create initial template version
-      await supabase.rpc('create_initial_template_version', {
-        p_workflow_id: workflowId
-      })
-
-      // 3. Add stages
+      // 2. Add stages (BEFORE creating template version — the version snapshots stages)
       if (stages.length > 0) {
         const stagesData = stages.map(s => ({
           workflow_id: workflowId,
@@ -1261,13 +1293,20 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
       // 6. Add automation rules
       if (automationRules.length > 0) {
+        // Inject user timezone into time-based rules
+        const userTz = (user as any)?.timezone
+          || Intl.DateTimeFormat().resolvedOptions().timeZone
+          || 'America/New_York'
+
         const autoRulesData = automationRules.map(r => ({
           workflow_id: workflowId,
           rule_name: r.name,
           rule_type: r.type,
           rule_category: r.rule_category,
           condition_type: r.conditionType,
-          condition_value: r.conditionValue,
+          condition_value: r.conditionType === 'time_interval'
+            ? { ...r.conditionValue, timezone: userTz }
+            : r.conditionValue,
           action_type: r.actionType,
           action_value: r.actionValue,
           is_active: r.isActive
@@ -1279,6 +1318,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
         if (autoError) throw autoError
       }
+
+      // Create initial template version AFTER all data is inserted
+      // (stages, rules, universe rules must exist before snapshotting)
+      await supabase.rpc('create_initial_template_version', {
+        p_workflow_id: workflowId
+      })
 
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
@@ -1443,25 +1488,6 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
         </section>
 
-        {/* ─── Appearance ───────────────────────────────────── */}
-        <section>
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Appearance</h3>
-          <div className="flex items-center space-x-3">
-            <Palette className="w-4 h-4 text-gray-300" />
-            <input
-              type="color"
-              value={basicInfo.color}
-              onChange={(e) => setBasicInfo({ ...basicInfo, color: e.target.value })}
-              className="w-8 h-8 rounded border border-gray-200 cursor-pointer"
-            />
-            <input
-              type="text"
-              value={basicInfo.color}
-              onChange={(e) => setBasicInfo({ ...basicInfo, color: e.target.value })}
-              className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs font-mono text-gray-500"
-            />
-          </div>
-        </section>
 
         {/* ─── Summary + scheduling framing ──────────────────── */}
         {basicInfo.name.trim().length >= 3 && !isNameBlocked(basicInfo.name) && (
@@ -1521,10 +1547,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             <div className="flex items-center space-x-2.5 min-w-0">
               <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                 <span className="font-semibold text-xs text-blue-700">
-                  {user?.email?.charAt(0).toUpperCase() || 'Y'}
+                  {((user as any)?.first_name?.[0] || user?.email?.[0] || 'Y').toUpperCase()}
                 </span>
               </div>
-              <span className="text-sm font-medium text-gray-900 truncate">{user?.email || 'You'}</span>
+              <span className="text-sm font-medium text-gray-900 truncate">
+                {[(user as any)?.first_name, (user as any)?.last_name].filter(Boolean).join(' ') || user?.email || 'You'}
+              </span>
             </div>
             <div className="flex items-center space-x-2 flex-shrink-0">
               <span
@@ -2436,6 +2464,54 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                           />
                         </div>
 
+                        {/* Target Duration + Default Assignee */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-medium text-gray-400 mb-1">Target Duration <span className="text-gray-300">(optional)</span></label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                value={stage.standard_deadline_days ?? ''}
+                                onChange={(e) => handleUpdateStage(stage.stage_key, { standard_deadline_days: e.target.value ? parseInt(e.target.value) : null })}
+                                className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 placeholder:text-gray-300"
+                                placeholder="—"
+                              />
+                              <span className="text-xs text-gray-400 shrink-0">days</span>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-medium text-gray-400 mb-1">Default Assignee <span className="text-gray-300">(optional)</span></label>
+                            <select
+                              value={stage.default_assignee_type || 'none'}
+                              onChange={(e) => {
+                                const val = e.target.value as 'none' | 'role'
+                                handleUpdateStage(stage.stage_key, {
+                                  default_assignee_type: val === 'none' ? null : val,
+                                  default_assignee_value: null,
+                                })
+                              }}
+                              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 bg-white"
+                            >
+                              <option value="none">None</option>
+                              <option value="role">By Role</option>
+                            </select>
+                          </div>
+                        </div>
+                        {stage.default_assignee_type === 'role' && (
+                          <select
+                            value={stage.default_assignee_value || ''}
+                            onChange={(e) => handleUpdateStage(stage.stage_key, { default_assignee_value: e.target.value || null })}
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 bg-white"
+                          >
+                            <option value="">Select a role...</option>
+                            <option value="primary_analyst">Primary Analyst</option>
+                            <option value="secondary_analyst">Secondary Analyst</option>
+                            <option value="portfolio_manager">Portfolio Manager</option>
+                            <option value="coverage_lead">Coverage Lead</option>
+                          </select>
+                        )}
+
                         {/* Completion criteria */}
                         <div>
                           <label className="block text-[11px] font-medium text-gray-400 mb-0.5">Completion Criteria</label>
@@ -2444,17 +2520,36 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                             <div className="space-y-1 mb-1.5">
                               {stage.checklist_items.map((item, itemIdx) => (
                                 <div key={itemIdx} className="flex items-center space-x-2 group">
-                                  <div className="w-3.5 h-3.5 rounded border border-gray-200 flex-shrink-0" />
+                                  {/* Type toggle */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...stage.checklist_items]
+                                      const currentType = itemType(item)
+                                      const newType = currentType === 'thinking' ? 'operational' : 'thinking'
+                                      updated[itemIdx] = { text: itemText(item), item_type: newType }
+                                      handleUpdateStage(stage.stage_key, { checklist_items: updated })
+                                    }}
+                                    className={`flex items-center gap-0.5 px-1 py-0 text-[9px] font-semibold rounded border flex-shrink-0 transition-colors ${
+                                      itemType(item) === 'thinking'
+                                        ? 'bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100'
+                                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                                    }`}
+                                    title={`Click to switch to ${itemType(item) === 'thinking' ? 'Task' : 'Analysis'}`}
+                                  >
+                                    {itemType(item) === 'thinking' ? <BrainCircuit className="w-2.5 h-2.5" /> : <Settings2 className="w-2.5 h-2.5" />}
+                                    {itemType(item) === 'thinking' ? 'A' : 'T'}
+                                  </button>
                                   <input
                                     type="text"
-                                    value={item}
+                                    value={itemText(item)}
                                     onChange={(e) => {
                                       const updated = [...stage.checklist_items]
-                                      updated[itemIdx] = e.target.value
+                                      updated[itemIdx] = { text: e.target.value, item_type: itemType(item) }
                                       handleUpdateStage(stage.stage_key, { checklist_items: updated })
                                     }}
                                     className="flex-1 px-2 py-1 border border-gray-150 rounded text-sm text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-400 placeholder:text-gray-300"
-                                    placeholder="Describe requirement..."
+                                    placeholder={itemType(item) === 'thinking' ? "What question needs answering?" : "What task needs to be done?"}
                                   />
                                   <button
                                     type="button"
@@ -2475,12 +2570,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                             type="button"
                             onClick={() => {
                               handleUpdateStage(stage.stage_key, {
-                                checklist_items: [...stage.checklist_items, ''],
+                                checklist_items: [...stage.checklist_items, { text: '', item_type: 'operational' }],
                               })
                             }}
                             className="text-[11px] text-blue-600 hover:text-blue-800 font-medium"
                           >
-                            + Add requirement
+                            + Add item
                           </button>
                         </div>
 
@@ -2857,17 +2952,17 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 {branchRules.map((rule) => (
                   <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors">
                     <div className="min-w-0">
-                      <div className="text-[13px] text-gray-700">{getRuleDescription(rule)}</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">{rule.name}</div>
+                      <div className="text-[13px] font-medium text-gray-900">{rule.name}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{getRuleDescription(rule)}</div>
                     </div>
-                    <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+                    <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
                       {!rule.isActive && (
                         <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Inactive</span>
                       )}
                       <button
                         type="button"
                         onClick={() => setAutomationRules(automationRules.filter(r => r.id !== rule.id))}
-                        className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-all"
                         aria-label={`Remove rule ${rule.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -2911,17 +3006,17 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   {assetRules.map((rule) => (
                     <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors">
                       <div className="min-w-0">
-                        <div className="text-[13px] text-gray-700">{getRuleDescription(rule)}</div>
-                        <div className="text-[11px] text-gray-400 mt-0.5">{rule.name}</div>
+                        <div className="text-[13px] font-medium text-gray-900">{rule.name}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">{getRuleDescription(rule)}</div>
                       </div>
-                      <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+                      <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
                         {!rule.isActive && (
                           <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Inactive</span>
                         )}
                         <button
                           type="button"
                           onClick={() => setAutomationRules(automationRules.filter(r => r.id !== rule.id))}
-                          className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                          className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-all"
                           aria-label={`Remove rule ${rule.name}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -2965,17 +3060,17 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 {endingRules.map((rule) => (
                   <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors">
                     <div className="min-w-0">
-                      <div className="text-[13px] text-gray-700">{getRuleDescription(rule)}</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">{rule.name}</div>
+                      <div className="text-[13px] font-medium text-gray-900">{rule.name}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{getRuleDescription(rule)}</div>
                     </div>
-                    <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+                    <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
                       {!rule.isActive && (
                         <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Inactive</span>
                       )}
                       <button
                         type="button"
                         onClick={() => setAutomationRules(automationRules.filter(r => r.id !== rule.id))}
-                        className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-all"
                         aria-label={`Remove rule ${rule.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />

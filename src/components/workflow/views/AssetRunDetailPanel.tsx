@@ -26,9 +26,10 @@ export interface AssetRunDetailPanelProps {
   workflowStages: WorkflowStage[]
   userId: string
   onNavigate?: (result: { id: string; title: string; type: string; data?: any }) => void
+  isRunEnded?: boolean
 }
 
-type FilterMode = 'all' | 'mine' | 'ready'
+type FilterMode = 'in_progress' | 'mine' | 'completed'
 type SortKey = 'symbol' | 'name' | 'stage' | 'status'
 type SortDir = 'asc' | 'desc' | null
 
@@ -37,8 +38,9 @@ export function AssetRunDetailPanel({
   workflowStages,
   userId,
   onNavigate,
+  isRunEnded = false,
 }: AssetRunDetailPanelProps) {
-  const [filterMode, setFilterMode] = useState<FilterMode>('all')
+  const [filterMode, setFilterMode] = useState<FilterMode>('in_progress')
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
   const queryClient = useQueryClient()
@@ -99,18 +101,16 @@ export function AssetRunDetailPanel({
   const remainingAssets = totalAssets - completedAssets
 
   const filteredAssets = useMemo(() => {
-    const remaining = progressRecords.filter(r => !r.is_completed)
     switch (filterMode) {
+      case 'completed':
+        return progressRecords.filter(r => r.is_completed)
       case 'mine':
-        return remaining.filter(r => coverageAssetIds.has(r.asset_id))
-      case 'ready':
-        if (!finalStageKey) return remaining
-        return remaining.filter(r => r.current_stage_key === finalStageKey)
-      case 'all':
+        return progressRecords.filter(r => !r.is_completed && coverageAssetIds.has(r.asset_id))
+      case 'in_progress':
       default:
-        return remaining
+        return progressRecords.filter(r => !r.is_completed)
     }
-  }, [progressRecords, filterMode, coverageAssetIds, finalStageKey])
+  }, [progressRecords, filterMode, coverageAssetIds])
 
   const sortedAssets = useMemo(() => {
     if (!sortKey || !sortDir) return filteredAssets
@@ -142,12 +142,6 @@ export function AssetRunDetailPanel({
   const mineCount = useMemo(
     () => progressRecords.filter(r => !r.is_completed && coverageAssetIds.has(r.asset_id)).length,
     [progressRecords, coverageAssetIds]
-  )
-  const readyCount = useMemo(
-    () => finalStageKey
-      ? progressRecords.filter(r => !r.is_completed && r.current_stage_key === finalStageKey).length
-      : 0,
-    [progressRecords, finalStageKey]
   )
 
   const markCompleteMutation = useMutation({
@@ -205,10 +199,10 @@ export function AssetRunDetailPanel({
             </>
           ) : (
             <>
-              <div className="text-4xl font-bold text-gray-900">{remainingAssets}</div>
-              <div className="text-sm text-gray-500 mt-1">Assets Remaining</div>
+              <div className="text-4xl font-bold text-gray-900">{isRunEnded ? completedAssets : remainingAssets}</div>
+              <div className="text-sm text-gray-500 mt-1">{isRunEnded ? 'Assets Completed' : 'Assets Remaining'}</div>
               <div className="text-xs text-gray-400 mt-1">
-                {completedAssets} completed &middot; {totalAssets} total
+                {isRunEnded ? `${remainingAssets} not completed` : `${completedAssets} completed`} &middot; {totalAssets} total
               </div>
               <div className="mt-3 max-w-xs mx-auto">
                 <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -226,9 +220,9 @@ export function AssetRunDetailPanel({
       {/* Filter tabs */}
       <div className="flex items-center space-x-2">
         {([
-          { mode: 'all' as FilterMode, label: 'All', count: remainingAssets },
-          { mode: 'mine' as FilterMode, label: 'Mine', count: mineCount },
-          { mode: 'ready' as FilterMode, label: 'Ready', count: readyCount },
+          { mode: 'in_progress' as FilterMode, label: isRunEnded ? 'Not Completed' : 'In Progress', count: remainingAssets },
+          ...(!isRunEnded ? [{ mode: 'mine' as FilterMode, label: 'Mine', count: mineCount }] : []),
+          { mode: 'completed' as FilterMode, label: 'Completed', count: completedAssets },
         ]).map(tab => (
           <button
             key={tab.mode}
@@ -262,11 +256,11 @@ export function AssetRunDetailPanel({
             <div className="p-8 text-center text-gray-500">
               <Filter className="w-8 h-8 mx-auto mb-2 text-gray-300" />
               <p className="text-sm font-medium text-gray-600">
-                {filterMode === 'all'
-                  ? 'All assets complete'
+                {filterMode === 'in_progress'
+                  ? 'All assets completed'
                   : filterMode === 'mine'
-                  ? '0 remaining assets in your coverage'
-                  : '0 assets ready for completion'}
+                  ? 'No remaining assets in your coverage'
+                  : 'No completed assets yet'}
               </p>
             </div>
           ) : (
@@ -311,10 +305,11 @@ export function AssetRunDetailPanel({
                       </td>
                       <td className="py-2.5 px-4">
                         <span className={`text-xs ${record.is_started ? 'text-blue-600' : 'text-gray-400'}`}>
-                          {record.is_started ? 'In Progress' : 'Pending'}
+                          {isRunEnded ? 'Not Completed' : (record.is_started ? 'In Progress' : 'Pending')}
                         </span>
                       </td>
                       <td className="py-2.5 px-4 text-right">
+                        {!isRunEnded && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -325,6 +320,7 @@ export function AssetRunDetailPanel({
                           <CheckCircle className="w-3 h-3 mr-1" />
                           Complete
                         </Button>
+                        )}
                       </td>
                     </tr>
                   )

@@ -1,14 +1,16 @@
 import React, { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Check, Info, AlertTriangle, Calendar, Users, MessageSquare, X, Plus, Trash2, Edit3, Paperclip, Upload, Download, FileText, ChevronDown, Zap, Target, Clock } from 'lucide-react'
+import { Check, Info, AlertTriangle, Calendar, Plus, ChevronDown, Zap, Target, Clock, BrainCircuit, Settings2 } from 'lucide-react'
 import { Badge } from './Badge'
 import { BadgeSelect } from './BadgeSelect'
 import { Button } from './Button'
 import { Card } from './Card'
 import { StageDeadlineManager } from './StageDeadlineManager'
 import { ContentTile } from './ContentTile'
-import { MentionInput } from './MentionInput'
 import { AssignmentSelector } from './AssignmentSelector'
+import { DecisionItemCard } from './checklist/DecisionItemCard'
+import { OperationalItemCard } from './checklist/OperationalItemCard'
+import { type ProcessItemType, userName as chUserName } from './checklist/types'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -30,6 +32,19 @@ interface ChecklistItem {
   sortOrder?: number
   attachments?: ChecklistAttachment[]
   dbId?: string
+  item_type?: ProcessItemType
+  takeaway?: string | null
+  takeaway_updated_at?: string | null
+  takeaway_revision_count?: number
+  takeaway_update_source?: 'manual' | 'finding' | null
+  assignee_id?: string | null
+  assignee?: { id: string; email: string; first_name?: string | null; last_name?: string | null } | null
+  due_date?: string | null
+  notes?: string | null
+  source_type?: 'manual' | 'work_request'
+  source_work_request_id?: string | null
+  source_thinking_item_id?: string | null
+  source_thinking_item_text?: string | null
 }
 
 interface ChecklistAttachment {
@@ -169,19 +184,11 @@ export function InvestmentTimeline({
   const [lastClickedStageId, setLastClickedStageId] = useState<string | null>(null) // Track clicked stage for focus ring
   const [hasAutoSelected, setHasAutoSelected] = useState(false) // Track if we've auto-selected on mount
   const [stageChecklists, setStageChecklists] = useState<Record<string, ChecklistItem[]>>({})
-  const [commentingItem, setCommentingItem] = useState<{stageId: string, itemId: string} | null>(null)
-  const [commentText, setCommentText] = useState('')
-  const [commentMentions, setCommentMentions] = useState<string[]>([])
-  const [commentReferences, setCommentReferences] = useState<Array<{type: string, id: string, text: string}>>([])
-  const [editingComment, setEditingComment] = useState<{id: string, text: string} | null>(null)
-  const [assigningItem, setAssigningItem] = useState<{stageId: string, itemId: string, dbId: string} | null>(null)
-  const [showingCommentsFor, setShowingCommentsFor] = useState<{stageId: string, itemId: string} | null>(null)
-  const [showingAttachmentsFor, setShowingAttachmentsFor] = useState<{stageId: string, itemId: string} | null>(null)
-  const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
   const [addingItemToStage, setAddingItemToStage] = useState<string | null>(null)
   const [newItemText, setNewItemText] = useState('')
-  const [uploadingFiles, setUploadingFiles] = useState<{[key: string]: boolean}>({})
+  const [newItemType, setNewItemType] = useState<ProcessItemType>('operational')
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   // Helper function to get default checklist items for a stage
@@ -194,7 +201,8 @@ export function InvestmentTimeline({
           id: template.item_id,
           text: template.item_text,
           completed: false,
-          isCustom: false
+          isCustom: false,
+          item_type: template.item_type || 'operational',
         }))
       }
     }
@@ -219,7 +227,6 @@ export function InvestmentTimeline({
 
       // Don't load stages for archived/ended/deleted workflows
       if (workflowError || !workflow || workflow.archived || workflow.status === 'ended' || workflow.deleted) {
-        console.warn(`⚠️ InvestmentTimeline: Workflow ${workflowId} is archived/ended/deleted or not found`)
         return []
       }
 
@@ -236,7 +243,6 @@ export function InvestmentTimeline({
           throw error
         }
 
-        console.log('📋 InvestmentTimeline: Loaded stages from template version:', templateVersion.stages)
         // Normalize template version stage format to match workflow_stages table format
         const normalizedStages = (templateVersion.stages || []).map((stage: any) => ({
           stage_key: stage.key || stage.stage_key,
@@ -258,7 +264,6 @@ export function InvestmentTimeline({
         .order('sort_order')
 
       if (error) throw error
-      console.log('📋 InvestmentTimeline: Loaded stages from workflow_stages table:', data)
       return data || []
     },
     enabled: !!workflowId,
@@ -283,34 +288,67 @@ export function InvestmentTimeline({
         return []
       }
 
-      // If it's a branch (has parent_workflow_id), get checklists from parent workflow's templates
-      if (workflow?.parent_workflow_id) {
-        // Get checklist templates from parent workflow
-        const { data: parentChecklists, error } = await supabase
-          .from('workflow_checklist_templates')
-          .select('*')
-          .eq('workflow_id', workflow.parent_workflow_id)
-          .order('stage_id, sort_order')
+      // Determine which workflow to load checklists from
+      const templateWorkflowId = workflow?.parent_workflow_id || workflowId
 
-        if (error) {
-          console.error('Error fetching parent workflow checklists:', error)
-          throw error
-        }
-
-        console.log('📋 InvestmentTimeline: Loaded checklist templates from parent workflow:', parentChecklists)
-        return parentChecklists || []
-      }
-
-      // Otherwise, it's a template - get checklists from workflow_checklist_templates table
-      const { data, error } = await supabase
+      // Try workflow_checklist_templates table first
+      const { data: checklists, error } = await supabase
         .from('workflow_checklist_templates')
         .select('*')
-        .eq('workflow_id', workflowId)
+        .eq('workflow_id', templateWorkflowId)
         .order('stage_id, sort_order')
 
       if (error) throw error
-      console.log('📋 InvestmentTimeline: Loaded checklist templates from workflow_checklist_templates table:', data)
-      return data || []
+
+      if (checklists && checklists.length > 0) {
+        return checklists
+      }
+
+      // Fallback: extract checklist items from template version stages JSONB
+      // (wizard-created processes store checklists inline in stages, not in the templates table)
+      const versionId = workflow?.template_version_id
+      const parentId = workflow?.parent_workflow_id
+      const lookupWorkflowId = parentId || workflowId
+
+      // For branches, use the run's pinned template version; otherwise use the active version
+      let versionQuery = supabase
+        .from('workflow_template_versions')
+        .select('stages')
+      if (versionId) {
+        versionQuery = versionQuery.eq('id', versionId)
+      } else {
+        versionQuery = versionQuery.eq('workflow_id', lookupWorkflowId).eq('is_active', true)
+      }
+      const { data: version } = await versionQuery.single()
+
+      if (version?.stages && Array.isArray(version.stages)) {
+        const extracted: any[] = []
+        for (const stage of version.stages) {
+          const items = stage.checklist_items || []
+          items.forEach((rawItem: any, idx: number) => {
+            // Handle both string format and {text, item_type} object format
+            const text = typeof rawItem === 'string' ? rawItem : rawItem?.text
+            const type = typeof rawItem === 'string' ? 'operational' : (rawItem?.item_type || 'operational')
+            if (!text?.trim()) return
+            const itemId = `${stage.stage_key}_item_${idx}`
+            extracted.push({
+              id: itemId,
+              item_id: itemId,
+              workflow_id: lookupWorkflowId,
+              stage_id: stage.stage_key,
+              item_text: text.trim(),
+              item_type: type,
+              sort_order: idx,
+              is_required: false,
+            })
+          })
+        }
+        if (extracted.length > 0) {
+          return extracted
+        }
+      }
+
+      return []
     },
     enabled: !!workflowId,
     gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
@@ -324,7 +362,7 @@ export function InvestmentTimeline({
 
       const { data, error} = await supabase
         .from('asset_checklist_items')
-        .select('id, stage_id, item_id')
+        .select('id, stage_id, item_id, item_text, takeaway, takeaway_updated_at, takeaway_revision_count, takeaway_update_source, item_type, assignee_id, due_date, notes, source_type, source_work_request_id, source_thinking_item_id, assignee:users!asset_checklist_items_assignee_id_fkey(id, email, first_name, last_name)')
         .eq('asset_id', assetId)
         .eq('workflow_id', workflowId)
 
@@ -333,6 +371,29 @@ export function InvestmentTimeline({
     },
     enabled: !!assetId && !!workflowId,
     gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+  })
+
+  // Stage-level work request query for summary (open gaps + in-flight)
+  const stageThinkingDbIds = (showStageDetails && stageChecklists[showStageDetails])
+    ? stageChecklists[showStageDetails]
+        .filter(i => i.item_type === 'thinking' && i.dbId)
+        .map(i => i.dbId!)
+    : []
+
+  const { data: stageWorkRequests } = useQuery({
+    queryKey: ['stage-work-requests', assetId, workflowId, showStageDetails, stageThinkingDbIds.join(',')],
+    queryFn: async () => {
+      if (stageThinkingDbIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('checklist_work_requests')
+        .select('id, checklist_item_id, prompt, status, resolved_at, owner_id, due_date, owner:users!checklist_work_requests_owner_id_fkey(first_name, last_name, email)')
+        .in('checklist_item_id', stageThinkingDbIds)
+        .neq('status', 'cancelled')
+      if (error) throw error
+      return (data || []).map((d: any) => ({ ...d, owner: Array.isArray(d.owner) ? d.owner[0] : d.owner }))
+    },
+    enabled: stageThinkingDbIds.length > 0,
+    staleTime: 30_000,
   })
 
   // Query to load workflow-specific priority for this asset
@@ -376,97 +437,6 @@ export function InvestmentTimeline({
       }
 
       return data
-    },
-    enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
-  })
-
-  // Query to load task assignments for all checklist items
-  const { data: taskAssignments } = useQuery({
-    queryKey: ['task-assignments-all', assetId, workflowId],
-    queryFn: async () => {
-      if (!assetId || !workflowId) return []
-
-      // Get all checklist items for this asset/workflow
-      const { data: checklistItems, error: itemsError } = await supabase
-        .from('asset_checklist_items')
-        .select('id, item_id, stage_id')
-        .eq('asset_id', assetId)
-        .eq('workflow_id', workflowId)
-
-      if (itemsError) throw itemsError
-      if (!checklistItems || checklistItems.length === 0) return []
-
-      // Get assignments for these items
-      const itemIds = checklistItems.map(item => item.id)
-      const { data: assignments, error: assignmentsError } = await supabase
-        .from('checklist_task_assignments')
-        .select(`
-          *,
-          user:users!checklist_task_assignments_assigned_user_id_fkey(id, email, first_name, last_name)
-        `)
-        .in('checklist_item_id', itemIds)
-
-      if (assignmentsError) throw assignmentsError
-
-      // Map assignments to item_id + stage_id for easy lookup
-      const assignmentMap: Record<string, any[]> = {}
-      assignments?.forEach(assignment => {
-        const item = checklistItems.find(ci => ci.id === assignment.checklist_item_id)
-        if (item) {
-          const key = `${item.stage_id}-${item.item_id}`
-          if (!assignmentMap[key]) assignmentMap[key] = []
-          assignmentMap[key].push(assignment)
-        }
-      })
-
-      return assignmentMap
-    },
-    enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
-  })
-
-  // Query to load comments for all checklist items
-  const { data: itemComments } = useQuery({
-    queryKey: ['checklist-item-comments', assetId, workflowId],
-    queryFn: async () => {
-      if (!assetId || !workflowId) return {}
-
-      // Get all checklist items for this asset/workflow
-      const { data: checklistItems, error: itemsError } = await supabase
-        .from('asset_checklist_items')
-        .select('id, item_id, stage_id')
-        .eq('asset_id', assetId)
-        .eq('workflow_id', workflowId)
-
-      if (itemsError) throw itemsError
-      if (!checklistItems || checklistItems.length === 0) return {}
-
-      // Get comments for these items
-      const itemIds = checklistItems.map(item => item.id)
-      const { data: comments, error: commentsError } = await supabase
-        .from('checklist_item_comments')
-        .select(`
-          *,
-          user:users!checklist_item_comments_user_id_fkey(id, email, first_name, last_name)
-        `)
-        .in('checklist_item_id', itemIds)
-        .order('created_at', { ascending: true })
-
-      if (commentsError) throw commentsError
-
-      // Map comments to item_id + stage_id for easy lookup
-      const commentsMap: Record<string, any[]> = {}
-      comments?.forEach(comment => {
-        const item = checklistItems.find(ci => ci.id === comment.checklist_item_id)
-        if (item) {
-          const key = `${item.stage_id}-${item.item_id}`
-          if (!commentsMap[key]) commentsMap[key] = []
-          commentsMap[key].push(comment)
-        }
-      })
-
-      return commentsMap
     },
     enabled: !!assetId && !!workflowId,
     gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
@@ -519,21 +489,17 @@ export function InvestmentTimeline({
 
   // Convert workflow stages to timeline stages format with default checklists
   const timelineStages: TimelineStage[] = React.useMemo(() => {
-    console.log('InvestmentTimeline: workflowId:', workflowId, 'workflowStages:', workflowStages, 'workflowChecklistTemplates:', workflowChecklistTemplates)
 
     // If no workflow is selected, use hardcoded stages
     if (!workflowId) {
-      console.log('InvestmentTimeline: No workflowId, using hardcoded TIMELINE_STAGES')
       return TIMELINE_STAGES
     }
 
     // If workflow is selected but stages haven't loaded or are empty (archived/deleted), return empty
     if (!workflowStages || workflowStages.length === 0) {
-      console.log('InvestmentTimeline: WorkflowId exists but no stages loaded - returning empty array')
       return []
     }
 
-    console.log('InvestmentTimeline: Converting workflow stages to timeline stages')
     const stages = workflowStages.map(stage => ({
       id: stage.stage_key,
       label: stage.stage_label,
@@ -551,6 +517,30 @@ export function InvestmentTimeline({
 
     return stages
   }, [workflowId, workflowStages, workflowChecklistTemplates])
+
+  // Query all commentary entries for the completed summary
+  const allThinkingDbIds = showStageDetails === 'completed'
+    ? timelineStages.filter(s => s.id !== 'completed').flatMap(s =>
+        (stageChecklists[s.id] || []).filter(i => i.item_type === 'thinking' && i.dbId).map(i => i.dbId!)
+      )
+    : []
+
+  const { data: allCommentaries = [] } = useQuery({
+    queryKey: ['all-commentaries', assetId, workflowId, allThinkingDbIds.join(',')],
+    queryFn: async () => {
+      if (allThinkingDbIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('checklist_item_comments')
+        .select('checklist_item_id, comment_text, user_id, created_at, user:users!checklist_item_comments_user_id_fkey(id, first_name, last_name, email)')
+        .in('checklist_item_id', allThinkingDbIds)
+        .eq('signal_type', 'commentary')
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+    enabled: showStageDetails === 'completed' && allThinkingDbIds.length > 0,
+    staleTime: 30_000,
+  })
 
   // Check if this specific workflow is started for this asset
   const isWorkflowStarted = workflowProgress?.is_started || false
@@ -739,11 +729,9 @@ export function InvestmentTimeline({
   React.useEffect(() => {
     // Always initialize checklists even if queries are still loading
     if (timelineStages.length === 0) {
-      console.log('⚠️ Checklist initialization skipped: timelineStages is empty')
       return
     }
 
-    console.log('🔄 Initializing checklists for', timelineStages.length, 'stages')
     const initialChecklists: Record<string, ChecklistItem[]> = {}
 
     timelineStages.forEach(stage => {
@@ -770,6 +758,19 @@ export function InvestmentTimeline({
             completedByUser: savedItem.completed_by_user || undefined,
             sortOrder: index,
             dbId: existingItem?.id,
+            item_type: item.item_type || existingItem?.item_type || 'operational',
+            takeaway: existingItem?.takeaway || null,
+            takeaway_updated_at: existingItem?.takeaway_updated_at || null,
+            takeaway_revision_count: existingItem?.takeaway_revision_count || 0,
+            takeaway_update_source: existingItem?.takeaway_update_source || null,
+            assignee_id: existingItem?.assignee_id || null,
+            assignee: existingItem?.assignee ? (Array.isArray(existingItem.assignee) ? existingItem.assignee[0] : existingItem.assignee) : null,
+            due_date: existingItem?.due_date || null,
+            notes: existingItem?.notes || null,
+            source_type: existingItem?.source_type || 'manual',
+            source_work_request_id: existingItem?.source_work_request_id || null,
+            source_thinking_item_id: existingItem?.source_thinking_item_id || null,
+            source_thinking_item_text: existingItem?.source_thinking_item_id ? (existingChecklistItems?.find(i => i.id === existingItem.source_thinking_item_id)?.item_text || null) : null,
             attachments: checklistAttachments?.filter(
               att => att.stage_id === stage.id && att.item_id === item.id
             ) || []
@@ -780,6 +781,12 @@ export function InvestmentTimeline({
           ...item,
           sortOrder: index,
           dbId: existingItem?.id,
+          item_type: existingItem?.item_type || item.item_type || 'operational',
+          takeaway: existingItem?.takeaway || null,
+          assignee_id: existingItem?.assignee_id || null,
+          assignee: existingItem?.assignee ? (Array.isArray(existingItem.assignee) ? existingItem.assignee[0] : existingItem.assignee) : null,
+          due_date: existingItem?.due_date || null,
+          notes: existingItem?.notes || null,
           attachments: checklistAttachments?.filter(
             att => att.stage_id === stage.id && att.item_id === item.id
           ) || []
@@ -807,6 +814,12 @@ export function InvestmentTimeline({
           isCustom: true,
           sortOrder: saved.sort_order || 999,
           dbId: existingItem?.id,
+          item_type: existingItem?.item_type || 'operational',
+          takeaway: existingItem?.takeaway || null,
+          assignee_id: existingItem?.assignee_id || null,
+          assignee: existingItem?.assignee ? (Array.isArray(existingItem.assignee) ? existingItem.assignee[0] : existingItem.assignee) : null,
+          due_date: existingItem?.due_date || null,
+          notes: existingItem?.notes || null,
           attachments: checklistAttachments?.filter(
             att => att.stage_id === stage.id && att.item_id === saved.item_id
           ) || []
@@ -819,10 +832,8 @@ export function InvestmentTimeline({
       )
 
       initialChecklists[stage.id] = allItems
-      console.log(`  ✓ Stage ${stage.id}: ${allItems.length} items`)
     })
 
-    console.log('✅ Setting stageChecklists with', Object.keys(initialChecklists).length, 'stages')
     setStageChecklists(initialChecklists)
   }, [assetId, savedChecklistItems, checklistAttachments, timelineStages, workflowChecklistTemplates, existingChecklistItems])
 
@@ -838,13 +849,6 @@ export function InvestmentTimeline({
     // Auto-select current stage or first stage
     const stageToSelect = effectiveCurrentStage || timelineStages[0]?.id
     if (stageToSelect) {
-      console.log(`🎬 Auto-selecting initial stage: ${stageToSelect}`, {
-        workflowProgress,
-        effectiveCurrentStage,
-        timelineStagesCount: timelineStages.length,
-        showStageDetails,
-        lastClickedStageId
-      })
       // Batch all state updates together using React.startTransition for consistency
       React.startTransition(() => {
         setShowStageDetails(stageToSelect)
@@ -868,7 +872,6 @@ export function InvestmentTimeline({
   // Handle external viewing stage requests (only when explicitly set from outside)
   React.useEffect(() => {
     if (viewingStageId && viewingStageId !== showStageDetails) {
-      console.log(`🔄 External request to view stage: ${viewingStageId}`)
       setShowStageDetails(viewingStageId)
       setLastClickedStageId(viewingStageId) // Set for blue ring styling
       onStageClick(viewingStageId)
@@ -884,7 +887,6 @@ export function InvestmentTimeline({
     if (showStageDetails && showStageDetails !== 'outdated' && showStageDetails !== 'completed') {
       const stageExists = timelineStages.some(stage => stage.id === showStageDetails)
       if (!stageExists && timelineStages.length > 0) {
-        console.log(`⚠️ Current stage ${showStageDetails} doesn't exist in workflow, resetting to first stage`)
         const firstStage = timelineStages[0]?.id
         if (firstStage) {
           setShowStageDetails(firstStage)
@@ -938,7 +940,6 @@ export function InvestmentTimeline({
 
   const handleStageClick = (stage: TimelineStage, index: number) => {
     // Allow viewing all stages regardless of workflow state
-    console.log(`🎯 User clicked stage: ${stage.label} (${stage.id})`)
     onStageClick(stage.id)
     setShowStageDetails(stage.id)
     setLastClickedStageId(stage.id) // Track for persistent focus ring
@@ -1179,614 +1180,47 @@ export function InvestmentTimeline({
     })
   }
 
-  const handleAddComment = (stageId: string, itemId: string) => {
-    setCommentingItem({ stageId, itemId })
-    setCommentText('')
-    setCommentMentions([])
-    setCommentReferences([])
-    // Also show the comments thread
-    setShowingCommentsFor({ stageId, itemId })
-  }
-
-  const handleToggleComments = (stageId: string, itemId: string) => {
-    const key = `${stageId}-${itemId}`
-    const isCurrentlyShowing = showingCommentsFor?.stageId === stageId && showingCommentsFor?.itemId === itemId
-
-    if (isCurrentlyShowing) {
-      setShowingCommentsFor(null)
-    } else {
-      setShowingCommentsFor({ stageId, itemId })
-    }
-  }
-
-  const handleSaveComment = async () => {
-    if (!commentingItem || !assetId || !user || !workflowId) {
-      console.log('Missing required data for saving comment:', { commentingItem, assetId, userId: user?.id, workflowId })
-      return
-    }
-
-    const trimmedComment = commentText.trim()
-    if (!trimmedComment) {
-      console.log('Empty comment text')
-      return
-    }
-
-    try {
-      // Get checklist item ID from database first, or create it if it doesn't exist
-      let { data: checklistItem, error: checklistError } = await supabase
-        .from('asset_checklist_items')
-        .select('id')
-        .eq('asset_id', assetId)
-        .eq('workflow_id', workflowId)
-        .eq('stage_id', commentingItem.stageId)
-        .eq('item_id', commentingItem.itemId)
-        .maybeSingle()
-
-      if (checklistError) {
-        console.error('Error fetching checklist item:', checklistError)
-        return
-      }
-
-      // If checklist item doesn't exist, create it
-      if (!checklistItem) {
-        console.log('Checklist item not found, creating it...')
-
-        // Find the checklist item text from the workflow template
-        const stage = timelineStages?.find(s => s.id === commentingItem.stageId)
-        const item = stage?.checklist.find(i => i.id === commentingItem.itemId)
-
-        if (!item) {
-          console.error('Could not find item in workflow template')
-          return
-        }
-
-        const { data: newItem, error: createError } = await supabase
-          .from('asset_checklist_items')
-          .insert({
-            asset_id: assetId,
-            workflow_id: workflowId,
-            stage_id: commentingItem.stageId,
-            item_id: commentingItem.itemId,
-            item_text: item.text,
-            completed: false,
-            created_by: user.id
-          })
-          .select('id')
-          .single()
-
-        if (createError) {
-          console.error('Error creating checklist item:', createError)
-          return
-        }
-
-        checklistItem = newItem
-        console.log('Created checklist item:', checklistItem)
-      }
-
-      // Save the comment to the new comments table
-      const { error: commentError } = await supabase
-        .from('checklist_item_comments')
-        .insert({
-          checklist_item_id: checklistItem.id,
-          user_id: user.id,
-          comment_text: trimmedComment
-        })
-
-      if (commentError) {
-        console.error('Error saving comment:', commentError)
-        return
-      }
-
-      // Save mentions to database if any
-      if (commentMentions.length > 0) {
-        for (const [index, mentionedUserId] of commentMentions.entries()) {
-          const { error: mentionError } = await supabase
-            .from('checklist_comment_mentions')
-            .insert({
-              checklist_item_id: checklistItem.id,
-              mentioned_user_id: mentionedUserId,
-              mentioned_by: user.id,
-              comment_text: trimmedComment,
-              mention_position: index
-            })
-
-          if (mentionError) {
-            console.error('Error saving mention:', mentionError)
-          }
-        }
-      }
-
-      // Save references to database if any
-      if (commentReferences.length > 0) {
-        for (const reference of commentReferences) {
-          const { error: refError } = await supabase
-            .from('checklist_comment_references')
-            .insert({
-              checklist_item_id: checklistItem.id,
-              reference_type: reference.type,
-              reference_id: reference.id,
-              reference_text: reference.text,
-              created_by: user.id
-            })
-
-          if (refError) {
-            console.error('Error saving reference:', refError)
-          }
-        }
-      }
-
-      // Invalidate queries to refetch comments
-      queryClient.invalidateQueries({ queryKey: ['checklist-item-comments', assetId, workflowId] })
-
-      // Reset state
-      setCommentingItem(null)
-      setCommentText('')
-      setCommentMentions([])
-      setCommentReferences([])
-
-      console.log('Comment saved successfully')
-    } catch (error) {
-      console.error('Unexpected error saving comment:', error)
-    }
-  }
-
-  const handleCancelComment = () => {
-    setCommentingItem(null)
-    setCommentText('')
-    setCommentMentions([])
-    setCommentReferences([])
-    setEditingComment(null)
-  }
-
-  const handleEditComment = (commentId: string, currentText: string) => {
-    setEditingComment({ id: commentId, text: currentText })
-  }
-
-  const handleUpdateComment = async (commentId: string) => {
-    if (!editingComment || !user) return
-
-    const trimmedText = editingComment.text.trim()
-    if (!trimmedText) return
-
-    try {
-      const { error } = await supabase
-        .from('checklist_item_comments')
-        .update({
-          comment_text: trimmedText,
-          is_edited: true,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', commentId)
-        .eq('user_id', user.id) // Only allow updating own comments
-
-      if (error) {
-        console.error('Error updating comment:', error)
-        return
-      }
-
-      // Invalidate queries to refetch comments
-      queryClient.invalidateQueries({ queryKey: ['checklist-item-comments', assetId, workflowId] })
-
-      setEditingComment(null)
-    } catch (error) {
-      console.error('Unexpected error updating comment:', error)
-    }
-  }
-
-  const handleDeleteComment = async (commentId: string) => {
-    if (!user || !confirm('Are you sure you want to delete this comment?')) return
-
-    try {
-      const { error } = await supabase
-        .from('checklist_item_comments')
-        .delete()
-        .eq('id', commentId)
-        .eq('user_id', user.id) // Only allow deleting own comments
-
-      if (error) {
-        console.error('Error deleting comment:', error)
-        return
-      }
-
-      // Invalidate queries to refetch comments
-      queryClient.invalidateQueries({ queryKey: ['checklist-item-comments', assetId, workflowId] })
-    } catch (error) {
-      console.error('Unexpected error deleting comment:', error)
-    }
-  }
-
-  // Helper function to get or create checklist item database ID
-  const getOrCreateChecklistItemId = async (stageId: string, itemId: string): Promise<string | null> => {
-    if (!assetId || !user) return null
-
-    try {
-      // First, try to find existing checklist item
-      const { data: existingItem, error: fetchError } = await supabase
-        .from('asset_checklist_items')
-        .select('id')
-        .eq('asset_id', assetId)
-        .eq('workflow_id', workflowId)
-        .eq('stage_id', stageId)
-        .eq('item_id', itemId)
-        .maybeSingle()
-
-      if (fetchError) {
-        console.error('Error fetching checklist item:', fetchError)
-        return null
-      }
-
-      if (existingItem) {
-        return existingItem.id
-      }
-
-      // If not found, create it
-      const stage = timelineStages?.find(s => s.id === stageId)
-      const item = stage?.checklist.find(i => i.id === itemId)
-
-      if (!item) {
-        console.error('Could not find item in workflow template')
-        return null
-      }
-
-      const { data: newItem, error: createError } = await supabase
-        .from('asset_checklist_items')
-        .insert({
-          asset_id: assetId,
-          workflow_id: workflowId,
-          stage_id: stageId,
-          item_id: itemId,
-          item_text: item.text,
-          completed: false,
-          created_by: user.id
-        })
-        .select('id')
-        .single()
-
-      if (createError) {
-        console.error('Error creating checklist item:', createError)
-        return null
-      }
-
-      return newItem.id
-    } catch (error) {
-      console.error('Unexpected error getting/creating checklist item:', error)
-      return null
-    }
-  }
-
-  const handleOpenAssignment = async (stageId: string, itemId: string) => {
-    console.log('👥 handleOpenAssignment called for stage:', stageId, 'item:', itemId)
-    const dbId = await getOrCreateChecklistItemId(stageId, itemId)
-    console.log('👥 Got dbId:', dbId)
-    if (dbId) {
-      console.log('👥 Setting assigningItem to:', { stageId, itemId, dbId })
-      setAssigningItem({ stageId, itemId, dbId })
-      // Invalidate to refresh dbIds in case item was just created
-      queryClient.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
-    }
-  }
-
-  const handleOpenConversation = async (userId: string) => {
-    if (!user) return
-
-    console.log('💬 Opening conversation with user:', userId)
-
-    try {
-      // Find existing direct message conversation between the two users
-      const { data: existingParticipants, error: fetchError } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id, conversations!inner(is_group)')
-        .eq('user_id', user.id)
-
-      if (fetchError) {
-        console.error('Error fetching conversations:', fetchError)
-        throw fetchError
-      }
-
-      console.log('📝 Found participant records:', existingParticipants?.length)
-
-      // Check each conversation to see if it's a DM with the target user
-      let conversationId: string | null = null
-      if (existingParticipants) {
-        for (const participant of existingParticipants) {
-          // Only check non-group conversations
-          if (!(participant.conversations as any).is_group) {
-            const { data: otherParticipants, error: otherError } = await supabase
-              .from('conversation_participants')
-              .select('user_id')
-              .eq('conversation_id', participant.conversation_id)
-              .neq('user_id', user.id)
-
-            if (otherError) continue
-
-            // If this conversation has exactly one other participant and it's our target user
-            if (otherParticipants && otherParticipants.length === 1 && otherParticipants[0].user_id === userId) {
-              conversationId = participant.conversation_id
-              break
-            }
-          }
-        }
-      }
-
-      if (conversationId) {
-        console.log('✅ Found existing conversation:', conversationId)
-        // Dispatch custom event to open direct messages pane with conversation
-        window.dispatchEvent(new CustomEvent('openDirectMessage', {
-          detail: { conversationId }
-        }))
-      } else {
-        console.log('🆕 Creating new conversation with user:', userId)
-        // Create new conversation
-        const { data: newConversation, error: createError } = await supabase
-          .from('conversations')
-          .insert({
-            is_group: false,
-            created_by: user.id
-          })
-          .select()
-          .single()
-
-        if (createError || !newConversation) {
-          console.error('Error creating conversation:', createError)
-          throw createError
-        }
-
-        console.log('✅ Created conversation:', newConversation.id)
-
-        // Add participants
-        const { error: participantsError } = await supabase
-          .from('conversation_participants')
-          .insert([
-            { conversation_id: newConversation.id, user_id: user.id },
-            { conversation_id: newConversation.id, user_id: userId }
-          ])
-
-        if (participantsError) {
-          console.error('Error adding participants:', participantsError)
-          throw participantsError
-        }
-
-        console.log('📨 Dispatching openDirectMessage event for new conversation')
-        // Dispatch custom event to open direct messages pane with new conversation
-        window.dispatchEvent(new CustomEvent('openDirectMessage', {
-          detail: { conversationId: newConversation.id }
-        }))
-      }
-    } catch (error) {
-      console.error('Error opening conversation:', error)
-    }
-  }
-
   const handleAddCustomItem = async (stageId: string) => {
-    if (!newItemText.trim() || !assetId) return
+    if (!newItemText.trim() || !assetId || !user) return
+    const itemId = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+    const text = newItemText.trim()
+    const itemType = newItemType
 
-    try {
-      const newItemId = `custom_${Date.now()}`
-      const maxSortOrder = Math.max(
-        ...(stageChecklists[stageId]?.map(item => item.sortOrder || 0) || [0])
-      )
+    // Add to local state immediately
+    setStageChecklists(prev => ({
+      ...prev,
+      [stageId]: [...(prev[stageId] || []), {
+        id: itemId, text, completed: false, status: 'unchecked', isCustom: true,
+        sortOrder: (prev[stageId]?.length || 0) + 1, item_type: itemType,
+      }]
+    }))
+    setNewItemText('')
+    setNewItemType('operational')
+    setAddingItemToStage(null)
 
-      // Save to database
-      const { error } = await supabase
-        .from('asset_checklist_items')
-        .insert({
-          asset_id: assetId,
-          workflow_id: workflowId,
-          stage_id: stageId,
-          item_id: newItemId,
-          item_text: newItemText.trim(),
-          is_custom: true,
-          completed: false,
-          sort_order: maxSortOrder + 1,
-          created_by: (await supabase.auth.getUser()).data.user?.id
-        })
-
-      if (error) throw error
-
-      // Update local state
-      setStageChecklists(prev => ({
-        ...prev,
-        [stageId]: [
-          ...(prev[stageId] || []),
-          {
-            id: newItemId,
-            text: newItemText.trim(),
-            completed: false,
-            isCustom: true,
-            sortOrder: maxSortOrder + 1
-          }
-        ].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-      }))
-
-      // Reset form
-      setNewItemText('')
-      setAddingItemToStage(null)
-
-      // Refresh the query
-      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
-    } catch (error) {
-      console.error('Error adding custom item:', error)
-      alert('Failed to add custom checklist item. Please try again.')
-    }
+    // Save to database
+    const { error } = await supabase.from('asset_checklist_items').insert({
+      asset_id: assetId, workflow_id: workflowId, stage_id: stageId,
+      item_id: itemId, item_text: text, completed: false, is_custom: true,
+      sort_order: (stageChecklists[stageId]?.length || 0) + 1,
+      item_type: itemType, created_by: user.id,
+    })
+    if (error) console.error('Error adding custom item:', error)
+    queryClient.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
+    queryClient.invalidateQueries({ queryKey: ['asset-checklist', assetId, workflowId] })
   }
 
   const handleRemoveCustomItem = async (stageId: string, itemId: string) => {
     if (!assetId) return
-
-    try {
-      // Remove from database
-      const { error } = await supabase
-        .from('asset_checklist_items')
-        .delete()
-        .eq('asset_id', assetId)
-        .eq('workflow_id', workflowId)
-        .eq('stage_id', stageId)
-        .eq('item_id', itemId)
-        .eq('is_custom', true)
-
-      if (error) throw error
-
-      // Update local state
-      setStageChecklists(prev => ({
-        ...prev,
-        [stageId]: prev[stageId]?.filter(item => item.id !== itemId) || []
-      }))
-
-      // Refresh the query
-      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
-    } catch (error) {
-      console.error('Error removing custom item:', error)
-      alert('Failed to remove custom checklist item. Please try again.')
-    }
-  }
-
-  const handleToggleAttachments = (stageId: string, itemId: string) => {
-    const key = `${stageId}-${itemId}`
-    const isCurrentlyShowing = showingAttachmentsFor?.stageId === stageId && showingAttachmentsFor?.itemId === itemId
-
-    if (isCurrentlyShowing) {
-      setShowingAttachmentsFor(null)
-    } else {
-      setShowingAttachmentsFor({ stageId, itemId })
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent, stageId: string, itemId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDraggingOver(`${stageId}-${itemId}`)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDraggingOver(null)
-  }
-
-  const handleDrop = async (e: React.DragEvent, stageId: string, itemId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDraggingOver(null)
-
-    const files = e.dataTransfer.files
-    if (files.length > 0) {
-      await handleFileUpload(stageId, itemId, files)
-    }
-  }
-
-  const handleFileUpload = async (stageId: string, itemId: string, files: FileList) => {
-    if (!assetId || !files.length) return
-
-    const uploadKey = `${stageId}-${itemId}`
-    setUploadingFiles(prev => ({ ...prev, [uploadKey]: true }))
-
-    try {
-      for (const file of Array.from(files)) {
-        // Upload file to Supabase Storage
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-        const filePath = `checklist-attachments/${assetId}/${stageId}/${itemId}/${fileName}`
-
-        console.log('Uploading file:', file.name, 'to path:', filePath)
-
-        const { error: uploadError } = await supabase.storage
-          .from('assets')
-          .upload(filePath, file)
-
-        if (uploadError) {
-          console.error('Storage upload error:', uploadError)
-          throw new Error(`Storage error: ${uploadError.message}`)
-        }
-
-        // Save attachment record to database
-        const { data: user } = await supabase.auth.getUser()
-
-        console.log('Saving attachment to database')
-        const { error: dbError } = await supabase
-          .from('asset_checklist_attachments')
-          .insert({
-            asset_id: assetId,
-            workflow_id: workflowId,
-            stage_id: stageId,
-            item_id: itemId,
-            file_name: file.name,
-            file_path: filePath,
-            file_size: file.size,
-            file_type: file.type,
-            uploaded_by: user.user?.id
-          })
-
-        if (dbError) {
-          console.error('Database insert error:', dbError)
-          throw new Error(`Database error: ${dbError.message}`)
-        }
-
-        console.log('File uploaded successfully')
-      }
-
-      // Refresh attachments
-      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist-attachments', assetId, workflowId] })
-    } catch (error: any) {
-      console.error('Error uploading file:', error)
-      alert(`Failed to upload file: ${error.message || 'Unknown error'}. Please check the console for details.`)
-    } finally {
-      setUploadingFiles(prev => ({ ...prev, [uploadKey]: false }))
-    }
-  }
-
-  const handleDeleteAttachment = async (attachmentId: string) => {
-    try {
-      // Get attachment details first
-      const { data: attachment } = await supabase
-        .from('asset_checklist_attachments')
-        .select('file_path')
-        .eq('id', attachmentId)
-        .single()
-
-      if (attachment) {
-        // Delete file from storage
-        await supabase.storage
-          .from('assets')
-          .remove([attachment.file_path])
-      }
-
-      // Delete attachment record
-      const { error } = await supabase
-        .from('asset_checklist_attachments')
-        .delete()
-        .eq('id', attachmentId)
-
-      if (error) throw error
-
-      // Refresh attachments
-      queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist-attachments', assetId, workflowId] })
-    } catch (error) {
-      console.error('Error deleting attachment:', error)
-      alert('Failed to delete attachment. Please try again.')
-    }
-  }
-
-  const handleDownloadAttachment = async (attachment: ChecklistAttachment) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from('assets')
-        .download(attachment.file_path)
-
-      if (error) throw error
-
-      // Create download link
-      const url = URL.createObjectURL(data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = attachment.file_name
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Error downloading file:', error)
-      alert('Failed to download file. Please try again.')
-    }
+    setStageChecklists(prev => ({
+      ...prev,
+      [stageId]: (prev[stageId] || []).filter(item => item.id !== itemId)
+    }))
+    const { error } = await supabase.from('asset_checklist_items').delete()
+      .eq('asset_id', assetId).eq('workflow_id', workflowId)
+      .eq('stage_id', stageId).eq('item_id', itemId)
+    if (error) console.error('Error removing custom item:', error)
+    queryClient.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
   }
 
   const getStageDeadline = (stageId: string) => {
@@ -1813,6 +1247,17 @@ export function InvestmentTimeline({
 
 
   // Show message when no workflow is assigned OR when workflow has no stages (archived/ended)
+  // Show a quiet spinner while workflow stages are loading
+  if (workflowId && !workflowStages) {
+    return (
+      <div className={`space-y-6 ${className}`}>
+        <div className="flex items-center justify-center py-16">
+          <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
   if (!workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null' || (workflowStages && timelineStages.length === 0)) {
     return (
       <div className={`space-y-6 ${className}`}>
@@ -2290,506 +1735,173 @@ export function InvestmentTimeline({
 
           <div className="grid grid-cols-1 gap-6">
 
-            {/* Completed Stage Message */}
-            {showStageDetails === 'completed' && (
-              <div className="text-center py-8">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Check className="w-10 h-10 text-green-600" />
+            {/* Completed — process summary */}
+            {showStageDetails === 'completed' && (() => {
+              const realStages = timelineStages.filter(s => s.id !== 'completed')
+              const allItems = realStages.flatMap(s => stageChecklists[s.id] || [])
+              const totalDone = allItems.filter(i => isItemDone(i)).length
+              const totalSkipped = allItems.filter(i => i.status === 'na').length
+
+              // Group commentaries by checklist_item_id
+              const commentaryByItem = new Map<string, typeof allCommentaries>()
+              for (const c of allCommentaries) {
+                const list = commentaryByItem.get(c.checklist_item_id) || []
+                list.push(c)
+                commentaryByItem.set(c.checklist_item_id, list)
+              }
+
+              // Build findings: items that have commentary
+              const findings = realStages.flatMap(stage =>
+                (stageChecklists[stage.id] || [])
+                  .filter(i => i.item_type === 'thinking' && i.dbId && commentaryByItem.has(i.dbId))
+                  .map(i => ({ item: i, stageLabel: stage.label, entries: commentaryByItem.get(i.dbId!) || [] }))
+              )
+
+              return (
+                <div className="space-y-4">
+                  {/* Stats row */}
+                  <div className="flex items-center gap-4 text-[12px] text-gray-500">
+                    <span>{realStages.length} stages</span>
+                    <span className="text-gray-300">·</span>
+                    <span>{totalDone} completed</span>
+                    {totalSkipped > 0 && <><span className="text-gray-300">·</span><span>{totalSkipped} skipped</span></>}
+                  </div>
+
+                  {/* Key findings — grouped by item, showing each person's commentary */}
+                  {findings.length > 0 && (
+                    <div>
+                      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5">Key Findings</h4>
+                      <div className="space-y-4">
+                        {findings.map(({ item: fi, stageLabel, entries }) => (
+                          <div key={fi.id}>
+                            <p className="text-[11px] font-medium text-gray-500 mb-1">{fi.text} <span className="text-gray-400 font-normal">· {stageLabel}</span></p>
+                            <div className="space-y-1.5 pl-2 border-l-2 border-gray-100">
+                              {entries.map((entry: any) => {
+                                const u = Array.isArray(entry.user) ? entry.user[0] : entry.user
+                                return (
+                                  <div key={entry.checklist_item_id + '-' + entry.user_id}>
+                                    <p className="text-[13px] text-gray-800 leading-relaxed">{entry.comment_text}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">{u ? `${u.first_name || u.email?.split('@')[0] || 'Unknown'}` : 'Unknown'}</p>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {findings.length === 0 && (
+                    <p className="text-[12px] text-gray-400 py-2">No commentary was captured during this process.</p>
+                  )}
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  🎉 Process Completed!
-                </h3>
-                <p className="text-gray-600">
-                  All stages have been successfully completed for {assetSymbol || 'this asset'}.
-                </p>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Stage Checklist for non-outdated and non-completed stages */}
             {showStageDetails && showStageDetails !== 'outdated' && showStageDetails !== 'completed' && stageChecklists[showStageDetails] && (
               <div>
-                <div className="mb-4">
-                  <h5 className="font-medium text-gray-900 flex items-center">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Checklist
-                    <span className="ml-2 text-xs text-gray-500">
-                      ({stageChecklists[showStageDetails].filter(item => isItemDone(item)).length}/{stageChecklists[showStageDetails].length} completed)
-                    </span>
-                  </h5>
-                </div>
-                <div className="space-y-3">
-                  {stageChecklists[showStageDetails].map((item) => {
-                    const isEditable = isStageEditable(showStageDetails)
-                    const isCommenting = commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id
+                {(() => {
+                  const items = stageChecklists[showStageDetails] || []
+                  const isEditable = isStageEditable(showStageDetails)
+                  const doneCount = items.filter(i => isItemDone(i)).length
 
-                    return (
-                      <div key={item.id}>
-                        <div
-                          className={`flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
-                            isEditable
-                              ? 'border-gray-200 hover:bg-gray-50'
-                              : 'border-gray-100 bg-gray-50'
-                          } ${
-                            !isEditable ? 'opacity-75' : ''
-                          }`}
-                        >
-                          <button
-                            onClick={() => handleChecklistToggle(showStageDetails, item.id)}
-                            disabled={!isEditable}
-                            className={`flex-shrink-0 w-5 h-5 rounded border-2 transition-colors flex items-center justify-center ${
-                              (item.status || (item.completed ? 'completed' : 'unchecked')) === 'completed'
-                                ? 'bg-green-500 border-green-500 text-white'
-                                : (item.status || (item.completed ? 'completed' : 'unchecked')) === 'na'
-                                ? 'bg-gray-400 border-gray-400 text-white'
-                                : isEditable
-                                ? 'border-gray-300 hover:border-gray-400'
-                                : 'border-gray-200'
-                            } ${
-                              !isEditable ? 'cursor-not-allowed' : 'cursor-pointer'
-                            }`}
-                          >
-                            {(item.status || (item.completed ? 'completed' : 'unchecked')) === 'completed' && (
-                              <Check className="w-3 h-3" />
-                            )}
-                            {(item.status || (item.completed ? 'completed' : 'unchecked')) === 'na' && (
-                              <X className="w-3 h-3" />
-                            )}
-                          </button>
-
-                          <div className="flex-1 flex items-center">
-                            <div className="flex items-center justify-between flex-1">
-                              <span className={`text-sm ${
-                                item.completed
-                                  ? 'text-gray-600 font-medium'
-                                  : 'text-gray-700'
-                              }`}>
-                                {item.text}
-                              </span>
-
-                              <div className="flex items-center space-x-2 ml-4">
-
-                                <div className="text-xs text-gray-400 text-right min-w-[140px] h-[32px] flex flex-col justify-center">
-                                  {item.completedAt && (
-                                    <>
-                                      <div className="leading-tight">
-                                        {new Date(item.completedAt).toLocaleString(undefined, {
-                                          month: 'short',
-                                          day: 'numeric',
-                                          year: 'numeric',
-                                          hour: 'numeric',
-                                          minute: '2-digit'
-                                        })}
-                                      </div>
-                                      {item.completedByUser && (
-                                        <div className="leading-tight">
-                                          by {item.completedByUser.first_name && item.completedByUser.last_name
-                                            ? `${item.completedByUser.first_name} ${item.completedByUser.last_name}`
-                                            : item.completedByUser.email.split('@')[0]
-                                          }
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-
-                                {(() => {
-                                  const comments = itemComments?.[`${showStageDetails}-${item.id}`] || []
-                                  const hasComments = comments.length > 0
-                                  return (
-                                    <button
-                                      onClick={() => handleToggleComments(showStageDetails, item.id)}
-                                      className={`relative p-1 rounded hover:bg-gray-100 transition-colors ${
-                                        hasComments ? 'text-blue-600' : 'text-gray-400'
-                                      }`}
-                                      title={hasComments ? `${comments.length} comment${comments.length > 1 ? 's' : ''}` : 'Add comment'}
-                                    >
-                                      <MessageSquare className="w-4 h-4" />
-                                      {hasComments && (
-                                        <span className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 text-[10px] font-semibold text-white bg-blue-600 rounded-full">
-                                          {comments.length}
-                                        </span>
-                                      )}
-                                    </button>
-                                  )
-                                })()}
-
-                                {(() => {
-                                  const hasAttachments = item.attachments && item.attachments.length > 0
-                                  const isShowingAttachments = showingAttachmentsFor?.stageId === showStageDetails && showingAttachmentsFor?.itemId === item.id
-
-                                  return (
-                                    <button
-                                      onClick={() => handleToggleAttachments(showStageDetails, item.id)}
-                                      className={`relative p-1 rounded transition-colors ${
-                                        isShowingAttachments
-                                          ? 'bg-blue-50 text-blue-600'
-                                          : hasAttachments
-                                          ? 'text-blue-600 hover:bg-blue-50'
-                                          : 'text-gray-400 hover:bg-gray-100 hover:text-blue-600'
-                                      }`}
-                                      title={hasAttachments ? `${item.attachments.length} attachment${item.attachments.length > 1 ? 's' : ''}` : 'View attachments'}
-                                    >
-                                      <Paperclip className="w-4 h-4" />
-                                      {hasAttachments && (
-                                        <span className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 text-[10px] font-semibold text-white bg-blue-600 rounded-full">
-                                          {item.attachments.length}
-                                        </span>
-                                      )}
-                                    </button>
-                                  )
-                                })()}
-
-                                {isEditable && (
-                                  <button
-                                    onClick={() => handleOpenAssignment(showStageDetails, item.id)}
-                                    className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-blue-600"
-                                    title="Assign task"
-                                  >
-                                    <Users className="w-4 h-4" />
-                                  </button>
-                                )}
-
-                                {/* Show assigned users for this task */}
-                                {(() => {
-                                  const key = `${showStageDetails}-${item.id}`
-                                  const itemAssignments = taskAssignments?.[key] || []
-
-                                  if (itemAssignments.length > 0) {
-                                    return (
-                                      <div className="flex items-center gap-1 ml-1">
-                                        {itemAssignments.map((assignment: any) => {
-                                          const userName = assignment.user?.first_name && assignment.user?.last_name
-                                            ? `${assignment.user.first_name} ${assignment.user.last_name}`
-                                            : assignment.user?.email || 'Unknown'
-                                          const initials = userName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
-
-                                          return (
-                                            <div
-                                              key={assignment.id}
-                                              className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 cursor-pointer hover:bg-blue-700 transition-colors"
-                                              title={`Assigned to ${userName}. Click to message.`}
-                                              onClick={async () => {
-                                                // Open direct message with this user
-                                                await handleOpenConversation(assignment.assigned_user_id || assignment.user?.id)
-                                              }}
-                                            >
-                                              <span className="text-white text-[10px] font-semibold">
-                                                {initials}
-                                              </span>
-                                            </div>
-                                          )
-                                        })}
-                                      </div>
-                                    )
-                                  }
-                                  return null
-                                })()}
-
-                                {uploadingFiles[`${showStageDetails}-${item.id}`] && (
-                                  <div className="flex items-center">
-                                    <div className="animate-spin w-4 h-4 border border-blue-600 border-t-transparent rounded-full"></div>
-                                  </div>
-                                )}
-
-                                {item.isCustom && isEditable && (
-                                  <button
-                                    onClick={() => handleRemoveCustomItem(showStageDetails, item.id)}
-                                    className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
-                                    title="Remove custom item"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
-
-                                {!isEditable && (
-                                  <AlertTriangle className="w-4 h-4 text-orange-400" title="Checklist is locked" />
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Comments thread */}
-                            {showingCommentsFor?.stageId === showStageDetails && showingCommentsFor?.itemId === item.id && (
-                              <div className="mt-2 bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-200">
-                                {/* Existing comments */}
-                                {itemComments?.[`${showStageDetails}-${item.id}`]?.map((comment: any) => {
-                                  const userName = comment.user?.first_name && comment.user?.last_name
-                                    ? `${comment.user.first_name} ${comment.user.last_name}`
-                                    : comment.user?.email || 'Unknown'
-                                  const isOwnComment = user?.id === comment.user_id
-                                  const isEditing = editingComment?.id === comment.id
-
-                                  return (
-                                    <div key={comment.id} className="p-2">
-                                      <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center space-x-2">
-                                          <span className="text-xs font-medium text-gray-900">{userName}</span>
-                                          {comment.is_edited && (
-                                            <span className="text-xs text-gray-400 italic">(edited)</span>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                          <span className="text-xs text-gray-500">
-                                            {new Date(comment.created_at).toLocaleString(undefined, {
-                                              month: 'short',
-                                              day: 'numeric',
-                                              hour: 'numeric',
-                                              minute: '2-digit'
-                                            })}
-                                          </span>
-                                          {isOwnComment && !isEditing && (
-                                            <div className="flex items-center space-x-1">
-                                              <button
-                                                onClick={() => handleEditComment(comment.id, comment.comment_text)}
-                                                className="text-gray-400 hover:text-blue-600 transition-colors"
-                                                title="Edit"
-                                              >
-                                                <Edit3 className="w-3 h-3" />
-                                              </button>
-                                              <button
-                                                onClick={() => handleDeleteComment(comment.id)}
-                                                className="text-gray-400 hover:text-red-600 transition-colors"
-                                                title="Delete"
-                                              >
-                                                <Trash2 className="w-3 h-3" />
-                                              </button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                      {isEditing ? (
-                                        <div className="flex items-start space-x-2">
-                                          <textarea
-                                            value={editingComment.text}
-                                            onChange={(e) => setEditingComment({ id: comment.id, text: e.target.value })}
-                                            onKeyDown={(e) => {
-                                              if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault()
-                                                handleUpdateComment(comment.id)
-                                              } else if (e.key === 'Escape') {
-                                                setEditingComment(null)
-                                              }
-                                            }}
-                                            className="flex-1 text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                            rows={2}
-                                            autoFocus
-                                          />
-                                          <div className="flex flex-col space-y-1">
-                                            <Button size="sm" onClick={() => handleUpdateComment(comment.id)}>
-                                              <Check className="w-3 h-3" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" onClick={() => setEditingComment(null)}>
-                                              <X className="w-3 h-3" />
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{comment.comment_text}</p>
-                                      )}
-                                    </div>
-                                  )
-                                })}
-
-                                {/* Add comment input */}
-                                <div className="p-2">
-                                  <MentionInput
-                                    value={commentingItem?.stageId === showStageDetails && commentingItem?.itemId === item.id ? commentText : ''}
-                                    onChange={(value, mentions, references) => {
-                                      if (!commentingItem || commentingItem.stageId !== showStageDetails || commentingItem.itemId !== item.id) {
-                                        handleAddComment(showStageDetails, item.id)
-                                      }
-                                      setCommentText(value)
-                                      setCommentMentions(mentions)
-                                      setCommentReferences(references)
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault()
-                                        if (commentText.trim()) {
-                                          handleSaveComment()
-                                        }
-                                      } else if (e.key === 'Escape') {
-                                        handleCancelComment()
-                                      }
-                                    }}
-                                    onBlur={() => {
-                                      // Only cancel if the text is empty
-                                      if (!commentText.trim()) {
-                                        handleCancelComment()
-                                      }
-                                    }}
-                                    placeholder="Add a comment (press Enter to send)..."
-                                    className="text-xs"
-                                    rows={2}
-                                    hideHelper={true}
-                                  />
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Attachments list */}
-                            {showingAttachmentsFor?.stageId === showStageDetails && showingAttachmentsFor?.itemId === item.id && (
-                              <div
-                                className={`mt-2 bg-gray-50 rounded-lg border-2 transition-colors ${
-                                  isDraggingOver === `${showStageDetails}-${item.id}`
-                                    ? 'border-blue-500 bg-blue-50'
-                                    : 'border-gray-200'
-                                }`}
-                                onDragOver={(e) => handleDragOver(e, showStageDetails, item.id)}
-                                onDragLeave={handleDragLeave}
-                                onDrop={(e) => handleDrop(e, showStageDetails, item.id)}
-                              >
-                                {/* Existing attachments */}
-                                {item.attachments && item.attachments.length > 0 ? (
-                                  <div className="divide-y divide-gray-200">
-                                    {item.attachments.map((attachment) => (
-                                      <div key={attachment.id} className="flex items-center justify-between p-2 hover:bg-gray-100 transition-colors">
-                                        <div className="flex items-center space-x-2 flex-1 min-w-0">
-                                          <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                          <span className="text-xs text-gray-700 truncate">{attachment.file_name}</span>
-                                          {attachment.file_size && (
-                                            <span className="text-xs text-gray-400">
-                                              ({(attachment.file_size / 1024).toFixed(1)} KB)
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center space-x-1 flex-shrink-0">
-                                          <button
-                                            onClick={() => handleDownloadAttachment(attachment)}
-                                            className="p-1 rounded hover:bg-blue-100 text-blue-600 transition-colors"
-                                            title="Download"
-                                          >
-                                            <Download className="w-3.5 h-3.5" />
-                                          </button>
-                                          {isEditable && (
-                                            <button
-                                              onClick={() => handleDeleteAttachment(attachment.id)}
-                                              className="p-1 rounded hover:bg-red-100 text-red-600 transition-colors"
-                                              title="Delete"
-                                            >
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="p-4 text-center text-gray-400 text-xs">
-                                    No attachments yet
-                                  </div>
-                                )}
-
-                                {/* Upload area */}
-                                {isEditable && (
-                                  <div className="p-3 border-t border-gray-200">
-                                    <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors cursor-pointer">
-                                      <input
-                                        type="file"
-                                        multiple
-                                        className="hidden"
-                                        onChange={(e) => {
-                                          if (e.target.files) {
-                                            handleFileUpload(showStageDetails, item.id, e.target.files)
-                                            e.target.value = '' // Reset input
-                                          }
-                                        }}
-                                      />
-                                      <Upload className="w-6 h-6 text-gray-400 mb-2" />
-                                      <span className="text-xs text-gray-600">
-                                        Click to browse or drag and drop files here
-                                      </span>
-                                    </label>
-                                  </div>
-                                )}
-
-                                {uploadingFiles[`${showStageDetails}-${item.id}`] && (
-                                  <div className="p-3 border-t border-gray-200 flex items-center justify-center space-x-2">
-                                    <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                                    <span className="text-xs text-gray-600">Uploading...</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                          </div>
-                        </div>
-
-
-                        {/* Assignment selector - always show if item exists in DB */}
-                        {(() => {
-                          const shouldAutoOpen = assigningItem?.stageId === showStageDetails && assigningItem?.itemId === item.id
-                          console.log(`🔍 Item ${item.id}: dbId=${item.dbId}, shouldAutoOpen=${shouldAutoOpen}, assigningItem=`, assigningItem)
-
-                          if (item.dbId) {
-                            return (
-                              <AssignmentSelector
-                                key={`${item.dbId}-${shouldAutoOpen ? 'auto' : 'normal'}`}
-                                checklistItemId={item.dbId}
-                                type="task"
-                                autoOpenModal={shouldAutoOpen}
-                                hideAssignedSection={true}
-                                onAssignmentChange={() => {
-                                  queryClient.invalidateQueries({ queryKey: ['task-assignments-all'] })
-                                }}
-                                onModalClose={() => setAssigningItem(null)}
-                              />
-                            )
+                  return (
+                    <>
+                      <div className="mb-2 px-1 text-[10px] text-gray-400">{doneCount}/{items.length} complete</div>
+                      <div className="space-y-1.5">
+                        {items.map(item => {
+                          const props = {
+                            item, stageId: showStageDetails, assetId, workflowId, isEditable,
+                            isExpanded: expandedItemId === item.id,
+                            onToggleExpand: () => setExpandedItemId(expandedItemId === item.id ? null : item.id),
+                            onToggleStatus: () => handleChecklistToggle(showStageDetails, item.id),
+                            onRemoveCustom: item.isCustom ? () => handleRemoveCustomItem(showStageDetails, item.id) : undefined,
+                            currentUser: user,
                           }
-                          return null
-                        })()}
+                          return (item.item_type || 'operational') === 'thinking'
+                            ? <DecisionItemCard key={item.id} {...props} />
+                            : <OperationalItemCard key={item.id} {...props} />
+                        })}
                       </div>
-                    )
-                  })}
+                    </>
+                  )
+                })()}
 
-                  {/* Add Custom Item Section */}
+                  {/* Add Item */}
                   {showStageDetails && showStageDetails !== 'outdated' && !workflowProgress?.is_completed && (
-                    <div className="mt-3">
+                    <div className="mt-2">
                       {addingItemToStage === showStageDetails ? (
-                        <div className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
-                          <Plus className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                          <input
-                            type="text"
-                            value={newItemText}
-                            onChange={(e) => setNewItemText(e.target.value)}
-                            placeholder="Add custom item..."
-                            className="flex-1 px-2 py-1 text-sm border-0 bg-transparent focus:outline-none focus:ring-0 placeholder-blue-400"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && newItemText.trim()) {
-                                handleAddCustomItem(showStageDetails)
-                              } else if (e.key === 'Escape') {
-                                setAddingItemToStage(null)
-                                setNewItemText('')
-                              }
-                            }}
-                            onBlur={() => {
-                              if (!newItemText.trim()) {
-                                setAddingItemToStage(null)
-                                setNewItemText('')
-                              }
-                            }}
-                          />
-                          {newItemText.trim() && (
+                        <div className="p-2.5 rounded-md border border-gray-200 bg-gray-50/50">
+                          {/* Type selector */}
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Type</span>
+                            <button
+                              onClick={() => setNewItemType('operational')}
+                              className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded border transition-colors ${
+                                newItemType === 'operational'
+                                  ? 'bg-gray-900 text-white border-gray-900'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                              }`}
+                            >
+                              <Settings2 className="w-3 h-3" />Task
+                            </button>
+                            <button
+                              onClick={() => setNewItemType('thinking')}
+                              className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded border transition-colors ${
+                                newItemType === 'thinking'
+                                  ? 'bg-gray-900 text-white border-gray-900'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                              }`}
+                            >
+                              <BrainCircuit className="w-3 h-3" />Analysis
+                            </button>
+                          </div>
+                          {/* Title input */}
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newItemText}
+                              onChange={(e) => setNewItemText(e.target.value)}
+                              placeholder={newItemType === 'thinking' ? "What question needs answering?" : "What task needs to be done?"}
+                              className="flex-1 px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newItemText.trim()) handleAddCustomItem(showStageDetails)
+                                if (e.key === 'Escape') { setAddingItemToStage(null); setNewItemText('') }
+                              }}
+                            />
                             <button
                               onClick={() => handleAddCustomItem(showStageDetails)}
-                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                              disabled={!newItemText.trim()}
+                              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                                newItemText.trim()
+                                  ? 'bg-gray-900 text-white hover:bg-gray-800'
+                                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              }`}
                             >
                               Add
                             </button>
-                          )}
+                            <button
+                              onClick={() => { setAddingItemToStage(null); setNewItemText('') }}
+                              className="text-gray-400 hover:text-gray-600 p-1"
+                            >
+                              <Plus className="w-3.5 h-3.5 rotate-45" />
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <button
                           onClick={() => setAddingItemToStage(showStageDetails)}
-                          className="flex items-center space-x-2 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors w-full"
+                          className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-2 py-1.5 rounded transition-colors w-full"
                         >
                           <Plus className="w-3 h-3" />
-                          <span>Add custom item...</span>
+                          <span>Add item</span>
                         </button>
                       )}
                     </div>
                   )}
-                </div>
               </div>
             )}
 

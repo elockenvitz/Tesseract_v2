@@ -20,11 +20,12 @@ interface PickedUser {
 export interface AddAdminModalProps {
   workflowId: string
   workflowName: string
+  scopeType?: 'asset' | 'portfolio' | 'general'
   onClose: () => void
   onAdd: (userIds: string[]) => void
 }
 
-export function AddAdminModal({ workflowId, workflowName, onClose, onAdd }: AddAdminModalProps) {
+export function AddAdminModal({ workflowId, workflowName, scopeType, onClose, onAdd }: AddAdminModalProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedUsers, setSelectedUsers] = useState<PickedUser[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -59,6 +60,46 @@ export function AddAdminModal({ workflowId, workflowName, onClose, onAdd }: AddA
         name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email
       }))
     }
+  })
+
+  // For portfolio-scoped workflows, check membership of selected users
+  const { data: membershipWarnings = [] } = useQuery({
+    queryKey: ['admin-membership-check', workflowId, selectedUsers.map(u => u.id).join(',')],
+    queryFn: async () => {
+      if (selectedUsers.length === 0) return []
+      const { data: selections } = await supabase
+        .from('workflow_portfolio_selections')
+        .select('portfolio_id, portfolio:portfolios!workflow_portfolio_selections_portfolio_id_fkey(id, name)')
+        .eq('workflow_id', workflowId)
+      if (!selections || selections.length === 0) return []
+
+      const portfolios = selections.map((s: any) => ({
+        id: s.portfolio_id,
+        name: Array.isArray(s.portfolio) ? s.portfolio[0]?.name : s.portfolio?.name || 'Unknown',
+      }))
+
+      const userIds = selectedUsers.map(u => u.id)
+      const { data: memberships } = await supabase
+        .from('portfolio_team')
+        .select('user_id, portfolio_id')
+        .in('user_id', userIds)
+        .in('portfolio_id', portfolios.map(p => p.id))
+
+      const membershipSet = new Set((memberships || []).map((m: any) => `${m.user_id}:${m.portfolio_id}`))
+
+      const warnings: { userId: string; userName: string; missingPortfolios: string[] }[] = []
+      for (const user of selectedUsers) {
+        const missing = portfolios
+          .filter(p => !membershipSet.has(`${user.id}:${p.id}`))
+          .map(p => p.name)
+        if (missing.length > 0) {
+          warnings.push({ userId: user.id, userName: user.name, missingPortfolios: missing })
+        }
+      }
+      return warnings
+    },
+    enabled: scopeType === 'portfolio' && selectedUsers.length > 0,
+    staleTime: 10_000,
   })
 
   const selectedIds = new Set(selectedUsers.map(u => u.id))
@@ -172,6 +213,23 @@ export function AddAdminModal({ workflowId, workflowName, onClose, onAdd }: AddA
               )}
             </div>
           </div>
+
+          {membershipWarnings.length > 0 && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider mb-1.5">Portfolio access</p>
+              <div className="space-y-1">
+                {membershipWarnings.map(w => (
+                  <p key={w.userId} className="text-[12px] text-amber-800">
+                    <span className="font-medium">{w.userName}</span> is not a member of{' '}
+                    {w.missingPortfolios.join(', ')}
+                  </p>
+                ))}
+              </div>
+              <p className="text-[11px] text-amber-600 mt-1.5">
+                They can still work on the process from the Workflows page but won't have access to the portfolio page.
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end space-x-3 mt-6">
             <Button type="button" variant="outline" onClick={onClose}>

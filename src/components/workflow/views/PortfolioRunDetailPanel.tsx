@@ -7,7 +7,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Filter, Inbox, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { CheckCircle, Inbox, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
@@ -24,17 +24,21 @@ interface WorkflowStage {
 export interface PortfolioRunDetailPanelProps {
   branchId: string
   workflowStages: WorkflowStage[]
+  onNavigateToPortfolio?: (portfolioId: string, portfolioName: string, portfolioMnemonic?: string) => void
+  isRunEnded?: boolean
 }
 
-type FilterMode = 'all' | 'ready'
+type FilterMode = 'in_progress' | 'completed'
 type SortKey = 'name' | 'stage' | 'status'
 type SortDir = 'asc' | 'desc' | null
 
 export function PortfolioRunDetailPanel({
   branchId,
   workflowStages,
+  onNavigateToPortfolio,
+  isRunEnded = false,
 }: PortfolioRunDetailPanelProps) {
-  const [filterMode, setFilterMode] = useState<FilterMode>('all')
+  const [filterMode, setFilterMode] = useState<FilterMode>('in_progress')
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
   const queryClient = useQueryClient()
@@ -47,7 +51,7 @@ export function PortfolioRunDetailPanel({
         .select(`
           id, portfolio_id, workflow_id, current_stage_key,
           is_completed, completed_at, is_started, started_at,
-          portfolio:portfolio_id ( id, name )
+          portfolio:portfolios!portfolio_workflow_progress_portfolio_id_fkey( id, name, portfolio_id )
         `)
         .eq('workflow_id', branchId)
       if (error) throw error
@@ -73,20 +77,12 @@ export function PortfolioRunDetailPanel({
   const completed = progressRecords.filter(r => r.is_completed).length
   const remaining = total - completed
 
-  const readyCount = useMemo(
-    () => finalStageKey
-      ? progressRecords.filter(r => !r.is_completed && r.current_stage_key === finalStageKey).length
-      : 0,
-    [progressRecords, finalStageKey]
-  )
-
   const filtered = useMemo(() => {
-    const rem = progressRecords.filter(r => !r.is_completed)
-    if (filterMode === 'ready' && finalStageKey) {
-      return rem.filter(r => r.current_stage_key === finalStageKey)
+    if (filterMode === 'completed') {
+      return progressRecords.filter(r => r.is_completed)
     }
-    return rem
-  }, [progressRecords, filterMode, finalStageKey])
+    return progressRecords.filter(r => !r.is_completed)
+  }, [progressRecords, filterMode])
 
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered
@@ -155,10 +151,10 @@ export function PortfolioRunDetailPanel({
             </>
           ) : (
             <>
-              <div className="text-4xl font-bold text-gray-900">{remaining}</div>
-              <div className="text-sm text-gray-500 mt-1">Portfolios Remaining</div>
+              <div className="text-4xl font-bold text-gray-900">{isRunEnded ? completed : remaining}</div>
+              <div className="text-sm text-gray-500 mt-1">{isRunEnded ? 'Portfolios Completed' : 'Portfolios Remaining'}</div>
               <div className="text-xs text-gray-400 mt-1">
-                {completed} completed &middot; {total} total
+                {isRunEnded ? `${remaining} not completed` : `${completed} completed`} &middot; {total} total
               </div>
               <div className="mt-3 max-w-xs mx-auto">
                 <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -176,8 +172,8 @@ export function PortfolioRunDetailPanel({
       {/* Filter tabs */}
       <div className="flex items-center space-x-2">
         {([
-          { mode: 'all' as FilterMode, label: 'All', count: remaining },
-          { mode: 'ready' as FilterMode, label: 'Ready', count: readyCount },
+          { mode: 'in_progress' as FilterMode, label: isRunEnded ? 'Not Completed' : 'In Progress', count: remaining },
+          { mode: 'completed' as FilterMode, label: 'Completed', count: completed },
         ]).map(tab => (
           <button
             key={tab.mode}
@@ -209,7 +205,7 @@ export function PortfolioRunDetailPanel({
             <div className="p-8 text-center text-gray-500">
               <Filter className="w-8 h-8 mx-auto mb-2 text-gray-300" />
               <p className="text-sm font-medium text-gray-600">
-                {filterMode === 'all' ? 'All portfolios complete' : '0 portfolios ready for completion'}
+                {filterMode === 'in_progress' ? 'All portfolios completed' : 'No completed portfolios yet'}
               </p>
             </div>
           ) : (
@@ -234,7 +230,18 @@ export function PortfolioRunDetailPanel({
                   const stage = stageMap.get(record.current_stage_key)
                   return (
                     <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-2.5 px-4 font-medium text-gray-900">{portfolio?.name || '—'}</td>
+                      <td className="py-2.5 px-4 font-medium text-gray-900">
+                        {onNavigateToPortfolio && portfolio?.id ? (
+                          <button
+                            onClick={() => onNavigateToPortfolio(portfolio.id, portfolio.name || 'Portfolio', portfolio.portfolio_id)}
+                            className="hover:text-blue-600 transition-colors text-left"
+                          >
+                            {portfolio.name || '—'}
+                          </button>
+                        ) : (
+                          portfolio?.name || '—'
+                        )}
+                      </td>
                       <td className="py-2.5 px-4">
                         {stage ? (
                           <Badge variant="outline" className="text-xs py-0" style={{ borderColor: stage.stage_color, color: stage.stage_color }}>
@@ -246,10 +253,11 @@ export function PortfolioRunDetailPanel({
                       </td>
                       <td className="py-2.5 px-4">
                         <span className={`text-xs ${record.is_started ? 'text-blue-600' : 'text-gray-400'}`}>
-                          {record.is_started ? 'In Progress' : 'Pending'}
+                          {isRunEnded ? 'Not Completed' : (record.is_started ? 'In Progress' : 'Pending')}
                         </span>
                       </td>
                       <td className="py-2.5 px-4 text-right">
+                        {!isRunEnded && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -260,6 +268,7 @@ export function PortfolioRunDetailPanel({
                           <CheckCircle className="w-3 h-3 mr-1" />
                           Complete
                         </Button>
+                        )}
                       </td>
                     </tr>
                   )

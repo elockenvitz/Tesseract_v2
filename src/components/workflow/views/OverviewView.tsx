@@ -134,6 +134,12 @@ export function OverviewView({
   onViewScope,
 }: OverviewViewProps) {
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const isPortfolioScope = workflow.scope_type === 'portfolio'
+  const itemLabel = isPortfolioScope ? 'portfolios' : 'assets'
+  const itemLabelSingular = isPortfolioScope ? 'portfolio' : 'asset'
+  const isGeneralScope = workflow.scope_type === 'general'
+  const ItemsInScope = isGeneralScope ? 'Stages in Process' : isPortfolioScope ? 'Portfolios in Scope' : 'Assets in Scope'
+  const ItemsAssigned = isGeneralScope ? 'Stages defined' : isPortfolioScope ? 'Portfolios assigned' : 'Assets assigned'
 
   const createdDate = new Date(workflow.created_at).toLocaleDateString()
   const updatedDate = new Date(workflow.updated_at).toLocaleDateString()
@@ -157,6 +163,41 @@ export function OverviewView({
     ? new Date(lastCompletedRun.archived_at || lastCompletedRun.created_at).toLocaleDateString()
     : null
 
+  // ─── End condition helper ──────────────────────────────────
+  function getEndConditionText(rules: any[], runCreatedAt?: string | null): string | null {
+    const active = rules.filter(r => r.is_active)
+    if (active.length === 0) return null
+    const rule = active[0]
+    const cv = rule.condition_value || {}
+    switch (rule.condition_type) {
+      case 'all_assets_completed': return 'Ends when all items are completed'
+      case 'time_after_creation': {
+        if (runCreatedAt && cv.amount && cv.unit) {
+          const created = new Date(runCreatedAt)
+          const ms = cv.unit === 'hours' ? cv.amount * 3600000 : cv.amount * 86400000
+          const endDate = new Date(created.getTime() + ms)
+          if (cv.atSpecificTime && cv.triggerTime) {
+            const [h, m] = cv.triggerTime.split(':').map(Number)
+            endDate.setHours(h, m, 0, 0)
+          }
+          const now = new Date()
+          if (endDate <= now) return `Should have ended ${endDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at ${cv.triggerTime || ''} (overdue)`
+          return `Ends ${endDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${cv.triggerTime ? ` at ${cv.triggerTime}` : ''}`
+        }
+        return `Ends ${cv.amount || ''} ${cv.unit || 'days'} after start${cv.triggerTime ? ` at ${cv.triggerTime}` : ''}`
+      }
+      case 'time_interval': {
+        if (cv.pattern_type === 'daily') return `Ends daily at ${cv.trigger_time || 'scheduled time'}`
+        if (cv.pattern_type === 'weekly') return `Ends weekly on ${cv.day_of_week || 'scheduled day'}`
+        if (cv.pattern_type === 'monthly') return `Ends monthly on day ${cv.day_of_month || 'scheduled day'}`
+        return `Ends on schedule`
+      }
+      case 'specific_date': return `Ends ${cv.date ? new Date(cv.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'on specific date'}`
+      case 'manual': return 'Ends manually'
+      default: return rule.rule_name || 'Has completion rule'
+    }
+  }
+
   // ─── Schedule info ─────────────────────────────────────────
   const hasScheduleRules = automationRules && automationRules.length > 0
   const creationRules = (automationRules || []).filter(
@@ -179,10 +220,10 @@ export function OverviewView({
   const attentionItems: { label: string; detail: string }[] = []
   if (activeRun) {
     if (activeRun.total_assets === 0) {
-      attentionItems.push({ label: 'No assets assigned', detail: 'Add assets to the run or configure asset inclusion rules.' })
+      attentionItems.push({ label: `No ${itemLabel} assigned`, detail: `Add ${itemLabel} to the run or configure inclusion rules.` })
     }
     if (activeRun.total_assets > 0 && activeRun.active_assets === activeRun.total_assets) {
-      attentionItems.push({ label: 'No progress yet', detail: 'None of the assigned assets have been completed.' })
+      attentionItems.push({ label: 'No progress yet', detail: `None of the assigned ${itemLabel} have been completed.` })
     }
   }
   const multipleActive = realBranches.filter((b) => b.is_active).length
@@ -248,13 +289,21 @@ export function OverviewView({
             </div>
 
             {/* Progress + counts */}
-            {activeRun.total_assets > 0 ? (
+            {workflow.scope_type === 'general' ? (
+              stages && stages.length > 0 ? (
+                <div className="text-sm text-gray-600">
+                  <span className="font-semibold text-gray-900">{stages.length}</span> stages · In progress
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">No stages defined</p>
+              )
+            ) : activeRun.total_assets > 0 ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center space-x-4">
                     <span className="text-gray-600">
                       <span className="font-semibold text-gray-900">{activeRun.completed_assets}</span>
-                      <span className="text-gray-400"> / {activeRun.total_assets} assets</span>
+                      <span className="text-gray-400"> / {activeRun.total_assets} {itemLabel}</span>
                     </span>
                     <span className={`text-xs font-medium ${activeRun.active_assets > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                       {activeRun.active_assets > 0 ? `${activeRun.active_assets} remaining` : 'All complete'}
@@ -274,7 +323,14 @@ export function OverviewView({
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-400">0 assets assigned to this run.</p>
+              <p className="text-sm text-gray-400">0 {itemLabel} assigned to this run.</p>
+            )}
+
+            {/* End condition */}
+            {getEndConditionText(endingRules) && (
+              <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                {getEndConditionText(endingRules, activeRun?.created_at)}
+              </p>
             )}
           </div>
         </Card>
@@ -330,7 +386,7 @@ export function OverviewView({
       {/* ═══ Quick Stats strip ═══════════════════════════════════ */}
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">Assets in Scope</p>
+          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">{ItemsInScope}</p>
           {scopeCount !== undefined ? (
             onViewScope ? (
               <button onClick={onViewScope} className="text-lg font-bold text-blue-600 hover:text-blue-700 transition-colors">

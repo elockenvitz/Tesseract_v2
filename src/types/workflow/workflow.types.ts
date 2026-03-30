@@ -14,8 +14,11 @@ export interface WorkflowStage {
   stage_color: string
   stage_icon: string
   sort_order: number
-  standard_deadline_days: number
+  standard_deadline_days: number | null
   suggested_priorities: string[]
+  default_assignee_type?: 'person' | 'role' | null
+  default_assignee_value?: string | null
+  completion_criteria?: string | null
   created_at: string
   updated_at: string
 }

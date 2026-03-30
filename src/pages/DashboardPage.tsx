@@ -677,7 +677,7 @@ export function DashboardPage() {
       case 'idea-generator':
         return <IdeaGeneratorPage onItemSelect={handleSearchResult} initialFilters={activeTab.data?.initialFilters} />
       case 'workflows':
-        return <WorkflowsPage initialWorkflowId={activeTab.data?.id} onNavigate={handleSearchResult} />
+        return <WorkflowsPage onNavigate={handleSearchResult} />
       case 'projects-list':
         return <ProjectsPage onProjectSelect={handleSearchResult} />
       case 'project':

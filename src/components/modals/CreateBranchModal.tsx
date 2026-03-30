@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { X, Orbit, Network, Calendar, CalendarDays, CalendarRange, Clock } from 'lucide-react'
+import { X, Orbit, Network, Calendar, CalendarDays, CalendarRange, Clock, Timer, CheckCircle2, Bell } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { processDynamicSuffix } from '../../utils/workflow/workflowSuffixHelpers'
 
@@ -11,14 +11,25 @@ interface WorkflowBranch {
   created_at: string
 }
 
+export interface EndingRuleOption {
+  id: string
+  name: string
+  description: string
+  conditionType: string
+  conditionValue: any
+  actionType: string
+}
+
 interface CreateBranchModalProps {
   workflowId: string
   workflowName: string
   existingBranches: WorkflowBranch[]
   preselectedSourceBranch?: string | null
   defaultSuffixFormat?: string | null
+  /** Available ending rules from the process template */
+  endingRules?: EndingRuleOption[]
   onClose: () => void
-  onSubmit: (branchName: string, branchSuffix: string, copyProgress: boolean, sourceBranchId?: string) => void
+  onSubmit: (branchName: string, branchSuffix: string, copyProgress: boolean, sourceBranchId?: string, endingRuleId?: string) => void
 }
 
 // Quick suffix options
@@ -49,10 +60,11 @@ const QUICK_SUFFIX_OPTIONS = [
   }
 ]
 
-export function CreateBranchModal({ workflowId, workflowName, existingBranches, preselectedSourceBranch, defaultSuffixFormat, onClose, onSubmit }: CreateBranchModalProps) {
+export function CreateBranchModal({ workflowId, workflowName, existingBranches, preselectedSourceBranch, defaultSuffixFormat, endingRules = [], onClose, onSubmit }: CreateBranchModalProps) {
   const [branchSuffix, setBranchSuffix] = useState('')
   const [branchSource, setBranchSource] = useState<'template' | 'branch'>(preselectedSourceBranch ? 'branch' : 'template')
   const [sourceBranchId, setSourceBranchId] = useState<string>(preselectedSourceBranch || '')
+  const [selectedEndingRuleId, setSelectedEndingRuleId] = useState<string>(endingRules.length === 1 ? endingRules[0].id : '')
 
   // Pre-populate with default suffix format if set
   useEffect(() => {
@@ -75,13 +87,13 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
     if (branchSuffix.trim()) {
       const copyProgress = branchSource === 'branch'
       // Pass the processed suffix (with placeholders resolved)
-      onSubmit(fullBranchName, processedSuffix, copyProgress, sourceBranchId || undefined)
+      onSubmit(fullBranchName, processedSuffix, copyProgress, sourceBranchId || undefined, selectedEndingRuleId || undefined)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pt-20">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
@@ -97,7 +109,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Run Suffix
@@ -260,6 +272,50 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
               </div>
             )}
           </div>
+
+          {/* Run Ending */}
+          {endingRules.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Run Ending
+              </label>
+              <div className="space-y-2">
+                {/* No auto-end option */}
+                <label className={`flex items-start px-3 py-2.5 rounded-lg cursor-pointer transition-all border ${
+                  !selectedEndingRuleId ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input type="radio" checked={!selectedEndingRuleId} onChange={() => setSelectedEndingRuleId('')}
+                    className="mt-0.5 mr-2.5 accent-blue-600" />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">End manually</div>
+                    <p className="text-xs text-gray-400 mt-0.5">You'll end this run yourself when it's done.</p>
+                  </div>
+                </label>
+
+                {/* Configured ending rules */}
+                {endingRules.map(rule => {
+                  const isSelected = selectedEndingRuleId === rule.id
+                  const icon = rule.actionType === 'archive_branch' ? Timer : rule.actionType === 'mark_complete' ? CheckCircle2 : Bell
+                  const Icon = icon
+                  return (
+                    <label key={rule.id} className={`flex items-start px-3 py-2.5 rounded-lg cursor-pointer transition-all border ${
+                      isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input type="radio" checked={isSelected} onChange={() => setSelectedEndingRuleId(rule.id)}
+                        className="mt-0.5 mr-2.5 accent-blue-600" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
+                          <span className="text-sm font-medium text-gray-900">{rule.name}</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">{rule.description}</p>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <Button variant="outline" onClick={onClose} type="button">

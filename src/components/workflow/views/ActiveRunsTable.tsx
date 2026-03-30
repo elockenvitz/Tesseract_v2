@@ -96,6 +96,7 @@ function RemainingCell({ run }: { run: ActiveRun }) {
 
 /** Subtle version chip displayed next to run name */
 function VersionChip({ run }: { run: ActiveRun }) {
+  if (!run.template_version_number) return null
   const label = getRunVersionLabel(run)
   const tooltip = getRunVersionTooltip(run)
   return (

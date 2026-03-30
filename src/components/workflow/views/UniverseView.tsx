@@ -10,7 +10,7 @@
 
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Eye } from 'lucide-react'
+import { Eye, Info, X, Plus, Search } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { Button } from '../../ui/Button'
 import { SimplifiedUniverseBuilder } from '../SimplifiedUniverseBuilder'
@@ -40,6 +40,15 @@ export interface UniverseViewProps {
   portfolios?: DropdownOption[]
   onRulesChange?: (rules: FilterRule[]) => void
   onSave?: () => void
+  /** Number of assets in the currently active run (if any) */
+  activeRunAssetCount?: number
+  scopeType?: 'asset' | 'portfolio' | 'general'
+  /** For portfolio-scoped: the selected portfolios */
+  selectedPortfolios?: { id: string; name: string }[]
+  /** For portfolio-scoped: available portfolios to add */
+  availablePortfolios?: { id: string; name: string }[]
+  onAddPortfolio?: (portfolioId: string) => void
+  onRemovePortfolio?: (portfolioId: string) => void
 }
 
 // ─── Asset matching (mirrors UniversePreviewModal logic) ─────
@@ -115,6 +124,123 @@ async function resolveUniverse(rules: FilterRule[]): Promise<string[]> {
   return result ? Array.from(result) : []
 }
 
+// ─── Portfolio Scope Editor ──────────────────────────────────
+
+function PortfolioScopeEditor({
+  selectedPortfolios,
+  availablePortfolios,
+  canEdit,
+  onAdd,
+  onRemove,
+}: {
+  selectedPortfolios: { id: string; name: string }[]
+  availablePortfolios: { id: string; name: string }[]
+  canEdit: boolean
+  onAdd?: (id: string) => void
+  onRemove?: (id: string) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  const [search, setSearch] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const selectedIds = new Set(selectedPortfolios.map(p => p.id))
+  const unselected = availablePortfolios.filter(p => !selectedIds.has(p.id) && p.name.toLowerCase().includes(search.toLowerCase()))
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <span className="text-2xl font-bold text-gray-900">{selectedPortfolios.length}</span>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {selectedPortfolios.length === 1 ? 'Portfolio in scope' : 'Portfolios in scope'}
+          </p>
+        </div>
+        {canEdit && !isEditing && (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+          >
+            Edit Portfolios
+          </button>
+        )}
+        {isEditing && (
+          <button
+            onClick={() => { setIsEditing(false); setShowAdd(false); setConfirmRemove(null) }}
+            className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+          >
+            Done
+          </button>
+        )}
+      </div>
+
+      {/* Add portfolio dropdown — only in edit mode */}
+      {isEditing && showAdd && (
+        <div className="mb-3 border border-gray-200 rounded-lg bg-white shadow-sm">
+          <div className="p-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search portfolios..."
+                className="w-full text-sm pl-8 pr-3 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-[180px] overflow-y-auto border-t border-gray-100">
+            {unselected.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No portfolios available to add</p>
+            ) : unselected.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onAdd!(p.id); setSearch(''); setShowAdd(false) }}
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0"
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Portfolio list */}
+      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+        {selectedPortfolios.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No portfolios selected</p>
+        ) : selectedPortfolios.map(p => (
+          <div key={p.id} className="flex items-center justify-between px-3 py-2.5">
+            <span className="text-sm font-medium text-gray-900">{p.name}</span>
+            {isEditing && onRemove && (
+              confirmRemove === p.id ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500">Remove?</span>
+                  <button onClick={() => { onRemove(p.id); setConfirmRemove(null) }} className="text-[11px] font-medium text-red-600 hover:text-red-700">Yes</button>
+                  <button onClick={() => setConfirmRemove(null)} className="text-[11px] text-gray-400 hover:text-gray-600">No</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmRemove(p.id)} className="text-[11px] text-gray-400 hover:text-red-600 transition-colors">
+                  Remove
+                </button>
+              )
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add button — only in edit mode, below the list */}
+      {isEditing && onAdd && !showAdd && (
+        <button
+          onClick={() => { setShowAdd(true); setSearch('') }}
+          className="mt-2 w-full px-3 py-2 text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 hover:text-gray-700 transition-colors text-center"
+        >
+          <Plus className="w-3.5 h-3.5 inline mr-1" />Add Portfolio
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── Component ───────────────────────────────────────────────
 
 export function UniverseView({
@@ -127,7 +253,13 @@ export function UniverseView({
   themes = [],
   portfolios = [],
   onRulesChange,
-  onSave
+  onSave,
+  activeRunAssetCount,
+  scopeType = 'asset',
+  selectedPortfolios = [],
+  availablePortfolios = [],
+  onAddPortfolio,
+  onRemovePortfolio,
 }: UniverseViewProps) {
   const [showPreview, setShowPreview] = useState(false)
   const hasRules = rules.length > 0
@@ -171,69 +303,85 @@ export function UniverseView({
 
   return (
     <div className="space-y-4">
-      {/* ─── Scope (hero card) ────────────────────── */}
-      <div className="rounded-lg border border-gray-200 bg-white px-5 py-4">
-        <div className="flex items-start justify-between">
-          {/* Left: count + label */}
+      {/* ─── Active run warning ────────────────────── */}
+      {activeRunAssetCount != null && activeRunAssetCount > 0 && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
+          <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div>
-            {isLoadingMatch ? (
-              <div className="h-8 w-16 bg-gray-100 rounded animate-pulse mb-1" />
-            ) : !hasRules ? (
-              <span className="text-2xl font-bold text-amber-600">All</span>
-            ) : matchCount !== null ? (
-              <span className="text-2xl font-bold text-gray-900">{matchCount}</span>
-            ) : (
-              <span className="text-2xl font-bold text-gray-300">—</span>
-            )}
-            <p className="text-xs text-gray-500 mt-0.5">
-              {!hasRules ? 'No selection rules — every asset is in scope' : 'Matching assets'}
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Active run in progress</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+              Changes to the universe will apply to the <strong>next run</strong>. The current run has {activeRunAssetCount} asset{activeRunAssetCount !== 1 ? 's' : ''} already in progress and will not be affected.
             </p>
           </div>
-
-          {/* Right: preview button */}
-          {hasRules && matchCount !== null && matchCount > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowPreview(true)}
-              className="mt-1"
-            >
-              <Eye className="w-3.5 h-3.5 mr-1" />
-              Preview
-            </Button>
-          )}
         </div>
+      )}
 
-        {/* Part 6: delta since last run (renders only when data exists) */}
-        {hasDelta && (
-          <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
-            {addedSinceLastRun !== null && addedSinceLastRun > 0 && (
-              <span className="text-xs text-emerald-600 font-medium">+{addedSinceLastRun} new since last run</span>
-            )}
-            {removedSinceLastRun !== null && removedSinceLastRun > 0 && (
-              <span className="text-xs text-red-500 font-medium">&minus;{removedSinceLastRun} removed</span>
+      {/* ─── Scope (hero card) ────────────────────── */}
+      <div className="rounded-lg border border-gray-200 bg-white px-5 py-4">
+        {scopeType === 'portfolio' ? (
+          <PortfolioScopeEditor
+            selectedPortfolios={selectedPortfolios}
+            availablePortfolios={availablePortfolios}
+            canEdit={canEdit}
+            onAdd={onAddPortfolio}
+            onRemove={onRemovePortfolio}
+          />
+        ) : (
+        <>
+          <div className="flex items-start justify-between">
+            <div>
+              {isLoadingMatch ? (
+                <div className="h-8 w-16 bg-gray-100 rounded animate-pulse mb-1" />
+              ) : !hasRules ? (
+                <span className="text-2xl font-bold text-amber-600">All</span>
+              ) : matchCount !== null ? (
+                <span className="text-2xl font-bold text-gray-900">{matchCount}</span>
+              ) : (
+                <span className="text-2xl font-bold text-gray-300">—</span>
+              )}
+              <p className="text-xs text-gray-500 mt-0.5">
+                {!hasRules ? 'No selection rules — every asset is in scope' : 'Matching assets'}
+              </p>
+            </div>
+            {hasRules && matchCount !== null && matchCount > 0 && (
+              <Button size="sm" variant="outline" onClick={() => setShowPreview(true)} className="mt-1">
+                <Eye className="w-3.5 h-3.5 mr-1" />Preview
+              </Button>
             )}
           </div>
+          {hasDelta && (
+            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+              {addedSinceLastRun !== null && addedSinceLastRun > 0 && (
+                <span className="text-xs text-emerald-600 font-medium">+{addedSinceLastRun} new since last run</span>
+              )}
+              {removedSinceLastRun !== null && removedSinceLastRun > 0 && (
+                <span className="text-xs text-red-500 font-medium">&minus;{removedSinceLastRun} removed</span>
+              )}
+            </div>
+          )}
+        </>
         )}
       </div>
 
-      {/* ─── Divider ───────────────────────────────────────── */}
-      <div className="border-t border-gray-100" />
-
-      {/* ─── Selection Rules ───────────────────────────────── */}
-      <SimplifiedUniverseBuilder
-        workflowId={workflowId}
-        rules={rules}
-        onRulesChange={onRulesChange || (() => {})}
-        onSave={onSave || (() => {})}
-        isEditable={canEdit}
-        canEdit={canEdit}
-        isEditMode={isEditMode}
-        analysts={analysts}
-        lists={lists}
-        themes={themes}
-        portfolios={portfolios}
-      />
+      {/* ─── Selection Rules (asset scope only) ──────────── */}
+      {scopeType !== 'portfolio' && (
+        <>
+          <div className="border-t border-gray-100" />
+          <SimplifiedUniverseBuilder
+            workflowId={workflowId}
+            rules={rules}
+            onRulesChange={onRulesChange || (() => {})}
+            onSave={onSave || (() => {})}
+            isEditable={canEdit}
+            canEdit={canEdit}
+            isEditMode={isEditMode}
+            analysts={analysts}
+            lists={lists}
+            themes={themes}
+            portfolios={portfolios}
+          />
+        </>
+      )}
 
       {/* ─── Preview Modal ─────────────────────────────────── */}
       {showPreview && (

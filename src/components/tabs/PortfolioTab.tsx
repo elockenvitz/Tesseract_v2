@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText } from 'lucide-react'
 import { Card } from '../ui/Card'
@@ -44,12 +44,13 @@ const TABS: { key: PortfolioTabType; label: string; icon: React.ElementType; bad
   { key: 'log', label: 'Portfolio Log', icon: BookOpen },
   { key: 'journal', label: 'Trade Journal', icon: BookText, badgeKey: 'pendingRationale' },
   { key: 'team', label: 'Team', icon: Users, badgeKey: 'team' },
-  { key: 'processes', label: 'Processes', icon: RefreshCw },
+  { key: 'processes', label: 'Process', icon: RefreshCw },
   { key: 'universe', label: 'Universe', icon: Globe },
 ]
 
 export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
   const [activeTab, setActiveTab] = useState<PortfolioTabType>(() => {
+    if (portfolio.initialTab) return portfolio.initialTab
     const savedState = TabStateManager.loadTabState(portfolio.id)
     const raw = savedState?.activeTab || 'overview'
     return MIGRATE_TAB[raw] || raw
@@ -85,6 +86,13 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       setHasLocalChanges(false)
     }
   }, [portfolio.id])
+
+  // Navigate to a specific tab when requested externally
+  useEffect(() => {
+    if (portfolio.initialTab) {
+      setActiveTab(portfolio.initialTab)
+    }
+  }, [portfolio._navTs])
 
   useEffect(() => { setIsTabStateInitialized(true) }, [])
 

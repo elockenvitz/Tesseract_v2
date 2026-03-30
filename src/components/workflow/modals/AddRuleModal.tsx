@@ -1014,7 +1014,7 @@ export function AddRuleModal({ workflowId, workflowName, workflowStages, cadence
                     <div className={`text-[13px] font-medium leading-tight ${formData.actionType === 'branch_copy' ? 'text-blue-900' : 'text-gray-800'}`}>
                       Carry forward
                     </div>
-                    <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">Incomplete assets move into the new run.</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">Reset stages but keep notes, comments, and custom items from the prior run.</p>
                   </button>
                 </div>
               </div>

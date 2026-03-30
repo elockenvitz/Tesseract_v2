@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, ListChecks } from 'lucide-react'
+import { Plus, ListChecks, ChevronDown, ChevronRight } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { WorkflowStage } from '../../../types/workflow/workflow.types'
@@ -61,8 +61,10 @@ export interface StageWithChecklistsProps {
   /** Called with reordered items when drag ends */
   onReorder?: (items: { id: string, sort_order: number }[], stageId: string) => void
 
-  /** Optional content tiles component */
-  contentTilesComponent?: React.ReactNode
+  /** Parent-controlled collapsed state (overrides local) */
+  forceCollapsed?: boolean
+  /** Called when user toggles collapse (if parent controls state) */
+  onToggleCollapsed?: () => void
 }
 
 export function StageWithChecklists({
@@ -88,11 +90,19 @@ export function StageWithChecklists({
   onDragLeave,
   onDrop,
   onReorder,
-  contentTilesComponent
+  forceCollapsed,
+  onToggleCollapsed,
 }: StageWithChecklistsProps) {
   const isFirst = index === 0
   const isLast = index === totalStages - 1
   const showControls = canEdit && isEditMode
+  const [localCollapsed, setLocalCollapsed] = useState(false)
+  // Allow parent to override collapsed state
+  const isCollapsed = forceCollapsed ?? localCollapsed
+  const toggleCollapsed = () => {
+    if (onToggleCollapsed) onToggleCollapsed()
+    else setLocalCollapsed(!localCollapsed)
+  }
 
   // Local state for smooth drag reordering
   const [localItems, setLocalItems] = useState(checklistItems)
@@ -167,11 +177,20 @@ export function StageWithChecklists({
   return (
     <Card>
       <div className="p-3">
-        {/* Stage Header */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-3">
+        {/* Stage Header — clickable to expand/collapse */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="flex items-center space-x-3 flex-1 min-w-0 text-left group"
+          >
+            {/* Collapse chevron */}
+            {isCollapsed
+              ? <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+              : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+            }
             {/* Stage Number */}
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm shrink-0">
               {index + 1}
             </div>
 
@@ -179,13 +198,25 @@ export function StageWithChecklists({
             <div>
               <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
               <p className="text-sm text-gray-500">{stage.stage_description}</p>
-              <div className="mt-0.5">
-                <span className="text-xs text-gray-400">
-                  Deadline: {stage.standard_deadline_days} days
-                </span>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                {stage.standard_deadline_days != null && (
+                  <span className="text-xs text-gray-400">
+                    Target: {stage.standard_deadline_days} days
+                  </span>
+                )}
+                {stage.default_assignee_type && stage.default_assignee_value && (
+                  <span className="text-xs text-gray-400">
+                    Assigned to: {stage.default_assignee_type === 'role' ? stage.default_assignee_value.replace(/_/g, ' ') : stage.default_assignee_value}
+                  </span>
+                )}
+                {stage.completion_criteria && (
+                  <span className="text-xs text-gray-400">
+                    Done when: {stage.completion_criteria}
+                  </span>
+                )}
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Stage Edit Controls */}
           {showControls && (
@@ -236,7 +267,8 @@ export function StageWithChecklists({
           )}
         </div>
 
-        {/* Checklist Items Section */}
+        {/* Checklist Items Section — collapsible */}
+        {!isCollapsed && (
         <div className="mt-3 border-t pt-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
@@ -296,13 +328,8 @@ export function StageWithChecklists({
             </div>
           )}
         </div>
-
-        {/* Content Tiles Section (if provided) */}
-        {contentTilesComponent && (
-          <div className="mt-3 border-t pt-3">
-            {contentTilesComponent}
-          </div>
         )}
+
       </div>
     </Card>
   )

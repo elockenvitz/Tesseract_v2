@@ -25,6 +25,7 @@ import { useQuickThought } from '../../hooks/useQuickThoughtsFeed'
 import { IdeaComments } from '../ideas/social/IdeaComments'
 import { useToast } from '../common/Toast'
 import { formatRelativeTime } from './RecentQuickIdeas'
+import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -194,6 +195,8 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
     || (thought as any)?.portfolio_id
     || (thought as any)?.theme_id
     || undefined
+  const category = extractTag(thought?.tags, 'category:') as RequestType | undefined
+  const categoryMeta = category ? REQUEST_TYPE_META[category] : undefined
   const responderFirstName = getPrimaryResponderFirstName(assigneeUser)
   const awaitingText = getAwaitingResponseText(responderFirstName)
   const statusCfg = STATUS_CONFIG[status]
@@ -216,7 +219,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
           {/* Type tag */}
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
             <MessageCircleQuestion className="h-3.5 w-3.5" />
-            Prompt
+            {categoryMeta ? categoryMeta.label : 'Prompt'}
           </span>
 
           {/* Status tag */}
@@ -263,9 +266,9 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
           )}
         </div>
 
-        {/* Audience / visibility */}
+        {/* Audience */}
         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
-          Visible to: {thought.visibility === 'team' ? 'Team' : 'Assignees'}
+          Between {authorName}{assigneeName ? ` and ${assigneeName}` : ''} · visible to process participants
         </p>
       </div>
 

@@ -9,6 +9,8 @@
  */
 
 import React from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../../../lib/supabase'
 import {
   UserPlus,
   Mail,
@@ -150,6 +152,27 @@ export function AdminsView({
   const admins = collaborators.filter((c) => c.permission === 'admin')
   const hasPendingRequests = accessRequests.length > 0
 
+  // Always fetch creator info directly — the join from the workflow query is unreliable
+  const { data: creatorUser } = useQuery({
+    queryKey: ['admins-view-creator', creatorId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('users').select('first_name, last_name, email').eq('id', creatorId).single()
+      if (error) { console.error('AdminsView creator lookup failed:', error); return null }
+      return data
+    },
+    enabled: !!creatorId,
+    staleTime: 5 * 60_000,
+  })
+
+  const resolvedCreatorName = (() => {
+    if (creatorUser?.first_name || creatorUser?.last_name) {
+      return `${creatorUser.first_name || ''} ${creatorUser.last_name || ''}`.trim()
+    }
+    if (creatorName && !creatorName.includes('@')) return creatorName
+    return creatorUser?.email || creatorName || 'Unknown User'
+  })()
+  const resolvedCreatorEmail = creatorUser?.email || creatorEmail
+
   return (
     <div className="space-y-3">
 
@@ -173,11 +196,11 @@ export function AdminsView({
       <Card>
         <div className="px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <UserAvatar name={creatorName} />
+            <UserAvatar name={resolvedCreatorName} />
             <div className="min-w-0">
-              <span className="text-sm font-medium text-gray-900 truncate block">{creatorName}</span>
-              {creatorEmail && (
-                <p className="text-[11px] text-gray-400 truncate">{creatorEmail}</p>
+              <span className="text-sm font-medium text-gray-900 truncate block">{resolvedCreatorName}</span>
+              {resolvedCreatorEmail && resolvedCreatorEmail !== resolvedCreatorName && (
+                <p className="text-[11px] text-gray-400 truncate">{resolvedCreatorEmail}</p>
               )}
             </div>
           </div>
@@ -310,21 +333,6 @@ export function AdminsView({
         </Card>
       </div>
 
-      {/* ─── Footer ──────────────────────────────────────────── */}
-      {(onGoToRuns || onGoToStages) && (
-        <div className="flex items-center justify-end gap-3 px-1 text-[11px]">
-          {onGoToRuns && (
-            <button onClick={onGoToRuns} className="inline-flex items-center font-medium text-blue-600 hover:text-blue-700 transition-colors">
-              Runs <ArrowRight className="w-3 h-3 ml-0.5" />
-            </button>
-          )}
-          {onGoToStages && (
-            <button onClick={onGoToStages} className="inline-flex items-center font-medium text-blue-600 hover:text-blue-700 transition-colors">
-              Stages <ArrowRight className="w-3 h-3 ml-0.5" />
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }

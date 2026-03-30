@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useRef } from 'react'
-import { X, Plus, GripVertical, Trash2 } from 'lucide-react'
+import { X, Plus, GripVertical, Trash2, Clock, User } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import type { WorkflowStage } from '../../../types/workflow'
 
@@ -29,9 +29,20 @@ export interface EditStageModalProps {
   onSave: (updates: Partial<WorkflowStage>, checklistChanges?: EditStageChecklistChanges) => void
 }
 
+const ROLE_OPTIONS = [
+  { value: 'primary_analyst', label: 'Primary Analyst' },
+  { value: 'secondary_analyst', label: 'Secondary Analyst' },
+  { value: 'portfolio_manager', label: 'Portfolio Manager' },
+  { value: 'coverage_lead', label: 'Coverage Lead' },
+]
+
 export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: EditStageModalProps) {
   const [stageLabel, setStageLabel] = useState(stage.stage_label)
   const [stageDescription, setStageDescription] = useState(stage.stage_description || '')
+  const [targetDays, setTargetDays] = useState<string>(stage.standard_deadline_days != null ? String(stage.standard_deadline_days) : '')
+  const [assigneeType, setAssigneeType] = useState<'none' | 'person' | 'role'>(stage.default_assignee_type || 'none')
+  const [assigneeValue, setAssigneeValue] = useState(stage.default_assignee_value || '')
+  const [completionCriteria, setCompletionCriteria] = useState(stage.completion_criteria || '')
 
   // Local copy of existing items for editing
   const [existingItems, setExistingItems] = useState<ChecklistItem[]>(
@@ -54,6 +65,17 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
     const stageUpdates: Partial<WorkflowStage> = {}
     if (stageLabel !== stage.stage_label) stageUpdates.stage_label = stageLabel
     if (stageDescription !== (stage.stage_description || '')) stageUpdates.stage_description = stageDescription
+
+    const newDeadline = targetDays ? parseInt(targetDays) : null
+    if (newDeadline !== stage.standard_deadline_days) stageUpdates.standard_deadline_days = newDeadline
+
+    const newAssigneeType = assigneeType === 'none' ? null : assigneeType
+    const newAssigneeValue = assigneeType === 'none' ? null : assigneeValue || null
+    if (newAssigneeType !== (stage.default_assignee_type || null)) stageUpdates.default_assignee_type = newAssigneeType as any
+    if (newAssigneeValue !== (stage.default_assignee_value || null)) stageUpdates.default_assignee_value = newAssigneeValue
+
+    const newCriteria = completionCriteria || null
+    if (newCriteria !== (stage.completion_criteria || null)) stageUpdates.completion_criteria = newCriteria
 
     // Checklist changes
     const updated: Record<string, Partial<ChecklistItem>> = {}
@@ -127,8 +149,8 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pt-20">
+      <div className="bg-white rounded-lg w-full max-w-lg max-h-full flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900">Edit Stage</h3>
@@ -162,6 +184,70 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 rows={2}
                 placeholder="What happens in this stage?"
+              />
+            </div>
+
+            {/* Target Duration + Default Assignee */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  Target Duration
+                  <span className="text-xs text-gray-400 font-normal">(optional)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    value={targetDays}
+                    onChange={(e) => setTargetDays(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="—"
+                  />
+                  <span className="text-sm text-gray-500 shrink-0">days</span>
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+                  <User className="w-3.5 h-3.5" />
+                  Default Assignee
+                  <span className="text-xs text-gray-400 font-normal">(optional)</span>
+                </label>
+                <select
+                  value={assigneeType}
+                  onChange={(e) => { setAssigneeType(e.target.value as any); setAssigneeValue('') }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="none">None</option>
+                  <option value="role">By Role</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Assignee value (conditional) */}
+            {assigneeType === 'role' && (
+              <select
+                value={assigneeValue}
+                onChange={(e) => setAssigneeValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Select a role...</option>
+                {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            )}
+
+            {/* Completion Criteria */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Completion Criteria
+                <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={completionCriteria}
+                onChange={(e) => setCompletionCriteria(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., All checklist items complete and thesis updated"
               />
             </div>
 
