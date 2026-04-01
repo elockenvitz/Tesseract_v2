@@ -5458,7 +5458,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               ))}
             </div>
           ) : (
-            <>
+            <div className="animate-in fade-in duration-200">
               {/* Processes list */}
               {filteredWorkflows.length > 0 && (
                 <div>
@@ -5557,7 +5557,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   )}
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -6048,7 +6048,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
             {/* Tab Content */}
             <div key={`${selectedWorkflow.id}-${activeView}`} className={`flex-1 bg-gray-50 overflow-y-auto animate-in fade-in duration-150 ${activeView === 'stages' ? '' : 'p-6'}`}>
-              {activeView === 'overview' && (
+              {activeView === 'overview' && isLoadingBranches ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                </div>
+              ) : activeView === 'overview' && (
                 <OverviewView
                   workflow={selectedWorkflow}
                   templateVersions={templateVersions}

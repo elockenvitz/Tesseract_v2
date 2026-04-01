@@ -399,11 +399,12 @@ export function Layout({
         {(() => {
           const activeTab = tabs.find(tab => tab.id === activeTabId)
           const isFullWidth = activeTab && FULL_WIDTH_TAB_TYPES.includes(activeTab.type)
+          const isCompactPad = activeTab && ['outcomes'].includes(activeTab.type)
           return (
             <div className={clsx(
               "relative h-full flex flex-col",
-              isFullWidth ? "overflow-hidden" : "overflow-auto",
-              !isFullWidth && "px-4 sm:px-6 lg:px-8 py-6",
+              isFullWidth ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
+              !isFullWidth && !isCompactPad && "px-4 sm:px-6 lg:px-8 py-6",
               isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
               isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
             )}>

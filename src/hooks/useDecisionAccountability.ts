@@ -263,6 +263,8 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           urgency,
           status,
           rationale,
+          visibility_tier,
+          deleted_at,
           assets:asset_id (id, symbol, company_name),
           portfolios:portfolio_id (id, name),
           approved_by_user:approved_by (id, email, first_name, last_name),
@@ -281,12 +283,14 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         query = query.in('status', ['approved', 'executed'])
       }
 
-      // Date range
+      // Date range — if dateRange object exists with null start, show all time
       if (filters?.dateRange?.start) {
         query = query.gte('approved_at', filters.dateRange.start)
-      } else {
+      } else if (!filters?.dateRange) {
+        // No dateRange set at all — default to last 90 days
         query = query.gte('created_at', subDays(new Date(), 90).toISOString())
       }
+      // If dateRange exists but start is null → no date filter (ALL)
       if (filters?.dateRange?.end) {
         query = query.lte('approved_at', filters.dateRange.end)
       }
@@ -526,7 +530,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       }
     }
 
-    return decisionData.map((item: any): AccountabilityRow => {
+    const decisionRows = decisionData.map((item: any): AccountabilityRow => {
       const direction = mapActionToDirection(item.action)
       const approvedAt = item.approved_at ? parseISO(item.approved_at) : null
       const daysSinceDecision = approvedAt
@@ -543,8 +547,23 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       const decisionPriceAt = snapshot?.at ?? null
       const hasDecisionPrice = snapshot != null
 
+      // Derive effective stage:
+      // - 'executed' legacy status → treat as approved
+      // - visibility_tier='archive' or deleted_at set on an approved item → cancelled
+      // - otherwise use status directly
+      let effectiveStage = item.status as string
+      if (effectiveStage === 'executed') effectiveStage = 'approved'
+      if (
+        effectiveStage === 'approved' &&
+        (item.visibility_tier === 'archive' || item.visibility_tier === 'trash' || item.deleted_at)
+      ) {
+        effectiveStage = 'cancelled'
+      }
+
+      const isApproved = effectiveStage === 'approved'
+
       // Non-approved decisions don't need execution matching
-      if (item.status !== 'approved') {
+      if (!isApproved) {
         // For rejected/cancelled decisions with a snapshot, still compute move since decision
         const moveSinceDecision = computeDirectionalMove(direction, decisionPrice, currentPrice)
         const resultDir = computeResultDirection(moveSinceDecision, null)
@@ -553,8 +572,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           decision_id: item.id,
           created_at: item.created_at,
           approved_at: item.approved_at,
+          source: 'decision' as const,
           direction,
-          stage: (item.status === 'executed' ? 'approved' : item.status) as any,
+          stage: effectiveStage as any,
           rationale_text: item.rationale || null,
           asset_id: item.asset_id,
           asset_symbol: item.assets?.symbol || null,
@@ -662,7 +682,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         created_at: item.created_at,
         approved_at: item.approved_at,
         direction,
-        stage: (item.status === 'executed' ? 'approved' : item.status) as any,
+        stage: effectiveStage as any,
         rationale_text: item.rationale || null,
         asset_id: item.asset_id,
         asset_symbol: item.assets?.symbol || null,
@@ -691,6 +711,92 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         weighted_delay_cost: weightedDelayCost,
       }
     })
+
+    // Merge in discretionary trade events (no linked decision) as their own rows
+    const claimedIds = new Set<string>()
+    for (const row of decisionRows) {
+      for (const m of row.matched_executions) claimedIds.add(m.event_id)
+    }
+
+    const discretionaryRows: AccountabilityRow[] = eventData
+      .filter((evt: any) => !claimedIds.has(evt.id) && !evt.linked_trade_idea_id)
+      .map((evt: any): AccountabilityRow => {
+        const action = evt.action_type || 'other'
+        const direction = (['initiate', 'add', 'increase'].includes(action) ? 'buy'
+          : ['exit', 'trim', 'reduce'].includes(action) ? 'sell'
+          : 'unknown') as any
+
+        const currentPrice = evt.asset_id ? (priceMap.get(evt.asset_id) ?? null) : null
+        const execPrice = deriveExecutionPrice(
+          evt.market_value_before, evt.market_value_after,
+          evt.quantity_before, evt.quantity_after,
+        )
+        const moveSinceExec = computeDirectionalMove(direction, execPrice, currentPrice)
+        const resultDir = computeResultDirection(null, moveSinceExec)
+        const { notional, basis } = computeTradeNotional({
+          market_value_before: evt.market_value_before ?? null,
+          market_value_after: evt.market_value_after ?? null,
+          quantity_delta: evt.quantity_delta ?? null,
+          execution_price: execPrice,
+          weight_delta: evt.weight_delta ?? null,
+        } as any)
+
+        return {
+          decision_id: evt.id,
+          created_at: evt.created_at || evt.event_date,
+          approved_at: null,
+          source: 'discretionary',
+          direction,
+          stage: 'approved' as any, // treat as "happened"
+          rationale_text: null,
+          asset_id: evt.asset_id,
+          asset_symbol: evt.assets?.symbol || null,
+          asset_name: evt.assets?.company_name || null,
+          portfolio_id: evt.portfolio_id,
+          portfolio_name: evt.portfolios?.name || null,
+          owner_name: null,
+          approver_name: null,
+          execution_status: 'executed',
+          matched_executions: [{
+            event_id: evt.id,
+            event_date: evt.event_date,
+            action_type: action,
+            source_type: evt.source_type,
+            quantity_delta: evt.quantity_delta,
+            weight_delta: evt.weight_delta,
+            match_method: 'explicit_link' as const,
+            rationale_status: null,
+            has_rationale: false,
+            execution_rationale_summary: null,
+            lag_days: null,
+            market_value_before: evt.market_value_before ?? null,
+            market_value_after: evt.market_value_after ?? null,
+            quantity_before: evt.quantity_before ?? null,
+            quantity_after: evt.quantity_after ?? null,
+            execution_price: execPrice,
+            weight_before: evt.weight_before ?? null,
+            weight_after: evt.weight_after ?? null,
+          }],
+          execution_lag_days: null,
+          days_since_decision: null,
+          decision_price: null,
+          decision_price_at: null,
+          has_decision_price: false,
+          current_price: currentPrice,
+          execution_price: execPrice,
+          move_since_decision_pct: null,
+          move_since_execution_pct: moveSinceExec,
+          result_direction: resultDir,
+          delay_cost_pct: null,
+          trade_notional: notional,
+          size_basis: basis,
+          weight_impact: evt.weight_delta ?? null,
+          impact_proxy: notional != null && moveSinceExec != null ? (notional * moveSinceExec) / 100 : null,
+          weighted_delay_cost: null,
+        }
+      })
+
+    return [...decisionRows, ...discretionaryRows]
   }, [decisionData, eventData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data])
 
   // ── Step 7: Apply client-side filters ─────────────────────────
@@ -1160,6 +1266,143 @@ export function useMarkAsReviewed(decisionId: string | null, executionEventId: s
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-story', decisionId, executionEventId] })
+      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+    },
+  })
+}
+
+// ============================================================
+// Manual Execution Matching
+// ============================================================
+
+export interface CandidateTradeEvent {
+  id: string
+  event_date: string
+  action_type: string
+  source_type: string
+  quantity_delta: number | null
+  weight_delta: number | null
+  asset_id: string
+  asset_symbol: string | null
+  asset_name: string | null
+  portfolio_id: string
+  portfolio_name: string | null
+  linked_trade_idea_id: string | null
+}
+
+/**
+ * Fetch candidate trade events that could match a decision.
+ * Filters by same asset + portfolio, within a reasonable window.
+ */
+export function useCandidateTradeEvents(row: AccountabilityRow | null) {
+  return useQuery({
+    queryKey: ['candidate-trade-events', row?.decision_id],
+    queryFn: async (): Promise<CandidateTradeEvent[]> => {
+      if (!row?.asset_id || !row?.portfolio_id) return []
+
+      const { data, error } = await supabase
+        .from('portfolio_trade_events')
+        .select(`
+          id, event_date, action_type, source_type,
+          quantity_delta, weight_delta,
+          asset_id, portfolio_id,
+          linked_trade_idea_id,
+          assets:asset_id(symbol, company_name),
+          portfolios:portfolio_id(name)
+        `)
+        .eq('asset_id', row.asset_id)
+        .eq('portfolio_id', row.portfolio_id)
+        .order('event_date', { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+
+      return (data || []).map((evt: any) => ({
+        id: evt.id,
+        event_date: evt.event_date,
+        action_type: evt.action_type,
+        source_type: evt.source_type,
+        quantity_delta: evt.quantity_delta,
+        weight_delta: evt.weight_delta,
+        asset_id: evt.asset_id,
+        asset_symbol: evt.assets?.symbol || null,
+        asset_name: evt.assets?.company_name || null,
+        portfolio_id: evt.portfolio_id,
+        portfolio_name: evt.portfolios?.name || null,
+        linked_trade_idea_id: evt.linked_trade_idea_id,
+      }))
+    },
+    enabled: !!row?.asset_id && !!row?.portfolio_id,
+    staleTime: 30_000,
+  })
+}
+
+/**
+ * Link a trade event to a decision (manual matching).
+ * Sets portfolio_trade_events.linked_trade_idea_id = decision_id.
+ */
+export function useManualMatch() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ eventId, decisionId }: { eventId: string; decisionId: string }) => {
+      const { error } = await supabase
+        .from('portfolio_trade_events')
+        .update({ linked_trade_idea_id: decisionId })
+        .eq('id', eventId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+      queryClient.invalidateQueries({ queryKey: ['candidate-trade-events'] })
+    },
+  })
+}
+
+/**
+ * Unlink a trade event from a decision (undo manual matching).
+ */
+export function useUnlinkMatch() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ eventId }: { eventId: string }) => {
+      const { error } = await supabase
+        .from('portfolio_trade_events')
+        .update({ linked_trade_idea_id: null })
+        .eq('id', eventId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+      queryClient.invalidateQueries({ queryKey: ['candidate-trade-events'] })
+    },
+  })
+}
+
+/**
+ * Mark an approved decision as intentionally not executed.
+ * Archives the decision with an explanation.
+ */
+export function useMarkDecisionSkipped() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ decisionId, reason }: { decisionId: string; reason: string }) => {
+      const { error } = await supabase
+        .from('trade_queue_items')
+        .update({
+          outcome_note: `Intentionally skipped: ${reason}`,
+          visibility_tier: 'archive' as any,
+          archived_at: new Date().toISOString(),
+        })
+        .eq('id', decisionId)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
     },
   })

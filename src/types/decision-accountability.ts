@@ -118,11 +118,16 @@ export type SizeBasis = 'market_value_delta' | 'qty_times_price' | 'weight_only'
 // Accountability Row — the primary data object for the page
 // ============================================================
 
+export type RowSource = 'decision' | 'discretionary'
+
 export interface AccountabilityRow {
-  /** trade_queue_item ID */
+  /** trade_queue_item ID (or trade event ID for discretionary) */
   decision_id: string
   created_at: string
   approved_at: string | null
+
+  /** Where this row originated */
+  source: RowSource
 
   /** Decision info */
   direction: DecisionDirection

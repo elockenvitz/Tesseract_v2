@@ -224,8 +224,34 @@ export function RecurringProcessesHomePanel({
 
   const hasAttention = notStartedCount > 0 || multipleRunsCount > 0 || orphanActiveRuns.length > 0
 
+  const isLoading = isLoadingWorkflows || isLoadingRuns
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <div className="bg-gray-100 px-6 py-6 border-b border-gray-200">
+          <div className="grid grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
+                <div className="h-8 w-12 bg-gray-100 rounded mb-1" />
+                <div className="h-3 w-20 bg-gray-100 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-14 bg-gray-100 rounded-lg" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex-1 flex flex-col h-full overflow-hidden animate-in fade-in duration-200">
       {/* ═══ HOME HERO — completely different from process detail ═══ */}
       <div className="bg-gray-100 dark:bg-gray-900 px-6 py-6 border-b border-gray-200 dark:border-gray-700">
         {/* Large stat tiles — the dominant visual that says "you're at the hub" */}
