@@ -42,11 +42,14 @@ import {
   useMarkDecisionSkipped,
 } from '../hooks/useDecisionAccountability'
 import type { CandidateTradeEvent } from '../hooks/useDecisionAccountability'
-import { AnalystScorecardCard } from '../components/outcomes/AnalystScorecardCard'
 import { PositionChart } from '../components/outcomes/PositionChart'
+import {
+  inferDecisionIntelligence, buildProcessHealth, buildSmartChips,
+  VERDICT_DISPLAY, HEALTH_DISPLAY,
+  type DecisionIntelligence, type DecisionVerdict, type ProcessHealth, type SmartChip, type ProcessFlowStage,
+} from '../lib/decision-intelligence'
 import { usePositionLifecycle, usePositionPriceHistory, useHoldingsTimeSeries } from '../hooks/usePositionLifecycle'
-import { PMScorecardCard } from '../components/outcomes/PMScorecardCard'
-import { useScorecardVisibility, useTeamMembers } from '../hooks/useScorecards'
+import { AnalystScorecardsView, PMScorecardsView } from '../components/outcomes/ScorecardViews'
 import { useAuth } from '../hooks/useAuth'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
 import type {
@@ -148,8 +151,9 @@ const SIZE_BASIS_LABEL: Record<string, string> = {
 // Grid template constants
 // ============================================================
 
-// Date | Symbol | Name | Type | Decision | Execution | Lag | Review | Portfolio | Owner
-const MAIN_GRID = 'grid-cols-[72px_72px_minmax(100px,220px)_64px_80px_88px_48px_76px_132px_112px]'
+// Dynamic grid — with or without Portfolio column
+const GRID_WITH_PORTFOLIO = 'grid-cols-[112px_52px_64px_76px_132px_120px_192px_76px_172px_104px_68px]'
+const GRID_WITHOUT_PORTFOLIO = 'grid-cols-[112px_52px_64px_80px_160px_220px_76px_180px_112px_68px]'
 
 /** Derive the review state for a row. Used consistently for borders, dots, and filters. */
 function getRowReviewState(row: AccountabilityRow): 'needs_review' | 'in_progress' | 'captured' | 'reviewed' | null {
@@ -315,87 +319,7 @@ function FilterBar({
         )}
       </div>
 
-      {/* Portfolio */}
-      <MultiSelectFilter
-        label="Portfolios"
-        options={portfolios.map(p => ({ value: p.id, label: p.name }))}
-        selected={filters.portfolioIds || []}
-        onChange={ids => onChange({ ...filters, portfolioIds: ids })}
-      />
 
-      {/* Analyst */}
-      <MultiSelectFilter
-        label="Analysts"
-        options={users.map(u => ({
-          value: u.id,
-          label: u.first_name || u.last_name
-            ? `${u.first_name || ''} ${u.last_name || ''}`.trim()
-            : u.email.split('@')[0],
-        }))}
-        selected={filters.ownerUserIds || []}
-        onChange={ids => onChange({ ...filters, ownerUserIds: ids })}
-      />
-
-      {/* Asset search */}
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Asset..."
-          value={filters.assetSearch || ''}
-          onChange={e => onChange({ ...filters, assetSearch: e.target.value })}
-          className="pl-7 pr-2.5 py-1 text-[11px] border border-gray-200 rounded-md w-28 bg-white text-gray-700 placeholder:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
-        />
-      </div>
-
-      <div className="w-px h-4 bg-gray-200" />
-
-      {/* Direction */}
-      <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
-        {([
-          { dirs: [] as string[], label: 'All' },
-          { dirs: ['buy', 'add', 'long'], label: 'Buy' },
-          { dirs: ['sell', 'trim', 'short'], label: 'Sell' },
-        ]).map(opt => {
-          const isAll = opt.dirs.length === 0
-          const active = isAll
-            ? !filters.directionFilter || filters.directionFilter.length === 0
-            : JSON.stringify(filters.directionFilter?.sort()) === JSON.stringify(opt.dirs.sort())
-          return (
-            <button
-              key={opt.label}
-              onClick={() => onChange({ ...filters, directionFilter: opt.dirs as any })}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
-                active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {opt.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Include rejected/cancelled */}
-      <div className="flex items-center gap-2.5">
-        <label className="flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={filters.showRejected || false}
-            onChange={e => onChange({ ...filters, showRejected: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
-          />
-          Rejected
-        </label>
-        <label className="flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={filters.showCancelled || false}
-            onChange={e => onChange({ ...filters, showCancelled: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
-          />
-          Cancelled
-        </label>
-      </div>
     </div>
   )
 }
@@ -628,165 +552,137 @@ function ExecStatusPill({ status, interactive = false, row }: {
 }
 
 // ============================================================
-// Decision Table Row
+// Decision Table Row (mini scorecard)
 // ============================================================
 
 function DecisionRow({
   row,
+  intel,
   isSelected,
-  isEven,
   onSelect,
+  gridClass,
+  showPortfolio,
 }: {
   row: AccountabilityRow
+  intel: DecisionIntelligence
   isSelected: boolean
-  isEven: boolean
   onSelect: () => void
+  gridClass: string
+  showPortfolio: boolean
 }) {
+  const vd = VERDICT_DISPLAY[intel.verdict]
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600', bgColor: 'bg-gray-100' }
-  const stageCfg = STAGE_CONFIG[row.stage] || STAGE_CONFIG.approved
-  const reviewState = getRowReviewState(row)
 
-  // Determine unselected border + bg, then brighten the border when selected
-  let unselectedBorder: string
-  let unselectedBg: string
-  if (row.source === 'discretionary') {
-    unselectedBorder = 'border-l-violet-300'
-    unselectedBg = `${isEven ? 'bg-violet-50/15' : 'bg-violet-50/8'} hover:bg-violet-50/25`
-  } else if (reviewState === 'needs_review') {
-    unselectedBorder = 'border-l-red-400'
-    unselectedBg = `${isEven ? 'bg-red-50/20' : 'bg-red-50/10'} hover:bg-red-50/30`
-  } else if (reviewState === 'in_progress') {
-    unselectedBorder = 'border-l-amber-400'
-    unselectedBg = `${isEven ? 'bg-amber-50/15' : 'bg-amber-50/8'} hover:bg-amber-50/25`
-  } else if (row.execution_status === 'unmatched') {
-    unselectedBorder = 'border-l-red-300'
-    unselectedBg = `${isEven ? 'bg-red-50/15' : 'bg-red-50/8'} hover:bg-red-50/30`
-  } else if (row.execution_status === 'pending') {
-    unselectedBorder = 'border-l-amber-300'
-    unselectedBg = `${isEven ? 'bg-amber-50/10' : 'bg-amber-50/5'} hover:bg-amber-50/20`
-  } else {
-    unselectedBorder = 'border-l-transparent'
-    unselectedBg = `${isEven ? 'bg-white' : 'bg-gray-50/40'} hover:bg-gray-50`
-  }
-
-  // Selected: widen the border and intensify the color
-  const selectedBorderMap: Record<string, string> = {
-    'border-l-violet-300': 'border-l-violet-500',
-    'border-l-red-400': 'border-l-red-500',
-    'border-l-red-300': 'border-l-red-400',
-    'border-l-amber-400': 'border-l-yellow-500',
-    'border-l-amber-300': 'border-l-yellow-500',
-    'border-l-transparent': 'border-l-gray-400',
-  }
-
+  // Urgency-based row tinting — 4 distinct tiers
   const borderClass = isSelected
-    ? `bg-gray-50/80 border-l-[4px] ${selectedBorderMap[unselectedBorder] || 'border-l-gray-400'}`
-    : `border-l-[3px] ${unselectedBorder} ${unselectedBg}`
+    ? `bg-gray-50/80 border-l-[4px] ${vd.borderColor}`
+    : intel.urgency === 'critical'
+      ? `border-l-[4px] ${vd.borderColor} bg-red-50/60 hover:bg-red-50/80`
+      : intel.urgency === 'high'
+        ? `border-l-[3px] ${vd.borderColor} bg-amber-50/30 hover:bg-amber-50/50`
+        : intel.urgency === 'medium'
+          ? `border-l-[2px] ${vd.borderColor} hover:bg-gray-50/60`
+          : `border-l-[2px] border-l-transparent hover:bg-gray-50/30`
 
-  // Lag display value
-  const lagValue = row.execution_lag_days !== null && row.execution_lag_days >= 0
-    ? row.execution_lag_days
-    : row.days_since_decision !== null && row.execution_status === 'pending'
-      ? row.days_since_decision
-      : null
-  const lagWarn = lagValue !== null && (
-    (row.execution_status === 'pending' && lagValue > 14) ||
-    (row.execution_status !== 'pending' && lagValue > 7)
-  )
+  // Age label with escalation
+  const ageDays = intel.ageDays ?? 0
+  const ageLabel = ageDays > 0 ? `${ageDays}d` : null
+  const ageIntensity = ageDays >= 30 ? 'text-red-700 font-black' : ageDays >= 21 ? 'text-red-600 font-bold' : ageDays >= 14 ? 'text-amber-600 font-bold' : ageDays >= 7 ? 'text-amber-500' : 'text-gray-400'
 
   return (
     <div
       onClick={onSelect}
-      className={`grid ${MAIN_GRID} cursor-pointer transition-colors border-b border-gray-100 ${borderClass}`}
+      className={`grid ${gridClass} cursor-pointer transition-colors border-b border-gray-100/80 ${borderClass}`}
     >
-      {/* Date */}
+      {/* State badge */}
       <div className="px-2 py-2 flex items-center">
-        <span className="text-[11px] text-gray-500 tabular-nums">
-          {row.approved_at ? format(new Date(row.approved_at), 'MMM d') : format(new Date(row.created_at), 'MMM d')}
+        <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-[3px] rounded whitespace-nowrap ${vd.color} ${vd.bgColor}`}>
+          {vd.label}
         </span>
       </div>
 
-      {/* Symbol */}
-      <div className="px-2 py-2 flex items-center">
-        <span className="text-[12px] font-semibold text-gray-900">{row.asset_symbol || '?'}</span>
+      {/* Age */}
+      <div className="py-2 flex items-center">
+        {ageLabel ? (
+          <span className={`text-[9px] tabular-nums ${ageIntensity}`}>
+            {ageLabel}
+          </span>
+        ) : (
+          <span className="text-[9px] text-gray-300">—</span>
+        )}
       </div>
 
-      {/* Name */}
-      <div className="px-2 py-2 flex items-center min-w-0">
-        <span className="text-[11px] text-gray-400 truncate">{row.asset_name || ''}</span>
-      </div>
-
-      {/* Type */}
-      <div className="px-2 py-2 flex items-center">
-        <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
+      {/* Type (direction) */}
+      <div className="px-1 py-2 flex items-center">
+        <span className={`text-[9px] font-bold uppercase px-1.5 py-[2px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
           {row.direction}
         </span>
       </div>
 
-      {/* Decision */}
-      <div className="px-2 py-2 flex items-center">
-        {row.source === 'discretionary' ? (
-          <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded text-violet-700 bg-violet-50">
-            Ad hoc
+      {/* Ticker */}
+      <div className="px-1 py-2 flex items-center">
+        <span className="text-[12px] font-semibold text-gray-900">{row.asset_symbol || '?'}</span>
+      </div>
+
+      {/* Name */}
+      <div className="px-1 py-2 flex items-center min-w-0">
+        <span className="text-[10px] text-gray-400 truncate">{row.asset_name || ''}</span>
+      </div>
+
+      {/* Portfolio — only when viewing all */}
+      {showPortfolio && (
+        <div className="px-1 py-2 flex items-center min-w-0">
+          <span className="text-[10px] text-gray-400 truncate">{row.portfolio_name || '—'}</span>
+        </div>
+      )}
+
+      {/* Primary issue */}
+      <div className="px-1 py-2 flex items-center min-w-0">
+        <span className={`text-[10px] truncate ${intel.urgency === 'critical' ? 'text-red-600 font-medium' : intel.urgency === 'high' ? 'text-amber-700' : 'text-gray-500'}`}>
+          {intel.primaryIssue}
+        </span>
+      </div>
+
+      {/* Result signal */}
+      <div className="pl-1 pr-2 py-2 flex items-center">
+        {intel.resultLabel ? (
+          <span className={`text-[11px] font-semibold tabular-nums ${
+            intel.resultDirection === 'positive' ? 'text-emerald-600' :
+            intel.resultDirection === 'negative' ? 'text-red-600' :
+            'text-gray-400'
+          }`}>
+            {intel.resultLabel}
           </span>
         ) : (
-          <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${stageCfg.color} ${stageCfg.bgColor}`}>
-            {stageCfg.label}
-          </span>
+          <span className="text-[10px] text-gray-300">—</span>
         )}
       </div>
 
-      {/* Execution */}
-      <div className="px-2 py-2 flex items-center">
-        <ExecStatusPill status={row.execution_status} interactive row={row} />
-      </div>
-
-      {/* Lag */}
-      <div className="px-2 py-2 flex items-center justify-end">
-        {lagValue !== null ? (
-          <span className={`text-[11px] tabular-nums ${lagWarn ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>
-            {lagValue}d
+      {/* Action cue */}
+      <div className="px-1 py-2 flex items-center">
+        {intel.actionNeeded ? (
+          <span className={`text-[9px] font-semibold px-1.5 py-[3px] rounded ${
+            intel.urgency === 'critical' ? 'text-red-700 bg-red-100 border border-red-200' :
+            intel.urgency === 'high' ? 'text-amber-700 bg-amber-50 border border-amber-200' :
+            'text-gray-600 bg-gray-100'
+          }`}>
+            {intel.actionNeeded}
           </span>
         ) : (
-          <span className="text-[11px] text-gray-300">{'\u2014'}</span>
+          <span className="text-[9px] text-gray-300">—</span>
         )}
-      </div>
-
-      {/* Review */}
-      <div className="px-2 py-2 flex items-center">
-        {reviewState === 'reviewed' ? (
-          <span className="inline-flex items-center text-[9px] font-medium text-blue-600 px-1.5 py-0.5 rounded-full bg-blue-50" title="Reviewed">
-            <CheckCircle2 className="w-3 h-3" />
-          </span>
-        ) : reviewState === 'captured' ? (
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" title="Captured" />
-        ) : reviewState === 'in_progress' ? (
-          <button
-            onClick={e => { e.stopPropagation(); onSelect() }}
-            className="text-[9px] font-semibold text-amber-700 hover:text-amber-800 px-1.5 py-[3px] rounded bg-amber-50 hover:bg-amber-100 transition-colors leading-none"
-            title="Continue draft review"
-          >
-            Draft
-          </button>
-        ) : reviewState === 'needs_review' ? (
-          <button
-            onClick={e => { e.stopPropagation(); onSelect() }}
-            className="text-[9px] font-semibold text-red-600 hover:text-red-700 px-1.5 py-[3px] rounded bg-red-50 hover:bg-red-100 transition-colors leading-none"
-            title="Start post-mortem review"
-          >
-            Review
-          </button>
-        ) : null}
-      </div>
-
-      {/* Portfolio */}
-      <div className="px-2 py-2 flex items-center min-w-0">
-        <span className="text-[11px] text-gray-400 truncate">{row.portfolio_name || '\u2014'}</span>
       </div>
 
       {/* Owner */}
-      <div className="px-2 py-2 flex items-center min-w-0">
-        <span className="text-[11px] text-gray-400 truncate">{row.owner_name || '\u2014'}</span>
+      <div className="px-1 py-2 flex items-center min-w-0">
+        <span className="text-[10px] text-gray-400 truncate">{row.owner_name || '—'}</span>
+      </div>
+
+      {/* Date */}
+      <div className="px-1 py-2 flex items-center">
+        <span className="text-[9px] text-gray-400 tabular-nums">
+          {row.approved_at ? format(new Date(row.approved_at), 'M/d/yy') : format(new Date(row.created_at), 'M/d/yy')}
+        </span>
       </div>
     </div>
   )
@@ -1097,33 +993,81 @@ function DetailPanel({
   onClose: () => void
 }) {
   const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600', bgColor: 'bg-gray-100' }
+  const intel = inferDecisionIntelligence(row)
+  const vd = VERDICT_DISPLAY[intel.verdict]
 
   // Fetch the full decision story (theses, recommendation, acceptance, rationale, research)
   const firstExecId = row.matched_executions?.[0]?.event_id || null
   const { data: story, isLoading: storyLoading } = useDecisionStory(row.decision_id, firstExecId)
 
-  // Review status badge (mirrors PostMortemSection logic)
-  const reviewBadge = row.execution_status !== 'executed' ? null
-    : !story?.executionRationale ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">No review</span>
-    : story.executionRationale.status === 'reviewed' ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Reviewed</span>
-    : story.executionRationale.status === 'complete' ? <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Captured</span>
-    : <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">In Progress</span>
-
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Header */}
-      <div className="px-5 py-3.5 border-b border-gray-200 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-[3px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
-            {row.direction}
-          </span>
-          <span className="text-[14px] font-semibold text-gray-900 truncate">{row.asset_symbol}</span>
-          <span className="text-[12px] text-gray-400 truncate">{row.asset_name}</span>
-          {reviewBadge}
+      {/* Header — intervention summary */}
+      <div className={`px-4 py-3 border-b shrink-0 ${
+        intel.urgency === 'critical' ? 'border-red-300 bg-red-50/40' :
+        intel.urgency === 'high' ? 'border-amber-200 bg-amber-50/20' :
+        'border-gray-200'
+      }`}>
+        {/* Identity row */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded ${dirCfg.color} ${dirCfg.bgColor}`}>
+              {row.direction}
+            </span>
+            <span className="text-[14px] font-semibold text-gray-900 truncate">{row.asset_symbol}</span>
+            <span className="text-[11px] text-gray-400 truncate">{row.asset_name}</span>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
-          <X className="w-4 h-4" />
-        </button>
+
+        {/* Intervention block */}
+        <div className={`rounded border p-3 ${
+          intel.urgency === 'critical' ? 'bg-red-50 border-red-300' :
+          intel.urgency === 'high' ? `${vd.bgColor} border-amber-300` :
+          `${vd.bgColor} ${vd.borderColor.replace('border-l-', 'border-')}`
+        }`}>
+          {/* Verdict + Impact */}
+          <div className="flex items-baseline justify-between mb-1.5">
+            <span className={`text-[15px] font-black uppercase tracking-wide ${vd.color}`}>{vd.label}</span>
+            {intel.resultLabel && (
+              <span className={`text-[18px] font-black tabular-nums ${
+                intel.resultDirection === 'positive' ? 'text-emerald-600' : intel.resultDirection === 'negative' ? 'text-red-600' : 'text-gray-400'
+              }`}>
+                {intel.resultLabel}
+              </span>
+            )}
+          </div>
+
+          {/* Issue */}
+          <p className={`text-[11px] leading-snug mb-2 ${intel.urgency === 'critical' ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+            {intel.primaryIssue}
+          </p>
+
+          {/* Next action — prominent */}
+          {intel.actionNeeded ? (
+            <div className={`flex items-center justify-between px-3 py-2 rounded-md ${
+              intel.urgency === 'critical' ? 'bg-red-100 border border-red-200' :
+              intel.urgency === 'high' ? 'bg-amber-50 border border-amber-200' :
+              'bg-gray-100 border border-gray-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-[8px] font-black uppercase tracking-wider ${intel.urgency === 'critical' ? 'text-red-400' : 'text-gray-400'}`}>Next</span>
+                <span className={`text-[11px] font-bold ${intel.urgency === 'critical' ? 'text-red-800' : intel.urgency === 'high' ? 'text-amber-800' : 'text-gray-800'}`}>
+                  {intel.actionNeeded}
+                </span>
+              </div>
+              {intel.ageDays != null && intel.ageDays > 7 && (
+                <span className={`text-[9px] font-bold tabular-nums ${intel.ageDays >= 21 ? 'text-red-600' : 'text-amber-500'}`}>
+                  {intel.ageDays}d
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-[9px] text-gray-400">No action required</span>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -2003,190 +1947,42 @@ function ManualMatchPanel({ row }: { row: AccountabilityRow }) {
 // ============================================================
 
 // ============================================================
-// Scorecards View
+// Scorecards View (redesigned)
 // ============================================================
 
 type ScorecardSection = 'analysts' | 'pms'
 
-function ScorecardsView() {
+function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
   const [section, setSection] = useState<ScorecardSection>('analysts')
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
-
-  const access = useScorecardVisibility()
-  const { data: teamMembers = [], isLoading: membersLoading } = useTeamMembers()
-
-  const analysts = useMemo(() => teamMembers.filter(m => m.role === 'analyst'), [teamMembers])
-  const pms = useMemo(() => teamMembers.filter(m => m.role === 'pm' || m.role === 'both'), [teamMembers])
-
-  // Find current user in team
-  const { user } = useAuth()
-  const currentMember = teamMembers.find(m => m.userId === user?.id)
-
-  if (access.isLoading || membersLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600" />
-      </div>
-    )
-  }
 
   return (
     <div className="flex-1 overflow-auto p-4">
-      <div className="space-y-5 max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Section Toggle */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => { setSection('analysts'); setSelectedUserId(null) }}
-              className={`px-4 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
-                section === 'analysts'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Analyst Performance
-            </button>
-            <button
-              onClick={() => { setSection('pms'); setSelectedUserId(null) }}
-              className={`px-4 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
-                section === 'pms'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              PM Performance
-            </button>
-          </div>
-
-          {/* Visibility indicator */}
-          <div className="text-[10px] text-gray-400 flex items-center gap-1.5">
-            {access.visibility === 'open' && 'Visible to all'}
-            {access.visibility === 'role_scoped' && (
-              access.currentUserRole === 'pm'
-                ? 'Showing all analysts (PM view)'
-                : 'Showing your scorecard only'
-            )}
-            {access.visibility === 'private' && 'Private — your scorecard only'}
-          </div>
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-4">
+          <button
+            onClick={() => setSection('analysts')}
+            className={`px-4 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
+              section === 'analysts'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Analyst Performance
+          </button>
+          <button
+            onClick={() => setSection('pms')}
+            className={`px-4 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
+              section === 'pms'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            PM Performance
+          </button>
         </div>
 
-        {/* ── Analyst Section ── */}
-        {section === 'analysts' && (
-          <>
-            {selectedUserId ? (
-              <div className="space-y-4">
-                <button
-                  onClick={() => setSelectedUserId(null)}
-                  className="text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                >
-                  ← Back to all
-                </button>
-                <AnalystScorecardCard userId={selectedUserId} />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Current user's own card always shown */}
-                {currentMember && (
-                  <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Your Performance</div>
-                    <AnalystScorecardCard
-                      userId={currentMember.userId}
-                      className="cursor-pointer hover:shadow-md transition-shadow"
-                    />
-                  </div>
-                )}
-
-                {/* Team members — filtered by visibility */}
-                {access.canViewLeaderboard && analysts.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                      Team ({analysts.length} analyst{analysts.length !== 1 ? 's' : ''})
-                    </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      {analysts
-                        .filter(a => a.userId !== user?.id) // exclude current user (shown above)
-                        .map(a => (
-                          <div key={a.userId} onClick={() => setSelectedUserId(a.userId)} className="cursor-pointer">
-                            <AnalystScorecardCard
-                              userId={a.userId}
-                              compact
-                              anonymize={access.anonymize}
-                              className="hover:shadow-md transition-shadow"
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {!access.canViewLeaderboard && access.visibility !== 'open' && (
-                  <div className="text-center py-8 text-gray-400">
-                    <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="text-sm">Team scorecards are visible to portfolio managers</p>
-                    <p className="text-[10px] mt-1">Your individual scorecard is shown above</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ── PM Section ── */}
-        {section === 'pms' && (
-          <>
-            {selectedUserId ? (
-              <div className="space-y-4">
-                <button
-                  onClick={() => setSelectedUserId(null)}
-                  className="text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                >
-                  ← Back to all
-                </button>
-                <PMScorecardCard userId={selectedUserId} />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Current user if they're a PM */}
-                {currentMember && (currentMember.role === 'pm' || currentMember.role === 'both') && (
-                  <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Your PM Performance</div>
-                    <PMScorecardCard userId={currentMember.userId} />
-                  </div>
-                )}
-
-                {/* Other PMs — only visible if canViewLeaderboard or open */}
-                {(access.canViewLeaderboard || access.visibility === 'open') && pms.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                      Portfolio Managers ({pms.length})
-                    </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      {pms
-                        .filter(pm => pm.userId !== user?.id)
-                        .map(pm => (
-                          <div key={pm.userId} onClick={() => setSelectedUserId(pm.userId)} className="cursor-pointer">
-                            <PMScorecardCard
-                              userId={pm.userId}
-                              compact
-                              className="hover:shadow-md transition-shadow"
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {pms.length === 0 && (
-                  <div className="text-center py-8 text-gray-400">
-                    <Briefcase className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="text-sm">No portfolio managers found</p>
-                    <p className="text-[10px] mt-1">PM performance tracks decisions made by portfolio managers</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
+        {section === 'analysts' ? <AnalystScorecardsView portfolioId={portfolioId} /> : <PMScorecardsView portfolioId={portfolioId} />}
       </div>
     </div>
   )
@@ -2198,45 +1994,43 @@ function ScorecardsView() {
 
 export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabilityPageProps) {
   const [activeTab, setActiveTab] = useState<OutcomesSubTab>('decisions')
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null)
+  const { data: allPortfolios = [] } = usePortfoliosForFilter()
   const [filters, setFilters] = useState<Partial<AccountabilityFilters>>({
     showApproved: true,
-    showRejected: false,
-    showCancelled: false,
+    showRejected: true,
+    showCancelled: true,
     resultFilter: 'all',
     directionFilter: [],
   })
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [showUnmatched, setShowUnmatched] = useState(false)
-  const [showDiscretionaryOnly, setShowDiscretionaryOnly] = useState(false)
-  const [sortBy, setSortBy] = useState<'date' | 'lag'>('date')
+  const [activeChipKey, setActiveChipKey] = useState<string>('all')
+  const [colFilterOpen, setColFilterOpen] = useState<string | null>(null)
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
+  const [tickerSearch, setTickerSearch] = useState('')
+  const [nameSearch, setNameSearch] = useState('')
+  const [portfolioFilter, setPortfolioFilter] = useState<string | null>(null)
+  const [issueSearch, setIssueSearch] = useState('')
+  const [actionFilter, setActionFilter] = useState<string | null>(null)
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<string>('date')
   const [sortDesc, setSortDesc] = useState(true)
 
-  const { rows, unmatchedExecutions, summary, isLoading, isError, refetch } = useDecisionAccountability({ filters })
+  // Merge portfolio selection into filters
+  const effectiveFilters = useMemo(() => ({
+    ...filters,
+    portfolioIds: selectedPortfolioId ? [selectedPortfolioId] : [],
+  }), [filters, selectedPortfolioId])
 
-  // Count decisions that need attention
-  const pendingDecisionCount = useMemo(
-    () => rows.filter(r => r.execution_status === 'pending').length,
+  const { rows, unmatchedExecutions, summary, isLoading, isError, refetch } = useDecisionAccountability({ filters: effectiveFilters })
+
+  // Decision intelligence
+  const rowIntels = useMemo(() =>
+    rows.map(row => ({ row, intel: inferDecisionIntelligence(row) })),
     [rows]
   )
-  const unmatchedDecisionCount = useMemo(
-    () => rows.filter(r => r.execution_status === 'unmatched').length,
-    [rows]
-  )
-  const needsPostMortemCount = useMemo(
-    () => rows.filter(r => {
-      if (r.execution_status !== 'executed') return false
-      return !r.matched_executions.some(e => e.has_rationale)
-    }).length,
-    [rows]
-  )
-  const executedDecisionCount = useMemo(
-    () => rows.filter(r => r.execution_status === 'executed' && r.source !== 'discretionary').length,
-    [rows]
-  )
-  const discretionaryTradeCount = useMemo(
-    () => rows.filter(r => r.source === 'discretionary').length,
-    [rows]
-  )
+  const processHealth = useMemo(() => buildProcessHealth(rows), [rows])
+  const smartChips = useMemo(() => buildSmartChips(processHealth.counts), [processHealth.counts])
 
   // Sort rows
   const sortedRows = useMemo(() => {
@@ -2244,11 +2038,15 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     sorted.sort((a, b) => {
       let cmp = 0
       switch (sortBy) {
-        case 'lag':
-          cmp = (a.execution_lag_days ?? a.days_since_decision ?? -1) - (b.execution_lag_days ?? b.days_since_decision ?? -1)
-          break
-        case 'date':
-        default: {
+        case 'lag': cmp = (a.days_since_decision ?? -1) - (b.days_since_decision ?? -1); break
+        case 'ticker': cmp = (a.asset_symbol || '').localeCompare(b.asset_symbol || ''); break
+        case 'name': cmp = (a.asset_name || '').localeCompare(b.asset_name || ''); break
+        case 'portfolio': cmp = (a.portfolio_name || '').localeCompare(b.portfolio_name || ''); break
+        case 'result': cmp = (a.move_since_decision_pct ?? -999) - (b.move_since_decision_pct ?? -999); break
+        case 'owner': cmp = (a.owner_name || '').localeCompare(b.owner_name || ''); break
+        case 'state': cmp = (a.execution_status || '').localeCompare(b.execution_status || ''); break
+        case 'type': cmp = (a.direction || '').localeCompare(b.direction || ''); break
+        case 'date': default: {
           const aDate = a.approved_at || a.created_at
           const bDate = b.approved_at || b.created_at
           cmp = aDate.localeCompare(bDate)
@@ -2260,12 +2058,44 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     return sorted
   }, [rows, sortBy, sortDesc])
 
+  // Apply chip filter
+  // Urgency ranking for sort
+  const URGENCY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, none: 4 }
+
+  const displayRows = useMemo(() => {
+    const activeChip = smartChips.find(c => c.key === activeChipKey)
+    let mapped = sortedRows.map(row => {
+      const match = rowIntels.find(ri => ri.row.decision_id === row.decision_id)
+      return { row, intel: match?.intel ?? inferDecisionIntelligence(row) }
+    })
+    // Column filters
+    if (activeChip && activeChip.key !== 'all') mapped = mapped.filter(({ intel }) => activeChip.filterFn(intel))
+    if (typeFilter) mapped = mapped.filter(({ row }) => row.direction === typeFilter)
+    if (tickerSearch) { const q = tickerSearch.toLowerCase(); mapped = mapped.filter(({ row }) => row.asset_symbol?.toLowerCase().includes(q)) }
+    if (nameSearch) { const q = nameSearch.toLowerCase(); mapped = mapped.filter(({ row }) => row.asset_name?.toLowerCase().includes(q)) }
+    if (portfolioFilter) mapped = mapped.filter(({ row }) => row.portfolio_name === portfolioFilter)
+    if (issueSearch) { const q = issueSearch.toLowerCase(); mapped = mapped.filter(({ intel }) => intel.primaryIssue.toLowerCase().includes(q)) }
+    if (actionFilter) {
+      if (actionFilter === 'has_action') mapped = mapped.filter(({ intel }) => intel.actionNeeded != null)
+      else if (actionFilter === 'no_action') mapped = mapped.filter(({ intel }) => intel.actionNeeded == null)
+    }
+    if (ownerFilter) mapped = mapped.filter(({ row }) => row.owner_name === ownerFilter)
+    // Sort by urgency (critical first) then by existing sort
+    mapped.sort((a, b) => {
+      const ua = URGENCY_RANK[a.intel.urgency] ?? 4
+      const ub = URGENCY_RANK[b.intel.urgency] ?? 4
+      if (ua !== ub) return ua - ub
+      return 0
+    })
+    return mapped
+  }, [sortedRows, rowIntels, activeChipKey, smartChips, typeFilter, tickerSearch, nameSearch, portfolioFilter, issueSearch, actionFilter, ownerFilter])
+
   const selectedRow = useMemo(
     () => sortedRows.find(r => r.decision_id === selectedId) || null,
     [sortedRows, selectedId],
   )
 
-  const handleSort = (col: 'date' | 'lag') => {
+  const handleSort = (col: 'date' | 'lag' | 'ticker' | 'result') => {
     if (sortBy === col) {
       setSortDesc(!sortDesc)
     } else {
@@ -2274,214 +2104,167 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     }
   }
 
+  // Column definitions — every column has sort + filter
+  // Portfolio column only shows when viewing all portfolios
+  type ColDef = { id: string; label: string; sortKey: string; filterType: 'dropdown' | 'search' }
+  const columnHeaders: ColDef[] = useMemo(() => {
+    const cols: ColDef[] = [
+      { id: 'state', label: 'State', sortKey: 'state', filterType: 'dropdown' },
+      { id: 'age', label: 'Age', sortKey: 'lag', filterType: 'dropdown' },
+      { id: 'type', label: 'Type', sortKey: 'type', filterType: 'dropdown' },
+      { id: 'ticker', label: 'Ticker', sortKey: 'ticker', filterType: 'search' },
+      { id: 'name', label: 'Name', sortKey: 'name', filterType: 'search' },
+    ]
+    if (!selectedPortfolioId) {
+      cols.push({ id: 'portfolio', label: 'Portfolio', sortKey: 'portfolio', filterType: 'dropdown' })
+    }
+    cols.push(
+      { id: 'issue', label: 'Issue', sortKey: 'state', filterType: 'search' },
+      { id: 'result', label: 'Result', sortKey: 'result', filterType: 'dropdown' },
+      { id: 'action', label: 'Action', sortKey: 'state', filterType: 'dropdown' },
+      { id: 'owner', label: 'Owner', sortKey: 'owner', filterType: 'dropdown' },
+      { id: 'date', label: 'Date', sortKey: 'date', filterType: 'dropdown' },
+    )
+    return cols
+  }, [selectedPortfolioId])
+
+  const MAIN_GRID = selectedPortfolioId ? GRID_WITHOUT_PORTFOLIO : GRID_WITH_PORTFOLIO
+
+  // Unique values for dropdown filters
+  const uniquePortfolios = useMemo(() => [...new Set(rows.map(r => r.portfolio_name).filter(Boolean))].sort() as string[], [rows])
+  const uniqueOwners = useMemo(() => [...new Set(rows.map(r => r.owner_name).filter(Boolean))].sort() as string[], [rows])
+
   return (
     <div className="h-full flex flex-col bg-white">
       {/* ── HEADER ─────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-6 shrink-0">
-        {/* Row 1: Title + Stats */}
-        <div className="flex items-center justify-between pt-2 pb-0">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-teal-100 rounded-lg">
-              <Target className="w-4 h-4 text-teal-600" />
-            </div>
-            <h1 className="text-lg font-semibold text-gray-900">Outcomes</h1>
+      <div className="bg-white border-b border-gray-200 px-5 shrink-0">
+        {/* Row 1: Title + Tabs */}
+        <div className="flex items-center gap-4 pt-2 pb-1.5">
+          <div className="flex items-center gap-2 shrink-0">
+            <Target className="w-4 h-4 text-teal-600" />
+            <h1 className="text-[15px] font-semibold text-gray-900">Outcomes</h1>
           </div>
 
-          {activeTab === 'decisions' && (() => {
-            const noFilter = (!filters.executionStatus || filters.executionStatus.length === 0)
-              && (filters.reviewFilter || 'all') === 'all'
-              && !showDiscretionaryOnly
-            const isActive = (key: string) => {
-              if (key === 'all') return noFilter
-              if (key === 'executed') return (filters.executionStatus || []).length === 1 && filters.executionStatus![0] === 'executed' && filters.reviewFilter !== 'needs_review'
-              if (key === 'pending') return (filters.executionStatus || []).length === 1 && filters.executionStatus![0] === 'pending'
-              if (key === 'unmatched') return (filters.executionStatus || []).length === 1 && filters.executionStatus![0] === 'unmatched'
-              if (key === 'review') return filters.reviewFilter === 'needs_review'
-              if (key === 'discretionary') return showDiscretionaryOnly
-              return false
-            }
-            const clearAll = () => {
-              setShowDiscretionaryOnly(false)
-              setFilters({ ...filters, executionStatus: [], reviewFilter: 'all' })
-            }
-            const selectFilter = (key: string) => {
-              if (isActive(key)) { clearAll(); return }
-              setShowDiscretionaryOnly(key === 'discretionary')
-              if (key === 'discretionary') {
-                setFilters({ ...filters, executionStatus: [], reviewFilter: 'all' })
-              } else if (key === 'review') {
-                setFilters({ ...filters, executionStatus: ['executed'], reviewFilter: 'needs_review' })
-              } else if (key === 'all') {
-                clearAll()
-              } else {
-                setFilters({ ...filters, executionStatus: [key as ExecutionMatchStatus], reviewFilter: 'all' })
-              }
-            }
-
-            const badges: { key: string; count: number; label: string; icon: typeof CheckCircle2; activeClass: string; defaultClass: string }[] = [
-              { key: 'all', count: rows.length, label: 'all', icon: Target, activeClass: 'border-gray-400 bg-gray-100 text-gray-800', defaultClass: 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50' },
-              { key: 'executed', count: executedDecisionCount, label: 'executed', icon: CheckCircle2, activeClass: 'border-emerald-300 bg-emerald-100 text-emerald-800', defaultClass: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
-              { key: 'pending', count: pendingDecisionCount, label: 'pending', icon: Clock, activeClass: 'border-amber-300 bg-amber-100 text-amber-800', defaultClass: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100' },
-              { key: 'unmatched', count: unmatchedDecisionCount, label: 'unmatched', icon: AlertTriangle, activeClass: 'border-red-300 bg-red-100 text-red-800', defaultClass: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' },
-              { key: 'review', count: needsPostMortemCount, label: 'need review', icon: Pencil, activeClass: 'border-blue-300 bg-blue-100 text-blue-800', defaultClass: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100' },
-              { key: 'discretionary', count: discretionaryTradeCount, label: 'discretionary', icon: Zap, activeClass: 'border-violet-300 bg-violet-100 text-violet-800', defaultClass: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' },
-            ]
-
-            return (
-              <div className="flex items-center gap-1.5">
-                {badges.map(b => {
-                  const active = isActive(b.key)
-                  const Icon = b.icon
-                  return (
-                    <button
-                      key={b.key}
-                      onClick={() => selectFilter(b.key)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
-                        active ? b.activeClass : b.defaultClass
-                      } ${b.count === 0 && b.key !== 'all' ? 'opacity-40' : ''}`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {b.count} {b.label}
-                    </button>
-                  )
-                })}
-              </div>
-            )
-          })()}
-        </div>
-
-        {/* Row 2: Tabs + Filters on same line */}
-        <div className="flex items-center gap-4 pb-2.5">
-          {/* Tabs */}
           <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => setActiveTab('decisions')}
-              className={`px-4 py-1.5 text-[13px] font-medium rounded-lg transition-colors ${
-                activeTab === 'decisions'
-                  ? 'bg-teal-50 text-teal-700'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
+            <button onClick={() => setActiveTab('decisions')}
+              className={`px-3.5 py-1 text-[12px] font-medium rounded-md transition-colors ${activeTab === 'decisions' ? 'bg-teal-50 text-teal-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
               Decisions
             </button>
-            <button
-              onClick={() => setActiveTab('scorecards')}
-              className={`px-4 py-1.5 text-[13px] font-medium rounded-lg transition-colors ${
-                activeTab === 'scorecards'
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
+            <button onClick={() => setActiveTab('scorecards')}
+              className={`px-3.5 py-1 text-[12px] font-medium rounded-md transition-colors ${activeTab === 'scorecards' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
               Scorecards
             </button>
           </div>
 
-          {/* Filters inline — invisible (not removed) when on scorecards */}
-          <div className={`flex items-center gap-4 ${activeTab !== 'decisions' ? 'invisible' : ''}`}>
-            <div className="w-px h-5 bg-gray-200" />
-            <FilterBar filters={filters} onChange={setFilters} />
+          {/* Portfolio selector — shared across Decisions + Scorecards */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+            <select
+              value={selectedPortfolioId || ''}
+              onChange={e => setSelectedPortfolioId(e.target.value || null)}
+              className="text-[12px] font-semibold border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 cursor-pointer"
+            >
+              <option value="">All Portfolios</option>
+              {allPortfolios.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
+
+          <div className="flex-1" />
         </div>
+
+        {/* Row 2: Diagnosis + Process chain + Command bar + Filters */}
+        {activeTab === 'decisions' && processHealth.counts.total > 0 && (() => {
+          const hd = HEALTH_DISPLAY[processHealth.level]
+          const isSevere = processHealth.level === 'critical' || processHealth.level === 'degraded'
+          const isCritical = processHealth.level === 'critical'
+          return (
+            <div className="pb-2 space-y-1.5">
+              {/* Row 1: Diagnosis + Process chain + Date filter */}
+              <div className={`flex items-center gap-4 rounded ${isSevere ? `border ${hd.borderColor} ${hd.bgColor} px-3 py-2.5` : 'py-1'}`}>
+                {/* Diagnosis */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2 mb-0.5">
+                    <span className={`text-[12px] font-black uppercase tracking-wide ${hd.color}`}>{hd.label}</span>
+                    {processHealth.primaryBreakdown && (
+                      <span className={`text-[11px] font-semibold ${isSevere ? 'text-gray-700' : 'text-gray-500'}`}>· {processHealth.primaryBreakdown}</span>
+                    )}
+                  </div>
+                  <p className={`text-[12px] leading-snug ${isCritical ? 'text-gray-900 font-semibold' : isSevere ? 'text-gray-700' : 'text-gray-500'}`}>
+                    {processHealth.headline}
+                  </p>
+                  {processHealth.narrative && processHealth.narrative !== processHealth.headline && (
+                    <p className={`text-[10px] leading-snug mt-0.5 ${isSevere ? 'text-gray-500' : 'text-gray-400'}`}>{processHealth.narrative}</p>
+                  )}
+                </div>
+
+                {/* Date range */}
+                <div className="shrink-0">
+                  <FilterBar filters={filters} onChange={setFilters} />
+                </div>
+              </div>
+
+              {/* Row 2: Command bar — primary action dominant */}
+              {processHealth.recommendations.length > 0 && processHealth.level !== 'healthy' && (
+                <div className="flex items-center gap-2">
+                  {processHealth.recommendations.map((r, i) => {
+                    const chipKey = r.includes('stalled') ? 'stalled'
+                      : (r.includes('post-mortem') || r.includes('review')) ? 'review'
+                      : r.includes('unmatched') ? 'unmatched'
+                      : r.includes('discretionary') ? 'discretionary'
+                      : null
+                    const isActive = chipKey != null && activeChipKey === chipKey
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => { if (chipKey) setActiveChipKey(isActive ? 'all' : chipKey) }}
+                        className={`text-[10px] px-3 py-1.5 rounded border transition-colors cursor-pointer ${
+                          isActive
+                            ? 'text-white bg-gray-900 border-gray-900 font-bold ring-2 ring-gray-900/20'
+                            : 'text-gray-700 bg-white border-gray-300 font-medium hover:bg-gray-50 hover:border-gray-400'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       {activeTab === 'scorecards' ? (
-        <ScorecardsView />
+        <ScorecardsView portfolioId={selectedPortfolioId} />
       ) : (
       <>
 
       {/* ── CONTENT ────────────────────────────────────────── */}
       <div className="flex-1 min-h-0">
-        {showUnmatched ? (
-          /* ── Discretionary Trades View ── */
-          <div className="h-full flex flex-col border-t border-gray-200 overflow-hidden bg-white">
-            <div className="px-4 py-2.5 border-b border-gray-200 bg-violet-50/50 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <Zap className="w-3.5 h-3.5 text-violet-600" />
-                <span className="text-[12px] font-semibold text-gray-800">
-                  Discretionary Trades
-                </span>
-                <span className="text-[10px] text-gray-400">
-                  Position changes with no linked decision — add context
-                </span>
-              </div>
-              <button onClick={() => setShowUnmatched(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className={`grid ${UNMATCHED_GRID} bg-gray-50 border-b border-gray-200 shrink-0`}>
-              <ColHeader>Date</ColHeader>
-              <ColHeader>Asset</ColHeader>
-              <ColHeader>Action</ColHeader>
-              <ColHeader align="right">Position Delta</ColHeader>
-              <ColHeader>Source</ColHeader>
-              <ColHeader>Portfolio</ColHeader>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {unmatchedExecutions.length > 0 ? (
-                unmatchedExecutions.map((evt, idx) => (
-                  <div
-                    key={evt.event_id}
-                    className={`grid ${UNMATCHED_GRID} border-b border-gray-100 ${
-                      idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
-                    }`}
-                  >
-                    <div className="px-2.5 py-[7px] text-[11px] text-gray-500 tabular-nums">
-                      {format(new Date(evt.event_date), 'MMM d')}
-                    </div>
-                    <div className="px-2.5 py-[7px] flex items-center gap-1.5 min-w-0">
-                      <span className="text-[11px] font-semibold text-gray-900">{evt.asset_symbol || '?'}</span>
-                      <span className="text-[10px] text-gray-400 truncate">{evt.asset_name || ''}</span>
-                    </div>
-                    <div className="px-2.5 py-[7px]">
-                      <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded bg-gray-100 text-gray-600">
-                        {evt.action_type}
-                      </span>
-                    </div>
-                    <div className="px-2.5 py-[7px] text-right">
-                      {evt.quantity_delta !== null ? (
-                        <span className={`text-[10px] font-semibold tabular-nums ${
-                          evt.quantity_delta > 0 ? 'text-emerald-600' : 'text-red-600'
-                        }`}>
-                          {evt.quantity_delta > 0 ? '+' : ''}{evt.quantity_delta.toLocaleString()} shr
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-gray-300">{'\u2014'}</span>
-                      )}
-                    </div>
-                    <div className="px-2.5 py-[7px]">
-                      <span className="text-[9px] text-gray-400 uppercase tracking-wide">{evt.source_type}</span>
-                    </div>
-                    <div className="px-2.5 py-[7px]">
-                      <span className="text-[10px] text-gray-400 truncate">{evt.portfolio_name || '\u2014'}</span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="py-10 text-center text-[11px] text-gray-400">
-                  No unmatched executions.
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
+        {(
           /* ── Main Decision Table + Detail + Bottom Chart ── */
           <div className="h-full flex border-t border-gray-200 overflow-hidden">
             {/* Left: Table rows + chart below */}
             <div className="flex-1 min-w-0 flex flex-col bg-white">
               {/* Column headers */}
               <div className={`grid ${MAIN_GRID} bg-gray-50 border-b border-gray-200 shrink-0`}>
-                <ColHeader sortable sortActive={sortBy === 'date'} sortDesc={sortDesc} onSort={() => handleSort('date')}>Date</ColHeader>
-                <ColHeader>Symbol</ColHeader>
-                <ColHeader>Name</ColHeader>
-                <ColHeader>Type</ColHeader>
-                <ColHeader>Decision</ColHeader>
-                <ColHeader>Execution</ColHeader>
-                <ColHeader sortable sortActive={sortBy === 'lag'} sortDesc={sortDesc} onSort={() => handleSort('lag')}>Lag</ColHeader>
-                <ColHeader>Review</ColHeader>
-                <ColHeader>Portfolio</ColHeader>
-                <ColHeader>Owner</ColHeader>
+                {columnHeaders.map(col => (
+                  <TableColHeader
+                    key={col.id} col={col}
+                    sortBy={sortBy} sortDesc={sortDesc} onSort={handleSort}
+                    colFilterOpen={colFilterOpen} setColFilterOpen={setColFilterOpen}
+                    activeChipKey={activeChipKey} setActiveChipKey={setActiveChipKey} smartChips={smartChips}
+                    typeFilter={typeFilter} setTypeFilter={setTypeFilter}
+                    tickerSearch={tickerSearch} setTickerSearch={setTickerSearch}
+                    nameSearch={nameSearch} setNameSearch={setNameSearch}
+                    portfolioFilter={portfolioFilter} setPortfolioFilter={setPortfolioFilter}
+                    issueSearch={issueSearch} setIssueSearch={setIssueSearch}
+                    actionFilter={actionFilter} setActionFilter={setActionFilter}
+                    ownerFilter={ownerFilter} setOwnerFilter={setOwnerFilter}
+                    uniquePortfolios={uniquePortfolios} uniqueOwners={uniqueOwners}
+                  />
+                ))}
               </div>
 
               {/* Rows */}
@@ -2506,13 +2289,15 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                     </p>
                   </div>
                 ) : (
-                  (showDiscretionaryOnly ? sortedRows.filter(r => r.source === 'discretionary') : sortedRows).map((row, idx) => (
+                  displayRows.map(({ row, intel }) => (
                     <DecisionRow
                       key={row.decision_id}
                       row={row}
+                      intel={intel}
                       isSelected={row.decision_id === selectedId}
-                      isEven={idx % 2 === 0}
                       onSelect={() => setSelectedId(row.decision_id === selectedId ? null : row.decision_id)}
+                      gridClass={MAIN_GRID}
+                      showPortfolio={!selectedPortfolioId}
                     />
                   ))
                 )}
@@ -2546,25 +2331,168 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
 // Column headers
 // ============================================================
 
-function ColHeader({ children, align = 'left', sortable, sortActive, sortDesc, onSort }: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  sortable?: boolean
-  sortActive?: boolean
-  sortDesc?: boolean
-  onSort?: () => void
+function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFilterOpen,
+  activeChipKey, setActiveChipKey, smartChips, typeFilter, setTypeFilter, tickerSearch, setTickerSearch,
+  nameSearch, setNameSearch, portfolioFilter, setPortfolioFilter, issueSearch, setIssueSearch,
+  actionFilter, setActionFilter, ownerFilter, setOwnerFilter, uniquePortfolios, uniqueOwners,
+}: {
+  col: { id: string; label: string; sortKey: string; filterType: string }
+  sortBy: string; sortDesc: boolean; onSort: (col: any) => void
+  colFilterOpen: string | null; setColFilterOpen: (v: string | null) => void
+  activeChipKey: string; setActiveChipKey: (v: string) => void; smartChips: SmartChip[]
+  typeFilter: string | null; setTypeFilter: (v: string | null) => void
+  tickerSearch: string; setTickerSearch: (v: string) => void
+  nameSearch: string; setNameSearch: (v: string) => void
+  portfolioFilter: string | null; setPortfolioFilter: (v: string | null) => void
+  issueSearch: string; setIssueSearch: (v: string) => void
+  actionFilter: string | null; setActionFilter: (v: string | null) => void
+  ownerFilter: string | null; setOwnerFilter: (v: string | null) => void
+  uniquePortfolios: string[]; uniqueOwners: string[]
 }) {
+  const isSortActive = sortBy === col.sortKey
+  const isFilterActive =
+    (col.id === 'state' && activeChipKey !== 'all') ||
+    (col.id === 'type' && typeFilter != null) ||
+    (col.id === 'ticker' && tickerSearch !== '') ||
+    (col.id === 'name' && nameSearch !== '') ||
+    (col.id === 'portfolio' && portfolioFilter != null) ||
+    (col.id === 'issue' && issueSearch !== '') ||
+    (col.id === 'action' && actionFilter != null) ||
+    (col.id === 'owner' && ownerFilter != null)
+  const isOpen = colFilterOpen === col.id
+  const isActive = isSortActive || isFilterActive
+
   return (
-    <div
-      onClick={sortable ? onSort : undefined}
-      className={`px-2 py-2 ${sortable ? 'cursor-pointer' : ''} ${
-        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
-      }`}
-    >
-      <span className={`text-[9px] font-bold uppercase tracking-wider select-none ${sortActive ? 'text-gray-700' : 'text-gray-400'}`}>
-        {children}
-        {sortActive && <span className="ml-0.5">{sortDesc ? '\u25BC' : '\u25B2'}</span>}
-      </span>
+    <div className="px-1 py-2 relative flex items-center h-full">
+      {/* Sort button */}
+      <button
+        onClick={() => onSort(col.sortKey)}
+        className={`text-[10px] font-black uppercase tracking-wide select-none cursor-pointer ${isActive ? 'text-gray-800' : 'text-gray-500'} hover:text-gray-800`}
+      >
+        {col.label}
+        {isSortActive ? <span className="ml-0.5 text-[8px]">{sortDesc ? '▼' : '▲'}</span> : <span className="ml-0.5 text-gray-300 text-[8px]">↕</span>}
+      </button>
+
+      {/* Filter button */}
+      <button
+        onClick={() => setColFilterOpen(isOpen ? null : col.id)}
+        className={`ml-1 cursor-pointer ${isFilterActive ? 'text-gray-800' : 'text-gray-300'} hover:text-gray-600`}
+      >
+        <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Filter dropdowns */}
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setColFilterOpen(null)} />
+          <div className="absolute left-0 top-full mt-0.5 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[120px]">
+            {/* State */}
+            {col.id === 'state' && (
+              <div className="py-1">
+                {smartChips.map(chip => (
+                  <button key={chip.key} onClick={() => { setActiveChipKey(chip.key); setColFilterOpen(null) }}
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium flex items-center justify-between ${
+                      activeChipKey === chip.key ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                    } ${chip.count === 0 && chip.key !== 'all' ? 'opacity-40' : ''}`}>
+                    <span className="capitalize">{chip.label}</span>
+                    <span className="text-[9px] text-gray-400 tabular-nums">{chip.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Age */}
+            {col.id === 'age' && (
+              <div className="py-1">
+                {[{ k: 'all', l: 'All' }, { k: 'stalled', l: 'Stalled (>14d)' }, { k: 'hurting', l: 'Hurting' }].map(o => (
+                  <button key={o.k} onClick={() => { setActiveChipKey(o.k); setColFilterOpen(null) }}
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${activeChipKey === o.k ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{o.l}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Type */}
+            {col.id === 'type' && (
+              <div className="py-1">
+                <button onClick={() => { setTypeFilter(null); setColFilterOpen(null) }}
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!typeFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                {['buy', 'sell', 'add', 'trim'].map(t => (
+                  <button key={t} onClick={() => { setTypeFilter(t); setColFilterOpen(null) }}
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium capitalize ${typeFilter === t ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{t}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Search-based: ticker, name, issue */}
+            {(col.id === 'ticker' || col.id === 'name' || col.id === 'issue') && (() => {
+              const val = col.id === 'ticker' ? tickerSearch : col.id === 'name' ? nameSearch : issueSearch
+              const setVal = col.id === 'ticker' ? setTickerSearch : col.id === 'name' ? setNameSearch : setIssueSearch
+              return (
+                <div className="p-2">
+                  <input autoFocus type="text" placeholder={`Filter ${col.label.toLowerCase()}...`} value={val}
+                    onChange={e => setVal(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setColFilterOpen(null) }}
+                    className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+                  {val && <button onClick={() => { setVal(''); setColFilterOpen(null) }} className="text-[9px] text-gray-400 hover:text-gray-600 mt-1">Clear</button>}
+                </div>
+              )
+            })()}
+
+            {/* Portfolio */}
+            {col.id === 'portfolio' && (
+              <div className="py-1 max-h-48 overflow-auto">
+                <button onClick={() => { setPortfolioFilter(null); setColFilterOpen(null) }}
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!portfolioFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                {uniquePortfolios.map(p => (
+                  <button key={p} onClick={() => { setPortfolioFilter(p); setColFilterOpen(null) }}
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium truncate ${portfolioFilter === p ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{p}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Result */}
+            {col.id === 'result' && (
+              <div className="py-1">
+                {[{ k: 'all', l: 'All' }, { k: 'hurting', l: 'Negative' }, { k: 'working', l: 'Positive' }].map(o => (
+                  <button key={o.k} onClick={() => { setActiveChipKey(o.k); setColFilterOpen(null) }}
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${activeChipKey === o.k ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{o.l}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Action */}
+            {col.id === 'action' && (
+              <div className="py-1">
+                <button onClick={() => { setActionFilter(null); setColFilterOpen(null) }}
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!actionFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                <button onClick={() => { setActionFilter('has_action'); setColFilterOpen(null) }}
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${actionFilter === 'has_action' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>Has action</button>
+                <button onClick={() => { setActionFilter('no_action'); setColFilterOpen(null) }}
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${actionFilter === 'no_action' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>No action</button>
+              </div>
+            )}
+
+            {/* Owner */}
+            {col.id === 'owner' && (
+              <div className="py-1 max-h-48 overflow-auto">
+                <button onClick={() => { setOwnerFilter(null); setColFilterOpen(null) }}
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!ownerFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                {uniqueOwners.map(o => (
+                  <button key={o} onClick={() => { setOwnerFilter(o); setColFilterOpen(null) }}
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium truncate ${ownerFilter === o ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{o}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Date */}
+            {col.id === 'date' && (
+              <div className="py-1">
+                <p className="px-3 py-1 text-[9px] text-gray-400">Use date filters above</p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
