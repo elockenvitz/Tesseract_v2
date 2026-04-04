@@ -405,6 +405,7 @@ export function Layout({
               "relative h-full flex flex-col",
               isFullWidth ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
               !isFullWidth && !isCompactPad && "px-4 sm:px-6 lg:px-8 py-6",
+              "transition-[margin] duration-300 ease-in-out",
               isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
               isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
             )}>

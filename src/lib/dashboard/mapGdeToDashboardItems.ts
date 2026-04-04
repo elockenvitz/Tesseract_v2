@@ -456,8 +456,10 @@ export function mapDecisionItem(
   if (item.context.ratingFrom) meta.ratingFrom = item.context.ratingFrom
   if (item.context.ratingTo) meta.ratingTo = item.context.ratingTo
   if (item.context.proposedWeight != null) meta.proposedWeight = item.context.proposedWeight
+  if (item.context.deltaWeight != null) meta.deltaWeight = item.context.deltaWeight
   if (item.context.isPairTrade) meta.isPairTrade = true
   if (item.context.stage) meta.stage = item.context.stage
+  if (item.context.needsPM) meta.needsPM = true
 
   return {
     id: item.id,

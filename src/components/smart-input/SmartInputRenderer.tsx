@@ -235,6 +235,114 @@ function parseContent(
   return segments
 }
 
+// ---------------------------------------------------------------------------
+// FormattedTextBlock — Direct rendering with line breaks, bullets, spacing
+// No ReactMarkdown — just parse lines into native HTML elements
+// ---------------------------------------------------------------------------
+
+function FormattedTextBlock({ text }: { text: string }) {
+  const lines = text.split('\n')
+  const elements: React.ReactNode[] = []
+  let bulletGroup: { prefix: string; content: string }[] = []
+  let orderedGroup: { num: string; content: string }[] = []
+
+  const flushBullets = () => {
+    if (bulletGroup.length === 0) return
+    elements.push(
+      <ul key={`ul-${elements.length}`} className="list-disc pl-5 my-1.5 space-y-0.5 text-sm text-gray-700">
+        {bulletGroup.map((b, i) => <li key={i}>{applyInlineFormatting(b.content)}</li>)}
+      </ul>
+    )
+    bulletGroup = []
+  }
+
+  const flushOrdered = () => {
+    if (orderedGroup.length === 0) return
+    elements.push(
+      <ol key={`ol-${elements.length}`} className="list-decimal pl-5 my-1.5 space-y-0.5 text-sm text-gray-700">
+        {orderedGroup.map((b, i) => <li key={i}>{applyInlineFormatting(b.content)}</li>)}
+      </ol>
+    )
+    orderedGroup = []
+  }
+
+  for (const line of lines) {
+    // Bullet list item: -, *, +, •, –
+    const bulletMatch = line.match(/^\s*[-*+•–]\s+(.*)/)
+    if (bulletMatch) {
+      flushOrdered()
+      bulletGroup.push({ prefix: '-', content: bulletMatch[1] })
+      continue
+    }
+
+    // Ordered list item: 1. 2. etc.
+    const orderedMatch = line.match(/^\s*(\d+)\.\s+(.*)/)
+    if (orderedMatch) {
+      flushBullets()
+      orderedGroup.push({ num: orderedMatch[1], content: orderedMatch[2] })
+      continue
+    }
+
+    // Not a list item — flush any open lists
+    flushBullets()
+    flushOrdered()
+
+    // Blank line → visible spacer
+    if (line.trim() === '') {
+      elements.push(<div key={`br-${elements.length}`} className="h-3" />)
+      continue
+    }
+
+    // Regular text paragraph
+    elements.push(
+      <p key={`p-${elements.length}`} className="text-sm text-gray-700 my-0.5 leading-relaxed">
+        {applyInlineFormatting(line)}
+      </p>
+    )
+  }
+
+  flushBullets()
+  flushOrdered()
+
+  return <div>{elements}</div>
+}
+
+// Apply **bold** and *italic* markdown inline formatting
+function applyInlineFormatting(text: string): React.ReactNode {
+  // Bold: **text** or __text__
+  // Italic: *text* or _text_
+  const parts: React.ReactNode[] = []
+  let remaining = text
+  let key = 0
+
+  while (remaining.length > 0) {
+    // Bold
+    const boldMatch = remaining.match(/\*\*(.+?)\*\*|__(.+?)__/)
+    // Italic (but not **)
+    const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/)
+
+    const boldIdx = boldMatch?.index ?? Infinity
+    const italicIdx = italicMatch?.index ?? Infinity
+
+    if (boldIdx === Infinity && italicIdx === Infinity) {
+      parts.push(<span key={key++}>{remaining}</span>)
+      break
+    }
+
+    if (boldIdx <= italicIdx && boldMatch) {
+      if (boldMatch.index! > 0) parts.push(<span key={key++}>{remaining.slice(0, boldMatch.index!)}</span>)
+      parts.push(<strong key={key++}>{boldMatch[1] || boldMatch[2]}</strong>)
+      remaining = remaining.slice(boldMatch.index! + boldMatch[0].length)
+    } else if (italicMatch) {
+      if (italicMatch.index! > 0) parts.push(<span key={key++}>{remaining.slice(0, italicMatch.index!)}</span>)
+      parts.push(<em key={key++}>{italicMatch[1] || italicMatch[2]}</em>)
+      remaining = remaining.slice(italicMatch.index! + italicMatch[0].length)
+    }
+  }
+
+  return parts.length === 1 ? parts[0] : <>{parts}</>
+}
+
 interface SegmentRendererProps {
   segment: ParsedSegment
   onMentionClick?: (userId: string) => void
@@ -258,11 +366,17 @@ function SegmentRenderer({
           p: ({ children }: { children?: React.ReactNode }) => <span>{children} </span>
         } : undefined
 
-        return (
-          <span className={clsx('prose prose-sm max-w-none', inline && 'inline')}>
-            <ReactMarkdown components={components}>{segment.content}</ReactMarkdown>
-          </span>
-        )
+        if (inline) {
+          return (
+            <span className="prose prose-sm max-w-none inline">
+              <ReactMarkdown components={components}>{segment.content}</ReactMarkdown>
+            </span>
+          )
+        }
+
+        // Direct rendering: parse lines into paragraphs, bullet lists, and blank lines.
+        // This avoids ReactMarkdown's whitespace collapsing entirely.
+        return <FormattedTextBlock text={segment.content} />
       }
       return <span>{segment.content}</span>
 

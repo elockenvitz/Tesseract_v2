@@ -10,6 +10,46 @@ import { clsx } from 'clsx'
 import { FieldHistory } from './FieldHistory'
 import { CitationButton } from '../communication/CitationButton'
 
+// ---------------------------------------------------------------------------
+// Render plain text with bullet/list detection
+// ---------------------------------------------------------------------------
+
+function renderFormattedContent(text: string): React.ReactNode {
+  const lines = text.split('\n')
+  const elements: React.ReactNode[] = []
+  let bulletGroup: string[] = []
+
+  const flushBullets = () => {
+    if (bulletGroup.length === 0) return
+    elements.push(
+      <ul key={`ul-${elements.length}`} className="list-disc pl-5 my-1.5 space-y-0.5">
+        {bulletGroup.map((b, i) => (
+          <li key={i} className="text-sm text-gray-700">{b}</li>
+        ))}
+      </ul>
+    )
+    bulletGroup = []
+  }
+
+  for (const line of lines) {
+    const bulletMatch = line.match(/^\s*[-•*–+]\s+(.+)/)
+    if (bulletMatch) {
+      bulletGroup.push(bulletMatch[1])
+    } else {
+      flushBullets()
+      if (line.trim() === '') {
+        // Visible blank line spacer
+        elements.push(<div key={`sp-${elements.length}`} className="h-3" />)
+      } else {
+        elements.push(<p key={`p-${elements.length}`} className="text-sm text-gray-700 my-0.5 leading-relaxed">{line}</p>)
+      }
+    }
+  }
+  flushBullets()
+
+  return <>{elements}</>
+}
+
 interface EditableSectionWithHistoryProps {
   title: string
   content: string
@@ -45,17 +85,24 @@ function EditableSectionWithHistoryInner(
 ) {
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(content)
+  const [displayContent, setDisplayContent] = useState(content)
   const [isSaving, setIsSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'content' | 'history'>('content')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Only sync incoming props when NOT editing to avoid stomping local text
+  // Sync incoming props when NOT editing
   useEffect(() => {
-    if (!isEditing) setEditContent(content)
+    if (!isEditing) {
+      setEditContent(content)
+      setDisplayContent(content)
+    }
   }, [content, fieldName, isEditing])
 
   useEffect(() => {
-    if (isEditing && textareaRef.current) textareaRef.current.focus()
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus()
+      autoGrow(textareaRef.current)
+    }
   }, [isEditing])
 
   const saveIfEditing = async () => {
@@ -87,6 +134,7 @@ function EditableSectionWithHistoryInner(
     }
     setIsSaving(true)
     try {
+      setDisplayContent(next)
       await onSave(next)
       setIsEditing(false)
       onEditEnd?.()
@@ -114,11 +162,62 @@ function EditableSectionWithHistoryInner(
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const autoGrow = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto'
+    el.style.height = `${Math.max(120, el.scrollHeight)}px`
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape') {
       handleCancel()
-    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      return
+    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       void handleSave()
+      return
+    }
+    // Auto-continue bullet lists on Enter
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const el = e.currentTarget
+      const { selectionStart } = el
+      const before = editContent.slice(0, selectionStart)
+      const after = editContent.slice(selectionStart)
+
+      // Find the current line
+      const lastNewline = before.lastIndexOf('\n')
+      const currentLine = before.slice(lastNewline + 1)
+
+      // Check if current line starts with a bullet pattern
+      const bulletMatch = currentLine.match(/^(\s*)([-•*])\s/)
+      if (bulletMatch) {
+        const [fullMatch, indent, bulletChar] = bulletMatch
+        const lineContent = currentLine.slice(fullMatch.length)
+
+        // If the line is empty (just a bullet), remove the bullet instead of continuing
+        if (lineContent.trim() === '') {
+          e.preventDefault()
+          const newContent = before.slice(0, lastNewline + 1) + after
+          setEditContent(newContent)
+          // Set cursor position after React re-renders
+          requestAnimationFrame(() => {
+            el.selectionStart = el.selectionEnd = lastNewline + 1
+            autoGrow(el)
+          })
+          return
+        }
+
+        // Continue with same bullet on next line
+        e.preventDefault()
+        const insertion = `\n${indent}${bulletChar} `
+        const newContent = before + insertion + after
+        setEditContent(newContent)
+        const newPos = selectionStart + insertion.length
+        requestAnimationFrame(() => {
+          el.selectionStart = el.selectionEnd = newPos
+          autoGrow(el)
+        })
+        return
+      }
     }
   }
 
@@ -177,12 +276,38 @@ function EditableSectionWithHistoryInner(
             <div className="space-y-2">
               <textarea
                 ref={textareaRef}
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                onKeyDown={handleKeyDown}
+                value={editContent.replace(/\n\n/g, '\n\u00A0\n')}
+                onChange={(e) => {
+                  setEditContent(e.target.value.replace(/\u00A0/g, ''))
+                  autoGrow(e.target)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Backspace') {
+                    const el = e.currentTarget
+                    const pos = el.selectionStart
+                    const displayVal = el.value
+                    const lineStart = displayVal.lastIndexOf('\n', pos - 1) + 1
+                    const lineContent = displayVal.slice(lineStart, pos)
+                    if ((lineContent === '\u00A0' || lineContent === '') && lineStart > 0) {
+                      e.preventDefault()
+                      const beforeInReal = displayVal.slice(0, lineStart).replace(/\u00A0/g, '')
+                      const afterInReal = displayVal.slice(lineStart).replace(/\u00A0/g, '')
+                      const newVal = beforeInReal.slice(0, -1) + afterInReal
+                      const newPos = beforeInReal.length - 1
+                      setEditContent(newVal)
+                      setTimeout(() => {
+                        el.selectionStart = el.selectionEnd = newPos
+                        autoGrow(el)
+                      }, 0)
+                      return
+                    }
+                  }
+                  handleKeyDown(e as any)
+                }}
                 onBlur={handleBlur}
                 placeholder={placeholder}
-                className="w-full h-[120px] p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 overflow-y-auto"
+                className="w-full min-h-[300px] p-3 border border-gray-300 rounded-lg text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 overflow-auto caret-gray-900 transition-all duration-200"
+                style={{ lineHeight: '1.5em' }}
               />
               {isSaving && (
                 <div className="flex items-center text-xs text-gray-500">
@@ -193,12 +318,12 @@ function EditableSectionWithHistoryInner(
             </div>
           ) : (
             <div
-              className="h-[120px] prose prose-sm max-w-none cursor-pointer hover:bg-gray-50 rounded-lg p-3 -m-3 transition-colors overflow-y-auto"
+              className="min-h-[120px] prose prose-sm max-w-none cursor-pointer hover:bg-gray-50 rounded-lg p-3 -m-3 transition-colors"
               onClick={handleEdit}
             >
-              {content ? (
-                <div className="text-gray-700 whitespace-pre-wrap group relative">
-                  {content}
+              {displayContent ? (
+                <div className="text-gray-700 group relative">
+                  {renderFormattedContent(displayContent)}
                   {onCite && (
                     <CitationButton
                       onCite={onCite}

@@ -6,8 +6,8 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { clsx } from 'clsx'
-import { AlertTriangle, ChevronDown, Check, X } from 'lucide-react'
-import type { DashboardScope, CoverageMode } from '../../hooks/useDashboardScope'
+import { AlertTriangle, ChevronDown, Check, X, Scale, FlaskConical, BarChart3 } from 'lucide-react'
+import type { DashboardScope, CoverageMode, DashboardMode } from '../../hooks/useDashboardScope'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -249,13 +249,45 @@ function PortfolioMultiSelect({
 // Component
 // ---------------------------------------------------------------------------
 
+const MODE_OPTIONS: { value: DashboardMode; label: string; icon: React.FC<{ className?: string }> }[] = [
+  { value: 'decision', label: 'Decisions', icon: Scale },
+  { value: 'research', label: 'Research', icon: FlaskConical },
+  { value: 'portfolio', label: 'Portfolio', icon: BarChart3 },
+]
+
 export function DashboardFilters({
   scope,
   onScopeChange,
   portfolios,
 }: DashboardFiltersProps) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/60 shadow-sm">
+    <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/60 shadow-sm">
+      {/* Mode selector */}
+      <div className="flex items-center rounded-lg bg-gray-100 dark:bg-gray-700/50 p-[3px] gap-[2px]">
+        {MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
+          <button
+            key={value}
+            onClick={() => onScopeChange({ ...scope, mode: value })}
+            className={clsx(
+              'flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md transition-all',
+              scope.mode === value
+                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-50 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-500/30'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50/50 dark:hover:bg-gray-600/30',
+            )}
+          >
+            <Icon className={clsx(
+              'w-3.5 h-3.5',
+              scope.mode === value
+                ? 'text-gray-700 dark:text-gray-200'
+                : 'text-gray-400 dark:text-gray-500',
+            )} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+
       {/* Portfolio multi-select */}
       <label className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">

@@ -69,17 +69,17 @@ interface RatingScaleValueWithDirection extends RatingScaleValue {
 /**
  * Detect whether a rating direction conflicts with expected-value return.
  *
- * Thresholds are intentionally generous to avoid false positives:
- * - positive rating + EV <= -10% => conflict
- * - negative rating + EV >= +10% => conflict
- * - neutral rating + |EV| >= 20% => conflict
+ * Thresholds:
+ * - positive rating (BUY/OW) + EV <= +7.5% => conflict (weak upside for a buy)
+ * - negative rating (SELL/UW) + EV >= -7.5% => conflict (weak downside for a sell)
+ * - neutral rating (HOLD/N) + EV outside ±7.5% => conflict (meaningful EV but rated neutral)
  */
 export function isDirectionConflict(
   direction: RatingDirection,
   evReturn: number
 ): boolean {
-  if (direction === 'positive' && evReturn <= -0.10) return true
-  if (direction === 'negative' && evReturn >= 0.10) return true
-  if (direction === 'neutral' && Math.abs(evReturn) >= 0.20) return true
+  if (direction === 'positive' && evReturn <= 0.075) return true
+  if (direction === 'negative' && evReturn >= -0.075) return true
+  if (direction === 'neutral' && Math.abs(evReturn) >= 0.075) return true
   return false
 }

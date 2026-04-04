@@ -44,13 +44,11 @@ import { AuditExplorerPage } from './AuditExplorerPage'
 import { AdminConsolePage } from './AdminConsolePage'
 import type { AttentionType } from '../types/attention'
 import type { DashboardItem } from '../types/dashboard-item'
-import type { CockpitBand } from '../types/cockpit'
 import { DashboardFilters } from '../components/dashboard/DashboardFilters'
-import { DecisionSnapshotBar } from '../components/dashboard/DecisionSnapshotBar'
-import { BandSection } from '../components/dashboard/BandSection'
-import { AdvanceBandSection } from '../components/dashboard/AdvanceBandSection'
-import { TradePipelineLoop, type StageKey } from '../components/dashboard/TradePipelineLoop'
-import { SystemInsightCard } from '../components/dashboard/SystemInsightCard'
+import { DecisionSystem } from '../components/dashboard/DecisionSystem'
+import { ResearchWorkbench } from '../components/dashboard/ResearchWorkbench'
+import { PortfolioWorkbench } from '../components/dashboard/PortfolioWorkbench'
+import { PortfolioGrid } from '../components/dashboard/PortfolioGrid'
 import { useDashboardScope } from '../hooks/useDashboardScope'
 import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
@@ -181,12 +179,6 @@ export function DashboardPage() {
     enabled: !!user?.id,
     staleTime: 300_000,
   })
-
-  // Track DECIDE expanded state — controls right column visibility
-  const [decideExpanded, setDecideExpanded] = useState(true)
-
-  // Pipeline stage filter — clicking a stage in TradePipelineLoop filters DECIDE
-  const [pipelineStage, setPipelineStage] = useState<StageKey | null>(null)
 
   // "New Trade Idea" modal — opened via decision-engine-action event from asset page
   const [tradeIdeaModal, setTradeIdeaModal] = useState<{ open: boolean; assetId?: string; portfolioId?: string }>({ open: false })
@@ -874,180 +866,74 @@ export function DashboardPage() {
     })
   }
 
-  // Scroll to a band element
-  const handleScrollToBand = (band: CockpitBand) => {
-    const el = document.getElementById(`band-${band}`)
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   // Row click → navigate to item's primary action
   const handleRowClick = useCallback((item: DashboardItem) => {
     item.primaryAction.onClick()
   }, [])
 
-  // Selected portfolio name for snapshot bar
-  const selectedPortfolioName = useMemo(() => {
-    if (scope.portfolioIds.length === 0) return null
-    if (scope.portfolioIds.length === 1) {
-      return portfolios.find(p => p.id === scope.portfolioIds[0])?.name ?? null
-    }
-    return `${scope.portfolioIds.length} portfolios`
-  }, [scope.portfolioIds, portfolios])
-
-  // Filtered DECIDE band — when a pipeline stage is selected, show only matching stacks
-  const filteredDecide = useMemo(() => {
-    if (!pipelineStage) return cockpit.viewModel.decide
-
-    // Map pipeline stage → stack kinds to show
-    const kindFilter: Record<StageKey, string[]> = {
-      deciding: ['proposal'],
-      modeling: ['simulation'],
-      executing: ['execution'],
-    }
-    const allowedKinds = new Set(kindFilter[pipelineStage])
-
-    // Pull matching stacks from ALL bands (modeling items are normally in ADVANCE)
-    const allStacks = [
-      ...cockpit.viewModel.decide.stacks,
-      ...cockpit.viewModel.advance.stacks,
-      ...cockpit.viewModel.aware.stacks,
-    ]
-    let filtered = allStacks.filter(s => allowedKinds.has(s.kind))
-
-    // For modeling: filter simulation stacks to only 'simulating' stage items
-    // and rename to "Ideas Being Modeled"
-    if (pipelineStage === 'modeling') {
-      filtered = filtered.map(stack => {
-        const modelingItems = stack.itemsAll.filter(i => i.meta?.stage === 'simulating')
-        if (modelingItems.length === 0 && stack.itemsAll.length > 0) return null
-        return {
-          ...stack,
-          title: 'Ideas Being Modeled',
-          itemsAll: modelingItems,
-          itemsPreview: modelingItems.slice(0, 3),
-          count: modelingItems.length,
-        }
-      }).filter(Boolean) as typeof filtered
-    }
-
-    const totalItems = filtered.reduce((sum, s) => sum + s.count, 0)
-
-    return {
-      ...cockpit.viewModel.decide,
-      stacks: filtered,
-      totalItems,
-    }
-  }, [cockpit.viewModel, pipelineStage])
-
-  // Keyboard shortcuts: D→DECIDE, A→ADVANCE, I→INVESTIGATE (only when dashboard is active)
-  useEffect(() => {
-    if (activeTab?.type !== 'dashboard') return
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if (e.key === 'd' || e.key === 'D') {
-        handleScrollToBand('DECIDE')
-      } else if (e.key === 'a' || e.key === 'A') {
-        handleScrollToBand('ADVANCE')
-      } else if (e.key === 'i' || e.key === 'I') {
-        handleScrollToBand('INVESTIGATE')
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [activeTab?.type])
-
   const renderDashboardContent = () => {
     return (
       <div className="h-full overflow-auto">
-        {/*
-         * Decision Cockpit — Command Center Layout
-         *
-         * Row 1: Filters
-         * Row 2: DecisionSnapshotBar (full width — scan in 5-8 seconds)
-         * Row 3: [DECIDE section | Pipeline + Insight] (two-column grid)
-         * Row 4: ADVANCE summary cards (collapsed by default)
-         * Row 5: AWARE + INVESTIGATE (compact, collapsed)
-         */}
-        <div className="p-3 space-y-3">
-          {/* Row 1: Integrated filter row */}
+        <div className="p-3 space-y-2.5">
+          {/* Filters */}
           <DashboardFilters
             scope={scope}
             onScopeChange={setScope}
             portfolios={portfolios}
           />
 
-          {/* Row 2: Decision Snapshot Bar */}
-          <DecisionSnapshotBar
-            viewModel={cockpit.viewModel}
-            pipelineStats={cockpit.pipelineStats}
-            isLoading={cockpit.isLoading}
-            portfolioName={selectedPortfolioName}
-            onScrollToBand={handleScrollToBand}
-            onOpenTradeQueue={handleOpenTradeQueue}
-          />
-
-          {/* Row 3: Two-column — DECIDE (primary) + Pipeline & Insight (secondary) */}
-          <div className={clsx(
-            'grid grid-cols-1 gap-3',
-            decideExpanded && 'lg:grid-cols-[1fr_320px] items-stretch',
-          )}>
-            {/* Left: DECIDE — Requires Decision */}
-            <BandSection
+          {/* MODE: DECISION */}
+          {scope.mode === 'decision' && (
+            <DecisionSystem
               id="band-DECIDE"
-              bandData={filteredDecide}
-              defaultExpanded
+              viewModel={cockpit.viewModel}
+              pipelineStats={cockpit.pipelineStats}
+              isLoading={cockpit.isLoading}
               onItemClick={handleRowClick}
               onSnooze={cockpit.snooze}
-              onExpandedChange={setDecideExpanded}
-            />
-
-            {/* Right: Pipeline + System Insight — visible when DECIDE is expanded */}
-            {decideExpanded && (
-              <div className="flex flex-col gap-3">
-                <TradePipelineLoop
-                  stats={cockpit.pipelineStats}
-                  isLoading={cockpit.isLoading}
-                  onOpenTradeQueue={handleOpenTradeQueue}
-                  activeStage={pipelineStage}
-                  onStageSelect={setPipelineStage}
-                />
-                <SystemInsightCard
-                  viewModel={cockpit.viewModel}
-                  pipelineStats={cockpit.pipelineStats}
-                  onScrollToBand={handleScrollToBand}
-                  onOpenTradeQueue={handleOpenTradeQueue}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Row 4: ADVANCE — Summary cards (collapsed by default) */}
-          <AdvanceBandSection
-            id="band-ADVANCE"
-            bandData={cockpit.viewModel.advance}
-            onItemClick={handleRowClick}
-            onSnooze={cockpit.snooze}
-          />
-
-          {/* Row 5: AWARE — Monitoring (hidden in urgent-only mode) */}
-          {!scope.urgentOnly && (
-            <BandSection
-              id="band-AWARE"
-              bandData={cockpit.viewModel.aware}
-              onItemClick={handleRowClick}
-              onSnooze={cockpit.snooze}
+              onOpenTradeQueue={handleOpenTradeQueue}
             />
           )}
 
-          {/* Row 5b: INVESTIGATE — System flags & team prompts */}
-          {!scope.urgentOnly && (
-            <BandSection
-              id="band-INVESTIGATE"
-              bandData={cockpit.viewModel.investigate}
+          {/* MODE: RESEARCH */}
+          {scope.mode === 'research' && (
+            <ResearchWorkbench
+              viewModel={cockpit.viewModel}
               onItemClick={handleRowClick}
-              onSnooze={cockpit.snooze}
             />
+          )}
+
+          {/* MODE: PORTFOLIO */}
+          {scope.mode === 'portfolio' && (
+            <>
+              {scope.portfolioIds.length === 1 && (
+                <PortfolioWorkbench
+                  portfolioId={scope.portfolioIds[0]}
+                  portfolioName={portfolios.find(p => p.id === scope.portfolioIds[0])?.name ?? 'Portfolio'}
+                  viewModel={cockpit.viewModel}
+                  onItemClick={handleRowClick}
+                  onNavigate={handleSearchResult}
+                />
+              )}
+
+              {scope.portfolioIds.length !== 1 && (
+                <>
+                  <PortfolioGrid
+                    portfolios={portfolios}
+                    viewModel={cockpit.viewModel}
+                    onSelectPortfolio={(id) => setScope({ ...scope, portfolioIds: [id] })}
+                  />
+
+                  <PortfolioWorkbench
+                    portfolioIds={scope.portfolioIds.length > 0 ? scope.portfolioIds : portfolios.map(p => p.id)}
+                    portfolioName={scope.portfolioIds.length > 0 ? `${scope.portfolioIds.length} portfolios` : 'All Portfolios'}
+                    viewModel={cockpit.viewModel}
+                    onItemClick={handleRowClick}
+                    onNavigate={handleSearchResult}
+                  />
+                </>
+              )}
+            </>
           )}
         </div>
       </div>

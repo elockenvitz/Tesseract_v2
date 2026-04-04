@@ -11,6 +11,55 @@ import { VisibilityPicker } from './VisibilityPicker'
 import { SmartInputMetadata, DataFunctionType, VisibilityType, AI_MODELS } from './types'
 import { useAuth } from '../../hooks/useAuth'
 
+// ---------------------------------------------------------------------------
+// HTML → plain text with formatting (for paste from rich sources)
+// ---------------------------------------------------------------------------
+
+function htmlToMarkdownText(node: Node, listPrefix = ''): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return (node.textContent || '').replace(/\r/g, '')
+  }
+
+  const el = node as HTMLElement
+  const tag = el.tagName?.toLowerCase()
+  const children = Array.from(el.childNodes)
+  const inner = (prefix = '') => children.map(c => htmlToMarkdownText(c, prefix)).join('')
+
+  switch (tag) {
+    case 'br': return '\n'
+    case 'p':
+    case 'div': {
+      const t = inner(listPrefix).trim()
+      return t ? t + '\n' : ''
+    }
+    case 'h1': case 'h2': case 'h3': case 'h4':
+      return inner().trim() + '\n'
+    case 'ul':
+      return children
+        .filter(c => (c as HTMLElement).tagName?.toLowerCase() === 'li')
+        .map(c => htmlToMarkdownText(c, '- ')).join('')
+    case 'ol':
+      return children
+        .filter(c => (c as HTMLElement).tagName?.toLowerCase() === 'li')
+        .map((c, i) => htmlToMarkdownText(c, `${i + 1}. `)).join('')
+    case 'li':
+      return listPrefix + inner().replace(/\n+$/, '').trim() + '\n'
+    case 'strong': case 'b': return '**' + inner().trim() + '**'
+    case 'em': case 'i': return '*' + inner().trim() + '*'
+    case 'a': return inner().trim()
+    case 'style': case 'script': return ''
+    default: return inner(listPrefix)
+  }
+}
+
+function cleanPastedText(raw: string): string {
+  return raw
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')  // collapse 3+ newlines to 2
+    .replace(/^\n+/, '')          // trim leading newlines
+    .replace(/\n+$/, '')          // trim trailing newlines
+}
+
 export interface UniversalSmartInputProps {
   value: string
   onChange: (value: string, metadata: SmartInputMetadata) => void
@@ -74,6 +123,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
     ref
   ) {
     const { user } = useAuth()
+    const [isFocused, setIsFocused] = React.useState(false)
 
     const {
       value,
@@ -206,7 +256,8 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
     // overlay is what the user sees. For embed tokens we render actual badges
     // instead of the raw bracket syntax.
     const renderStyledContent = (text: string) => {
-      const pattern = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)|(\.chart\[(\w+):([A-Z0-9.]+)\])|(\.data\[(\w+):(?:snapshot|live):([^\]]+)\])/g
+      // Match cashtags, mentions, hashtags, embeds, bold, italic
+      const pattern = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)|(\.chart\[(\w+):([A-Z0-9.]+)\])|(\.data\[(\w+):(?:snapshot|live):([^\]]+)\])|(\*\*(.+?)\*\*)|(\*(.+?)\*)/g
       const parts: React.ReactNode[] = []
       let lastIndex = 0
       let match
@@ -223,15 +274,13 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
         } else if (match[3]) {
           parts.push(<span key={`h-${i}`} className="text-yellow-600 font-medium">{match[3]}</span>)
         } else if (match[4]) {
-          // .chart[type:SYMBOL] → exact raw text with badge styling
-          parts.push(
-            <span key={`ch-${i}`} className="bg-cyan-100 text-cyan-800 rounded-sm">{match[4]}</span>
-          )
+          parts.push(<span key={`ch-${i}`} className="bg-cyan-100 text-cyan-800 rounded-sm">{match[4]}</span>)
         } else if (match[7]) {
-          // .data[type:mode:ref] → exact raw text with badge styling
-          parts.push(
-            <span key={`d-${i}`} className="bg-emerald-100 text-emerald-800 rounded-sm">{match[7]}</span>
-          )
+          parts.push(<span key={`d-${i}`} className="bg-emerald-100 text-emerald-800 rounded-sm">{match[7]}</span>)
+        } else if (match[10]) {
+          parts.push(<strong key={`b-${i}`}>{match[11]}</strong>)
+        } else if (match[12]) {
+          parts.push(<em key={`i-${i}`}>{match[13]}</em>)
         }
         lastIndex = match.index + match[0].length
       }
@@ -239,7 +288,8 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
       return parts.length > 0 ? parts : <span>{text}</span>
     }
 
-    const hasStyledContent = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)|(\.chart\[)|(\.data\[)/.test(value)
+    // Show overlay when content has any styled elements (cashtags, mentions, bold, italic, etc.)
+    const hasStyledContent = /(\$[A-Z0-9.]+)|(@[A-Z][a-zA-Z0-9]*)|(#[A-Z][a-zA-Z0-9]*)|(\.chart\[)|(\.data\[)|(\*\*.+?\*\*)|(\*.+?\*)/.test(value)
 
 
     return (
@@ -294,10 +344,10 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
         {/* Textarea Container with Highlight Overlay */}
         <div className="relative">
           {/* Smart Input Overlay - shows styled mentions, cashtags, hashtags, embeds */}
-          {!isAIPromptMode && hasStyledContent && (
+          {!isAIPromptMode && hasStyledContent && !isFocused && (
             <div
               className={clsx(
-                'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-gray-900',
+                'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-gray-900 leading-relaxed',
                 textareaClassName || 'p-3',
               )}
               style={{
@@ -347,19 +397,82 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
             </div>
           )}
 
-          {/* Textarea */}
+          {/* Textarea — pad blank lines with zero-width space for caret visibility */}
           <textarea
             ref={textareaRef}
-            value={value}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onFocus={onFocus}
-            onBlur={onBlur}
+            value={value.replace(/\n\n/g, '\n\u00A0\n')}
+            onChange={(e) => {
+              // Strip NBSP placeholders before updating state
+              const cleaned = { ...e, target: { ...e.target, value: e.target.value.replace(/\u00A0/g, ''), selectionStart: e.target.selectionStart } } as any
+              handleChange(cleaned)
+              const el = e.target
+              el.style.height = 'auto'
+              el.style.height = `${el.scrollHeight}px`
+            }}
+            onKeyDown={(e) => {
+              // Intercept Backspace on blank lines — delete the line instead of just the NBSP
+              if (e.key === 'Backspace') {
+                const el = e.currentTarget
+                const pos = el.selectionStart
+                const displayVal = el.value
+                // Find current line boundaries
+                const lineStart = displayVal.lastIndexOf('\n', pos - 1) + 1
+                const lineContent = displayVal.slice(lineStart, pos)
+                // If current line is just NBSP (blank line placeholder), delete the whole blank line
+                if (lineContent === '\u00A0' || lineContent === '') {
+                  // Check if we're not at the very start
+                  if (lineStart > 0) {
+                    e.preventDefault()
+                    // Remove one newline from the real value
+                    // Map display position back to real value position
+                    const beforeInReal = displayVal.slice(0, lineStart).replace(/\u00A0/g, '')
+                    const afterInReal = displayVal.slice(lineStart).replace(/\u00A0/g, '')
+                    // beforeInReal ends with \n, remove it
+                    const newValue = beforeInReal.slice(0, -1) + afterInReal
+                    const newPos = beforeInReal.length - 1
+                    handleChange({ target: { value: newValue, selectionStart: newPos } } as any)
+                    setTimeout(() => {
+                      el.selectionStart = el.selectionEnd = newPos
+                      el.style.height = 'auto'
+                      el.style.height = `${el.scrollHeight}px`
+                    }, 0)
+                    return
+                  }
+                }
+              }
+              handleKeyDown(e)
+            }}
+            onFocus={(e) => {
+              setIsFocused(true)
+              onFocus?.()
+              const el = e.target
+              el.style.height = 'auto'
+              el.style.height = `${el.scrollHeight}px`
+            }}
+            onBlur={(e) => { setIsFocused(false); onBlur?.() }}
+            onPaste={(e) => {
+              const html = e.clipboardData.getData('text/html')
+              if (html) {
+                e.preventDefault()
+                const doc = new DOMParser().parseFromString(html, 'text/html')
+                const converted = cleanPastedText(htmlToMarkdownText(doc.body))
+                const textarea = e.currentTarget
+                const start = textarea.selectionStart
+                const end = textarea.selectionEnd
+                const newValue = value.slice(0, start) + converted + value.slice(end)
+                handleChange({ target: { value: newValue, selectionStart: start + converted.length } } as any)
+                setTimeout(() => {
+                  textarea.selectionStart = textarea.selectionEnd = start + converted.length
+                  textarea.style.height = 'auto'
+                  textarea.style.height = `${textarea.scrollHeight}px`
+                }, 0)
+              }
+            }}
             placeholder={placeholder}
             disabled={disabled || isAILoading}
             rows={rows}
             className={clsx(
-              'w-full resize-none cursor-text',
+              'w-full resize-none cursor-text leading-relaxed',
               'disabled:bg-gray-100 disabled:cursor-not-allowed',
               // Only apply default border/focus styles if no custom textareaClassName is provided
               !textareaClassName && 'p-3 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent',
@@ -375,11 +488,12 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
             )}
             style={{
               minHeight,
-              // Make textarea text transparent when overlay is active so styled content shows through
-              color: (isAIPromptMode || hasStyledContent) ? 'transparent' : undefined,
+              color: isAIPromptMode ? 'transparent'
+                : (hasStyledContent && !isFocused) ? 'transparent'
+                  : undefined,
               background: isAIPromptMode ? 'transparent' : undefined,
-              // Always set caret color to ensure it's visible
-              caretColor: isAIPromptMode ? '#9333ea' : '#111827',
+              caretColor: isAIPromptMode ? '#9333ea' : '#000000',
+              lineHeight: '1.5em',
             }}
           />
         </div>

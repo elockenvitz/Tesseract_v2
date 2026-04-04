@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { clsx } from 'clsx'
 import {
   Users,
@@ -52,6 +52,89 @@ import { useQuery } from '@tanstack/react-query'
 import { DiffView } from './DiffView'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
+import { RichTextEditor, type RichTextEditorRef } from '../rich-text-editor/RichTextEditor'
+
+// ---------------------------------------------------------------------------
+// Markdown ↔ HTML conversion for rich editor
+// ---------------------------------------------------------------------------
+
+function markdownToHtml(md: string): string {
+  if (!md) return ''
+  // If content is already HTML (starts with <), return as-is
+  if (md.trim().startsWith('<')) return md
+
+  return md
+    .split('\n')
+    .map(line => {
+      // Headings
+      if (line.startsWith('## ')) return `<h2>${line.slice(3)}</h2>`
+      if (line.startsWith('# ')) return `<h1>${line.slice(2)}</h1>`
+      // Bullet lists
+      if (/^\s*[-*+•–]\s+/.test(line)) {
+        const content = line.replace(/^\s*[-*+•–]\s+/, '')
+        return `<li>${applyInlineMd(content)}</li>`
+      }
+      // Ordered lists
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const content = line.replace(/^\s*\d+\.\s+/, '')
+        return `<li>${applyInlineMd(content)}</li>`
+      }
+      // Empty line
+      if (line.trim() === '') return '<p><br></p>'
+      // Regular paragraph
+      return `<p>${applyInlineMd(line)}</p>`
+    })
+    .join('')
+    // Wrap consecutive <li> in <ul>
+    .replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>')
+}
+
+function applyInlineMd(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/_(.+?)_/g, '<em>$1</em>')
+}
+
+function htmlToMarkdown(html: string): string {
+  if (!html) return ''
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return nodeToMd(doc.body).replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function nodeToMd(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent || ''
+  const el = node as HTMLElement
+  const tag = el.tagName?.toLowerCase()
+  const children = Array.from(el.childNodes)
+  const inner = () => children.map(c => nodeToMd(c)).join('')
+
+  switch (tag) {
+    case 'br': return '\n'
+    case 'p': {
+      const t = inner()
+      return t === '\n' || !t.trim() ? '\n' : t + '\n'
+    }
+    case 'div': return inner() + '\n'
+    case 'h1': return '# ' + inner().trim() + '\n'
+    case 'h2': return '## ' + inner().trim() + '\n'
+    case 'h3': return '## ' + inner().trim() + '\n'
+    case 'ul': case 'ol': return children.map(c => nodeToMd(c)).join('')
+    case 'li': {
+      const parent = el.parentElement?.tagName?.toLowerCase()
+      const prefix = parent === 'ol'
+        ? `${Array.from(el.parentElement!.children).indexOf(el) + 1}. `
+        : '- '
+      return prefix + inner().replace(/\n+$/, '').trim() + '\n'
+    }
+    case 'strong': case 'b': return '**' + inner().trim() + '**'
+    case 'em': case 'i': return '*' + inner().trim() + '*'
+    case 'a': return inner().trim()
+    case 'style': case 'script': return ''
+    default: return inner()
+  }
+}
 
 type TabType = 'aggregated' | string
 
@@ -169,6 +252,306 @@ function ViewReferences({
             )}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// CollapsibleContent — show/hide long content with fade
+// ---------------------------------------------------------------------------
+
+const COLLAPSED_MAX_HEIGHT = 240 // ~10 lines
+
+function CollapsibleContent({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+
+  useEffect(() => {
+    if (contentRef.current) {
+      // Only collapse if content meaningfully exceeds the limit (30px buffer to avoid false triggers)
+      setNeedsCollapse(contentRef.current.scrollHeight > COLLAPSED_MAX_HEIGHT + 30)
+    }
+  }, [content])
+
+  return (
+    <div className="relative">
+      <div
+        ref={contentRef}
+        className={clsx(
+          'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200',
+          !expanded && needsCollapse && 'max-h-[240px]',
+        )}
+      >
+        <SmartInputRenderer content={content} />
+      </div>
+      {needsCollapse && !expanded && (
+        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white dark:from-gray-900 to-transparent pointer-events-none" />
+      )}
+      {needsCollapse && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="relative z-10 mt-2 flex items-center gap-1 text-[12px] font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
+        >
+          {expanded ? '▴ Show less' : '▾ Show more'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// EditingPane — Full-screen editor below sticky header
+// ---------------------------------------------------------------------------
+
+function EditingPane({
+  title, smartInputRef, editContent, onContentChange, onKeyDown, placeholder, assetContext,
+  onCancel, onSaveDraft, onPublish, onDiscardDraft, isSaving, isDraftSaving, isDiscarding, canSave,
+}: {
+  title: string
+  smartInputRef: React.RefObject<UniversalSmartInputRef>
+  editContent: string
+  onContentChange: (value: string, metadata: SmartInputMetadata) => void
+  onKeyDown: (e: React.KeyboardEvent) => void
+  placeholder: string
+  assetContext?: { id: string; symbol: string } | null
+  onCancel: () => void; onSaveDraft: () => void; onPublish: () => void
+  onDiscardDraft?: () => void
+  isSaving: boolean; isDraftSaving: boolean; isDiscarding: boolean; canSave: boolean
+}) {
+  const paneRef = useRef<HTMLDivElement>(null)
+  const sectionCardRef = useRef<HTMLElement | null>(null)
+  const scrollContainerRef = useRef<HTMLElement | null>(null)
+  const [isCollapsing, setIsCollapsing] = useState(false)
+
+  const savedScrollTop = useRef(0)
+
+  // Synchronized animation using requestAnimationFrame
+  const animFrameRef = useRef(0)
+
+  // Smooth ease — gentle start, soft landing, no harsh middle
+  const ease = (t: number) => {
+    // Custom bezier approximation: ease-out-quart for buttery feel
+    const t1 = 1 - t
+    return 1 - t1 * t1 * t1 * t1
+  }
+
+  const animate = useCallback((
+    from: { height: number; scroll: number },
+    to: { height: number; scroll: number },
+    duration: number,
+    onComplete: () => void,
+  ) => {
+    const card = sectionCardRef.current
+    const sc = scrollContainerRef.current
+    if (!card || !sc) { onComplete(); return }
+
+    const start = performance.now()
+
+    const tick = (now: number) => {
+      const elapsed = now - start
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = ease(progress)
+
+      const currentHeight = from.height + (to.height - from.height) * eased
+      const currentScroll = from.scroll + (to.scroll - from.scroll) * eased
+
+      card.style.height = `${currentHeight}px`
+      card.style.minHeight = `${currentHeight}px`
+      sc.scrollTop = currentScroll
+
+      if (progress < 1) {
+        animFrameRef.current = requestAnimationFrame(tick)
+      } else {
+        onComplete()
+      }
+    }
+
+    animFrameRef.current = requestAnimationFrame(tick)
+  }, [])
+
+  const collapseAndRun = useCallback((action: () => void) => {
+    const card = sectionCardRef.current
+    const sc = scrollContainerRef.current
+    if (!card || !sc || isCollapsing) return
+    setIsCollapsing(true)
+
+    // Unlock scroll for the animation
+    sc.style.overflow = ''
+
+    const fromHeight = card.getBoundingClientRect().height
+    const fromScroll = sc.scrollTop
+
+    // Remove minHeight to measure natural height
+    card.style.transition = 'none'
+    card.style.height = ''
+    card.style.minHeight = ''
+    const toHeight = card.getBoundingClientRect().height
+    // Restore expanded height immediately
+    card.style.height = `${fromHeight}px`
+    card.style.minHeight = `${fromHeight}px`
+    void card.offsetHeight
+
+    // Scroll target: center the section
+    const cardTop = card.offsetTop - sc.offsetTop
+    const toScroll = Math.max(0, cardTop - sc.clientHeight / 2 + toHeight / 2)
+
+    card.style.willChange = 'min-height'
+
+    animate(
+      { height: fromHeight, scroll: fromScroll },
+      { height: toHeight, scroll: toScroll },
+      500,
+      () => {
+        card.style.height = ''
+        card.style.minHeight = ''
+        card.style.willChange = ''
+        action()
+      },
+    )
+  }, [isCollapsing, animate])
+
+  useEffect(() => {
+    const el = paneRef.current
+    if (!el) return
+
+    const sectionCard = el.closest('.rounded-lg') as HTMLElement | null
+    const scrollContainer = el.closest('.overflow-auto') as HTMLElement | null
+    if (!sectionCard || !scrollContainer) return
+
+    sectionCardRef.current = sectionCard
+    scrollContainerRef.current = scrollContainer
+
+    savedScrollTop.current = scrollContainer.scrollTop
+
+    // Subtract header (~40px) + toolbar (~36px) + action bar (~44px) so buttons stay visible
+    const visibleHeight = scrollContainer.clientHeight
+    const currentHeight = sectionCard.getBoundingClientRect().height
+    const cardOffsetInScroll = sectionCard.offsetTop - scrollContainer.offsetTop
+
+    // Set up card and ALL intermediate containers as flex column
+    // so flex-1 propagates from EditingPane through to the card
+    sectionCard.style.display = 'flex'
+    sectionCard.style.flexDirection = 'column'
+    sectionCard.style.overflow = 'hidden'
+    sectionCard.style.transition = 'none'
+    sectionCard.style.height = `${currentHeight}px`
+    sectionCard.style.minHeight = `${currentHeight}px`
+    sectionCard.style.willChange = 'min-height'
+
+    // Walk up from paneRef to sectionCard and make each intermediate div flex
+    let walker: HTMLElement | null = el.parentElement
+    const intermediates: HTMLElement[] = []
+    while (walker && walker !== sectionCard) {
+      intermediates.push(walker)
+      walker.style.display = 'flex'
+      walker.style.flexDirection = 'column'
+      walker.style.flex = '1'
+      walker.style.minHeight = '0'
+      walker = walker.parentElement
+    }
+
+    // Animate expand: height grows + scroll moves to top
+    animate(
+      { height: currentHeight, scroll: scrollContainer.scrollTop },
+      { height: visibleHeight, scroll: cardOffsetInScroll },
+      500,
+      () => {
+        sectionCard.style.willChange = ''
+        scrollContainer.style.overflow = 'hidden'
+      },
+    )
+
+    return () => {
+      cancelAnimationFrame(animFrameRef.current)
+      if (scrollContainer) {
+        scrollContainer.style.overflow = ''
+        scrollContainer.style.scrollBehavior = ''
+      }
+      // Clean up intermediate flex containers
+      for (const el2 of intermediates) {
+        el2.style.display = ''
+        el2.style.flexDirection = ''
+        el2.style.flex = ''
+        el2.style.minHeight = ''
+      }
+      if (sectionCard) {
+        sectionCard.style.display = ''
+        sectionCard.style.flexDirection = ''
+        sectionCard.style.overflow = ''
+        sectionCard.style.transition = ''
+        sectionCard.style.height = ''
+        sectionCard.style.minHeight = ''
+        sectionCard.style.willChange = ''
+      }
+    }
+  }, [])
+
+  // Convert markdown content to HTML for the rich editor
+  const htmlContent = useMemo(() => markdownToHtml(editContent), [editContent])
+  const richEditorRef = useRef<import('../rich-text-editor/RichTextEditor').RichTextEditorRef>(null)
+
+  // Track HTML content separately for the rich editor
+  const handleRichChange = useCallback((html: string, _text: string) => {
+    // Convert HTML back to markdown for storage
+    const md = htmlToMarkdown(html)
+    onContentChange(md, { mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
+  }, [onContentChange])
+
+  return (
+    <div ref={paneRef} className={clsx('flex flex-col flex-1 min-h-0 transition-opacity duration-300', isCollapsing && 'opacity-50')}>
+
+      {/* Editor — toolbar fixed below header, content scrolls */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:overflow-hidden [&_.editor-container]:flex-1 [&_.editor-container]:min-h-0 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.editor-container]:relative [&_.sticky]:static">
+        {/* Fold line injected into editor-container via CSS selector */}
+        <style>{`
+          .editor-container::after {
+            content: '— show more fold —';
+            position: absolute;
+            top: ${COLLAPSED_MAX_HEIGHT + 95}px;
+            left: 16px;
+            right: 16px;
+            border-top: 2px dashed rgba(59, 130, 246, 0.35);
+            font-size: 10px;
+            color: rgba(59, 130, 246, 0.55);
+            text-align: center;
+            padding-top: 3px;
+            pointer-events: none;
+            z-index: 5;
+            letter-spacing: 0.5px;
+          }
+        `}</style>
+        <RichTextEditor
+          ref={richEditorRef}
+          value={htmlContent}
+          onChange={handleRichChange}
+          placeholder={placeholder}
+          minHeight="100px"
+          editorClassName="px-4 py-1 text-sm"
+          assetContext={assetContext}
+        />
+      </div>
+
+      {/* Action bar */}
+      <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/20">
+        {onDiscardDraft && (
+          <button onClick={() => collapseAndRun(onDiscardDraft)} disabled={isDiscarding} className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">
+            {isDiscarding ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1.5" />}
+            Discard Draft
+          </button>
+        )}
+        <button onClick={() => collapseAndRun(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
+          Cancel
+        </button>
+        <button onClick={() => collapseAndRun(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50">
+          {isDraftSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileEdit className="w-4 h-4 mr-1.5" />}
+          Save Draft
+        </button>
+        <button onClick={() => collapseAndRun(onPublish)} disabled={!canSave || isSaving} className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50">
+          {isSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Upload className="w-4 h-4 mr-1.5" />}
+          Publish
+        </button>
       </div>
     </div>
   )
@@ -583,31 +966,60 @@ export function ContributionSection({
     const end = textarea.selectionEnd
     const selectedText = editContent.substring(start, end)
 
-    // Check if we're at the start of a line or need a newline
-    const beforeCursor = editContent.substring(0, start)
-    const needsNewline = beforeCursor.length > 0 && !beforeCursor.endsWith('\n')
-
-    let newContent: string
     if (selectedText) {
-      // Convert selected lines to list items
+      // Toggle: if all selected lines already have the prefix, remove it; otherwise add it
       const lines = selectedText.split('\n')
-      const listItems = lines.map((line, i) => {
-        const itemPrefix = prefix === '1. ' ? `${i + 1}. ` : prefix
-        return itemPrefix + line
-      }).join('\n')
-      newContent = editContent.substring(0, start) + (needsNewline ? '\n' : '') + listItems + editContent.substring(end)
+      const bulletRegex = prefix === '1. ' ? /^\d+\.\s/ : /^[-*+•]\s/
+      const allBulleted = lines.every(l => !l.trim() || bulletRegex.test(l))
+
+      let result: string
+      if (allBulleted) {
+        // Remove bullets
+        result = lines.map(l => l.replace(bulletRegex, '')).join('\n')
+      } else {
+        // Add bullets
+        result = lines.map((l, i) => {
+          if (!l.trim()) return l
+          const cleaned = l.replace(bulletRegex, '')
+          const p = prefix === '1. ' ? `${i + 1}. ` : prefix
+          return p + cleaned
+        }).join('\n')
+      }
+
+      // Ensure blank line before list block
+      const before = editContent.substring(0, start)
+      const needsBlank = before.length > 0 && !before.endsWith('\n\n') && !before.endsWith('\n')
+      const insert = needsBlank && !allBulleted ? '\n\n' : ''
+
+      const newContent = editContent.substring(0, start) + insert + result + editContent.substring(end)
+      handleContentChange(newContent)
+      setTimeout(() => { textarea.focus(); textarea.setSelectionRange(start + insert.length, start + insert.length + result.length) }, 0)
     } else {
-      // Insert a single list item
-      newContent = editContent.substring(0, start) + (needsNewline ? '\n' : '') + prefix + editContent.substring(end)
+      // No selection — toggle current line
+      const before = editContent.substring(0, start)
+      const lineStart = before.lastIndexOf('\n') + 1
+      const lineEnd = editContent.indexOf('\n', start)
+      const line = editContent.substring(lineStart, lineEnd === -1 ? editContent.length : lineEnd)
+      const bulletRegex = prefix === '1. ' ? /^\d+\.\s/ : /^[-*+•]\s/
+
+      if (bulletRegex.test(line)) {
+        // Remove bullet from current line
+        const cleaned = line.replace(bulletRegex, '')
+        const newContent = editContent.substring(0, lineStart) + cleaned + editContent.substring(lineEnd === -1 ? editContent.length : lineEnd)
+        handleContentChange(newContent)
+        setTimeout(() => { textarea.focus(); textarea.setSelectionRange(lineStart, lineStart) }, 0)
+      } else {
+        // Add bullet to current line, with blank line before if needed
+        const textBefore = editContent.substring(0, lineStart)
+        const needsBlank = textBefore.length > 0 && !textBefore.endsWith('\n\n') && lineStart > 0
+        const insert = needsBlank ? '\n' : ''
+        const newLine = prefix + line.trimStart()
+        const newContent = editContent.substring(0, lineStart) + insert + newLine + editContent.substring(lineEnd === -1 ? editContent.length : lineEnd)
+        handleContentChange(newContent)
+        const cursorPos = lineStart + insert.length + prefix.length
+        setTimeout(() => { textarea.focus(); textarea.setSelectionRange(cursorPos, cursorPos) }, 0)
+      }
     }
-
-    handleContentChange(newContent)
-
-    setTimeout(() => {
-      textarea.focus()
-      const newCursorPos = start + (needsNewline ? 1 : 0) + prefix.length + (selectedText ? selectedText.length : 0)
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-    }, 0)
   }
 
   const formatBold = () => insertFormatting('**', '**', 'bold text')
@@ -670,6 +1082,37 @@ export function ContributionSection({
       handleCancel()
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       handleSave()
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      // Auto-continue bullet lists
+      const textarea = smartInputRef.current?.getTextarea()
+      if (textarea) {
+        const { selectionStart } = textarea
+        const before = editContent.slice(0, selectionStart)
+        const after = editContent.slice(selectionStart)
+        const lastNewline = before.lastIndexOf('\n')
+        const currentLine = before.slice(lastNewline + 1)
+        const bulletMatch = currentLine.match(/^(\s*)([-•*]|\d+\.)\s/)
+        if (bulletMatch) {
+          const [fullMatch, indent, bulletChar] = bulletMatch
+          const lineContent = currentLine.slice(fullMatch.length)
+          if (lineContent.trim() === '') {
+            // Empty bullet — remove it
+            e.preventDefault()
+            const newContent = before.slice(0, lastNewline + 1) + after
+            handleContentChange(newContent)
+            setTimeout(() => { textarea.focus(); textarea.setSelectionRange(lastNewline + 1, lastNewline + 1) }, 0)
+          } else {
+            // Continue with next bullet
+            e.preventDefault()
+            const nextBullet = /^\d+\./.test(bulletChar) ? `${parseInt(bulletChar) + 1}.` : bulletChar
+            const insertion = `\n${indent}${nextBullet} `
+            const newContent = before + insertion + after
+            handleContentChange(newContent)
+            const newPos = selectionStart + insertion.length
+            setTimeout(() => { textarea.focus(); textarea.setSelectionRange(newPos, newPos) }, 0)
+          }
+        }
+      }
     } else if (e.key === 'b' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       formatBold()
@@ -1183,156 +1626,26 @@ export function ContributionSection({
             {activeTab !== 'aggregated' && (
               <>
                 {isEditing && activeTab === user?.id ? (
-                  <div className="space-y-3">
-                    <div>
-                      <UniversalSmartInput
-                        ref={smartInputRef}
-                        value={editContent}
-                        onChange={(value, metadata) => {
-                          handleContentChange(value)
-                          setInputMetadata(metadata)
-                        }}
-                        onKeyDown={handleKeyDown}
-                        placeholder={`Share your perspective on ${title.toLowerCase()}... Use @mention, #reference, .template, .price, .AI`}
-                        textareaClassName="text-base min-h-[120px]"
-                        rows={4}
-                        minHeight="120px"
-                        assetContext={assetContext}
-                        enableMentions={true}
-                        enableHashtags={true}
-                        enableTemplates={true}
-                        enableDataFunctions={true}
-                        enableAI={true}
-                      />
-                    </div>
-
-                    
-                    {/* Formatting Toolbar + Actions */}
-                    <div className="flex items-center justify-between pt-1">
-                      {/* Formatting Toolbar */}
-                      <div className="flex items-center space-x-0.5">
-                        <button
-                          type="button"
-                          onClick={handleUndo}
-                          disabled={undoStack.length === 0}
-                          title="Undo (⌘Z)"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <Undo2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleRedo}
-                          disabled={redoStack.length === 0}
-                          title="Redo (⌘⇧Z)"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <Redo2 className="w-4 h-4" />
-                        </button>
-                        <div className="w-px h-4 bg-gray-300 mx-1" />
-                        <button
-                          type="button"
-                          onClick={formatBold}
-                          title="Bold (⌘B)"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <Bold className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={formatItalic}
-                          title="Italic (⌘I)"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <Italic className="w-4 h-4" />
-                        </button>
-                        <div className="w-px h-4 bg-gray-300 mx-1" />
-                        <button
-                          type="button"
-                          onClick={formatHeading}
-                          title="Heading"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <Heading2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={formatBulletList}
-                          title="Bullet List"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <List className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={formatNumberedList}
-                          title="Numbered List"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <ListOrdered className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={formatLink}
-                          title="Link"
-                          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <Link className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center space-x-2">
-                        {/* Discard draft button - only show if editing a draft */}
-                        {hasDraft && (
-                          <button
-                            onClick={handleDiscardDraft}
-                            disabled={discardDraft.isPending}
-                            className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg"
-                          >
-                            {discardDraft.isPending ? (
-                              <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                            ) : (
-                              <RotateCcw className="w-4 h-4 mr-1.5" />
-                            )}
-                            Discard Draft
-                          </button>
-                        )}
-                        <button
-                          onClick={handleCancel}
-                          className="flex items-center px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
-                        >
-                          Cancel
-                        </button>
-                        {/* Save as Draft button */}
-                        <button
-                          onClick={handleSaveDraft}
-                          disabled={!editContent.trim() || saveDraft.isPending}
-                          className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {saveDraft.isPending ? (
-                            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                          ) : (
-                            <FileEdit className="w-4 h-4 mr-1.5" />
-                          )}
-                          Save Draft
-                        </button>
-                        {/* Publish button */}
-                        <button
-                          onClick={hasDraft ? handlePublishDraft : handleSave}
-                          disabled={!editContent.trim() || saveContribution.isPending || publishDraft.isPending}
-                          className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {(saveContribution.isPending || publishDraft.isPending) ? (
-                            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                          ) : (
-                            <Upload className="w-4 h-4 mr-1.5" />
-                          )}
-                          Publish
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <EditingPane
+                    title={title}
+                    smartInputRef={smartInputRef}
+                    editContent={editContent}
+                    onContentChange={(value, metadata) => {
+                      handleContentChange(value)
+                      setInputMetadata(metadata)
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder={`Share your perspective on ${title.toLowerCase()}...`}
+                    assetContext={assetContext}
+                    onCancel={handleCancel}
+                    onSaveDraft={handleSaveDraft}
+                    onPublish={hasDraft ? handlePublishDraft : handleSave}
+                    onDiscardDraft={hasDraft ? handleDiscardDraft : undefined}
+                    isSaving={saveContribution.isPending || publishDraft.isPending}
+                    isDraftSaving={saveDraft.isPending}
+                    isDiscarding={discardDraft.isPending}
+                    canSave={!!editContent.trim()}
+                  />
                 ) : showHistory ? (
                   <div className="space-y-2">
                     {individualHistory.length === 0 ? (
@@ -1393,9 +1706,7 @@ export function ContributionSection({
                       </div>
                     ) : selectedContribution ? (
                       <div className="space-y-3">
-                        <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
-                          <SmartInputRenderer content={selectedContribution.content} />
-                        </div>
+                        <CollapsibleContent content={selectedContribution.content} />
 
                         {/* References (only shown if exists) */}
                         {selectedContribution.attachments && selectedContribution.attachments.length > 0 && (

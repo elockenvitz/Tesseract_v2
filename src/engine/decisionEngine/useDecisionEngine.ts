@@ -397,11 +397,14 @@ export function useDecisionEngine(): UseDecisionEngineResult {
   const enrichedTradeIdeas = useMemo(() => {
     if (!tradeIdeas?.length || !proposals?.length) return tradeIdeas ?? []
 
-    // Build map: trade_queue_item_id → target_weight from variant computed data
-    const weightByItemId = new Map<string, number>()
+    // Build maps: trade_queue_item_id → target_weight + delta_weight from variant computed data
+    const weightByItemId = new Map<string, { target: number; delta: number | null }>()
     for (const p of proposals) {
       if (p.trade_queue_item_id && p.computed?.target_weight != null) {
-        weightByItemId.set(p.trade_queue_item_id, p.computed.target_weight)
+        weightByItemId.set(p.trade_queue_item_id, {
+          target: p.computed.target_weight,
+          delta: p.computed.delta_weight ?? null,
+        })
       }
     }
 
@@ -410,21 +413,23 @@ export function useDecisionEngine(): UseDecisionEngineResult {
     return tradeIdeas.map((idea: any) => {
       // For pair trades, sum target weights from all leg IDs
       if (idea._isPairTrade && idea._pairLegIds) {
-        let totalWeight = 0
+        let totalTarget = 0
+        let totalDelta = 0
         let found = false
         for (const legId of idea._pairLegIds) {
           const w = weightByItemId.get(legId)
           if (w != null) {
-            totalWeight += w
+            totalTarget += w.target
+            totalDelta += w.delta ?? 0
             found = true
           }
         }
-        if (found) return { ...idea, proposed_weight: totalWeight }
+        if (found) return { ...idea, proposed_weight: totalTarget, delta_weight: totalDelta }
         return idea
       }
 
       const w = weightByItemId.get(idea.id)
-      if (w != null) return { ...idea, proposed_weight: w }
+      if (w != null) return { ...idea, proposed_weight: w.target, delta_weight: w.delta }
       return idea
     })
   }, [tradeIdeas, proposals])

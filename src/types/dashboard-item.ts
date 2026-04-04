@@ -52,12 +52,16 @@ export interface DashboardItemMeta {
   ratingFrom?: string
   /** Rating change: new value */
   ratingTo?: string
-  /** Proposed weight % for trade proposals */
+  /** Proposed weight % for trade proposals (target) */
   proposedWeight?: number
+  /** Weight delta (target - current) */
+  deltaWeight?: number
   /** Whether this item represents a pair trade */
   isPairTrade?: boolean
-  /** Original trade queue stage (idea, simulating, deciding) */
+  /** Original trade queue stage (idea, simulating, deciding, approved) */
   stage?: string
+  /** Whether this needs PM sign-off (vs user's own decision) */
+  needsPM?: boolean
 }
 
 // ---------------------------------------------------------------------------

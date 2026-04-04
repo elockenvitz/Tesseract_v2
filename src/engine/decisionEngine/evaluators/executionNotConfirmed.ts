@@ -66,6 +66,7 @@ export function evaluateExecutionNotConfirmed(data: {
         action,
         proposedWeight: idea.proposed_weight ?? undefined,
         isPairTrade: isPair || undefined,
+        stage: 'approved',
       },
       ctas: [
         { label: 'Confirm', actionKey: 'OPEN_TRADE_QUEUE_EXECUTION', kind: 'primary', payload: { tradeIdeaId } },

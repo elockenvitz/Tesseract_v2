@@ -8,11 +8,13 @@
 import { useState, useCallback } from 'react'
 
 export type CoverageMode = 'mine' | 'assigned' | 'visible'
+export type DashboardMode = 'decision' | 'research' | 'portfolio'
 
 export interface DashboardScope {
   portfolioIds: string[]
   coverageMode: CoverageMode
   urgentOnly: boolean
+  mode: DashboardMode
 }
 
 function readFromURL(): DashboardScope {
@@ -22,6 +24,7 @@ function readFromURL(): DashboardScope {
     portfolioIds: portfolioParam ? portfolioParam.split(',').filter(Boolean) : [],
     coverageMode: (params.get('coverage') as CoverageMode) || 'mine',
     urgentOnly: params.get('urgent') === '1',
+    mode: (params.get('mode') as DashboardMode) || 'decision',
   }
 }
 
@@ -47,6 +50,12 @@ function writeToURL(scope: DashboardScope): void {
     params.set('urgent', '1')
   } else {
     params.delete('urgent')
+  }
+
+  if (scope.mode !== 'decision') {
+    params.set('mode', scope.mode)
+  } else {
+    params.delete('mode')
   }
 
   const qs = params.toString()
