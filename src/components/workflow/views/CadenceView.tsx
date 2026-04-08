@@ -370,11 +370,12 @@ export function CadenceView({
 
     let lastRunText: string | undefined
     let lastRunIcon: React.ReactNode | undefined
-    if (rule.last_run_at) {
+
+    // Only show last_run info when there's an error — otherwise the date
+    // and run count add clutter next to the schedule/description.
+    if (rule.last_run_at && rule.last_status === 'error') {
       lastRunText = formatRelative(rule.last_run_at)
-      lastRunIcon = rule.last_status === 'success' ? <CheckCircle className="w-3 h-3 text-green-500" />
-        : rule.last_status === 'error' ? <AlertCircle className="w-3 h-3 text-red-500" />
-        : <Clock className="w-3 h-3 text-gray-400" />
+      lastRunIcon = <AlertCircle className="w-3 h-3 text-red-500" />
     }
 
     let nextRunText: string | undefined
@@ -403,7 +404,7 @@ export function CadenceView({
         lastRunIcon={lastRunIcon}
         nextRunText={nextRunText}
         scheduleWarning={scheduleWarning}
-        runCount={rule.run_count}
+        runCount={undefined}
         onEdit={onEdit ? () => onEdit(rule) : undefined}
         onDelete={onDelete ? () => onDelete(rule.id, rule.rule_name) : undefined}
         onToggleActive={onToggleRuleActive ? () => onToggleRuleActive(rule.id, !rule.is_active) : undefined}

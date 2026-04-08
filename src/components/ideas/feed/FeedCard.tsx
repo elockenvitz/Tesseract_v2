@@ -5,11 +5,11 @@
  * Charts always show timeframe selector + expand button.
  */
 
-import React from 'react'
+import React, { useState } from 'react'
 import { clsx } from 'clsx'
 import {
   Lightbulb, TrendingUp, TrendingDown, FileText, GitBranch,
-  MoreHorizontal, ExternalLink, ChevronRight,
+  MoreHorizontal, ExternalLink, ChevronRight, ChevronLeft,
   Zap, ArrowRight,
 } from 'lucide-react'
 import { formatDistanceToNowStrict, differenceInDays, differenceInHours } from 'date-fns'
@@ -144,16 +144,81 @@ function AuthorWhyNowRow({ item, whyNow, onAuthorClick }: { item: ScoredFeedItem
 }
 
 function EngagementRow({ item }: { item: ScoredFeedItem }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = React.useRef<HTMLDivElement>(null)
   const total = item.reactionCounts?.reduce((s, r) => s + r.count, 0) || 0
+  const asset = 'asset' in item ? (item as any).asset : null
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!menuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
+
+  const dispatchCapture = (captureType: string) => {
+    setMenuOpen(false)
+    window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+      detail: {
+        contextType: asset ? 'asset' : undefined,
+        contextId: asset?.id,
+        contextTitle: asset?.symbol,
+        captureType,
+      },
+    }))
+  }
+
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <IdeaReactions itemId={item.id} itemType={item.type} compact />
         {total > 0 && <span className="text-[10px] text-gray-400">{total}</span>}
       </div>
-      <button onClick={e => e.stopPropagation()} className="p-1 text-gray-300 hover:text-gray-500 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100">
-        <MoreHorizontal className="w-3.5 h-3.5" />
-      </button>
+      <div className="relative" ref={menuRef}>
+        <button
+          onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
+          className="p-1 text-gray-300 hover:text-gray-500 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <MoreHorizontal className="w-3.5 h-3.5" />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 bottom-full mb-1 z-50 w-[180px] bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-[12px]">
+            <button
+              onClick={e => { e.stopPropagation(); dispatchCapture('thought') }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+            >
+              <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+              Add thought
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); dispatchCapture('trade_idea') }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+              Create trade idea
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); dispatchCapture('prompt') }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+            >
+              <Zap className="w-3.5 h-3.5 text-purple-500" />
+              Send prompt
+            </button>
+            {asset && (
+              <button
+                onClick={e => { e.stopPropagation(); dispatchCapture('proposal') }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+              >
+                <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                Recommend
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -346,8 +411,7 @@ function RichContentCard({ item, onAuthorClick, onAssetClick, onCardClick, onExp
   const asset = 'asset' in item ? (item as any).asset : null
   const noteTitle = 'title' in item ? (item as any).title : null
   const thesisSection = 'section' in item ? (item as any).section : null
-  const content = stripHtml(item.content || '')
-  const truncated = content.length > 400 ? content.slice(0, 400) + '...' : content
+  const rawContent = stripHtml(item.content || '')
   const { data: quote } = useFeedQuote(asset?.symbol)
   const whyNow = generateWhyNow(item, quote)
   const isThesis = item.type === 'thesis_update'
@@ -378,14 +442,88 @@ function RichContentCard({ item, onAuthorClick, onAssetClick, onCardClick, onExp
           <AuthorWhyNowRow item={item} whyNow={whyNow} onAuthorClick={onAuthorClick} />
         </div>
         <div className="px-4 pb-2">
-          <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{truncated}</p>
-          {content.length > 400 && <button onClick={e => { e.stopPropagation(); onCardClick?.(item) }} className="text-[12px] font-medium text-primary-600 mt-0.5">More <ChevronRight className="w-3 h-3 inline" /></button>}
+          <RichTextContent content={rawContent} />
         </div>
 
         <div className="px-4 py-1.5 border-t border-gray-100"><EngagementRow item={item} /></div>
       </div>
     </div>
   )
+}
+
+/** Renders markdown-style text with bullets, bold, and paragraphs */
+function RichTextContent({ content, maxLines = 6 }: { content: string; maxLines?: number }) {
+  const [expanded, setExpanded] = useState(false)
+
+  const allLines = content.split('\n')
+  // Count visible lines (skip empty lines in the count but include them)
+  const visibleLines: string[] = []
+  let contentLineCount = 0
+  let truncateAt = allLines.length
+  for (let i = 0; i < allLines.length; i++) {
+    visibleLines.push(allLines[i])
+    if (allLines[i].trim()) contentLineCount++
+    if (!expanded && contentLineCount >= maxLines) {
+      truncateAt = i + 1
+      break
+    }
+  }
+
+  const isTruncated = !expanded && truncateAt < allLines.length
+  const lines = expanded ? allLines : visibleLines
+
+  const elements: React.ReactNode[] = []
+  let key = 0
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      if (elements.length > 0) elements.push(<div key={key++} className="h-1" />)
+      continue
+    }
+    const bulletMatch = trimmed.match(/^[-*•]\s+(.+)/)
+    if (bulletMatch) {
+      elements.push(
+        <div key={key++} className="flex gap-1.5 pl-0.5">
+          <span className="text-gray-400 shrink-0">&bull;</span>
+          <span>{renderBoldInline(bulletMatch[1])}</span>
+        </div>
+      )
+    } else {
+      elements.push(<div key={key++}>{renderBoldInline(trimmed)}</div>)
+    }
+  }
+
+  return (
+    <div className="text-[13px] text-gray-700 leading-relaxed space-y-0.5">
+      {elements}
+      {isTruncated && (
+        <button
+          onClick={e => { e.stopPropagation(); setExpanded(true) }}
+          className="text-[12px] font-medium text-primary-600 hover:text-primary-700 mt-0.5"
+        >
+          Show more
+        </button>
+      )}
+      {expanded && allLines.length > maxLines && (
+        <button
+          onClick={e => { e.stopPropagation(); setExpanded(false) }}
+          className="text-[12px] font-medium text-primary-600 hover:text-primary-700 mt-0.5"
+        >
+          Show less
+        </button>
+      )}
+    </div>
+  )
+}
+
+function renderBoldInline(text: string): React.ReactNode {
+  if (!text.includes('**')) return text
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return parts.map((part, i) => {
+    const m = part.match(/^\*\*(.+)\*\*$/)
+    return m ? <strong key={i} className="font-semibold text-gray-900">{m[1]}</strong> : part || null
+  })
 }
 
 // ============================================================
@@ -403,4 +541,115 @@ export const FeedCard = React.memo(function FeedCard(props: FeedCardProps) {
     case 'rich_content': return <RichContentCard {...props} />
     default: return <CompactThoughtCard {...props} />
   }
+})
+
+// ============================================================
+// GroupedThesisCard — multiple thesis field updates in one card with carousel
+// ============================================================
+
+function formatSection(s: string | undefined): string {
+  if (!s) return 'Unknown'
+  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+export const GroupedThesisCard = React.memo(function GroupedThesisCard({
+  items, onAuthorClick, onAssetClick, onCardClick, onExpandChart, isSelected,
+}: {
+  items: ScoredFeedItem[]
+  onAuthorClick?: (id: string) => void
+  onAssetClick?: (id: string, symbol: string) => void
+  onCardClick?: (item: ScoredFeedItem) => void
+  onExpandChart?: (symbol: string) => void
+  isSelected?: boolean
+}) {
+  const [activeIdx, setActiveIdx] = useState(0)
+  const active = items[activeIdx]
+  const asset = 'asset' in active ? (active as any).asset : null
+  const sections = items.map(i => (i as any).section as string | undefined)
+  const rawContent = stripHtml(active.content || '')
+  const { data: quote } = useFeedQuote(asset?.symbol)
+  const whyNow = generateWhyNow(active, quote)
+
+  return (
+    <div onClick={() => onCardClick?.(active)} className={clsx(
+      'rounded-xl overflow-hidden transition-all cursor-pointer group border',
+      isSelected ? 'border-primary-300 shadow-lg ring-1 ring-primary-200' : 'border-gray-200 hover:shadow-md',
+    )}>
+      {/* Header */}
+      <div className="px-4 pt-2.5 pb-2 border-b bg-teal-50/40 border-teal-100">
+        <div className="flex items-center gap-2 mb-1.5">
+          <GitBranch className="w-3 h-3 text-teal-600" />
+          <span className="text-[10px] font-bold uppercase tracking-wide text-teal-600">Thesis Update</span>
+          {asset && (
+            <button onClick={e => { e.stopPropagation(); onAssetClick?.(asset.id, asset.symbol) }}
+              className="text-[13px] font-bold text-gray-900 hover:text-primary-700">{asset.symbol}</button>
+          )}
+          <span className="text-[10px] text-gray-400 ml-auto">{relativeTime(active.created_at)}</span>
+        </div>
+
+        {/* Section pills — clickable to switch carousel */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {sections.map((section, idx) => (
+            <button
+              key={idx}
+              onClick={(e) => { e.stopPropagation(); setActiveIdx(idx) }}
+              className={clsx(
+                'text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors',
+                idx === activeIdx
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-teal-100 text-teal-700 hover:bg-teal-200',
+              )}
+            >
+              {formatSection(section)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white">
+        {asset?.symbol && <FeedChart symbol={asset.symbol} height={140} defaultTimeframe="3M" onExpand={onExpandChart} className="pt-1" />}
+
+        <div className="px-4 pt-1.5 pb-0.5">
+          <AuthorWhyNowRow item={active} whyNow={whyNow} onAuthorClick={onAuthorClick} />
+        </div>
+
+        {/* Carousel content */}
+        <div className="px-4 pb-2">
+          <RichTextContent content={rawContent} />
+
+          {/* Carousel nav */}
+          {items.length > 1 && (
+            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-gray-100">
+              <button
+                onClick={(e) => { e.stopPropagation(); setActiveIdx(i => (i - 1 + items.length) % items.length) }}
+                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <div className="flex items-center gap-1">
+                {items.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={(e) => { e.stopPropagation(); setActiveIdx(idx) }}
+                    className={clsx(
+                      'w-1.5 h-1.5 rounded-full transition-colors',
+                      idx === activeIdx ? 'bg-teal-500' : 'bg-gray-300',
+                    )}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setActiveIdx(i => (i + 1) % items.length) }}
+                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 py-1.5 border-t border-gray-100"><EngagementRow item={active} /></div>
+      </div>
+    </div>
+  )
 })

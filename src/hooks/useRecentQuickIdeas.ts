@@ -154,7 +154,7 @@ export function useRecentQuickIdeas(limit: number = 5) {
             ...base,
             kind: 'prompt',
             title,
-            status: 'open', // No status column yet — safe default
+            status: (extractTag(t.tags, 'status:') as 'open' | 'responded' | 'closed') || 'open',
             assigneeName: assigneeId ? nameMap[assigneeId] : undefined,
           }
         }

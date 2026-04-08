@@ -104,10 +104,16 @@ export function isActiveProcess(process: {
 export function getRunVersionLabel(run: {
   template_version_number?: number | null
 }): string {
-  if (run.template_version_number != null && run.template_version_number > 0) {
-    return `v${run.template_version_number}`
+  const n = run.template_version_number
+  if (n == null || n <= 0) return 'v—'
+  // Versions >= 100 use major.minor encoding (e.g. 301 → v3.1)
+  if (n >= 100) {
+    const major = Math.floor(n / 100)
+    const minor = n % 100
+    return `v${major}.${minor}`
   }
-  return 'v—'
+  // Legacy single-digit versions
+  return `v${n}.0`
 }
 
 /**
@@ -118,7 +124,7 @@ export function getRunVersionTooltip(run: {
   template_version_number?: number | null
 }): string {
   if (run.template_version_number != null && run.template_version_number > 0) {
-    return `Process definition v${run.template_version_number}`
+    return `Process definition ${getRunVersionLabel(run)}`
   }
   return 'No definition version assigned'
 }
@@ -230,18 +236,20 @@ export function getScopeRemainingLabel(run: {
   const total = run.total_items ?? run.total_assets ?? 0
 
   if (scope === 'general') {
-    // For general scope: "Stage X of Y" is more meaningful
-    // But we only have completed/total counts here, not stage position.
-    // Show "1 remaining" or "Complete" style
-    if (total === 0) return '—'
+    if (total === 0) return 'Not started'
     if (remaining === 0) return 'Complete'
     return 'In progress'
   }
 
-  if (total === 0) return `0 ${scope === 'portfolio' ? 'portfolios' : 'assets'}`
-  const noun = scope === 'portfolio'
-    ? (remaining === 1 ? 'portfolio' : 'portfolios')
-    : (remaining === 1 ? 'asset' : 'assets')
+  if (scope === 'portfolio') {
+    if (total === 0) return '0 portfolios'
+    const noun = remaining === 1 ? 'portfolio' : 'portfolios'
+    return `${remaining} ${noun}`
+  }
+
+  // asset scope
+  if (total === 0) return '0 assets'
+  const noun = remaining === 1 ? 'asset' : 'assets'
   return `${remaining} ${noun}`
 }
 

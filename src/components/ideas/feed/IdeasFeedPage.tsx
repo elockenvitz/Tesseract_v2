@@ -19,9 +19,10 @@ import {
   SlidersHorizontal, Sparkles, Users, Clock as ClockIcon,
   FileText, TrendingUp, GitBranch, Zap,
 } from 'lucide-react'
+import { useMemo } from 'react'
 import { useIdeasFeed, type FeedMode, type IdeasFeedFilters, type MixedFeedItem, isSignalCard } from '../../../hooks/ideas/useIdeasFeed'
 import { useSignalCards, insertSignalsIntoFeed } from '../../../hooks/ideas/useSignalCards'
-import { FeedCard } from './FeedCard'
+import { FeedCard, GroupedThesisCard } from './FeedCard'
 import { SignalFeedCard } from './SignalFeedCard'
 import { FeedSkeleton } from './FeedSkeleton'
 import type { ScoredFeedItem, ItemType } from '../../../hooks/ideas/types'
@@ -97,6 +98,54 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                author.includes(searchQuery.toLowerCase())
       })
     : mixedFeed
+
+  // ── Group thesis updates by same asset + author + close timestamps ──
+  type FeedEntry = { type: 'single'; item: MixedFeedItem } | { type: 'group'; items: ScoredFeedItem[]; key: string }
+  const groupedFeed = useMemo((): FeedEntry[] => {
+    const entries: FeedEntry[] = []
+    const used = new Set<number>()
+
+    for (let i = 0; i < displayItems.length; i++) {
+      if (used.has(i)) continue
+      const item = displayItems[i]
+
+      if (isSignalCard(item) || item.type !== 'thesis_update') {
+        entries.push({ type: 'single', item })
+        continue
+      }
+
+      // Collect adjacent thesis_updates with same asset + author within 30 min
+      const asset = 'asset' in item ? (item as any).asset : null
+      const authorId = item.author?.id
+      const ts = new Date(item.created_at).getTime()
+      const group: ScoredFeedItem[] = [item]
+      used.add(i)
+
+      for (let j = i + 1; j < displayItems.length; j++) {
+        if (used.has(j)) continue
+        const other = displayItems[j]
+        if (isSignalCard(other) || other.type !== 'thesis_update') continue
+        const otherAsset = 'asset' in other ? (other as any).asset : null
+        const otherAuthorId = other.author?.id
+        const otherTs = new Date(other.created_at).getTime()
+        if (
+          asset?.id && otherAsset?.id === asset.id &&
+          authorId && otherAuthorId === authorId &&
+          Math.abs(otherTs - ts) < 30 * 60 * 1000
+        ) {
+          group.push(other)
+          used.add(j)
+        }
+      }
+
+      if (group.length > 1) {
+        entries.push({ type: 'group', items: group, key: `group-${group.map(g => g.id).join('-')}` })
+      } else {
+        entries.push({ type: 'single', item })
+      }
+    }
+    return entries
+  }, [displayItems])
 
   // ── Infinite scroll trigger ──
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -322,9 +371,24 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
           )}
 
           {/* Feed items */}
-          {!isLoading && displayItems.length > 0 && (
+          {!isLoading && groupedFeed.length > 0 && (
             <div className="space-y-3">
-              {displayItems.map((item, idx) => {
+              {groupedFeed.map((entry) => {
+                if (entry.type === 'group') {
+                  return (
+                    <GroupedThesisCard
+                      key={entry.key}
+                      items={entry.items}
+                      onAuthorClick={handleAuthorClick}
+                      onAssetClick={handleAssetClick}
+                      onCardClick={handleCardClick}
+                      onExpandChart={handleExpandChart}
+                      isSelected={entry.items.some(i => i.id === selectedItem?.id)}
+                    />
+                  )
+                }
+
+                const item = entry.item
                 if (isSignalCard(item)) {
                   return (
                     <SignalFeedCard
@@ -334,6 +398,35 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                       onCardClick={handleSignalClick}
                       onExpandChart={handleExpandChart}
                     />
+                  )
+                }
+
+                // Discovery prompt cards (system-generated)
+                if ((item as any).meta?.isDiscovery) {
+                  const meta = (item as any).meta
+                  return (
+                    <div key={item.id} className="rounded-xl border border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-white p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center shrink-0 mt-0.5">
+                          <Sparkles className="w-4 h-4 text-primary-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-[13px] font-semibold text-gray-900 leading-snug">{(item as any).title}</h4>
+                          <p className="text-[12px] text-gray-500 mt-0.5 leading-relaxed">{item.content}</p>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+                                detail: { captureType: meta.captureType },
+                              }))
+                            }}
+                            className="mt-2 text-[12px] font-medium text-primary-600 hover:text-primary-700 transition-colors"
+                          >
+                            {meta.actionLabel} &rarr;
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )
                 }
 

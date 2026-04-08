@@ -310,15 +310,15 @@ export function useEntitySearch({
           (async () => {
             const { data: projects } = await supabase
               .from('projects')
-              .select('id, name, description, status')
-              .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+              .select('id, title, description, status')
+              .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
               .limit(limit)
 
             if (projects) {
               searchResults.push(...projects.map(project => ({
                 id: project.id,
                 type: 'project' as const,
-                title: project.name,
+                title: (project as any).title,
                 subtitle: [project.description, project.status].filter(Boolean).join(' · '),
                 icon: 'folder',
                 data: project

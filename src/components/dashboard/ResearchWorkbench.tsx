@@ -27,9 +27,13 @@ import {
   AlertTriangle,
   TrendingDown,
   Activity,
+  RotateCw,
+  Check,
 } from 'lucide-react'
 import type { CockpitViewModel, CockpitStack } from '../../types/cockpit'
 import type { DashboardItem } from '../../types/dashboard-item'
+import { useAuth } from '../../hooks/useAuth'
+import { useActiveRuns, type ActiveRun } from '../../hooks/workflow/useActiveRuns'
 
 // ---------------------------------------------------------------------------
 // Section config
@@ -57,6 +61,12 @@ const SECTIONS: SectionConfig[] = [
     emptyLabel: 'No projects needing attention',
     accentBorder: 'border-l-red-400', accentText: 'text-red-700 dark:text-red-400',
     accentBg: 'bg-red-50 dark:bg-red-950/20',
+  },
+  {
+    id: 'processes', title: 'Processes', icon: RotateCw,
+    emptyLabel: 'No active processes',
+    accentBorder: 'border-l-teal-400', accentText: 'text-teal-700 dark:text-teal-400',
+    accentBg: 'bg-teal-50 dark:bg-teal-950/20',
   },
   {
     id: 'simulation', title: 'Pipeline', icon: FlaskConical,
@@ -327,8 +337,21 @@ interface ResearchWorkbenchProps {
 // ---------------------------------------------------------------------------
 
 export function ResearchWorkbench({ viewModel, onItemClick }: ResearchWorkbenchProps) {
+  const { user } = useAuth()
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set())
+
+  // ---- Standalone processes (asset + general scoped) ----
+  const { data: allRuns = [] } = useActiveRuns(user?.id)
+  const standaloneProcesses = useMemo(() => {
+    return allRuns.filter(r =>
+      (r.scope_type === 'asset' || r.scope_type === 'general') &&
+      r.status === 'active' &&
+      !r.archived &&
+      !r.parent_archived &&
+      !r.parent_deleted
+    )
+  }, [allRuns])
 
   // Gather items per section from ALL bands (including DECIDE for promoted deliverables)
   const sectionData = useMemo(() => {
@@ -383,10 +406,11 @@ export function ResearchWorkbench({ viewModel, onItemClick }: ResearchWorkbenchP
   const sectionCounts = useMemo(() => ({
     thesis: sectionData.thesis.length,
     projects: sectionData.projects.length,
+    processes: standaloneProcesses.length,
     simulation: sectionData.simulation.length,
     investigate: sectionData.investigate.length + sectionData.syntheticInvestigate.length,
     monitoring: sectionData.monitoring.length + sectionData.syntheticMonitoring.length,
-  }), [sectionData])
+  }), [sectionData, standaloneProcesses])
 
   // Auto-expand sections that have content
   const initialExpanded = useMemo(() => {
@@ -469,9 +493,17 @@ export function ResearchWorkbench({ viewModel, onItemClick }: ResearchWorkbenchP
           onSelectItem={handleSelectItem}
         />
 
+        {/* Processes — standalone (asset + general scoped) */}
+        <ProcessesSection
+          config={SECTIONS[2]}
+          runs={standaloneProcesses}
+          isExpanded={effectiveExpanded.has('processes')}
+          onToggle={() => toggleSection('processes')}
+        />
+
         {/* Pipeline */}
         <AccordionSection
-          config={SECTIONS[2]}
+          config={SECTIONS[3]}
           items={sectionData.simulation}
           count={sectionCounts.simulation}
           status={getSectionStatus(sectionData.simulation, 'simulation')}
@@ -483,7 +515,7 @@ export function ResearchWorkbench({ viewModel, onItemClick }: ResearchWorkbenchP
 
         {/* Investigate */}
         <AccordionSection
-          config={SECTIONS[3]}
+          config={SECTIONS[4]}
           items={sectionData.investigate}
           syntheticItems={sectionData.syntheticInvestigate}
           count={sectionCounts.investigate}
@@ -495,7 +527,7 @@ export function ResearchWorkbench({ viewModel, onItemClick }: ResearchWorkbenchP
 
         {/* Monitoring */}
         <AccordionSection
-          config={SECTIONS[4]}
+          config={SECTIONS[5]}
           items={sectionData.monitoring}
           syntheticItems={sectionData.syntheticMonitoring}
           count={sectionCounts.monitoring}
@@ -845,6 +877,99 @@ function SyntheticItemRow({
       <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500 truncate max-w-[180px]">
         {item.detail}
       </span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ProcessesSection — Active runs with progress bars
+// ---------------------------------------------------------------------------
+
+function ProcessesSection({
+  config,
+  runs,
+  isExpanded,
+  onToggle,
+}: {
+  config: SectionConfig
+  runs: ActiveRun[]
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const Icon = config.icon
+  const isEmpty = runs.length === 0
+
+  return (
+    <div className="border-t border-gray-100 dark:border-gray-700/40">
+      <button
+        onClick={onToggle}
+        className={clsx(
+          'w-full flex items-center gap-2 px-3.5 py-2.5 text-left transition-colors',
+          isEmpty
+            ? 'bg-gray-50/30 dark:bg-gray-800/20'
+            : clsx(config.accentBg, 'hover:brightness-95 dark:hover:brightness-110'),
+        )}
+      >
+        {isExpanded && !isEmpty
+          ? <ChevronDown className={clsx('w-3 h-3 shrink-0', config.accentText)} />
+          : <ChevronRight className="w-3 h-3 shrink-0 text-gray-400 dark:text-gray-500" />
+        }
+        <Icon className={clsx('w-3.5 h-3.5 shrink-0', isEmpty ? 'text-gray-300 dark:text-gray-600' : config.accentText)} />
+        <span className={clsx(
+          'text-[12px] font-semibold',
+          isEmpty ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200',
+        )}>
+          {config.title}
+        </span>
+        {!isEmpty && (
+          <span className={clsx(
+            'text-[11px] font-bold tabular-nums px-1.5 py-px rounded-full min-w-[20px] text-center',
+            config.accentBg, config.accentText,
+          )}>
+            {runs.length}
+          </span>
+        )}
+        {isEmpty && (
+          <span className="text-[11px] text-gray-400 dark:text-gray-500 italic ml-auto">
+            {config.emptyLabel}
+          </span>
+        )}
+      </button>
+
+      {isExpanded && !isEmpty && (
+        <div>
+          {runs.map(run => {
+            const pct = run.total_items > 0 ? Math.round((run.completed_items / run.total_items) * 100) : 0
+            return (
+              <div
+                key={run.id}
+                className="flex items-center gap-2 pl-8 pr-3.5 py-[6px] border-t border-t-gray-50 dark:border-t-gray-700/20"
+              >
+                <span className="w-[26px] shrink-0 text-center">
+                  {pct === 100
+                    ? <Check className="w-3.5 h-3.5 text-emerald-500 inline-block" />
+                    : <RotateCw className="w-3 h-3 text-teal-500 inline-block" />
+                  }
+                </span>
+                <span className="text-[12px] font-medium text-gray-700 dark:text-gray-200 truncate flex-1">
+                  {run.parent_name}
+                </span>
+                <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 shrink-0">
+                  {run.completed_items}/{run.total_items}
+                </span>
+                {run.total_items > 0 && (
+                  <div className="w-[40px] h-[4px] rounded-full bg-gray-200 dark:bg-gray-700 shrink-0 overflow-hidden">
+                    <div
+                      className={clsx('h-full rounded-full', pct === 100 ? 'bg-emerald-500' : 'bg-teal-500')}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

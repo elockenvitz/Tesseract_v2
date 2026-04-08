@@ -365,7 +365,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
       const projectIds = assignments.map(a => a.project_id)
       const { data: projectData } = await supabase
         .from('projects')
-        .select('id, name, status, priority')
+        .select('id, title, status, priority')
         .in('id', projectIds)
         .in('status', ['planning', 'in_progress', 'blocked'])
 

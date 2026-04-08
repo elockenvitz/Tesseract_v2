@@ -137,29 +137,53 @@ async function generateStaleCoverageSignals(userId: string): Promise<SignalCard[
   }
   if (heldAssets.size === 0) return []
 
-  // Check for recent activity on held assets
   const since30d = subDays(new Date(), 30).toISOString()
   const assetIds = [...heldAssets.keys()]
 
-  const { data: recentActivity } = await supabase
-    .from('quick_thoughts')
-    .select('asset_id')
-    .in('asset_id', assetIds)
-    .gte('created_at', since30d)
+  // Check ALL activity sources in parallel — not just quick_thoughts
+  const [recentThoughts, recentContributions, recentNotes, recentTargets] = await Promise.all([
+    supabase
+      .from('quick_thoughts')
+      .select('asset_id')
+      .in('asset_id', assetIds)
+      .gte('created_at', since30d),
+    supabase
+      .from('asset_contributions')
+      .select('asset_id')
+      .in('asset_id', assetIds)
+      .gte('updated_at', since30d),
+    supabase
+      .from('asset_notes')
+      .select('asset_id')
+      .in('asset_id', assetIds)
+      .gte('created_at', since30d),
+    supabase
+      .from('analyst_price_targets')
+      .select('asset_id')
+      .in('asset_id', assetIds)
+      .gte('updated_at', since30d),
+  ])
 
-  const activeAssets = new Set((recentActivity || []).map((r: any) => r.asset_id))
+  const activeAssets = new Set([
+    ...(recentThoughts.data || []).map((r: any) => r.asset_id),
+    ...(recentContributions.data || []).map((r: any) => r.asset_id),
+    ...(recentNotes.data || []).map((r: any) => r.asset_id),
+    ...(recentTargets.data || []).map((r: any) => r.asset_id),
+  ])
+
   const staleAssets = assetIds.filter(id => !activeAssets.has(id))
 
   if (staleAssets.length === 0) return []
 
+  // Find the most recent activity date for each stale asset to show how long it's been
   const signals: SignalCard[] = staleAssets.slice(0, 3).map(assetId => {
     const asset = heldAssets.get(assetId)!
     return {
       id: `signal-stale-${assetId}`,
       type: 'signal' as const,
       signalType: 'stale_coverage' as SignalType,
-      headline: `${asset.symbol}: held position with no recent team activity`,
-      body: `This position has had no posts, notes, or thesis updates in over 30 days. The view may be stale.`,
+      headline: `${asset.symbol}: held position with no recent activity`,
+      body: `No posts, thesis updates, notes, or target changes on ${asset.symbol} in the last 30 days.`,
       relatedAssets: [{ id: asset.id, symbol: asset.symbol }],
       metric: '30+',
       metricLabel: 'days silent',

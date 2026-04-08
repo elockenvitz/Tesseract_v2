@@ -210,11 +210,27 @@ export function ProcessWalkthrough({
 
   // ── Derived state ─────────────────────────────────────────────
 
-  const currentStageKey = progress?.current_stage_key
   const isCompleted = progress?.is_completed ?? false
-  const currentStageIndex = isCompleted ? stages.length : stages.findIndex(s => s.stage_key === currentStageKey)
+  // Default to first stage if started but no stage set
+  const currentStageKey = progress?.current_stage_key || (progress?.is_started && stages.length > 0 ? stages[0].stage_key : null)
+  const currentStageIndex = isCompleted ? stages.length : (currentStageKey ? Math.max(0, stages.findIndex(s => s.stage_key === currentStageKey)) : 0)
   const activeIdx = viewingStageIdx ?? currentStageIndex
-  const activeStage = activeIdx < stages.length ? stages[activeIdx] : undefined
+  const activeStage = activeIdx >= 0 && activeIdx < stages.length ? stages[activeIdx] : undefined
+
+  // Auto-fix: if progress exists but current_stage_key is null, set it to first stage
+  React.useEffect(() => {
+    if (progress && progress.is_started && !progress.current_stage_key && stages.length > 0) {
+      const firstKey = stages[0].stage_key
+      let q = supabase.from(progressTable).update({
+        current_stage_key: firstKey,
+        updated_at: new Date().toISOString(),
+      }).eq('workflow_id', effectiveWorkflowId)
+      if (scopeType === 'portfolio' && portfolioId) {
+        q = q.eq('portfolio_id', portfolioId)
+      }
+      q.then(() => qc.invalidateQueries({ queryKey: progressKey }))
+    }
+  }, [progress?.id, progress?.current_stage_key, stages.length])
 
   const itemsByStage = useMemo(() => {
     const map = new Map<string, any[]>()

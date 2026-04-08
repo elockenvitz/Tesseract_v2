@@ -463,9 +463,21 @@ function QueueRow({
         </span>
 
         {/* Portfolio */}
-        <span className="w-[110px] shrink-0 text-[11px] text-gray-400 dark:text-gray-500 truncate ml-3">
-          {item.portfolio?.name ?? ''}
-        </span>
+        {item.portfolio?.id ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              window.dispatchEvent(new CustomEvent('openTradeLab', { detail: { portfolioId: item.portfolio!.id } }))
+            }}
+            className="w-[110px] shrink-0 text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline truncate ml-3 text-left transition-colors"
+          >
+            {item.portfolio.name}
+          </button>
+        ) : (
+          <span className="w-[110px] shrink-0 text-[11px] text-gray-400 dark:text-gray-500 truncate ml-3">
+            {item.portfolio?.name ?? ''}
+          </span>
+        )}
 
         {/* Weight: current → target */}
         <span className="w-[80px] shrink-0 text-[11px] tabular-nums ml-2">
@@ -563,7 +575,16 @@ function DetailPane({
             <span className={clsx('text-[11px] font-bold tabular-nums', ageColor(age))}>{age}d</span>
           </div>
           {item.portfolio?.name && (
-            <span className="text-[10px] text-gray-400 dark:text-gray-500">{item.portfolio.name}</span>
+            item.portfolio.id ? (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('openTradeLab', { detail: { portfolioId: item.portfolio!.id } }))}
+                className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition-colors"
+              >
+                {item.portfolio.name}
+              </button>
+            ) : (
+              <span className="text-[10px] text-gray-400 dark:text-gray-500">{item.portfolio.name}</span>
+            )
           )}
         </div>
 

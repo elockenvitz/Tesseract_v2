@@ -167,6 +167,9 @@ export function PriceTargetChart({
     priceChange,
     priceChangePercent,
     riskRewardRatio,
+    riskRewardBreakdown,
+    riskRewardUpside,
+    riskRewardDownside,
     loading,
     fetching,
     error
@@ -273,9 +276,10 @@ export function PriceTargetChart({
     const min = Math.min(...allPrices)
     const max = Math.max(...allPrices)
     const range = max - min
-    // Base 15% padding, scaled by zoom level (each step is ~30% more/less padding)
+    // Base 25% padding, scaled by zoom level (each step is ~30% more/less padding)
+    // Enough to show distribution tails without clipping
     const zoomMultiplier = Math.pow(1.3, yZoom)
-    const padding = range * 0.15 * zoomMultiplier
+    const padding = range * 0.25 * zoomMultiplier
     // Round domain bounds to clean numbers for nicer tick marks
     const rawMin = Math.max(0, min - padding)
     const rawMax = max + padding
@@ -560,28 +564,16 @@ export function PriceTargetChart({
               </>
             )}
 
-            {/* Risk/Return - clickable to show probability distribution (only in individual view) */}
-            {riskRewardRatio !== null && onUpdateProbabilities && (
-              <button
-                type="button"
-                onClick={() => setShowProbabilityModal(true)}
-                className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-left"
-              >
-                <div className="text-xs text-gray-500 dark:text-gray-400">Risk/Return</div>
-                <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-1">
-                  {riskRewardRatio.toFixed(2)}x
-                  <span className="text-xs text-primary-600 dark:text-primary-400">{'\u2192'}</span>
-                </div>
-              </button>
-            )}
-            {/* Risk/Return - display only (in aggregated/other user views) */}
-            {riskRewardRatio !== null && !onUpdateProbabilities && (
-              <div className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Risk/Return</div>
-                <div className="font-semibold text-gray-900 dark:text-white">
-                  {riskRewardRatio.toFixed(2)}x
-                </div>
-              </div>
+            {/* Risk/Return */}
+            {riskRewardRatio !== null && (
+              <RiskReturnBadge
+                ratio={riskRewardRatio}
+                breakdown={riskRewardBreakdown}
+                upside={riskRewardUpside}
+                downside={riskRewardDownside}
+                clickable={!!onUpdateProbabilities}
+                onClick={onUpdateProbabilities ? () => setShowProbabilityModal(true) : undefined}
+              />
             )}
           </div>
 
@@ -1143,19 +1135,25 @@ export function PriceTargetChart({
                       // Calculate expected price
                       const expectedPrice = priceTargets.reduce((sum, t) => sum + t.price * (t.probability || 0), 0) / totalProb
 
-                      // Calculate variance
+                      // Smooth skew-normal distribution from probability-weighted scenarios
                       const [minPrice, maxPrice] = yAxisDomain
                       const priceRange = maxPrice - minPrice
+                      const priceSpread = Math.max(...priceTargets.map(t => t.price)) - Math.min(...priceTargets.map(t => t.price))
                       const variance = priceTargets.reduce((sum, t) => sum + (t.probability || 0) * Math.pow(t.price - expectedPrice, 2), 0) / totalProb
-                      const stdDev = Math.sqrt(variance) || priceRange * 0.15
+                      const stdDev = Math.sqrt(variance) || priceSpread * 0.2
+                      const skewness = priceTargets.reduce((sum, t) => sum + (t.probability || 0) * Math.pow((t.price - expectedPrice) / stdDev, 3), 0) / totalProb
+                      const skewFactor = Math.tanh(skewness * 0.5)
+                      const leftStdDev = stdDev * (1 - skewFactor * 0.3)
+                      const rightStdDev = stdDev * (1 + skewFactor * 0.3)
 
-                      // Generate distribution curve using the EXACT yAxis.scale
                       const numPoints = 100
                       const points: { price: number; y: number; density: number }[] = []
 
                       for (let i = 0; i <= numPoints; i++) {
                         const price = minPrice + (i / numPoints) * priceRange
-                        const density = Math.exp(-Math.pow(price - expectedPrice, 2) / (2 * stdDev * stdDev))
+                        const sd = price < expectedPrice ? leftStdDev : rightStdDev
+                        const z = (price - expectedPrice) / sd
+                        const density = Math.exp(-0.5 * z * z)
                         const y = yAxis.scale(price)
                         if (!isNaN(y)) {
                           points.push({ price, y, density })
@@ -1474,6 +1472,110 @@ export function PriceTargetChart({
         isEditable={!!onUpdateProbabilities}
       />
 
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// RiskReturnBadge — hover popover showing probability-weighted breakdown
+// ---------------------------------------------------------------------------
+
+function RiskReturnBadge({
+  ratio,
+  breakdown,
+  upside,
+  downside,
+  clickable,
+  onClick,
+}: {
+  ratio: number
+  breakdown: { scenario: string; price: number; prob: number; returnPct: number; contribution: number; side: 'upside' | 'downside' }[]
+  upside: number
+  downside: number
+  clickable: boolean
+  onClick?: () => void
+}) {
+  const [hover, setHover] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const sorted = [...breakdown].sort((a, b) => b.returnPct - a.returnPct)
+
+  const badge = (
+    <div className="text-left">
+      <div className="text-xs text-gray-500 dark:text-gray-400">Risk/Return</div>
+      <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-1">
+        {ratio.toFixed(2)}x
+        {clickable && <span className="text-xs text-primary-600 dark:text-primary-400">{'\u2192'}</span>}
+      </div>
+    </div>
+  )
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {clickable ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        >
+          {badge}
+        </button>
+      ) : (
+        <div className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
+          {badge}
+        </div>
+      )}
+
+      {hover && sorted.length > 0 && (
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 w-[240px] bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden pointer-events-none">
+          {/* Arrow */}
+          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white dark:bg-gray-800 rotate-45 border-l border-t border-gray-200 dark:border-gray-700" />
+
+          <div className="px-3 pt-2.5 pb-1.5">
+            <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Scenario Breakdown</div>
+            <div className="space-y-1">
+              {sorted.map(s => (
+                <div key={s.scenario} className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-gray-600 dark:text-gray-300 truncate">{s.scenario}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">${s.price.toFixed(0)}</span>
+                    <span className={clsx(
+                      'text-[11px] font-medium tabular-nums w-[42px] text-right',
+                      s.returnPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                    )}>
+                      {s.returnPct >= 0 ? '+' : ''}{(s.returnPct * 100).toFixed(1)}%
+                    </span>
+                    <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 w-[28px] text-right">{Math.round(s.prob)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mx-3 border-t border-gray-100 dark:border-gray-700" />
+
+          <div className="px-3 pt-1.5 pb-2.5 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Weighted upside</span>
+              <span className="text-[11px] font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">+{(upside * 100).toFixed(1)}%</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-red-600 dark:text-red-400">Weighted downside</span>
+              <span className="text-[11px] font-semibold tabular-nums text-red-600 dark:text-red-400">-{(downside * 100).toFixed(1)}%</span>
+            </div>
+            <div className="flex items-center justify-between pt-0.5">
+              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">Ratio</span>
+              <span className="text-[12px] font-bold tabular-nums text-gray-900 dark:text-white">
+                {(upside * 100).toFixed(1)} / {(downside * 100).toFixed(1)} = {ratio.toFixed(2)}x
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

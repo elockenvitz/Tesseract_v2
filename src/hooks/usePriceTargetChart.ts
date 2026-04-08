@@ -254,13 +254,45 @@ export function usePriceTargetChart({
     })
   }
 
-  // Calculate risk/reward ratio
+  // Calculate probability-weighted risk/return ratio
+  // Uses all scenarios with probabilities: upside EV contribution / downside EV contribution
   let riskRewardRatio: number | null = null
-  const bullZone = riskRewardZones.find(z => z.scenarioName.toLowerCase().includes('bull'))
-  const bearZone = riskRewardZones.find(z => z.scenarioName.toLowerCase().includes('bear'))
+  let riskRewardBreakdown: { scenario: string; price: number; prob: number; returnPct: number; contribution: number; side: 'upside' | 'downside' }[] = []
+  let riskRewardUpside = 0
+  let riskRewardDownside = 0
 
-  if (bullZone && bearZone && bearZone.percentChange !== 0) {
-    riskRewardRatio = Math.abs(bullZone.percentChange / bearZone.percentChange)
+  if (currentPrice > 0) {
+    const withProb = priceTargets.filter(t => t.price > 0 && t.probability != null && t.probability > 0)
+    const totalProb = withProb.reduce((sum, t) => sum + (t.probability ?? 0), 0)
+
+    if (withProb.length >= 2 && totalProb > 0) {
+      // Group by scenario and average prices/probs for display
+      const scenarioMap = new Map<string, { prices: number[]; probs: number[] }>()
+      for (const t of withProb) {
+        const key = t.scenarioName
+        if (!scenarioMap.has(key)) scenarioMap.set(key, { prices: [], probs: [] })
+        scenarioMap.get(key)!.prices.push(t.price)
+        scenarioMap.get(key)!.probs.push(t.probability ?? 0)
+      }
+
+      for (const [scenario, data] of scenarioMap) {
+        const avgPrice = data.prices.reduce((a, b) => a + b, 0) / data.prices.length
+        const avgProb = data.probs.reduce((a, b) => a + b, 0) / data.probs.length
+        const normalizedProb = avgProb / totalProb
+        const returnPct = (avgPrice - currentPrice) / currentPrice
+        const contribution = Math.abs(returnPct) * normalizedProb
+        const side = returnPct >= 0 ? 'upside' as const : 'downside' as const
+
+        if (side === 'upside') riskRewardUpside += contribution
+        else riskRewardDownside += contribution
+
+        riskRewardBreakdown.push({ scenario, price: avgPrice, prob: avgProb, returnPct, contribution, side })
+      }
+
+      if (riskRewardDownside > 0) {
+        riskRewardRatio = riskRewardUpside / riskRewardDownside
+      }
+    }
   }
 
   // isLoading = initial load (no cached data)
@@ -278,6 +310,9 @@ export function usePriceTargetChart({
     priceChangePercent,
     riskRewardZones,
     riskRewardRatio,
+    riskRewardBreakdown,
+    riskRewardUpside,
+    riskRewardDownside,
     loading,
     fetching, // True when refetching with existing data
     error: error as Error | null

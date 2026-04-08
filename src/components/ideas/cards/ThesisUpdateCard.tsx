@@ -1,21 +1,8 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { clsx } from 'clsx'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { IdeaCard, type IdeaCardProps } from '../IdeaCard'
 import type { ThesisUpdateItem, ScoredFeedItem } from '../../../hooks/ideas/types'
-
-function stripHtml(html: string | undefined): string {
-  if (!html) return ''
-  const text = html.replace(/<[^>]*>/g, ' ')
-  const decoded = text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-  return decoded.replace(/\s+/g, ' ').trim()
-}
 
 const changeTypeConfig = {
   created: { icon: Plus, color: 'text-green-600', bg: 'bg-green-50', label: 'Added' },
@@ -54,22 +41,97 @@ export function ThesisUpdateCard({
     </div>
   )
 
-  // Get the content to display
-  const displayContent = stripHtml(item.new_value || item.content)
+  const rawContent = item.new_value || item.content || ''
 
-  // Override content to show the stripped content
-  const cardItem: ScoredFeedItem = {
-    ...item,
-    content: displayContent
-  }
+  // Render rich content as React elements
+  const richContent = useMemo(() => {
+    let text = rawContent
+
+    // If HTML, convert to markdown-ish text first
+    if (/<[a-z][\s\S]*>/i.test(text)) {
+      text = text
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/h[1-6]>/gi, '\n\n')
+        .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner) => {
+          const clean = inner.replace(/<[^>]*>/g, '').trim()
+          return `- ${clean}\n`
+        })
+        .replace(/<[^>]*>/g, '')
+    }
+
+    // Decode entities
+    text = text
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+
+    // Split into lines and render with formatting
+    const lines = text.split('\n')
+    const elements: React.ReactNode[] = []
+    let key = 0
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+
+      // Skip empty lines (add spacing)
+      if (!line) {
+        if (elements.length > 0) {
+          elements.push(<div key={key++} className="h-1.5" />)
+        }
+        continue
+      }
+
+      // Bullet line
+      const bulletMatch = line.match(/^[-*]\s+(.+)/)
+      if (bulletMatch) {
+        elements.push(
+          <div key={key++} className="flex gap-1.5 pl-1">
+            <span className="text-gray-400 shrink-0">&bull;</span>
+            <span>{renderInlineFormatting(bulletMatch[1])}</span>
+          </div>
+        )
+        continue
+      }
+
+      // Regular line
+      elements.push(<div key={key++}>{renderInlineFormatting(line)}</div>)
+    }
+
+    return elements
+  }, [rawContent])
 
   return (
     <IdeaCard
-      item={cardItem}
+      item={item}
       headerWidget={headerWidget}
+      contentWidget={
+        <div className="text-sm text-gray-700 leading-relaxed space-y-0.5">
+          {richContent}
+        </div>
+      }
       {...props}
     />
   )
+}
+
+/** Render inline markdown formatting (**bold**, *italic*) as React elements */
+function renderInlineFormatting(text: string): React.ReactNode {
+  // Split on **bold** markers
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  if (parts.length === 1 && !text.includes('**')) return text
+
+  return parts.map((part, i) => {
+    const boldMatch = part.match(/^\*\*(.+)\*\*$/)
+    if (boldMatch) {
+      return <strong key={i} className="font-semibold text-gray-900">{boldMatch[1]}</strong>
+    }
+    return part || null
+  })
 }
 
 function formatFieldName(fieldName: string | undefined): string {

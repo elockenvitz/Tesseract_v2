@@ -32,6 +32,7 @@ import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { WorkflowWithStats } from '../../../types/workflow/workflow.types'
 import { WorkflowTemplateVersionCard, TemplateVersion } from './WorkflowTemplateVersionCard'
+import { getRunVersionLabel } from '../../../utils/workflow/runHelpers'
 import {
   safeRelativeTime,
   safeFutureRelativeTime,
@@ -236,9 +237,7 @@ export function OverviewView({
   const healthCfg = health ? HEALTH_CONFIG[health] : null
 
   // ─── Version label ─────────────────────────────────────────
-  const versionLabel = activeRun?.template_version_number
-    ? `v${activeRun.template_version_number}`
-    : 'v—'
+  const versionLabel = getRunVersionLabel({ template_version_number: activeRun?.template_version_number ?? null })
 
   return (
     <div className="space-y-6">

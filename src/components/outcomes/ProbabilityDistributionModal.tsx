@@ -46,6 +46,10 @@ function InteractiveDistributionChart({
   const [hoveringId, setHoveringId] = useState<string | null>(null)
   const [dragStartX, setDragStartX] = useState<number | null>(null)
   const [pendingDragId, setPendingDragId] = useState<string | null>(null)
+  // Freeze the xToPrice mapping at drag start to prevent feedback loops from chart rescaling
+  const frozenXToPrice = useRef<((x: number) => number) | null>(null)
+  const frozenRect = useRef<DOMRect | null>(null)
+  const frozenScaleX = useRef(1)
 
   // Minimum pixels to move before drag activates (more deliberate)
   const DRAG_THRESHOLD = 8
@@ -76,9 +80,9 @@ function InteractiveDistributionChart({
   const maxScenarioPrice = Math.max(...allPrices)
   const priceSpread = Math.max(maxScenarioPrice - minScenarioPrice, currentPrice * 0.1)
 
-  // Extend the range beyond the scenarios for the tails
-  const minPrice = minScenarioPrice - priceSpread * 0.4
-  const maxPrice = maxScenarioPrice + priceSpread * 0.4
+  // Extend the range beyond the scenarios for the tails — enough to show ~95% of the distribution
+  const minPrice = minScenarioPrice - priceSpread * 0.8
+  const maxPrice = maxScenarioPrice + priceSpread * 0.8
   const priceRange = maxPrice - minPrice
 
   // Convert price to x coordinate
@@ -97,7 +101,10 @@ function InteractiveDistributionChart({
     ? scenarioWithProbs.reduce((sum, s) => sum + s.price * s.prob, 0) / totalProb
     : currentPrice
 
-  // Generate a single smooth probability distribution
+  // Generate a smooth probability distribution that reflects the user's scenario outlook.
+  // Uses the probability-weighted mean and variance to create a single continuous curve.
+  // Skewness is derived from the asymmetry in scenario placement — if bull scenarios
+  // dominate, the curve leans right; if bear scenarios dominate, it leans left.
   const generateDistributionCurve = useMemo(() => {
     const numPoints = 300
     const points: { price: number; x: number; density: number }[] = []
@@ -110,14 +117,29 @@ function InteractiveDistributionChart({
       return points
     }
 
+    // Probability-weighted variance
     const variance = scenarioWithProbs.reduce((sum, s) => {
       return sum + s.prob * Math.pow(s.price - expectedPrice, 2)
     }, 0) / totalProb
-    const stdDev = Math.sqrt(variance) || priceSpread * 0.25
+    const stdDev = Math.sqrt(variance) || priceSpread * 0.2
+
+    // Skewness: probability-weighted third moment (normalized)
+    // Positive skew → longer right tail, negative → longer left tail
+    const skewness = scenarioWithProbs.reduce((sum, s) => {
+      return sum + s.prob * Math.pow((s.price - expectedPrice) / stdDev, 3)
+    }, 0) / totalProb
+
+    // Skew-normal approximation: adjust the stddev on each side of the mean
+    // More probability above the mean → wider right side, narrower left
+    const skewFactor = Math.tanh(skewness * 0.5) // clamp to [-1, 1] range
+    const leftStdDev = stdDev * (1 - skewFactor * 0.3)
+    const rightStdDev = stdDev * (1 + skewFactor * 0.3)
 
     for (let i = 0; i <= numPoints; i++) {
       const price = minPrice + (i / numPoints) * priceRange
-      const density = Math.exp(-Math.pow(price - expectedPrice, 2) / (2 * stdDev * stdDev))
+      const sd = price < expectedPrice ? leftStdDev : rightStdDev
+      const z = (price - expectedPrice) / sd
+      const density = Math.exp(-0.5 * z * z)
       points.push({ price, x: priceToX(price), density })
     }
 
@@ -152,6 +174,18 @@ function InteractiveDistributionChart({
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
     setDragStartX(clientX)
     setPendingDragId(targetId)
+
+    // Freeze the current coordinate system so chart rescaling during drag doesn't cause feedback
+    if (svgRef.current) {
+      frozenRect.current = svgRef.current.getBoundingClientRect()
+      frozenScaleX.current = width / frozenRect.current.width
+      // Capture current xToPrice as a frozen closure
+      const frozenMin = minPrice
+      const frozenRange = priceRange
+      frozenXToPrice.current = (svgX: number) => {
+        return frozenMin + ((svgX - padding.left) / chartWidth) * frozenRange
+      }
+    }
   }
 
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
@@ -174,24 +208,25 @@ function InteractiveDistributionChart({
     }
 
     // Only process if we're actively dragging
-    if (!draggingId) return
+    if (!draggingId || !frozenRect.current || !frozenXToPrice.current) return
 
-    const svg = svgRef.current
-    const rect = svg.getBoundingClientRect()
-
-    // Convert screen coordinates to SVG coordinates
-    const scaleX = width / rect.width
+    // Use FROZEN coordinate system — not the live one which rescales as prices change
+    const rect = frozenRect.current
+    const scaleX = frozenScaleX.current
     const svgX = (clientX - rect.left) * scaleX
-
-    // Clamp to chart bounds
     const clampedX = Math.max(padding.left, Math.min(padding.left + chartWidth, svgX))
-    const newPrice = xToPrice(clampedX)
+    const rawPrice = frozenXToPrice.current(clampedX)
 
-    // Round to nearest $5 for more deliberate increments
-    const roundedPrice = Math.round(newPrice / 5) * 5
+    // Snap to $5 increments
+    const snappedPrice = Math.round(rawPrice / 5) * 5
 
-    onPriceChange(draggingId, Math.max(5, roundedPrice))
-  }, [draggingId, pendingDragId, dragStartX, xToPrice, onPriceChange, chartWidth, DRAG_THRESHOLD])
+    // Only update if actually changed
+    const currentScenario = scenarioWithProbs.find(s => s.id === draggingId)
+    const currentSnapped = currentScenario ? Math.round(currentScenario.price / 5) * 5 : 0
+    if (snappedPrice === currentSnapped) return
+
+    onPriceChange(draggingId, Math.max(5, snappedPrice))
+  }, [draggingId, pendingDragId, dragStartX, onPriceChange, chartWidth, DRAG_THRESHOLD, scenarioWithProbs])
 
   const handleDragEnd = useCallback(() => {
     setDraggingId(null)
@@ -294,47 +329,51 @@ function InteractiveDistributionChart({
           strokeLinejoin="round"
         />
 
-        {/* Current price vertical line */}
-        <line
-          x1={priceToX(currentPrice)}
-          y1={padding.top}
-          x2={priceToX(currentPrice)}
-          y2={padding.top + chartHeight}
-          stroke="#6b7280"
-          strokeWidth={2}
-          strokeDasharray="6 4"
-        />
-        <text
-          x={priceToX(currentPrice)}
-          y={padding.top - 12}
-          textAnchor="middle"
-          className="text-[11px] fill-gray-600 dark:fill-gray-300 font-semibold"
-        >
-          Current ${currentPrice.toFixed(2)}
-        </text>
+        {/* Current price + Expected value lines — with overlap detection */}
+        {(() => {
+          const curX = priceToX(currentPrice)
+          const evX = priceToX(expectedPrice)
+          const tooClose = totalProb > 0 && Math.abs(curX - evX) < 80
+          const curIsLeft = curX <= evX
 
-        {/* Expected value line */}
-        {totalProb > 0 && (
-          <>
-            <line
-              x1={priceToX(expectedPrice)}
-              y1={densityToY(maxDensity * 0.95)}
-              x2={priceToX(expectedPrice)}
-              y2={padding.top + chartHeight}
-              stroke="#4f46e5"
-              strokeWidth={2}
-              strokeDasharray="8 4"
-            />
-            <text
-              x={priceToX(expectedPrice)}
-              y={densityToY(maxDensity) - 12}
-              textAnchor="middle"
-              className="text-[11px] fill-indigo-600 dark:fill-indigo-400 font-bold"
-            >
-              E[V] ${expectedPrice.toFixed(2)}
-            </text>
-          </>
-        )}
+          return (
+            <>
+              {/* Current price line */}
+              <line
+                x1={curX} y1={padding.top}
+                x2={curX} y2={padding.top + chartHeight}
+                stroke="#6b7280" strokeWidth={2} strokeDasharray="6 4"
+              />
+              <text
+                x={curX + (tooClose ? (curIsLeft ? -6 : 6) : 0)}
+                y={padding.top - 12}
+                textAnchor={tooClose ? (curIsLeft ? 'end' : 'start') : 'middle'}
+                className="text-[11px] fill-gray-600 dark:fill-gray-300 font-semibold"
+              >
+                Current ${currentPrice.toFixed(2)}
+              </text>
+
+              {/* Expected value line */}
+              {totalProb > 0 && (
+                <>
+                  <line
+                    x1={evX} y1={densityToY(maxDensity * 0.95)}
+                    x2={evX} y2={padding.top + chartHeight}
+                    stroke="#4f46e5" strokeWidth={2} strokeDasharray="8 4"
+                  />
+                  <text
+                    x={evX + (tooClose ? (curIsLeft ? 6 : -6) : 0)}
+                    y={tooClose ? padding.top - 12 : densityToY(maxDensity) - 12}
+                    textAnchor={tooClose ? (curIsLeft ? 'start' : 'end') : 'middle'}
+                    className="text-[11px] fill-indigo-600 dark:fill-indigo-400 font-bold"
+                  >
+                    E[V] ${expectedPrice.toFixed(2)}
+                  </text>
+                </>
+              )}
+            </>
+          )
+        })()}
 
         {/* Draggable scenario markers */}
         {sortedScenarios.map((scenario) => {

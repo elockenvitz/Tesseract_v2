@@ -35,15 +35,16 @@ export function useDirectCounts() {
  * "Open" = not archived.
  */
 export async function getOpenPromptCount(userId: string): Promise<number> {
-  // Prompts created by user
+  // Prompts created by user (exclude resolved)
   const { count: createdCount, error: err1 } = await supabase
     .from('quick_thoughts')
     .select('id', { count: 'exact', head: true })
     .eq('created_by', userId)
     .eq('idea_type', 'prompt')
     .eq('is_archived', false)
+    .not('tags', 'cs', '{"status:closed"}')
 
-  // Prompts assigned to user (assignee tag contains their ID)
+  // Prompts assigned to user (exclude resolved)
   const { count: assignedCount, error: err2 } = await supabase
     .from('quick_thoughts')
     .select('id', { count: 'exact', head: true })
@@ -51,6 +52,7 @@ export async function getOpenPromptCount(userId: string): Promise<number> {
     .eq('is_archived', false)
     .neq('created_by', userId)
     .contains('tags', [`assignee:${userId}`])
+    .not('tags', 'cs', '{"status:closed"}')
 
   if (err1) console.error('Failed to fetch created prompt count:', err1)
   if (err2) console.error('Failed to fetch assigned prompt count:', err2)

@@ -2851,10 +2851,16 @@ function PairTradeCard({
               </button>
             )
           ) : firstLeg?.portfolios?.name ? (
-            // Not in labs but has portfolio
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-medium">{firstLeg.portfolios.name}</span>
-            </span>
+            // Not in labs but has portfolio — click to open trade lab
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                window.dispatchEvent(new CustomEvent('openTradeLab', { detail: { portfolioId: firstLeg.portfolios!.id } }))
+              }}
+              className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"
+            >
+              <span className="text-primary-600 dark:text-primary-400 font-medium hover:underline">{firstLeg.portfolios.name}</span>
+            </button>
           ) : null}
 
           {/* Conviction indicator */}

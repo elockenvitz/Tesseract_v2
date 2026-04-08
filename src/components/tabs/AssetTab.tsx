@@ -1060,7 +1060,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
 
   // Count of active (non-completed) processes for badge/chip display
-  const activeProcessCount = allAssetWorkflows?.filter(w => w.workflows?.status === 'active').length ?? 0
+  const activeProcessCount = allAssetWorkflows?.filter(w => !w.is_completed && w.workflows?.status === 'active').length ?? 0
 
   // Fetch available active workflow branches that asset can join
   const { data: availableWorkflows } = useQuery({
@@ -1086,7 +1086,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       const stakeholderWorkflowIds = new Set(stakeholderWorkflows?.map(sw => sw.workflow_id) || [])
 
-      // Fetch ALL active workflow branches (not templates)
+      // Fetch active asset-scoped workflow branches (not templates, not portfolio/general)
       const { data: allBranches, error } = await supabase
         .from('workflows')
         .select(`
@@ -1101,12 +1101,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           is_public,
           archived,
           parent_workflow_id,
+          scope_type,
           created_at
         `)
         .eq('status', 'active')
         .eq('archived', false)
         .eq('deleted', false)
         .not('parent_workflow_id', 'is', null)  // Only branches, not templates
+        .or('scope_type.eq.asset,scope_type.is.null')  // Only asset-scoped processes
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -1978,8 +1980,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const handleWorkflowChange = async (workflowId: string) => {
     setHasLocalChanges(true)
 
-    // Optimistically set the effective workflow ID so the UI never flashes "No Active Workflows"
+    // Optimistically set the effective workflow ID so the UI switches immediately
     queryClient.setQueryData(['asset-effective-workflow', effectiveAsset.id], workflowId)
+    asset.workflow_id = workflowId
 
     // Clear the viewing stage initially to prevent showing stale information from previous workflow
     setViewingStageId(null)
@@ -1998,11 +2001,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       if (workflowStagesResult.error) {
         console.error('Error fetching workflow stages:', workflowStagesResult.error)
-        // Fallback to just updating workflow without changing stage
-        asset.workflow_id = workflowId
-        updateAssetMutation.mutate({ workflow_id: workflowId })
-        // Invalidate the effective workflow query to update the UI immediately
-        queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', asset.id] })
+        updateAssetMutation.mutate({ workflow_id: workflowId }, {
+          onSuccess: () => queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
+        })
         return
       }
 
@@ -2010,33 +2011,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       // Determine which stage to show: use current_stage_key if available, otherwise first stage
       const workflowProgress = workflowProgressResult.data
-      const isWorkflowStarted = workflowProgress?.is_started || false
       const effectiveCurrentStage = workflowProgress?.current_stage_key || firstStageKey
 
-      // Update workflow assignment (but don't automatically start it)
-      asset.workflow_id = workflowId
       setStage(effectiveCurrentStage)
 
       // Auto-select the appropriate stage to show what needs to be done
       setTimeout(() => {
         setViewingStageId(effectiveCurrentStage)
-      }, 100) // Small delay to ensure the workflow data is updated
+      }, 100)
 
-      // Only update workflow_id, don't try to update process_stage since stage_key values
-      // may not match the process_stage enum values
-      updateAssetMutation.mutate({
-        workflow_id: workflowId
+      // Persist to DB — only invalidate after the write lands
+      updateAssetMutation.mutate({ workflow_id: workflowId }, {
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
       })
-
-      // Invalidate the effective workflow query to update the UI immediately
-      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
     } catch (error) {
       console.error('Error in handleWorkflowChange:', error)
-      // Fallback to just updating workflow
-      asset.workflow_id = workflowId
-      updateAssetMutation.mutate({ workflow_id: workflowId })
-      // Invalidate the effective workflow query to update the UI immediately
-      queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
+      updateAssetMutation.mutate({ workflow_id: workflowId }, {
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['asset-effective-workflow', effectiveAsset.id] })
+      })
     }
   }
 
@@ -2937,8 +2929,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== RESEARCH SUB-PAGE ========== */}
         {activeSubPage === 'research' && (
           <div className="space-y-3 min-h-full">
-            {/* Decision Engine — filtered view for this asset */}
-            <AssetDecisionView assetId={asset.id} />
 
             {thesisViewMode === 'summary' ? (
               /* AI Summary View - shows unified summary */
@@ -3403,8 +3393,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             {/* Investment Case Builder Modal */}
             {showCaseBuilder && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                  <div className="p-6">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                  <div className="overflow-y-auto max-h-[90vh] p-6">
                     <InvestmentCaseBuilder
                       assetId={asset.id}
                       symbol={asset.symbol || asset.name}

@@ -158,11 +158,12 @@ function RunRow({
             />
           )}
           {!indent && (
-            <span className="text-gray-700 truncate max-w-[160px]">{run.parent_name}</span>
+            <span className="text-gray-700">{run.parent_name}</span>
           )}
           {indent && (
-            <span className="text-gray-400 text-xs truncate max-w-[160px]">{run.parent_name}</span>
+            <span className="text-gray-400 text-xs">{run.parent_name}</span>
           )}
+          {!indent && <VersionChip run={run} />}
           {!indent && getScopeBadgeLabel(run.scope_type) && (
             <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
               {getScopeBadgeLabel(run.scope_type)}
@@ -179,14 +180,11 @@ function RunRow({
         </div>
       </td>
 
-      {/* Run name/suffix + version chip */}
+      {/* Run name/suffix */}
       <td className="py-2.5 px-3">
-        <div className="flex items-center">
-          <span className={`font-medium ${indent ? 'text-gray-500 text-xs' : 'text-gray-900'}`}>
-            {run.branch_suffix || run.name}
-          </span>
-          {!indent && <VersionChip run={run} />}
-        </div>
+        <span className={`font-medium ${indent ? 'text-gray-500 text-xs' : 'text-gray-900'}`}>
+          {run.branch_suffix || run.name}
+        </span>
       </td>
 
       {/* Remaining */}
@@ -283,7 +281,8 @@ function GroupedProcessRow({
               className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: group.parentColor || '#6b7280' }}
             />
-            <span className="text-gray-700 truncate max-w-[140px]">{group.parentName}</span>
+            <span className="text-gray-700">{group.parentName}</span>
+            <VersionChip run={canonical} />
             {getScopeBadgeLabel((canonical as any).scope_type) && (
               <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
                 {getScopeBadgeLabel((canonical as any).scope_type)}
@@ -301,14 +300,11 @@ function GroupedProcessRow({
           </div>
         </td>
 
-        {/* Run name/suffix + version chip */}
+        {/* Run name/suffix */}
         <td className="py-2.5 px-3">
-          <div className="flex items-center">
-            <span className="font-medium text-gray-900">
-              {canonical.branch_suffix || canonical.name}
-            </span>
-            <VersionChip run={canonical} />
-          </div>
+          <span className="font-medium text-gray-900">
+            {canonical.branch_suffix || canonical.name}
+          </span>
         </td>
 
         {/* Remaining */}

@@ -44,7 +44,8 @@ interface FeedPage {
 // ============================================================
 
 const PAGE_SIZE = 15
-const MAX_DAYS_BACK = 90
+const INITIAL_DAYS_BACK = 90
+const MAX_DAYS_BACK = 365
 
 // ============================================================
 // Signal card types for system-generated content
@@ -218,10 +219,13 @@ async function fetchFeedPage(
   filters: IdeasFeedFilters,
   ctx: { userId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
 ): Promise<FeedPage> {
-  const timeStart = filters.timeRange === 'day' ? subDays(new Date(), 1).toISOString()
-    : filters.timeRange === 'week' ? subDays(new Date(), 7).toISOString()
-    : filters.timeRange === 'month' ? subDays(new Date(), 30).toISOString()
-    : subDays(new Date(), MAX_DAYS_BACK).toISOString()
+  // Expand time window as user scrolls deeper — starts at 90d, grows to 365d
+  const baseDays = filters.timeRange === 'day' ? 1
+    : filters.timeRange === 'week' ? 7
+    : filters.timeRange === 'month' ? 30
+    : INITIAL_DAYS_BACK
+  const expandedDays = Math.min(MAX_DAYS_BACK, baseDays + Math.floor(offset / PAGE_SIZE) * 30)
+  const timeStart = subDays(new Date(), expandedDays).toISOString()
 
   const wantTypes = filters.types && filters.types.length > 0 ? filters.types : null
 
@@ -407,12 +411,63 @@ async function fetchFeedPage(
 
   // Paginate
   const pageItems = diverse.slice(0, PAGE_SIZE)
-  const hasMore = allItems.length >= fetchSize
+  const hasHumanContent = allItems.length >= fetchSize
+
+  // If human content is running thin, generate system insights to keep the feed going
+  if (pageItems.length < PAGE_SIZE && ctx.heldAssetIds.size > 0) {
+    const systemItems = generateDiscoveryItems(ctx, offset, PAGE_SIZE - pageItems.length)
+    pageItems.push(...systemItems)
+  }
+
+  // Keep pagination alive: only stop at hard limit with no time window left to expand
+  const hasMore = hasHumanContent || expandedDays < MAX_DAYS_BACK || pageItems.length >= PAGE_SIZE
 
   return {
     items: pageItems,
     nextCursor: hasMore ? offset + PAGE_SIZE : null,
   }
+}
+
+// ============================================================
+// System-generated discovery items to keep the feed infinite
+// ============================================================
+
+const DISCOVERY_PROMPTS: { title: string; body: string; actionLabel: string; captureType: string }[] = [
+  { title: 'What are the biggest risks to your portfolio right now?', body: 'Take a moment to document the key risks you\'re tracking.', actionLabel: 'Capture thought', captureType: 'thought' },
+  { title: 'Any positions you\'ve been meaning to revisit?', body: 'If a thesis feels stale, now is a good time to refresh it.', actionLabel: 'Update thesis', captureType: 'thought' },
+  { title: 'Is there a trade idea you haven\'t formalized yet?', body: 'Turn a conviction into a structured idea your team can evaluate.', actionLabel: 'Create idea', captureType: 'trade_idea' },
+  { title: 'Have you reviewed your price targets recently?', body: 'Markets move — make sure your scenarios reflect current conditions.', actionLabel: 'Review targets', captureType: 'thought' },
+  { title: 'Any unresolved questions on your holdings?', body: 'Send a prompt to a colleague to get their perspective.', actionLabel: 'Send prompt', captureType: 'prompt' },
+  { title: 'What\'s changed in your highest-conviction name?', body: 'Check if the thesis still holds for your largest active positions.', actionLabel: 'Capture thought', captureType: 'thought' },
+  { title: 'Are there catalysts coming up you should prepare for?', body: 'Earnings, events, or macro data that could move your portfolio.', actionLabel: 'Capture thought', captureType: 'thought' },
+  { title: 'Do any team members have views you should review?', body: 'Check if colleagues have posted new research or ideas.', actionLabel: 'Browse feed', captureType: 'thought' },
+]
+
+function generateDiscoveryItems(
+  ctx: { userId: string | null; heldAssetIds: Set<string> },
+  offset: number,
+  count: number,
+): ScoredFeedItem[] {
+  const items: ScoredFeedItem[] = []
+  const startIdx = Math.floor(offset / PAGE_SIZE) % DISCOVERY_PROMPTS.length
+
+  for (let i = 0; i < count && i < DISCOVERY_PROMPTS.length; i++) {
+    const prompt = DISCOVERY_PROMPTS[(startIdx + i) % DISCOVERY_PROMPTS.length]
+    items.push({
+      id: `discovery-${offset}-${i}`,
+      type: 'insight' as any,
+      content: prompt.body,
+      title: prompt.title,
+      created_at: new Date().toISOString(),
+      author: { id: 'system' },
+      score: 0.3,
+      scoreBreakdown: { recency: 0.5, engagement: 0, authorRelevance: 0, assetRelevance: 0, contentQuality: 0.3 },
+      cardSize: 'medium',
+      meta: { actionLabel: prompt.actionLabel, captureType: prompt.captureType, isDiscovery: true },
+    } as any)
+  }
+
+  return items
 }
 
 // ============================================================

@@ -24,8 +24,12 @@ import {
   AlertTriangle,
   FileText,
   ExternalLink,
+  RotateCw,
+  Check,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { useActiveRuns, type ActiveRun } from '../../hooks/workflow/useActiveRuns'
 import type { CockpitViewModel } from '../../types/cockpit'
 import type { DashboardItem } from '../../types/dashboard-item'
 import {
@@ -58,6 +62,7 @@ interface SectionConfig {
 const SECTIONS: SectionConfig[] = [
   { id: 'aware', title: 'Movers & Gaps', icon: TrendingUp, emptyLabel: 'No notable moves or gaps', accentBg: 'bg-blue-50 dark:bg-blue-950/20', accentText: 'text-blue-700 dark:text-blue-400' },
   { id: 'catalysts', title: 'Upcoming Catalysts', icon: Calendar, emptyLabel: 'No upcoming catalysts', accentBg: 'bg-amber-50 dark:bg-amber-950/20', accentText: 'text-amber-700 dark:text-amber-400' },
+  { id: 'processes', title: 'Processes', icon: RotateCw, emptyLabel: 'No active processes', accentBg: 'bg-teal-50 dark:bg-teal-950/20', accentText: 'text-teal-700 dark:text-teal-400' },
   { id: 'investigate', title: 'Investigate', icon: Compass, emptyLabel: 'No issues surfaced', accentBg: 'bg-violet-50 dark:bg-violet-950/20', accentText: 'text-violet-700 dark:text-violet-400' },
 ]
 
@@ -81,8 +86,9 @@ interface PortfolioWorkbenchProps {
 export function PortfolioWorkbench({
   portfolioId, portfolioIds, portfolioName, viewModel, onItemClick, onNavigate,
 }: PortfolioWorkbenchProps) {
+  const { user } = useAuth()
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set(['aware', 'catalysts', 'investigate']),
+    () => new Set(['aware', 'catalysts', 'processes', 'investigate']),
   )
 
   const queryIds = useMemo(() => portfolioId ? [portfolioId] : portfolioIds ?? [], [portfolioId, portfolioIds])
@@ -320,6 +326,18 @@ export function PortfolioWorkbench({
     return items
   }, [perPortfolio, benchmarkByPortfolio, portfolioNames, isSingle, portfolioName])
 
+  // ---- Portfolio Processes ----
+  const { data: allRuns = [] } = useActiveRuns(user?.id)
+  const portfolioProcesses = useMemo(() => {
+    return allRuns.filter(r =>
+      r.scope_type === 'portfolio' &&
+      r.status === 'active' &&
+      !r.archived &&
+      !r.parent_archived &&
+      !r.parent_deleted
+    )
+  }, [allRuns])
+
   const awareCount = movers.length + gaps.length
   const toggleSection = useCallback((id: string) => {
     setExpandedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -464,8 +482,39 @@ export function PortfolioWorkbench({
           </div>
         )}
 
+        {/* PROCESSES */}
+        <SectionHeader config={SECTIONS[2]} count={portfolioProcesses.length} isExpanded={expandedSections.has('processes')} onToggle={() => toggleSection('processes')} />
+        {expandedSections.has('processes') && portfolioProcesses.length > 0 && (
+          <div>
+            {portfolioProcesses.map(run => {
+              const pct = run.total_items > 0 ? Math.round((run.completed_items / run.total_items) * 100) : 0
+              return (
+                <div key={run.id} className="flex items-center gap-2 pl-8 pr-3.5 py-[5px] border-t border-t-gray-50 dark:border-t-gray-700/20">
+                  <span className="w-[26px] shrink-0 text-center">
+                    {pct === 100
+                      ? <Check className="w-3.5 h-3.5 text-emerald-500 inline-block" />
+                      : <RotateCw className="w-3 h-3 text-teal-500 inline-block" />
+                    }
+                  </span>
+                  <span className="text-[12px] font-medium text-gray-700 dark:text-gray-200 truncate flex-1">
+                    {run.parent_name}
+                  </span>
+                  <span className="text-[10px] tabular-nums text-gray-400 dark:text-gray-500 shrink-0">
+                    {run.completed_items}/{run.total_items}
+                  </span>
+                  {run.total_items > 0 && (
+                    <div className="w-[40px] h-[4px] rounded-full bg-gray-200 dark:bg-gray-700 shrink-0 overflow-hidden">
+                      <div className={clsx('h-full rounded-full', pct === 100 ? 'bg-emerald-500' : 'bg-teal-500')} style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         {/* INVESTIGATE — per-portfolio */}
-        <SectionHeader config={SECTIONS[2]} count={investigateItems.length} isExpanded={expandedSections.has('investigate')} onToggle={() => toggleSection('investigate')} />
+        <SectionHeader config={SECTIONS[3]} count={investigateItems.length} isExpanded={expandedSections.has('investigate')} onToggle={() => toggleSection('investigate')} />
         {expandedSections.has('investigate') && investigateItems.length > 0 && (
           <div>
             {investigateItems.map(item => (

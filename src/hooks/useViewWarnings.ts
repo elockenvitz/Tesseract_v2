@@ -8,18 +8,19 @@
  * All warnings are real-time computed — nothing is logged to Evolution.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useAssetRevisions, type RevisionRow } from './useAssetRevisions'
 import { useRatingDivergence } from './useRatingDivergence'
 import { useExpectedValue, type ViewScope } from './useExpectedValue'
 import { useAnalystRatings } from './useAnalystRatings'
+import { useDecisionEngine } from '../engine/decisionEngine/useDecisionEngine'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type WarningSeverity = 'warning' | 'info'
-export type WarningTile = 'rating' | 'targets' | 'risks' | 'evolution' | 'other'
+export type WarningSeverity = 'warning' | 'info' | 'action'
+export type WarningTile = 'rating' | 'targets' | 'risks' | 'evolution' | 'attention' | 'other'
 
 export interface WarningItem {
   id: string
@@ -29,13 +30,16 @@ export interface WarningItem {
   message: string
   anchorId: string
   actions?: { label: string; fn: () => void }[]
+  /** Whether this item can be dismissed */
+  dismissible?: boolean
+  onDismiss?: () => void
 }
 
 export interface ViewWarningsResult {
   all: WarningItem[]
   byTile: Record<string, WarningItem[]>
   count: number
-  countBySeverity: { warning: number; info: number }
+  countBySeverity: { action: number; warning: number; info: number }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +210,10 @@ export function useViewWarnings({
   currentPrice,
   accessibleUserIds,
 }: UseViewWarningsOptions): ViewWarningsResult {
+  // ---- Decision engine items for this asset ----
+  const { selectForAsset } = useDecisionEngine()
+  const { action: engineAction, intel: engineIntel } = selectForAsset(assetId)
+
   // ---- Existing badge logic (reuse, don't duplicate) ----
   const {
     hasCrossViewDivergence,
@@ -340,6 +348,49 @@ export function useViewWarnings({
       }
     }
 
+    // ---- Decision engine: Needs Attention items ----
+    for (const item of engineAction) {
+      const severityMap: Record<string, WarningSeverity> = { red: 'action', orange: 'action', blue: 'info' }
+      items.push({
+        id: `engine-${item.id}`,
+        severity: severityMap[item.severity] ?? 'info',
+        tile: 'attention',
+        title: item.title,
+        message: item.description,
+        anchorId: '',
+        actions: item.ctas?.map(cta => ({
+          label: cta.label,
+          fn: () => {
+            // Dispatch the CTA action
+            import('../engine/decisionEngine').then(mod => {
+              mod.dispatchDecisionAction(cta.actionKey, item.context ?? {})
+            })
+          },
+        })),
+      })
+    }
+
+    // ---- Decision engine: Intel / Radar items ----
+    for (const item of engineIntel) {
+      items.push({
+        id: `engine-${item.id}`,
+        severity: 'info',
+        tile: 'attention',
+        title: item.title,
+        message: item.description,
+        anchorId: '',
+        dismissible: item.dismissible ?? false,
+        actions: item.ctas?.map(cta => ({
+          label: cta.label,
+          fn: () => {
+            import('../engine/decisionEngine').then(mod => {
+              mod.dispatchDecisionAction(cta.actionKey, item.context ?? {})
+            })
+          },
+        })),
+      })
+    }
+
     return items
   }, [
     hasCrossViewDivergence,
@@ -353,6 +404,8 @@ export function useViewWarnings({
     currentPrice,
     currentEVReturn,
     viewRatingValue,
+    engineAction,
+    engineIntel,
   ])
 
   // ---- Derived outputs ----
@@ -366,13 +419,15 @@ export function useViewWarnings({
   }, [warnings])
 
   const countBySeverity = useMemo(() => {
+    let action = 0
     let warning = 0
     let info = 0
     for (const w of warnings) {
-      if (w.severity === 'warning') warning++
+      if (w.severity === 'action') action++
+      else if (w.severity === 'warning') warning++
       else info++
     }
-    return { warning, info }
+    return { action, warning, info }
   }, [warnings])
 
   return {

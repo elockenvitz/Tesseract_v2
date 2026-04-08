@@ -226,6 +226,7 @@ export function ThoughtsSection({
               if (selectedItem.type === 'prompt') {
                 // Go back to Open Prompts list, not main Quick Ideas
                 setShowPromptList(true)
+                invalidateRecentIdeas()
                 onBackToCapture?.()
               } else {
                 onBackToCapture?.()
@@ -376,6 +377,14 @@ export function ThoughtsSection({
                   <Lightbulb className="h-4 w-4" />
                   <span>Thought</span>
                 </button>
+                {recentIdeas.filter(i => i.kind === 'thought').length > 0 && (
+                  <button
+                    onClick={handleViewAllIdeas}
+                    className="mt-1 w-full text-center text-[11px] text-gray-400 dark:text-gray-500 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors"
+                  >
+                    <span className="font-semibold text-gray-600 dark:text-gray-300">{recentIdeas.filter(i => i.kind === 'thought').length}</span> recent thoughts
+                  </button>
+                )}
               </div>
               <div className="flex-1">
                 <button
@@ -560,19 +569,20 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
   const { data: prompts = [], isLoading } = useQuery({
     queryKey: ['open-prompts-list', user?.id],
     queryFn: async () => {
-      // Fetch prompts created by the current user
+      // Fetch prompts created by the current user (exclude resolved)
       const { data: myPrompts, error: err1 } = await supabase
         .from('quick_thoughts')
         .select('id, content, tags, created_at, created_by')
         .eq('created_by', user!.id)
         .eq('idea_type', 'prompt')
         .eq('is_archived', false)
+        .not('tags', 'cs', '{"status:closed"}')
         .order('created_at', { ascending: false })
         .limit(20)
 
       if (err1) throw err1
 
-      // Fetch prompts assigned to the current user (tag contains assignee:<userId>)
+      // Fetch prompts assigned to the current user (exclude resolved)
       const { data: assignedToMe, error: err2 } = await supabase
         .from('quick_thoughts')
         .select('id, content, tags, created_at, created_by')
@@ -580,6 +590,7 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
         .eq('is_archived', false)
         .neq('created_by', user!.id)
         .contains('tags', [`assignee:${user!.id}`])
+        .not('tags', 'cs', '{"status:closed"}')
         .order('created_at', { ascending: false })
         .limit(20)
 

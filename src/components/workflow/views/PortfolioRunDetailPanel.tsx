@@ -7,7 +7,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, Inbox, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { CheckCircle, Inbox, ChevronUp, ChevronDown, ChevronsUpDown, Filter } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'

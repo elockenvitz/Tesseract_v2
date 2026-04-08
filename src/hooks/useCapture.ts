@@ -306,7 +306,7 @@ export async function fetchEntityData(
     project: async () => {
       const { data } = await supabase
         .from('projects')
-        .select('id, name, description, status')
+        .select('id, title, description, status')
         .eq('id', entityId)
         .single()
       return data

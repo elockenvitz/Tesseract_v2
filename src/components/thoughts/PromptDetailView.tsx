@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Copy,
   MoreHorizontal,
+  Trash2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -95,8 +96,8 @@ const STATUS_CONFIG: Record<PromptStatus, { label: string; icon: typeof Clock; c
   closed: {
     label: 'Resolved',
     icon: CheckCircle2,
-    cls: 'text-gray-500 dark:text-gray-400',
-    bg: 'bg-gray-100 dark:bg-gray-700',
+    cls: 'text-emerald-700 dark:text-emerald-300',
+    bg: 'bg-emerald-100 dark:bg-emerald-900/30',
   },
 }
 
@@ -112,8 +113,9 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
   // Fetch the quick_thought row (prompts are stored in the same table)
   const { data: thought, isLoading } = useQuickThought(promptId)
 
-  // --- Local status state (TODO: persist to DB when status column exists) ---
-  const [status, setStatus] = useState<PromptStatus>('open')
+  // --- Status derived from tags, persisted via tag mutation ---
+  const statusFromTags = (thought?.tags as string[] | null)?.find(t => t.startsWith('status:'))?.slice(7) as PromptStatus | undefined
+  const [status, setStatusLocal] = useState<PromptStatus>('open')
 
   // --- Editing state ---
   const [isEditing, setIsEditing] = useState(false)
@@ -121,6 +123,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
 
   // --- Secondary menu ---
   const [showMenu, setShowMenu] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // --- Response count (reported from IdeaComments) ---
   const [responseCount, setResponseCount] = useState(0)
@@ -130,10 +133,50 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
   useEffect(() => {
     if (thought) {
       setEditContent(thought.content)
-      // TODO: Read actual status from DB when column exists
-      // For now: if there are responses (messages), consider it 'responded'
+      setStatusLocal(statusFromTags || 'open')
     }
-  }, [thought])
+  }, [thought, statusFromTags])
+
+  // --- Status mutation (persists via tags) ---
+  const statusMutation = useMutation({
+    mutationFn: async (newStatus: PromptStatus) => {
+      const currentTags = ((thought?.tags as string[]) || []).filter(t => !t.startsWith('status:'))
+      const updatedTags = newStatus === 'open' ? currentTags : [...currentTags, `status:${newStatus}`]
+      const { error } = await supabase
+        .from('quick_thoughts')
+        .update({ tags: updatedTags, updated_at: new Date().toISOString() })
+        .eq('id', promptId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quick-thought', promptId] })
+      queryClient.invalidateQueries({ queryKey: ['open-prompts-list'] })
+      queryClient.invalidateQueries({ queryKey: ['direct-open-prompt-count'] })
+      queryClient.invalidateQueries({ queryKey: ['recent-quick-ideas'] })
+    },
+  })
+
+  const setStatus = (newStatus: PromptStatus) => {
+    setStatusLocal(newStatus)
+    statusMutation.mutate(newStatus)
+  }
+
+  // --- Delete mutation ---
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('quick_thoughts')
+        .update({ is_archived: true, updated_at: new Date().toISOString() })
+        .eq('id', promptId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['open-prompts-list'] })
+      queryClient.invalidateQueries({ queryKey: ['direct-open-prompt-count'] })
+      queryClient.invalidateQueries({ queryKey: ['recent-quick-ideas'] })
+      onClose?.()
+    },
+  })
 
   // --- Fetch assignee name ---
   const assigneeId = extractTag(thought?.tags, 'assignee:')
@@ -245,9 +288,9 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
               onClick={() => {
                 setStatus('closed')
                 success('Prompt resolved')
-                // TODO: Persist status to DB
               }}
-              className="text-[11px] text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1"
+              disabled={statusMutation.isPending}
+              className="text-[11px] text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1 disabled:opacity-50"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               Mark Resolved
@@ -256,9 +299,10 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
             <button
               onClick={() => {
                 setStatus('open')
-                // TODO: Persist status to DB
+                success('Prompt reopened')
               }}
-              className="text-[11px] text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors flex items-center gap-1"
+              disabled={statusMutation.isPending}
+              className="text-[11px] text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors flex items-center gap-1 disabled:opacity-50"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reopen
@@ -392,7 +436,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
         <div className="px-4 py-3 border-t border-gray-50 dark:border-gray-800">
           <div className="relative">
             <button
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={() => { setShowMenu(!showMenu); setConfirmDelete(false) }}
               className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex items-center gap-1"
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
@@ -420,6 +464,43 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
                   <Copy className="h-3.5 w-3.5" />
                   Copy link
                 </button>
+                {isCreator && (
+                  <>
+                    <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+                    {!confirmDelete ? (
+                      <button
+                        onClick={() => setConfirmDelete(true)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete prompt
+                      </button>
+                    ) : (
+                      <div className="px-3 py-2 space-y-2">
+                        <p className="text-xs text-gray-600 dark:text-gray-300">Delete this prompt and all responses?</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              deleteMutation.mutate()
+                              setShowMenu(false)
+                              setConfirmDelete(false)
+                            }}
+                            disabled={deleteMutation.isPending}
+                            className="px-2.5 py-1 text-xs font-medium rounded bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
+                          >
+                            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDelete(false)}
+                            className="px-2.5 py-1 text-xs font-medium rounded text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -458,10 +458,15 @@ function HoldingRow({
       className={clsx(
         'group/row transition-colors duration-75',
         isEven ? ROW_EVEN : ROW_ODD,
-        row.isNew && !isFocused && (v?.action === 'sell' || v?.action === 'trim'
-          ? '!bg-red-50/40 dark:!bg-red-950/10'
-          : '!bg-emerald-50/40 dark:!bg-emerald-950/10'),
-        row.isRemoved && '!bg-red-50/40 dark:!bg-red-950/10 opacity-50',
+        // New positions (not in baseline)
+        row.isNew && !isFocused && (action === 'sell' || action === 'trim'
+          ? '!bg-red-50 dark:!bg-red-950/20'
+          : '!bg-emerald-50 dark:!bg-emerald-950/20'),
+        // Existing positions with active sizing (ideas/recommendations)
+        !row.isNew && hasSizing && !isFocused && !row.isRemoved && (action === 'sell' || action === 'trim'
+          ? '!bg-amber-50/80 dark:!bg-amber-950/15'
+          : '!bg-blue-50/80 dark:!bg-blue-950/15'),
+        row.isRemoved && '!bg-red-50 dark:!bg-red-950/20 opacity-50',
         !isFocused && 'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
         isFocused && '!bg-primary-50/40 dark:!bg-primary-950/10',
       )}

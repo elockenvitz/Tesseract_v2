@@ -28,6 +28,8 @@ import { useUserAssetPagePreferences } from '../../hooks/useUserAssetPagePrefere
 import { useContributions } from '../../hooks/useContributions'
 import { useInvestmentCaseTemplates } from '../../hooks/useInvestmentCaseTemplates'
 import { useAuth } from '../../hooks/useAuth'
+import { useAnalystRatings } from '../../hooks/useAnalystRatings'
+import { useAnalystPriceTargets } from '../../hooks/useAnalystPriceTargets'
 import { supabase } from '../../lib/supabase'
 import { useQueryClient } from '@tanstack/react-query'
 import { InvestmentCaseTemplateSelector, InvestmentCaseTemplateEditor } from '../investment-case-templates'
@@ -101,6 +103,8 @@ export function InvestmentCaseBuilder({
   const queryClient = useQueryClient()
   const { displayedFieldsBySection, isLoading } = useUserAssetPagePreferences(assetId)
   const { contributions } = useContributions({ assetId })
+  const { ratings } = useAnalystRatings({ assetId })
+  const { priceTargets } = useAnalystPriceTargets({ assetId, userId: user?.id })
   const { recordUsage, getLogoUrl, defaultTemplate } = useInvestmentCaseTemplates()
 
   // Template
@@ -341,7 +345,8 @@ export function InvestmentCaseBuilder({
       const addWrappedText = (text: string, fontSize: number, fontWeight: 'normal' | 'bold' = 'normal') => {
         pdf.setFontSize(fontSize)
         pdf.setFont(styleConfig.fonts.body.family, fontWeight)
-        const lines = pdf.splitTextToSize(text, contentWidth)
+        const safe = sanitizeForPdf(text)
+        const lines = pdf.splitTextToSize(safe, contentWidth)
         const lineHeight = fontSize * 0.4
 
         for (const line of lines) {
@@ -350,6 +355,154 @@ export function InvestmentCaseBuilder({
           yOffset += lineHeight + styleConfig.spacing.paragraphGap
         }
         yOffset += styleConfig.spacing.paragraphGap
+      }
+
+      /** Render rich content (markdown or HTML) into the PDF with proper formatting */
+      const addRichText = (content: string, fontSize: number) => {
+        const bodyFamily = styleConfig.fonts.body.family
+        const lineHeight = fontSize * 0.4
+        const paragraphGap = styleConfig.spacing.paragraphGap
+        const bulletIndent = 8
+
+        pdf.setFontSize(fontSize)
+        pdf.setFont(bodyFamily, 'normal')
+
+        // Detect if content is HTML (contains tags) or markdown-style
+        const isHtml = /<[a-z][\s\S]*>/i.test(content)
+
+        // Normalize to plain text with structure markers
+        let text = content
+        if (isHtml) {
+          text = text
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n\n')
+            .replace(/<\/div>/gi, '\n')
+            .replace(/<\/h[1-6]>/gi, '\n\n')
+            .replace(/<li[^>]*>/gi, '- ')
+            .replace(/<\/li>/gi, '\n')
+            .replace(/<[^>]*>/g, '')
+        }
+
+        // Sanitize Unicode for PDF font compatibility
+        text = sanitizeForPdf(text)
+
+        // Process line by line to handle mixed paragraph + list content
+        const allLines = text.split('\n')
+        let i = 0
+
+        while (i < allLines.length) {
+          const line = allLines[i].trim()
+
+          // Skip empty lines (paragraph break)
+          if (!line) {
+            yOffset += paragraphGap
+            i++
+            continue
+          }
+
+          // Bullet line
+          if (/^[-*]\s/.test(line)) {
+            const itemText = line.replace(/^[-*]\s+/, '')
+            checkNewPage(lineHeight + 2)
+
+            // Render bullet marker
+            pdf.setFont(bodyFamily, 'normal')
+            pdf.setFontSize(fontSize)
+            pdf.text('-', margins.left + 1, yOffset)
+
+            // Render item text with inline bold
+            renderLineWithBold(itemText, margins.left + bulletIndent, contentWidth - bulletIndent, fontSize, bodyFamily, lineHeight, paragraphGap)
+            i++
+            continue
+          }
+
+          // Regular text line
+          checkNewPage(lineHeight + 2)
+          renderLineWithBold(line, margins.left, contentWidth, fontSize, bodyFamily, lineHeight, paragraphGap)
+          i++
+        }
+
+        // Reset font
+        pdf.setFont(bodyFamily, 'normal')
+      }
+
+      /** Render a single line with **bold** markdown inline formatting */
+      const renderLineWithBold = (
+        rawText: string, x: number, maxWidth: number,
+        fontSize: number, fontFamily: string,
+        lineHeight: number, paragraphGap: number
+      ) => {
+        const text = sanitizeForPdf(rawText)
+
+        // Parse into segments: [{text, bold}]
+        const segments: { text: string; bold: boolean }[] = []
+        const boldPattern = /\*\*(.+?)\*\*/g
+        let lastIndex = 0
+        let match: RegExpExecArray | null
+
+        while ((match = boldPattern.exec(text)) !== null) {
+          if (match.index > lastIndex) {
+            segments.push({ text: text.slice(lastIndex, match.index), bold: false })
+          }
+          segments.push({ text: match[1], bold: true })
+          lastIndex = match.index + match[0].length
+        }
+        if (lastIndex < text.length) {
+          segments.push({ text: text.slice(lastIndex), bold: false })
+        }
+
+        // No bold — simple path
+        if (segments.length <= 1 && !segments[0]?.bold) {
+          const plain = segments[0]?.text || text
+          pdf.setFont(fontFamily, 'normal')
+          pdf.setFontSize(fontSize)
+          const wrapped = pdf.splitTextToSize(plain, maxWidth)
+          for (const wline of wrapped) {
+            checkNewPage(lineHeight + 2)
+            pdf.text(wline, x, yOffset)
+            yOffset += lineHeight + paragraphGap
+          }
+          return
+        }
+
+        // Has bold — use jsPDF inline positioning per wrapped line
+        const plainText = segments.map(s => s.text).join('')
+        pdf.setFont(fontFamily, 'normal')
+        pdf.setFontSize(fontSize)
+        const wrapped = pdf.splitTextToSize(plainText, maxWidth)
+
+        let charOffset = 0
+        for (const wline of wrapped) {
+          checkNewPage(lineHeight + 2)
+          const lineEnd = charOffset + wline.length
+
+          // Render segments that fall within this wrapped line
+          let cursorX = x
+          let segCharPos = 0
+
+          for (const seg of segments) {
+            const segStart = segCharPos
+            const segEnd = segCharPos + seg.text.length
+            segCharPos = segEnd
+
+            // Find overlap with current wrapped line
+            const overlapStart = Math.max(segStart, charOffset)
+            const overlapEnd = Math.min(segEnd, lineEnd)
+
+            if (overlapStart >= overlapEnd) continue
+
+            const fragment = seg.text.slice(overlapStart - segStart, overlapEnd - segStart)
+            if (!fragment) continue
+
+            pdf.setFont(fontFamily, seg.bold ? 'bold' : 'normal')
+            pdf.text(fragment, cursorX, yOffset)
+            cursorX += pdf.getTextWidth(fragment)
+          }
+
+          pdf.setFont(fontFamily, 'normal')
+          yOffset += lineHeight + paragraphGap
+          charOffset = lineEnd
+        }
       }
 
       // Determine effective watermark (template watermark OR temporary override)
@@ -518,17 +671,74 @@ export function InvestmentCaseBuilder({
           pdf.text(field.name, margins.left, yOffset)
           yOffset += styleConfig.spacing.fieldGap
 
-          const fieldContent = getFieldContent(field, contributions)
           pdf.setFontSize(fonts.body.size)
           pdf.setFont(fonts.body.family, 'normal')
           pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
 
-          if (fieldContent) {
-            addWrappedText(fieldContent, fonts.body.size)
+          const normalizedSlug = field.slug.replace(/-/g, '_')
+
+          // Special handling for rating field
+          if (normalizedSlug === 'rating') {
+            const userRating = ratings.find(r => r.user_id === user?.id)
+            if (userRating) {
+              const conviction = userRating.conviction ? `  \u00B7  ${userRating.conviction} conviction` : ''
+              addWrappedText(`${userRating.rating_value}${conviction}`, fonts.body.size, 'bold')
+              if (userRating.notes) {
+                yOffset += 1
+                addRichText(userRating.notes, fonts.body.size)
+              }
+            } else if (ratings.length > 0) {
+              for (const r of ratings) {
+                const name = r.user ? [r.user.first_name, r.user.last_name].filter(Boolean).join(' ') : 'Unknown'
+                const conviction = r.conviction ? `  \u00B7  ${r.conviction}` : ''
+                addWrappedText(`${name}: ${r.rating_value}${conviction}`, fonts.body.size)
+              }
+            } else {
+              pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+              addWrappedText('No rating set.', fonts.body.size)
+              pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
+            }
+
+          // Special handling for price targets field
+          } else if (normalizedSlug === 'price_targets' || normalizedSlug === 'price_target') {
+            const userTargets = priceTargets?.filter(t => t.user_id === user?.id) || []
+            const targetsToShow = userTargets.length > 0 ? userTargets : (priceTargets || [])
+
+            if (targetsToShow.length > 0) {
+              for (const t of targetsToShow) {
+                const scenario = t.scenario?.name || 'Unknown'
+                const prob = t.probability != null ? `  \u00B7  ${Math.round(t.probability)}% prob` : ''
+                const returnPct = currentPrice && currentPrice > 0
+                  ? `  \u00B7  ${(((t.price - currentPrice) / currentPrice) * 100) >= 0 ? '+' : ''}${(((t.price - currentPrice) / currentPrice) * 100).toFixed(1)}%`
+                  : ''
+                addWrappedText(`${scenario}:  $${t.price.toFixed(2)}${prob}${returnPct}`, fonts.body.size)
+              }
+
+              // Add EV if we have probabilities
+              const withProb = targetsToShow.filter(t => t.probability != null && t.probability > 0 && t.price > 0)
+              const totalProb = withProb.reduce((sum, t) => sum + (t.probability ?? 0), 0)
+              if (withProb.length > 0 && totalProb > 0 && currentPrice && currentPrice > 0) {
+                const ev = withProb.reduce((sum, t) => sum + t.price * (t.probability ?? 0), 0) / totalProb
+                const evReturn = ((ev - currentPrice) / currentPrice) * 100
+                yOffset += 2
+                addWrappedText(`Expected Value:  $${ev.toFixed(2)}  (${evReturn >= 0 ? '+' : ''}${evReturn.toFixed(1)}%)`, fonts.body.size, 'bold')
+              }
+            } else {
+              pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+              addWrappedText('No price targets set.', fonts.body.size)
+              pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
+            }
+
+          // Standard content field — render as rich text
           } else {
-            pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
-            addWrappedText('No content available for this field.', fonts.body.size)
-            pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
+            const fieldContent = getFieldContent(field, contributions)
+            if (fieldContent) {
+              addRichText(fieldContent, fonts.body.size)
+            } else {
+              pdf.setTextColor(mutedRgb.r, mutedRgb.g, mutedRgb.b)
+              addWrappedText('No content available for this field.', fonts.body.size)
+              pdf.setTextColor(textRgb.r, textRgb.g, textRgb.b)
+            }
           }
 
           yOffset += styleConfig.spacing.fieldGap
@@ -585,9 +795,10 @@ export function InvestmentCaseBuilder({
               ? `${user.user_metadata.first_name} ${user.user_metadata.last_name}`
               : user.email?.split('@')[0] || 'Unknown'
 
-            await supabase.from('asset_notes').insert({
+            const noteTitle = filename.replace(/\.pdf$/i, '')
+            const { data: insertedNote } = await supabase.from('asset_notes').insert({
               asset_id: assetId,
-              title: filename.replace(/\.pdf$/i, ''),
+              title: noteTitle,
               content: '',
               source_type: 'uploaded',
               file_path: storagePath,
@@ -607,7 +818,24 @@ export function InvestmentCaseBuilder({
                 generated_by_id: user.id,
                 included_artifact_ids: []
               }
-            })
+            }).select('id').single()
+
+            // Also add as a key reference so it appears in Key References
+            if (insertedNote?.id) {
+              await supabase.from('user_asset_references').insert({
+                asset_id: assetId,
+                user_id: user.id,
+                reference_type: 'note',
+                target_id: insertedNote.id,
+                target_table: 'asset_notes',
+                title: noteTitle,
+                description: `Investment case exported on ${new Date(asOfDate).toLocaleDateString()} using ${selectedTemplate?.name || 'Default'} template`,
+                category: 'research',
+                importance: 'normal'
+              })
+              queryClient.invalidateQueries({ queryKey: ['key-references', assetId, user.id] })
+            }
+
             queryClient.invalidateQueries({ queryKey: ['asset-notes', assetId] })
           }
         } catch (saveErr) {
@@ -621,7 +849,7 @@ export function InvestmentCaseBuilder({
     } finally {
       setIsGenerating(false)
     }
-  }, [sectionConfigs, selectedTemplate, symbol, companyName, currentPrice, contributions, logoDataUrl, recordUsage, asOfDate, filenameOverride, defaultFilename, customExportTitle, tempWatermarkText, hideCoverPage, excludeHeaderFooter, assetId, user, queryClient])
+  }, [sectionConfigs, selectedTemplate, symbol, companyName, currentPrice, contributions, ratings, priceTargets, logoDataUrl, recordUsage, asOfDate, filenameOverride, defaultFilename, customExportTitle, tempWatermarkText, hideCoverPage, excludeHeaderFooter, assetId, user, queryClient])
 
   if (isLoading) {
     return (
@@ -1135,27 +1363,70 @@ function getFieldContent(field: FieldConfig, contributions: any[]): string | nul
   if (sectionKeys) {
     for (const key of sectionKeys) {
       const contrib = contributions.find((c: any) => c.section === key)
-      if (contrib?.content) return stripHtml(contrib.content)
+      if (contrib?.content) return contrib.content
     }
   }
 
   // 2. Try direct match (slug === section)
   const direct = contributions.find((c: any) => c.section === field.slug)
-  if (direct?.content) return stripHtml(direct.content)
+  if (direct?.content) return direct.content
 
   // 3. Try normalized match (hyphens → underscores)
   const normalized = field.slug.replace(/-/g, '_')
   if (normalized !== field.slug) {
     const norm = contributions.find((c: any) => c.section === normalized)
-    if (norm?.content) return stripHtml(norm.content)
+    if (norm?.content) return norm.content
   }
 
   return null
 }
 
-// Helper to strip HTML tags for plain text export
+// Convert HTML to formatted plain text, preserving list structure
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div')
-  tmp.innerHTML = html
-  return tmp.textContent || tmp.innerText || ''
+  // Normalize line-break tags first
+  let text = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n')
+
+  // Convert list items to bullet lines
+  text = text.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_match, inner) => {
+    const clean = inner.replace(/<[^>]*>/g, '').trim()
+    return `- ${clean}\n`
+  })
+
+  // Remove remaining tags
+  text = text.replace(/<[^>]*>/g, '')
+
+  // Clean up whitespace: collapse multiple blank lines, trim each line
+  text = text
+    .split('\n')
+    .map(line => line.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  return text
+}
+
+/** Replace Unicode characters that jsPDF built-in fonts can't render */
+function sanitizeForPdf(text: string): string {
+  return text
+    .replace(/\u2014/g, '--')       // em dash
+    .replace(/\u2013/g, '-')        // en dash
+    .replace(/\u2192/g, '->')       // right arrow
+    .replace(/\u2190/g, '<-')       // left arrow
+    .replace(/\u2022/g, '-')        // bullet (we render our own)
+    .replace(/\u201C|\u201D/g, '"') // smart double quotes
+    .replace(/\u2018|\u2019/g, "'") // smart single quotes
+    .replace(/\u2026/g, '...')      // ellipsis
+    .replace(/\u00B7/g, '.')        // middle dot
+    .replace(/\u2011/g, '-')        // non-breaking hyphen
+    .replace(/[^\x00-\x7F]/g, (ch) => {
+      // Last resort: replace any remaining non-ASCII with a safe fallback
+      // Keep common accented chars (Latin-1 Supplement range 0x80-0xFF)
+      const code = ch.charCodeAt(0)
+      if (code >= 0x80 && code <= 0xFF) return ch
+      return ''
+    })
 }

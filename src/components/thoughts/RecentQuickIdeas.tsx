@@ -96,7 +96,7 @@ const SIGNAL_CONFIG: Record<QuickIdeaSignal, {
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   open: { text: 'Open', cls: 'text-violet-600 dark:text-violet-400' },
   responded: { text: 'Responded', cls: 'text-emerald-600 dark:text-emerald-400' },
-  closed: { text: 'Closed', cls: 'text-gray-400 dark:text-gray-500' },
+  closed: { text: 'Resolved', cls: 'text-emerald-600 dark:text-emerald-400' },
 }
 
 // ---------------------------------------------------------------------------

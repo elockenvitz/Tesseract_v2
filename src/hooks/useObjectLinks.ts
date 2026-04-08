@@ -308,8 +308,8 @@ export function useForwardLinksEnriched(
               break
             }
             case 'project': {
-              const { data: projects } = await supabase.from('projects').select('id, name, status').in('id', ids)
-              if (projects) projects.forEach(p => labelMap.set(p.id, { label: p.name, subtitle: p.status }))
+              const { data: projects } = await supabase.from('projects').select('id, title, status').in('id', ids)
+              if (projects) projects.forEach(p => labelMap.set(p.id, { label: (p as any).title, subtitle: p.status }))
               break
             }
             case 'trade_idea': {

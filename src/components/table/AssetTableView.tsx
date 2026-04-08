@@ -740,14 +740,14 @@ export function AssetTableView({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('asset_workflow_progress')
-        .select(`asset_id, workflow_id, is_started, is_completed, workflows:workflow_id (id, name, color, archived, deleted)`)
+        .select(`asset_id, workflow_id, is_started, is_completed, workflows:workflow_id (id, name, color, status, archived, deleted, parent_workflow_id)`)
         .eq('is_started', true)
         .eq('is_completed', false)
       if (error) throw error
-      // Filter out archived/deleted workflows
+      // Filter to only active, non-archived/deleted workflow branches
       return (data || []).filter(d => {
         const wf = d.workflows as any
-        return wf && !wf.archived && !wf.deleted
+        return wf && !wf.archived && !wf.deleted && wf.status === 'active' && wf.parent_workflow_id !== null
       })
     },
     staleTime: 2 * 60 * 1000,
@@ -780,7 +780,7 @@ export function AssetTableView({
 
       const stakeholderWorkflowIds = new Set(stakeholderWorkflows?.map(sw => sw.workflow_id) || [])
 
-      // Fetch ALL active workflow branches (not templates) — org-scoped view
+      // Fetch active asset-scoped workflow branches (not templates) — org-scoped view
       const { data: allBranches, error } = await supabase
         .from('org_workflows_v')
         .select(`
@@ -791,12 +791,14 @@ export function AssetTableView({
           color,
           status,
           created_by,
-          parent_workflow_id
+          parent_workflow_id,
+          scope_type
         `)
         .eq('status', 'active')
         .eq('archived', false)
         .eq('deleted', false)
         .not('parent_workflow_id', 'is', null) // Only branches, not templates
+        .or('scope_type.eq.asset,scope_type.is.null') // Only asset-scoped processes
         .order('name', { ascending: true })
 
       if (error) {

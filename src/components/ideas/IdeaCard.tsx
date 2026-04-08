@@ -58,10 +58,15 @@ export interface IdeaCardProps {
 
   // Widget slots (unchanged)
   headerWidget?: ReactNode
+  /** When provided, replaces the default plain-text content rendering */
+  contentWidget?: ReactNode
   chartWidget?: ReactNode
   metricsWidget?: ReactNode
   actionsWidget?: ReactNode
   footerWidget?: ReactNode
+
+  /** Extra class applied to the content text element */
+  contentClassName?: string
 }
 
 /**
@@ -120,10 +125,12 @@ export function IdeaCard({
   onPromotedClick,
   // Widget slots
   headerWidget,
+  contentWidget,
   chartWidget,
   metricsWidget,
   actionsWidget,
-  footerWidget
+  footerWidget,
+  contentClassName,
 }: IdeaCardProps) {
   // Hover state for action visibility
   const [isHovered, setIsHovered] = useState(false)
@@ -234,14 +241,14 @@ export function IdeaCard({
       {/* ===== CONTENT AREA ===== */}
       {/* Content is the visual hero - takes up available space */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {item.content && (() => {
+        {contentWidget ? contentWidget : item.content && (() => {
           const maxChars = size === 'large' ? 800 : size === 'medium' ? 550 : 400
           const isTruncated = item.content.length > maxChars
           const displayText = isTruncated
             ? item.content.substring(0, maxChars).trim() + '...'
             : item.content
           return (
-            <p className="text-sm text-gray-700 leading-relaxed">
+            <p className={clsx("text-sm text-gray-700 leading-relaxed", contentClassName)}>
               {displayText}
             </p>
           )
