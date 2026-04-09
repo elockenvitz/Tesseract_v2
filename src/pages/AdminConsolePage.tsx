@@ -34,6 +34,8 @@ import { Card } from '../components/ui/Card'
 import { useToast } from '../components/common/Toast'
 import { format } from 'date-fns'
 import { logOrgActivity } from '../lib/org-activity-log'
+import { useMorphSession } from '../hooks/useMorphSession'
+import { Eye } from 'lucide-react'
 
 interface OrgSummary {
   id: string
@@ -104,6 +106,44 @@ export function AdminConsolePage() {
   // Grant temp access form
   const [grantUserId, setGrantUserId] = useState('')
   const [grantDuration, setGrantDuration] = useState('60')
+
+  // Morph
+  const { startMorph, isMorphing } = useMorphSession()
+  const [morphTargetId, setMorphTargetId] = useState<string | null>(null)
+  const [morphReason, setMorphReason] = useState('')
+
+  // Provision new client form
+  const [showProvision, setShowProvision] = useState(false)
+  const [provisionName, setProvisionName] = useState('')
+  const [provisionSlug, setProvisionSlug] = useState('')
+  const [provisionEmail, setProvisionEmail] = useState('')
+
+  const provisionMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc('provision_client_org', {
+        p_name: provisionName.trim(),
+        p_slug: provisionSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        p_admin_email: provisionEmail.trim().toLowerCase(),
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data: any) => {
+      toast.success(`Organization "${provisionName}" provisioned successfully`)
+      queryClient.invalidateQueries({ queryKey: ['admin-console-orgs'] })
+      setShowProvision(false)
+      setProvisionName('')
+      setProvisionSlug('')
+      setProvisionEmail('')
+      // Navigate to the new org detail
+      if (data?.organization_id) {
+        setSelectedOrgId(data.organization_id)
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to provision organization')
+    },
+  })
 
   // ─── All Organizations ──────────────────────────────────────
   const { data: orgs = [], isLoading: orgsLoading } = useQuery({
@@ -463,7 +503,79 @@ export function AdminConsolePage() {
               Platform support — view organizations and manage temporary access
             </p>
           </div>
+          <Button
+            onClick={() => setShowProvision(!showProvision)}
+            className="flex items-center gap-1.5"
+          >
+            <UserPlus className="w-4 h-4" />
+            Provision Client
+          </Button>
         </div>
+
+        {/* Provision New Client Form */}
+        {showProvision && (
+          <Card className="p-4 space-y-4 border-indigo-200 bg-indigo-50/30">
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-indigo-600" />
+              Provision New Client Organization
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Organization Name</label>
+                <input
+                  type="text"
+                  placeholder="Acme Capital"
+                  value={provisionName}
+                  onChange={(e) => {
+                    setProvisionName(e.target.value)
+                    if (!provisionSlug || provisionSlug === provisionName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')) {
+                      setProvisionSlug(e.target.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">URL Slug</label>
+                <input
+                  type="text"
+                  placeholder="acme-capital"
+                  value={provisionSlug}
+                  onChange={(e) => setProvisionSlug(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Admin Email</label>
+                <input
+                  type="email"
+                  placeholder="admin@acmecapital.com"
+                  value={provisionEmail}
+                  onChange={(e) => setProvisionEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => provisionMutation.mutate()}
+                disabled={!provisionName.trim() || !provisionSlug.trim() || !provisionEmail.trim() || provisionMutation.isPending}
+              >
+                {provisionMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-1.5" /> Provisioning...</>
+                ) : (
+                  'Create Organization'
+                )}
+              </Button>
+              <button
+                onClick={() => setShowProvision(false)}
+                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </Card>
+        )}
 
         {/* Search */}
         <div className="relative max-w-sm">
@@ -983,12 +1095,64 @@ export function AdminConsolePage() {
                     <p className="text-xs text-gray-500 truncate">{m.user_email}</p>
                   </div>
                 </div>
-                {m.status === 'inactive' && m.suspension_reason && (
-                  <span className="text-xs text-amber-600 flex items-center flex-shrink-0 ml-2">
-                    <AlertTriangle className="w-3 h-3 mr-1" />
-                    {m.suspension_reason}
-                  </span>
-                )}
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                  {m.status === 'inactive' && m.suspension_reason && (
+                    <span className="text-xs text-amber-600 flex items-center">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      {m.suspension_reason}
+                    </span>
+                  )}
+                  {m.status === 'active' && (
+                    morphTargetId === m.user_id ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="Reason..."
+                          value={morphReason}
+                          onChange={(e) => setMorphReason(e.target.value)}
+                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') }
+                          }}
+                        />
+                        <button
+                          onClick={async () => {
+                            if (!morphReason.trim()) return
+                            try {
+                              await startMorph.mutateAsync({ targetUserId: m.user_id, reason: morphReason.trim() })
+                              toast.success(`Morphing as ${m.user_full_name}`)
+                              setMorphTargetId(null)
+                              setMorphReason('')
+                            } catch (err: any) {
+                              toast.error(err.message || 'Failed to start morph')
+                            }
+                          }}
+                          disabled={!morphReason.trim() || startMorph.isPending}
+                          className="px-2 py-1 text-xs font-medium rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                        >
+                          Go
+                        </button>
+                        <button
+                          onClick={() => { setMorphTargetId(null); setMorphReason('') }}
+                          className="text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setMorphTargetId(m.user_id)}
+                        disabled={isMorphing}
+                        title={isMorphing ? 'End current morph session first' : `View as ${m.user_full_name}`}
+                        className="px-2 py-1 text-[10px] font-medium rounded border border-orange-200 text-orange-600 hover:bg-orange-50 disabled:opacity-40 transition-colors flex items-center gap-1"
+                      >
+                        <Eye className="w-3 h-3" />
+                        Morph
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </div>

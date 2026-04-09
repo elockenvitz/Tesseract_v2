@@ -1,4 +1,4 @@
-export type PortfolioTabType = 'overview' | 'positions' | 'performance' | 'log' | 'journal' | 'team' | 'processes' | 'universe'
+export type PortfolioTabType = 'overview' | 'positions' | 'performance' | 'log' | 'journal' | 'team' | 'processes' | 'universe' | 'settings'
 
 export interface PortfolioHolding {
   id: string

@@ -1,10 +1,13 @@
 import React, { useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
 import { TesseractLoader } from './ui/TesseractLoader'
 import { Lock, Clock, LogOut, ArrowRight, Loader2, Mail } from 'lucide-react'
 import { Button } from './ui/Button'
 import { acceptInviteByToken } from '../lib/org-domain-routing'
+import { supabase } from '../lib/supabase'
+import { ClientOnboardingWizard } from './onboarding/ClientOnboardingWizard'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -17,6 +20,49 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteSuccess, setInviteSuccess] = useState(false)
+
+  // Derived values (safe even if user is null)
+  const currentOrgId = (user as any)?.current_organization_id ?? null
+  const hasOrg = !!currentOrgId
+  const isOpsRoute = location.pathname.startsWith('/ops')
+
+  // ─── All hooks must be called unconditionally (Rules of Hooks) ───
+
+  // Client onboarding status
+  const { data: onboardingStatus, isLoading: onboardingLoading } = useQuery({
+    queryKey: ['org-onboarding-status', currentOrgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('org_onboarding_status')
+        .select('is_completed')
+        .eq('organization_id', currentOrgId!)
+        .maybeSingle()
+      if (error) return null
+      return data
+    },
+    enabled: !!currentOrgId && !isOpsRoute,
+    staleTime: 60_000,
+  })
+
+  // Org admin check
+  const { data: isOrgAdmin } = useQuery({
+    queryKey: ['is-org-admin-check', currentOrgId, user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('organization_memberships')
+        .select('is_org_admin')
+        .eq('organization_id', currentOrgId!)
+        .eq('user_id', user!.id)
+        .eq('status', 'active')
+        .maybeSingle()
+      if (error) return false
+      return data?.is_org_admin || false
+    },
+    enabled: !!currentOrgId && !!user?.id && !isOpsRoute,
+    staleTime: 5 * 60_000,
+  })
+
+  // ─── Rendering logic (order matters: loading → auth → org → onboarding → app) ───
 
   // Show loading while checking auth
   if (authLoading) {
@@ -39,7 +85,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   const routeAction = (user as any)?._routeAction as string | undefined
   const routeOrgName = (user as any)?._routeOrgName as string | undefined
-  const hasOrg = !!(user as any)?.current_organization_id
 
   // Blocked screen — invite_only org, user has no org
   if (routeAction === 'blocked' && !hasOrg) {
@@ -56,13 +101,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           <p className="text-sm text-gray-500 mb-6">
             This organization requires an invitation to join. Contact your organization administrator to request access.
           </p>
-          <Button
-            variant="outline"
-            onClick={() => signOut()}
-            className="w-full"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+          <Button variant="outline" onClick={() => signOut()} className="w-full">
+            <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>
         </div>
       </div>
@@ -84,13 +124,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           <p className="text-sm text-gray-500 mb-6">
             Your request to join has been submitted and is pending admin approval. You'll be able to access the organization once approved.
           </p>
-          <Button
-            variant="outline"
-            onClick={() => signOut()}
-            className="w-full"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+          <Button variant="outline" onClick={() => signOut()} className="w-full">
+            <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>
         </div>
       </div>
@@ -110,7 +145,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           setInviteError(error)
         } else if (organization_id) {
           setInviteSuccess(true)
-          // Reload to pick up the new org in auth state
           setTimeout(() => window.location.reload(), 800)
         }
       } finally {
@@ -128,7 +162,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           <p className="text-sm text-gray-500 mb-6">
             You need an invitation to join an organization. Ask your admin to invite you, or paste your invite code below.
           </p>
-
           {inviteSuccess ? (
             <div className="rounded-lg bg-green-50 border border-green-200 p-3 mb-4">
               <p className="text-sm font-medium text-green-800">Invite accepted! Redirecting...</p>
@@ -145,35 +178,24 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
                   className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   disabled={inviteLoading}
                 />
-                <Button
-                  onClick={handleAcceptInvite}
-                  disabled={!inviteToken.trim() || inviteLoading}
-                  className="shrink-0"
-                >
-                  {inviteLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="w-4 h-4" />
-                  )}
+                <Button onClick={handleAcceptInvite} disabled={!inviteToken.trim() || inviteLoading} className="shrink-0">
+                  {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 </Button>
               </div>
-              {inviteError && (
-                <p className="text-xs text-red-600 mt-1.5 text-left">{inviteError}</p>
-              )}
+              {inviteError && <p className="text-xs text-red-600 mt-1.5 text-left">{inviteError}</p>}
             </div>
           )}
-
-          <Button
-            variant="ghost"
-            onClick={() => signOut()}
-            className="w-full text-gray-500"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+          <Button variant="ghost" onClick={() => signOut()} className="w-full text-gray-500">
+            <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>
         </div>
       </div>
     )
+  }
+
+  // ─── Client onboarding wizard ─────────────────────────────────
+  if (!isOpsRoute && !onboardingLoading && onboardingStatus && !onboardingStatus.is_completed && isOrgAdmin) {
+    return <ClientOnboardingWizard />
   }
 
   return <>{children}</>

@@ -17,6 +17,10 @@ import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
 import { TesseractLoader } from './components/ui/TesseractLoader'
 import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
+import { BugReportButton } from './components/support/BugReportButton'
+import { MorphBanner } from './components/support/MorphBanner'
+import { OpsGuard } from './components/ops/OpsGuard'
+import { OpsLayout } from './components/ops/OpsLayout'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,7 +73,16 @@ function AppRoutes() {
         <Navigate to="/dashboard" replace />
       } />
 
-      {/* Protected routes */}
+      {/* Operations Portal — separate layout for platform staff */}
+      <Route path="/ops/*" element={
+        <ProtectedRoute>
+          <OpsGuard>
+            <OpsLayout />
+          </OpsGuard>
+        </ProtectedRoute>
+      } />
+
+      {/* Protected routes — the product */}
       <Route path="/*" element={
         <ProtectedRoute>
           <DashboardPage />
@@ -96,6 +109,8 @@ function App() {
               <Router>
                 <OrganizationProvider>
                   <AppRoutes />
+                  <BugReportButton />
+                  <MorphBanner />
                 </OrganizationProvider>
                 {/* Global capture mode components */}
                 <CaptureOverlay />

@@ -335,20 +335,7 @@ export function Header({
                       </div>
                       <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">Organization</span>
                     </button>
-                    {isPlatformAdmin && (
-                      <button
-                        onClick={() => {
-                          setShowAppMenu(false)
-                          onSearchResult({ id: 'admin-console', title: 'Admin Console', type: 'admin-console', data: null })
-                        }}
-                        className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile opacity-75"
-                      >
-                        <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-1.5 bg-red-50">
-                          <Shield className="h-4 w-4 text-red-400" />
-                        </div>
-                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">Admin</span>
-                      </button>
-                    )}
+                    {/* Ops Portal: access via /ops directly — no product UI link */}
                   </div>
 
                   {/* Tools - visually de-emphasized */}

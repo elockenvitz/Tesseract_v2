@@ -86,6 +86,13 @@ const ORG_SCOPED_QUERY_PREFIXES = [
   'context-tag-search',
   'organization-domains',
   'org-archived-status',
+  // Holdings & analyst data (org-scoped after RLS hardening)
+  'portfolio-holdings',
+  'holdings-snapshots',
+  'holdings-positions',
+  'analyst-ratings',
+  'analyst-estimates',
+  'bug-reports',
 ]
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {

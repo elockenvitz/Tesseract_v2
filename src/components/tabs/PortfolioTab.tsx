@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText } from 'lucide-react'
+import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText, Settings } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
@@ -21,6 +21,7 @@ import { TeamTab } from '../portfolio/tabs/TeamTab'
 import { ProcessesTab } from '../portfolio/tabs/ProcessesTab'
 import { InvestableUniverseSection } from '../portfolio/InvestableUniverseSection'
 import { TradeJournalTab } from '../portfolio/tabs/TradeJournalTab'
+import { HoldingsUploadPanel } from '../portfolio/HoldingsUploadPanel'
 import { usePendingRationaleCount } from '../../hooks/useTradeJournal'
 
 interface PortfolioTabProps {
@@ -46,6 +47,7 @@ const TABS: { key: PortfolioTabType; label: string; icon: React.ElementType; bad
   { key: 'team', label: 'Team', icon: Users, badgeKey: 'team' },
   { key: 'processes', label: 'Process', icon: RefreshCw },
   { key: 'universe', label: 'Universe', icon: Globe },
+  { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
 export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
@@ -512,6 +514,11 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
 
           {activeTab === 'universe' && (
             <InvestableUniverseSection portfolioId={portfolio.id} defaultExpanded collapsible={false} />
+          )}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              <HoldingsUploadPanel portfolioId={portfolio.id} portfolioName={portfolio.name} />
+            </div>
           )}
         </div>
       </Card>

@@ -28,6 +28,7 @@ import { TradeQueuePage } from './TradeQueuePage'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { DecisionAccountabilityPage } from './DecisionAccountabilityPage'
 import { FilesPage } from './FilesPage'
+import { useSessionTracking } from '../hooks/useSessionTracking'
 import { ChartingPage } from './ChartingPage'
 import { SimulationPage } from './SimulationPage'
 import { TradeBookPage } from './TradeBookPage'
@@ -112,6 +113,9 @@ export function DashboardPage() {
   // Auth
   const { user } = useAuth()
   const queryClient = useQueryClient()
+
+  // Session tracking (heartbeat-based)
+  useSessionTracking()
 
   // Clear stale tabs if a different user logged in
   useEffect(() => {
