@@ -44,12 +44,6 @@ export function ReelsFeed({
 
   // Debug logging
   useEffect(() => {
-    console.log('[ReelsFeed] State:', {
-      itemsCount: items.length,
-      isLoading,
-      error: error?.message,
-      filters
-    })
   }, [items.length, isLoading, error, filters])
 
   const currentItem = items[currentIndex]

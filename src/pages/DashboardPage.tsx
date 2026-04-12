@@ -19,27 +19,27 @@ import { ThemeTab } from '../components/tabs/ThemeTab'
 import { PortfolioTab } from '../components/tabs/PortfolioTab'
 import { ListTab } from '../components/tabs/ListTab'
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
-import { IdeaGeneratorPage} from './IdeaGeneratorPage'
-import { WorkflowsPage } from './WorkflowsPage'
+const IdeaGeneratorPage = lazy(() => import('./IdeaGeneratorPage').then(m => ({ default: m.IdeaGeneratorPage })))
+const WorkflowsPage = lazy(() => import('./WorkflowsPage').then(m => ({ default: m.WorkflowsPage })))
 import { ProjectsPage } from './ProjectsPage'
 import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
 // Project widgets removed - content now in Command Center carousel
 import { TradeQueuePage } from './TradeQueuePage'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
-import { DecisionAccountabilityPage } from './DecisionAccountabilityPage'
+const DecisionAccountabilityPage = lazy(() => import('./DecisionAccountabilityPage').then(m => ({ default: m.DecisionAccountabilityPage })))
 import { FilesPage } from './FilesPage'
 import { useSessionTracking } from '../hooks/useSessionTracking'
-import { ChartingPage } from './ChartingPage'
-import { SimulationPage } from './SimulationPage'
-import { TradeBookPage } from './TradeBookPage'
+const ChartingPage = lazy(() => import('./ChartingPage').then(m => ({ default: m.ChartingPage })))
+const SimulationPage = lazy(() => import('./SimulationPage').then(m => ({ default: m.SimulationPage })))
+const TradeBookPage = lazy(() => import('./TradeBookPage').then(m => ({ default: m.TradeBookPage })))
 import { AssetAllocationPage } from './AssetAllocationPage'
 import { TDFListPage } from './TDFListPage'
 import { TDFTab } from '../components/tabs/TDFTab'
 import { UserTab } from '../components/tabs/UserTab'
 import { TemplatesTab } from '../components/tabs/TemplatesTab'
-import { CalendarPage } from './CalendarPage'
+const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m.CalendarPage })))
 import { PrioritizerPage } from './PrioritizerPage'
-import { CoveragePage } from './CoveragePage'
+const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
 import { AdminConsolePage } from './AdminConsolePage'
@@ -53,6 +53,9 @@ import { PortfolioGrid } from '../components/dashboard/PortfolioGrid'
 import { useDashboardScope } from '../hooks/useDashboardScope'
 import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
+import { FeedbackWidget } from '../components/feedback/FeedbackWidget'
 import { useOnboarding } from '../hooks/useOnboarding'
 import { SetupWizard } from '../components/onboarding/SetupWizard'
 import { useToast } from '../components/common/Toast'
@@ -70,8 +73,8 @@ function AssetLoadingState() {
 }
 
 // Helper to get initial tab state synchronously (avoids flash on refresh)
-function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
-  const savedState = TabStateManager.loadMainTabState()
+function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; activeTabId: string } {
+  const savedState = TabStateManager.loadMainTabState(userId, orgId)
   if (savedState && savedState.tabs && savedState.tabs.length > 0) {
     // Ensure dashboard tab always exists
     const hasDashboard = savedState.tabs.some(tab => tab.id === 'dashboard')
@@ -101,44 +104,46 @@ function getInitialTabState(): { tabs: Tab[]; activeTabId: string } {
   }
 }
 
-// Cache the initial state so we only read from storage once
-const cachedInitialState = getInitialTabState()
-
 export function DashboardPage() {
-  // Initialize state synchronously from sessionStorage to avoid flash
-  const [tabs, setTabs] = useState<Tab[]>(cachedInitialState.tabs)
-  const [activeTabId, setActiveTabId] = useState(cachedInitialState.activeTabId)
-  const [isInitialized, setIsInitialized] = useState(true) // Already initialized from storage
-
-  // Auth
+  // Auth & org
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
+
+  // Initialize state from org-scoped sessionStorage
+  const [initialState] = useState(() => getInitialTabState(user?.id, currentOrgId ?? undefined))
+  const [tabs, setTabs] = useState<Tab[]>(initialState.tabs)
+  const [activeTabId, setActiveTabId] = useState(initialState.activeTabId)
+  const [isInitialized, setIsInitialized] = useState(true)
 
   // Session tracking (heartbeat-based)
   useSessionTracking()
 
-  // Clear stale tabs if a different user logged in
+  // Reset tabs when org changes (switch org → load that org's saved tabs or default)
+  const prevOrgRef = useRef(currentOrgId)
   useEffect(() => {
-    if (user?.id) {
-      const saved = TabStateManager.loadMainTabState()
-      if (saved?.userId && saved.userId !== user.id) {
-        TabStateManager.clearAll()
+    if (currentOrgId && currentOrgId !== prevOrgRef.current) {
+      prevOrgRef.current = currentOrgId
+      const saved = TabStateManager.loadMainTabState(user?.id, currentOrgId)
+      if (saved) {
+        setTabs(saved.tabs as Tab[])
+        setActiveTabId(saved.activeTabId)
+      } else {
         const defaultTabs = [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }]
         setTabs(defaultTabs as Tab[])
         setActiveTabId('dashboard')
       }
     }
-  }, [user?.id])
+  }, [currentOrgId, user?.id])
 
-  // Save tab state whenever tabs or activeTabId changes (but only after initialization)
+  // Save tab state whenever tabs or activeTabId changes
   useEffect(() => {
-    if (isInitialized) {
-      // Preserve existing tabStates when saving main state
-      const currentState = TabStateManager.loadMainTabState()
+    if (isInitialized && user?.id && currentOrgId) {
+      const currentState = TabStateManager.loadMainTabState(user.id, currentOrgId)
       const existingTabStates = currentState?.tabStates || {}
-      TabStateManager.saveMainTabState(tabs, activeTabId, existingTabStates, user?.id)
+      TabStateManager.saveMainTabState(tabs, activeTabId, existingTabStates, user.id, currentOrgId)
     }
-  }, [tabs, activeTabId, isInitialized, user?.id])
+  }, [tabs, activeTabId, isInitialized, user?.id, currentOrgId])
 
   // Onboarding: check if new user needs profile setup
   const { onboardingStatus, isLoading: onboardingLoading } = useOnboarding()
@@ -202,18 +207,8 @@ export function DashboardPage() {
   )
 
   const handleSearchResult = async (result: any) => {
-    console.log(`🎯 DashboardPage: handleSearchResult called with:`, {
-      resultId: result.id,
-      resultType: result.type,
-      hasData: !!result.data,
-      dataWorkflowId: result.data?.workflow_id,
-      dataSymbol: result.data?.symbol,
-      dataId: result.data?.id
-    })
-
     // For asset type, if we don't have an ID but have a symbol, fetch the asset by symbol
     if (result.type === 'asset' && !result.data?.id && result.data?.symbol) {
-      console.log('🔍 DashboardPage: Fetching asset by symbol:', result.data.symbol)
       const { data: assetData, error } = await supabase
         .from('assets')
         .select('*')
@@ -221,7 +216,6 @@ export function DashboardPage() {
         .single()
 
       if (!error && assetData) {
-        console.log('✅ DashboardPage: Found asset by symbol:', assetData.id)
         // Merge the fetched asset data with the navigation data
         result.data = { ...assetData, ...result.data }
         result.id = assetData.id
@@ -257,11 +251,6 @@ export function DashboardPage() {
     })
 
     if (existingTab) {
-      console.log(`🔄 DashboardPage: Existing tab found, updating data and activating`, {
-        existingTabId: existingTab.id,
-        resultId: result.id,
-        mergedData: { ...existingTab.data, ...result.data }
-      })
       // If tab exists, update its data (merge with existing) and activate it
       // Also update the title in case it was renamed (e.g. "All Priorities" → "My Priorities")
       setTabs(tabs.map(tab => ({
@@ -434,7 +423,7 @@ export function DashboardPage() {
     }
 
     // Remove the tab's stored state
-    TabStateManager.removeTabState(tabId)
+    TabStateManager.removeTabState(tabId, user?.id, currentOrgId ?? undefined)
 
     // Use functional update to handle multiple closes in succession
     setTabs(currentTabs => {
@@ -492,7 +481,7 @@ export function DashboardPage() {
             })
         }
       }
-      TabStateManager.removeTabState(tabId)
+      TabStateManager.removeTabState(tabId, user?.id, currentOrgId ?? undefined)
     }
 
     // Single state update to remove all tabs at once
@@ -543,8 +532,6 @@ export function DashboardPage() {
   useEffect(() => {
     const handleOpenTradeLab = (event: CustomEvent) => {
       const { labId, labName, portfolioId } = event.detail || {}
-      console.log('🧪 Opening Trade Lab:', { labId, labName, portfolioId })
-
       // Navigate to trade-lab tab with the portfolio/lab ID
       // Always use "Trade Lab" as the tab title for consistency
       handleSearchResult({
@@ -595,8 +582,6 @@ export function DashboardPage() {
   useEffect(() => {
     const handleOpenIdeasTab = (event: CustomEvent) => {
       const { filters } = event.detail || {}
-      console.log('💡 Opening Ideas tab with filters:', filters)
-
       // Navigate to idea-generator tab with initial filters
       handleSearchResult({
         id: 'idea-generator',
@@ -879,6 +864,9 @@ export function DashboardPage() {
     return (
       <div className="h-full overflow-auto">
         <div className="p-3 space-y-2.5">
+          {/* Pilot welcome banner */}
+          <PilotWelcomeBanner onNavigate={handleSearchResult} />
+
           {/* Filters */}
           <DashboardFilters
             scope={scope}
@@ -971,7 +959,9 @@ export function DashboardPage() {
       onFocusSearch={handleFocusSearch}
     >
       <>
-        {renderTabContent()}
+        <Suspense fallback={<AssetLoadingState />}>
+          {renderTabContent()}
+        </Suspense>
 
         {/* New Trade Idea modal — shared across all tabs via decision-engine-action event */}
         <AddTradeIdeaModal
@@ -986,6 +976,7 @@ export function DashboardPage() {
         />
       </>
     </Layout>
+    <FeedbackWidget />
     </>
   )
 }

@@ -716,8 +716,6 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const { data: proposals = [], refetch: refetchProposals } = useQuery({
     queryKey: ['trade-proposals', tradeId, pairTradeLegIds],
     queryFn: async () => {
-      console.log('[TradeIdeaDetailModal] Fetching proposals for tradeId:', tradeId, 'isPairTrade:', isPairTrade, 'legIds:', pairTradeLegIds)
-
       // For pair trades, fetch proposals for all leg IDs
       if (isPairTrade && pairTradeLegIds.length > 0) {
         const { data, error } = await supabase
@@ -1486,7 +1484,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       orgId: undefined,
       actorEmail: user.email || undefined,
       actorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || undefined,
-    }).catch(() => {})
+    }).catch(e => console.warn('[TradeIdea] Audit failed:', e))
   }
 
   // Update priority mutation

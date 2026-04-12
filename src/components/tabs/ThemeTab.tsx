@@ -54,7 +54,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   // Handle noteId from navigation (e.g., from dashboard note click)
   useEffect(() => {
     if (theme.noteId && theme.id) {
-      console.log('📝 ThemeTab: Opening note from navigation:', theme.noteId)
       setActiveTab('notes')
       setShowNoteEditor(true)
       setSelectedNoteId(theme.noteId)
@@ -63,7 +62,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
 
   // Debug logging
   useEffect(() => {
-    console.log('🔔 ThemeTab state changed:', { showNoteEditor, selectedNoteId })
   }, [showNoteEditor, selectedNoteId])
 
   // Save tab state when it changes
@@ -463,10 +461,8 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   }
 
   const handleCreateNote = () => {
-    console.log('📝 handleCreateNote called')
     setSelectedNoteId(null)
     setShowNoteEditor(true)
-    console.log('📝 State updated - selectedNoteId: null, showNoteEditor: true')
   }
 
   const handleCloseNoteEditor = () => {
@@ -754,7 +750,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 isLoading={!relatedAssets}
                 onAssetSelect={(asset) => {
                   // Handle asset click - could navigate to asset detail
-                  console.log('Asset clicked:', asset.symbol)
                 }}
                 storageKey={`themeAssets_${theme.id}`}
                 onBulkAction={handleBulkRemoveFromTheme}
@@ -856,7 +851,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                     <h3 className="text-lg font-medium text-gray-900">No related notes</h3>
                     <p className="text-gray-500 mb-4">Create notes to document your research and thoughts about this theme.</p>
                     <Button size="sm" onClick={() => {
-                      console.log('🔥 Add First Note button clicked!')
                       handleCreateNote()
                     }}>
                       <Plus className="h-4 w-4 mr-2" />
@@ -876,7 +870,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 contextTitle={theme.name}
                 onProjectClick={(projectId) => {
                   // Navigate to project - you may need to implement this via onNavigate if available
-                  console.log('Navigate to project:', projectId)
                 }}
               />
             </div>

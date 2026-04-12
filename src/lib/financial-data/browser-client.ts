@@ -49,7 +49,6 @@ export class BrowserFinancialService {
   // Debug method to clear cache
   clearCache() {
     this.cache.clear()
-    console.log('Financial data cache cleared')
   }
 
   // Debug method to get cache status
@@ -64,60 +63,43 @@ export class BrowserFinancialService {
   async getQuote(symbol: string): Promise<Quote | null> {
     try {
       const upperSymbol = symbol.toUpperCase()
-      console.log(`🎯 Getting quote for ${upperSymbol}`)
-
       // Check cache first
       const cached = this.cache.get(upperSymbol)
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-        console.log(`📋 Using cached data for ${upperSymbol}, volume: ${cached.data.volume}`)
         return cached.data
       }
 
       // Try Alpha Vantage first if we have an API key
       if (this.alphaVantageKey) {
-        console.log(`🔄 Trying Alpha Vantage for ${upperSymbol}`)
         const quote = await this.fetchFromAlphaVantage(upperSymbol)
         if (quote) {
           // Cache successful result
           this.cache.set(upperSymbol, { data: quote, timestamp: Date.now() })
-          console.log(`✅ Alpha Vantage successful for ${upperSymbol}, volume: ${quote.volume}`)
           return quote
         }
-        console.log(`❌ Alpha Vantage failed for ${upperSymbol}`)
       } else {
-        console.log(`⚠️ No Alpha Vantage API key, skipping`)
       }
 
       // Fallback to Yahoo Finance
-      console.log(`🔄 Trying Yahoo Finance for ${upperSymbol}`)
       const yahooQuote = await this.fetchFromYahooFinance(upperSymbol)
       if (yahooQuote) {
         // Cache successful result
         this.cache.set(upperSymbol, { data: yahooQuote, timestamp: Date.now() })
-        console.log(`✅ Yahoo Finance successful for ${upperSymbol}, volume: ${yahooQuote.volume}`)
         return yahooQuote
       }
-      console.log(`❌ Yahoo Finance failed for ${upperSymbol}`)
-
       // Fallback to Finnhub (free tier)
-      console.log(`🔄 Trying Finnhub for ${upperSymbol}`)
       const finnhubQuote = await this.fetchFromFinnhub(upperSymbol)
       if (finnhubQuote) {
         // Cache successful result
         this.cache.set(upperSymbol, { data: finnhubQuote, timestamp: Date.now() })
-        console.log(`✅ Finnhub successful for ${upperSymbol}, volume: ${finnhubQuote.volume}`)
         return finnhubQuote
       }
-      console.log(`❌ Finnhub failed for ${upperSymbol}`)
-
       // If we have cached data (even if expired), return it rather than null
       if (cached) {
-        console.log(`Using expired cache for ${upperSymbol}`)
         return cached.data
       }
 
       // As last resort, provide a placeholder quote so UI doesn't break
-      console.log(`No real data available for ${upperSymbol} from any API provider, providing placeholder`)
       return this.createPlaceholderQuote(upperSymbol)
     } catch (error) {
       console.warn('Failed to fetch quote for', symbol, error)
@@ -168,7 +150,6 @@ export class BrowserFinancialService {
       const timeSinceLastCall = now - this.lastApiCall
       if (timeSinceLastCall < this.API_CALL_DELAY) {
         const waitTime = this.API_CALL_DELAY - timeSinceLastCall
-        console.log(`Rate limiting: waiting ${waitTime}ms before API call for ${symbol}`)
         await new Promise(resolve => setTimeout(resolve, waitTime))
       }
 
@@ -176,12 +157,8 @@ export class BrowserFinancialService {
       this.dailyCallCount++
 
       const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${this.alphaVantageKey}`
-      console.log(`Fetching real data for ${symbol} from Alpha Vantage`)
-
       const response = await fetch(url)
       const data = await response.json()
-      console.log(`Alpha Vantage raw response for ${symbol}:`, JSON.stringify(data, null, 2))
-
       // Check for API error responses
       if (data['Error Message']) {
         console.warn('Alpha Vantage API error:', data['Error Message'])
@@ -221,8 +198,6 @@ export class BrowserFinancialService {
         dayLow: parseFloat(quote['04. low'] || '0')
       }
 
-      console.log(`Successfully fetched real Alpha Vantage data for ${symbol}: $${result.price}, volume: ${result.volume}`)
-      console.log(`🔍 Alpha Vantage raw volume field for ${symbol}:`, quote['06. volume'])
       return result
     } catch (error) {
       console.warn('Alpha Vantage request failed:', error)
@@ -245,8 +220,6 @@ export class BrowserFinancialService {
       for (const proxyUrl of corsProxies) {
         try {
           const url = proxyUrl + encodeURIComponent(targetUrl)
-          console.log(`Trying Yahoo Finance for ${symbol} via proxy: ${proxyUrl.substring(0, 30)}...`)
-
           // Add timeout to prevent hanging
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 8000)
@@ -260,8 +233,6 @@ export class BrowserFinancialService {
           }
 
           const data = await response.json()
-          console.log(`Yahoo Finance success for ${symbol} via ${proxyUrl}`)
-
           const chart = data?.chart?.result?.[0]
           if (!chart) {
             console.warn('No chart data returned from Yahoo Finance')
@@ -310,8 +281,6 @@ export class BrowserFinancialService {
             dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice
           }
 
-          console.log(`Successfully fetched real Yahoo data for ${symbol}: $${result.price}, volume: ${result.volume}`)
-          console.log(`🔍 Yahoo Finance volume for ${symbol}: regularMarketVolume=${meta.regularMarketVolume}, volumes[latest]=${volumes[latestIndex]}`)
           return result
 
         } catch (proxyError: any) {
@@ -351,8 +320,6 @@ export class BrowserFinancialService {
       }
 
       const quoteData = await quoteResponse.json()
-      console.log(`Finnhub quote response for ${symbol}:`, JSON.stringify(quoteData, null, 2))
-
       // Finnhub returns: {c: current, h: high, l: low, o: open, pc: previous close, t: timestamp}
       if (!quoteData.c || quoteData.c === 0) {
         console.warn('No price data available from Finnhub')
@@ -364,12 +331,9 @@ export class BrowserFinancialService {
       // Try to get volume from candle data
       if (volumeResponse.ok) {
         const volumeData = await volumeResponse.json()
-        console.log(`Finnhub volume response for ${symbol}:`, JSON.stringify(volumeData, null, 2))
-
         if (volumeData.v && volumeData.v.length > 0) {
           // Get the most recent volume
           volume = volumeData.v[volumeData.v.length - 1] || 0
-          console.log(`Got volume from Finnhub candle data: ${volume}`)
         }
       }
 
@@ -393,7 +357,6 @@ export class BrowserFinancialService {
         dayLow: quoteData.l || currentPrice
       }
 
-      console.log(`Successfully fetched real Finnhub data for ${symbol}: $${result.price}, volume: ${result.volume}`)
       return result
     } catch (error) {
       console.warn('Finnhub request failed:', error)

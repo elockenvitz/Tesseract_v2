@@ -599,17 +599,6 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
     const endDate = new Date()
     const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000)
 
-    console.log('applyFrequencySelection:', {
-      frequencyKey,
-      intervalStr,
-      isIntraday,
-      days,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      apiInterval: freqConfig.apiInterval,
-      activePanel,
-      currentSymbol: currentPanel.symbol
-    })
 
     updatePanel(activePanel, {
       timeFrame: 'CUSTOM',

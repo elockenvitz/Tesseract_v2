@@ -67,7 +67,6 @@ export class ProviderManager {
       lastCheck: new Date()
     })
 
-    console.log(`Registered financial data provider: ${provider.name}`)
   }
 
   /**
@@ -76,7 +75,6 @@ export class ProviderManager {
   public unregisterProvider(providerName: string): void {
     this.providers.delete(providerName)
     this.providerHealth.delete(providerName)
-    console.log(`Unregistered financial data provider: ${providerName}`)
   }
 
   /**

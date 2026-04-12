@@ -1256,7 +1256,6 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         })
       }
 
-      console.log('Coverage stats by team (membership-based):', stats)
       return stats
     },
     enabled: activeTab === 'teams' && !!orgChartNodes && orgChartNodes.length > 0

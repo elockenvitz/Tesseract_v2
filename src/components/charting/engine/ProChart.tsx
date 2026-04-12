@@ -295,13 +295,6 @@ export function ProChart({
   useEffect(() => {
     if (!symbol) return
 
-    console.log('ProChart useEffect triggered:', {
-      symbol,
-      timeFrame,
-      customRangeKey,
-      hasCustomRange: !!customRange
-    })
-
     const fetchData = async () => {
       setIsLoading(true)
       setError(null)
@@ -316,14 +309,6 @@ export function ProChart({
           interval = customRange.interval
           setCurrentInterval(interval)
 
-          console.log('ProChart: Fetching custom range:', {
-            symbol: symbol.toUpperCase(),
-            start: customRange.startDate.toISOString(),
-            end: customRange.endDate.toISOString(),
-            interval,
-            startTimestamp: Math.floor(customRange.startDate.getTime() / 1000),
-            endTimestamp: Math.floor(customRange.endDate.getTime() / 1000)
-          })
 
           rawData = await chartDataService.getCustomRangeData(
             symbol.toUpperCase(),
@@ -331,7 +316,6 @@ export function ProChart({
             customRange.endDate,
             interval
           )
-          console.log('ProChart: Custom range data returned:', rawData.length, 'points')
         } else {
           // Use preset timeframe
           const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }

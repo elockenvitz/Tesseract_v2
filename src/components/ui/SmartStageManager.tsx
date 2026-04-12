@@ -168,7 +168,6 @@ export function SmartStageManager({
           suggested_priorities: stage.suggested_priorities || []
         }))
 
-        console.log('📋 SmartStageManager: Loaded stages from template version:', stages)
         return stages as WorkflowStage[]
       }
 
@@ -180,7 +179,6 @@ export function SmartStageManager({
         .order('sort_order')
 
       if (error) throw error
-      console.log('📋 SmartStageManager: Loaded stages from workflow_stages table:', stages)
       return stages as WorkflowStage[]
     },
     staleTime: 5 * 60 * 1000, // 5 minutes

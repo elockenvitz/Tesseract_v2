@@ -141,10 +141,8 @@ export function AssetWorkflowSelectorEnhanced({
   }
 
   const handleJoin = (workflowId: string, e: React.MouseEvent) => {
-    console.log('🔘 Add button clicked!', { workflowId, hasOnJoinWorkflow: !!onJoinWorkflow })
     e.stopPropagation()
     onJoinWorkflow?.(workflowId)
-    console.log('✅ onJoinWorkflow called')
     // Don't close dropdown - let user add multiple workflows
   }
 

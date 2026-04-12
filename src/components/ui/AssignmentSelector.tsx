@@ -60,9 +60,7 @@ export function AssignmentSelector({
 
   // Auto-open modal if autoOpenModal prop is true
   useEffect(() => {
-    console.log('🔔 AssignmentSelector: useEffect triggered, autoOpenModal =', autoOpenModal)
     if (autoOpenModal) {
-      console.log('🔔 AssignmentSelector: autoOpenModal is true, opening modal')
       setShowAssignModal(true)
     }
   }, [autoOpenModal])
@@ -142,8 +140,6 @@ export function AssignmentSelector({
             notes: notes || null
           }))
 
-          console.log('🔄 AssignmentSelector: Attempting to upsert task assignments:', assignments)
-
           const { data: upsertData, error: assignmentError } = await supabase
             .from('checklist_task_assignments')
             .upsert(assignments, {
@@ -155,8 +151,6 @@ export function AssignmentSelector({
             console.error('❌ AssignmentSelector: Task assignment upsert error:', assignmentError)
             throw assignmentError
           }
-
-          console.log('✅ AssignmentSelector: Task assignments upserted successfully:', upsertData)
 
           // Create notifications for all assigned users
           if (assetId) {
@@ -187,8 +181,6 @@ export function AssignmentSelector({
             notes: notes || null
           }))
 
-          console.log('🔄 AssignmentSelector: Attempting to upsert stage assignments:', assignments)
-
           const { data: upsertData, error: assignmentError } = await supabase
             .from('stage_assignments')
             .upsert(assignments, {
@@ -200,8 +192,6 @@ export function AssignmentSelector({
             console.error('❌ AssignmentSelector: Stage assignment upsert error:', assignmentError)
             throw assignmentError
           }
-
-          console.log('✅ AssignmentSelector: Stage assignments upserted successfully:', upsertData)
 
           // Create notifications for all assigned users
           const notifications = selectedUserIds.map(userId => ({
@@ -239,8 +229,6 @@ export function AssignmentSelector({
   const deleteAssignment = useMutation({
     mutationFn: async (assignmentId: string) => {
       const table = type === 'task' ? 'checklist_task_assignments' : 'stage_assignments'
-      console.log(`🗑️ Attempting to delete assignment ${assignmentId} from ${table}`)
-
       const { error } = await supabase
         .from(table)
         .delete()
@@ -251,10 +239,8 @@ export function AssignmentSelector({
         throw error
       }
 
-      console.log(`✅ Successfully deleted assignment ${assignmentId}`)
     },
     onSuccess: () => {
-      console.log('🔄 Invalidating queries after successful deletion')
       queryClient.invalidateQueries({ queryKey: type === 'task' ? ['task-assignments'] : ['stage-assignments'] })
       onAssignmentChange?.()
     },

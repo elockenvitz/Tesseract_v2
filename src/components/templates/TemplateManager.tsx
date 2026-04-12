@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import DOMPurify from 'dompurify'
 import { Plus, Download, Loader2, X } from 'lucide-react'
 import { useTemplates, Template, extractVariables } from '../../hooks/useTemplates'
 import { useAuth } from '../../hooks/useAuth'
@@ -242,7 +243,7 @@ export function TemplateManager() {
                       prose-blockquote:border-l-primary-500 prose-blockquote:text-gray-600
                       prose-code:text-primary-700 prose-code:bg-primary-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none"
                     dangerouslySetInnerHTML={{
-                      __html: previewTemplate.content_html || previewTemplate.content.replace(/\n/g, '<br>')
+                      __html: DOMPurify.sanitize(previewTemplate.content_html || previewTemplate.content.replace(/\n/g, '<br>'))
                     }}
                   />
                 </div>

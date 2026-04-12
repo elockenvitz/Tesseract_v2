@@ -374,15 +374,12 @@ export function useModelTemplates() {
       if (insertError) throw insertError
 
       // If the original template has a base template file, copy it
-      console.log('[duplicateTemplate] Original template base_template_path:', template.base_template_path, 'filename:', template.base_template_filename)
       if (template.base_template_path && template.base_template_filename) {
         try {
           // Generate new path for the copy
           const randomId = Math.random().toString(36).substring(2, 10)
           const extension = template.base_template_filename.split('.').pop() || 'xlsx'
           const newStoragePath = `model-templates/${newTemplate.id}/${Date.now()}_${randomId}.${extension}`
-
-          console.log('[duplicateTemplate] Copying file from:', template.base_template_path, 'to:', newStoragePath)
 
           // Use Supabase's copy method to copy the file server-side
           // Note: Files are stored in the 'assets' bucket
@@ -393,7 +390,6 @@ export function useModelTemplates() {
           if (copyError) {
             console.error('Failed to copy base template file:', copyError)
           } else {
-            console.log('[duplicateTemplate] File copied successfully to:', newStoragePath)
             // Update the new template with the file path and return updated data
             const { data: updatedTemplate, error: updateError } = await supabase
               .from('model_templates')
@@ -408,7 +404,6 @@ export function useModelTemplates() {
             if (updateError) {
               console.error('Failed to update template with base template path:', updateError)
             } else if (updatedTemplate) {
-              console.log('[duplicateTemplate] Template updated with base template path:', updatedTemplate.base_template_path)
               return updatedTemplate as ModelTemplate
             }
           }
@@ -443,8 +438,6 @@ export function useModelTemplates() {
       // Use same pattern as other working uploads (models, documents, notes)
       const storagePath = `model-templates/${templateId}/${Date.now()}_${randomId}.${extension}`
 
-      console.log('Uploading base template to:', storagePath, 'File:', file.name, 'Size:', file.size, 'Type:', file.type)
-
       // Get auth session for manual upload
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) throw new Error('No auth session')
@@ -452,8 +445,6 @@ export function useModelTemplates() {
       // Use fetch API directly - the Supabase JS client sometimes has issues with file uploads
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const uploadUrl = `${supabaseUrl}/storage/v1/object/assets/${storagePath}`
-
-      console.log('Upload URL:', uploadUrl)
 
       const response = await fetch(uploadUrl, {
         method: 'POST',
@@ -465,8 +456,6 @@ export function useModelTemplates() {
         body: file
       })
 
-      console.log('Upload response status:', response.status, response.statusText)
-
       if (!response.ok) {
         const errorText = await response.text()
         console.error('Upload error response:', errorText)
@@ -474,8 +463,6 @@ export function useModelTemplates() {
       }
 
       const uploadData = await response.json()
-      console.log('Upload success:', uploadData)
-
       // Update template with file info
       const { data, error } = await supabase
         .from('model_templates')

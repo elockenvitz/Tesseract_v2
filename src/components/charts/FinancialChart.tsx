@@ -260,10 +260,8 @@ export function FinancialChart({
           config={chartConfig}
           indicators={activeIndicators}
           onDataPointClick={(point, index) => {
-            console.log('Chart point clicked:', point, index)
           }}
           onAnnotationCreate={(annotation) => {
-            console.log('Annotation created:', annotation)
           }}
         />
       </div>

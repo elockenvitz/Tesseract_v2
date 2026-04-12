@@ -37,8 +37,6 @@ export function FieldHistory({ assetId, fieldName, className, isExpanded = false
     queryKey: ['asset-field-history', assetId, fieldName],
     queryFn: async () => {
       try {
-        console.log('🔍 Fetching asset field history for:', { assetId: assetId.substring(0, 8), fieldName })
-        
         // Use the RPC function to get asset field history
         const { data, error } = await supabase.rpc('get_asset_field_history', {
           p_asset_id: assetId,
@@ -59,7 +57,6 @@ export function FieldHistory({ assetId, fieldName, className, isExpanded = false
           change_type: record.old_value ? 'update' : 'insert'
         })) || []
         
-        console.log('✅ Asset field history data received:', transformedData?.length || 0, 'records')
         return transformedData
       } catch (error) {
         console.error('💥 Failed to fetch asset field history:', error)

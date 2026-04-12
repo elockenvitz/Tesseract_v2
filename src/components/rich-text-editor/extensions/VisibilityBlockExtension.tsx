@@ -206,7 +206,6 @@ export const VisibilityBlockExtension = Node.create<{}>({
       insertVisibilityBlock:
         (attrs: Partial<VisibilityBlockAttrs>) =>
         ({ tr, dispatch, state, editor }) => {
-          console.log('[VisibilityBlock] insertVisibilityBlock command called')
           if (dispatch) {
             const node = state.schema.nodes.visibilityBlock.create(
               attrs,
@@ -215,18 +214,14 @@ export const VisibilityBlockExtension = Node.create<{}>({
 
             // Insert at current position
             const pos = state.selection.from
-            console.log('[VisibilityBlock] inserting at pos:', pos)
             tr.insert(pos, node)
 
             // The visibilityBlock node structure is:
             // visibilityBlock (1) > paragraph (1) > text position (1)
             // So cursor should be at pos + 2 (after block open + after paragraph open)
             const cursorPos = pos + 2
-            console.log('[VisibilityBlock] setting cursor to:', cursorPos, 'doc size:', tr.doc.content.size)
-
             try {
               tr.setSelection(TextSelection.create(tr.doc, cursorPos))
-              console.log('[VisibilityBlock] selection set successfully')
             } catch (e) {
               console.error('[VisibilityBlock] error setting selection:', e)
               // Fallback: try to select at end of inserted content

@@ -67,7 +67,6 @@ interface ChartStatistic {
 }
 
 export function AdvancedChart({ symbol, symbols = [], height = 500, className = '' }: AdvancedChartProps) {
-  console.log('🚨 AdvancedChart component rendering with symbol:', symbol)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -775,7 +774,6 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
   }
 
   if (isLoading) {
-    console.log('🔄 AdvancedChart is in loading state')
     return (
       <div className={`w-full ${className}`} style={{ height }}>
         <div className="animate-pulse bg-blue-100 border-2 border-blue-300 rounded-lg h-full flex items-center justify-center">
@@ -785,15 +783,11 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     )
   }
 
-  console.log('📊 Chart data length:', chartData.length, 'currentQuote:', !!currentQuote)
-
   const displayData = chartData.slice(
     Math.floor((chartData.length * zoom.start) / 100),
     Math.ceil((chartData.length * zoom.end) / 100)
   )
 
-
-  console.log('🎯 AdvancedChart rendering main chart UI')
 
   return (
     <div className={`w-full space-y-4 ${className}`}>

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
+import DOMPurify from 'dompurify'
 import { RotateCcw, Eye, Pin, X, Copy, Clock, ChevronDown, ChevronRight } from 'lucide-react'
 import { format, isToday, isYesterday } from 'date-fns'
 import { useNoteVersions, type NoteType, type NoteVersion } from '../../hooks/useNoteVersions'
@@ -529,7 +530,7 @@ export function NoteVersionHistory({
                   </h4>
                   <div
                     className="prose prose-sm max-w-none text-gray-700 text-[13px]"
-                    dangerouslySetInnerHTML={{ __html: previewContent }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewContent) }}
                   />
                 </>
               ) : (

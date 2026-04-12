@@ -51,7 +51,6 @@ export function useNotifications() {
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('📢 Real-time notification update:', payload)
           // Invalidate queries to refresh data
           queryClient.invalidateQueries({ queryKey: ['notifications'] })
           queryClient.invalidateQueries({ queryKey: ['unread-notifications-count'] })

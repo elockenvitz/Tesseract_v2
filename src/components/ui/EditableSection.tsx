@@ -69,9 +69,7 @@ export const EditableSection = forwardRef<EditableSectionRef, EditableSectionPro
 
     setIsSaving(true)
     try {
-      console.log('🚀 EditableSection saving:', editContent.length, 'characters')
       await onSave(editContent)
-      console.log('✅ EditableSection save completed')
       setIsEditing(false)
       onEditEnd?.()
     } catch (error) {

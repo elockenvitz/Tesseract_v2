@@ -150,19 +150,20 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
 
       // Determine new status
       const newStatus = params.targetStatus || params.stage
+      const now = new Date().toISOString()
 
       // Optimistically update the list cache
       queryClient.setQueriesData({ queryKey: ['trade-queue-items'] }, (old: any) => {
         if (!old) return old
         return old.map((item: any) =>
           item.id === params.tradeId
-            ? { ...item, status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
+            ? { ...item, status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus, updated_at: now }
             : item
         )
       })
 
       // Optimistically update the detail cache (used by TradeIdeaDetailModal)
-      const stageUpdate = { status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
+      const stageUpdate = { status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus, updated_at: now }
       queryClient.setQueryData(['trade-detail', params.tradeId], (old: any) => {
         if (!old) return old
         if (old.type === 'single' && old.data) {
@@ -186,10 +187,17 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       }
       toast.error(error instanceof Error ? error.message : 'Failed to move trade')
     },
-    onSettled: () => {
-      // Always refetch after error or success to ensure consistency
-      invalidateQueries()
+    onSuccess: (_data, params) => {
+      // Surgical cache update: refetch only the moved item's detail
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', params.tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] })
       options.onMoveSuccess?.()
+    },
+    onSettled: () => {
+      // Background refetch to ensure consistency — staleTime on the list query
+      // means this won't flash since the optimistic data is already correct
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
     },
   })
 
@@ -397,13 +405,14 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       const previousTradeItems = queryClient.getQueryData(['trade-queue-items'])
       const previousDetail = queryClient.getQueryData(['trade-detail', params.pairTradeId])
       const newStatus = params.targetStatus || params.stage
+      const now = new Date().toISOString()
 
       // Update pair_trades cache
       queryClient.setQueriesData({ queryKey: ['pair-trades'] }, (old: any) => {
         if (!old || !Array.isArray(old)) return old
         return old.filter(item => item != null).map((item: any) =>
           item?.id === params.pairTradeId
-            ? { ...item, status: newStatus, workflow_stage: params.stage || newStatus }
+            ? { ...item, status: newStatus, workflow_stage: params.stage || newStatus, updated_at: now }
             : item
         )
       })
@@ -413,14 +422,14 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         if (!old || !Array.isArray(old)) return old
         return old.filter(item => item != null).map((item: any) => {
           if (item?.pair_id === params.pairTradeId || item?.pair_trade_id === params.pairTradeId) {
-            return { ...item, status: newStatus, stage: params.stage || newStatus }
+            return { ...item, status: newStatus, stage: params.stage || newStatus, updated_at: now }
           }
           return item
         })
       })
 
       // Optimistically update the detail cache
-      const stageUpdate = { status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }
+      const stageUpdate = { status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus, updated_at: now }
       queryClient.setQueryData(['trade-detail', params.pairTradeId], (old: any) => {
         if (!old) return old
         if ((old.type === 'pair' || old.type === 'pair_from_legs') && old.data) {
@@ -443,8 +452,13 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       }
       toast.error(error instanceof Error ? error.message : 'Failed to move pair trade')
     },
+    onSuccess: (_data, params) => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', params.pairTradeId] })
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] })
+    },
     onSettled: () => {
-      invalidateQueries()
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
     },
   })
 

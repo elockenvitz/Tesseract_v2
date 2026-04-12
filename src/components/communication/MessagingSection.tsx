@@ -73,9 +73,7 @@ export function MessagingSection({
     staleTime: 60000, // Consider data fresh for 60 seconds
     gcTime: 300000, // Keep in cache for 5 minutes
     queryFn: async () => {
-      console.log('🔍 Starting recentConversations query, user:', user?.id)
       if (!user?.id) {
-        console.log('❌ No user ID, returning empty array')
         return []
       }
 
@@ -99,8 +97,6 @@ export function MessagingSection({
         throw error
       }
 
-      console.log('📨 Fetched messages count:', data?.length || 0)
-
       // Group by context and get the most recent message for each
       const contextMap = new Map()
       data?.forEach(msg => {
@@ -121,12 +117,9 @@ export function MessagingSection({
       })
 
       const conversations = Array.from(contextMap.values()).slice(0, 20)
-      console.log('📊 Grouped conversations count:', conversations.length)
-
       // Fetch names for each context
       const conversationsWithNames = await Promise.all(
         conversations.map(async (conv) => {
-          console.log('🔎 Fetching name for:', conv.context_type, conv.context_id)
           let contextName = conv.context_type
           let contextData: any = { id: conv.context_id }
 
@@ -221,8 +214,6 @@ export function MessagingSection({
             console.error('Error fetching context name:', err)
           }
 
-          console.log('✅ Conversation context:', conv.context_type, conv.context_id, '->', contextName, 'data:', contextData)
-
           return {
             ...conv,
             context_name: contextName,
@@ -231,7 +222,6 @@ export function MessagingSection({
         })
       )
 
-      console.log('🎉 Final conversations with names:', conversationsWithNames.length, conversationsWithNames)
       return conversationsWithNames
     }
   })
@@ -407,9 +397,6 @@ export function MessagingSection({
     mutationFn: async (messageIds: string[]) => {
       if (messageIds.length === 0) return
 
-      console.log('💾 Attempting to mark messages as read:', messageIds)
-      console.log('💾 Current user ID:', user?.id)
-
       const { data, error, status, statusText } = await supabase
         .from('messages')
         .update({
@@ -419,17 +406,13 @@ export function MessagingSection({
         .in('id', messageIds)
         .select()
 
-      console.log('📊 Update response - status:', status, 'statusText:', statusText, 'data:', data, 'error:', error)
-
       if (error) {
         console.error('❌ Error marking messages as read:', error)
         throw error
       }
 
-      console.log('✅ Successfully marked messages as read:', data?.length || 0, 'messages updated', 'data:', data)
     },
     onSuccess: () => {
-      console.log('🔄 Invalidating queries after marking messages as read')
       queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
       queryClient.invalidateQueries({ queryKey: ['unread-messages-count'] })
       queryClient.invalidateQueries({ queryKey: ['recent-conversations', user?.id] })
@@ -544,16 +527,8 @@ export function MessagingSection({
     markedAsReadContextRef.current = null
   }, [contextType, contextId])
 
-  console.log('📍 MessagingSection render - contextType:', contextType, 'contextId:', contextId)
-
   // Show conversation list if no context is selected
   if (!contextType && !contextId) {
-    console.log('🎨 Rendering conversation list view', {
-      conversationsLoading,
-      hasData: !!recentConversations,
-      count: recentConversations?.length,
-      showLoading: conversationsLoading || !recentConversations
-    })
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto">
@@ -582,7 +557,6 @@ export function MessagingSection({
                 <div
                   key={`${conv.context_type}:${conv.context_id}`}
                   onClick={() => {
-                    console.log('🖱️ Conversation clicked:', conv.context_type, conv.context_id, conv.context_name, 'data:', conv.context_data)
                     if (onContextChange) {
                       onContextChange(conv.context_type, conv.context_id, conv.context_name, conv.context_data)
                     }
@@ -620,7 +594,6 @@ export function MessagingSection({
             {onBack && (
               <button
                 onClick={() => {
-                  console.log('🔙 Back button clicked')
                   onBack()
                 }}
                 className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"

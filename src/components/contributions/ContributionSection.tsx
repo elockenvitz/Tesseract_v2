@@ -906,13 +906,11 @@ export function ContributionSection({
 
   const handleVisibilityChangeSave = async (contributionId: string, visibility: ContributionVisibility, targetIds: string[]) => {
     try {
-      console.log('handleVisibilityChangeSave called:', { contributionId, visibility, targetIds, myContribution })
       await updateVisibility.mutateAsync({
         contributionId,
         visibility,
         targetIds
       })
-      console.log('Visibility change saved successfully')
       resetVisibilityChangeState()
     } catch (error) {
       console.error('Failed to save visibility change:', error)

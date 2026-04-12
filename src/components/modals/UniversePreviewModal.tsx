@@ -24,12 +24,8 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
 
   // Helper function to get asset IDs matching a single rule
   const getAssetIdsForRule = async (rule: UniverseRule): Promise<string[]> => {
-    console.log('🔍 Processing rule:', rule)
-
     // Handle array values (multi-select filters)
     if (Array.isArray(rule.values)) {
-      console.log('📋 Rule has array values:', rule.values)
-
       switch (rule.type) {
         case 'analyst':
           const { data: coverageAssets } = await supabase
@@ -38,7 +34,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             .in('user_id', rule.values)
             .eq('is_active', true)
             .order('asset_id', { ascending: true })
-          console.log(`✅ Analyst filter found ${coverageAssets?.length || 0} assets`)
           return coverageAssets?.map(c => c.asset_id) || []
 
         case 'list':
@@ -46,7 +41,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             .from('asset_list_items')
             .select('asset_id')
             .in('list_id', rule.values)
-          console.log(`✅ List filter found ${listAssets?.length || 0} assets`)
           return listAssets?.map(l => l.asset_id) || []
 
         case 'theme':
@@ -54,7 +48,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             .from('theme_assets')
             .select('asset_id')
             .in('theme_id', rule.values)
-          console.log(`✅ Theme filter found ${themeAssets?.length || 0} assets`)
           return themeAssets?.map(t => t.asset_id) || []
 
         case 'sector':
@@ -65,7 +58,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           if (sectorError) {
             console.error('❌ Sector query error:', sectorError)
           }
-          console.log(`✅ Sector filter found ${sectorAssets?.length || 0} assets for sectors:`, rule.values)
           return sectorAssets?.map(a => a.id) || []
 
         case 'priority':
@@ -73,7 +65,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             .from('assets')
             .select('id')
             .in('priority', rule.values)
-          console.log(`✅ Priority filter found ${priorityAssets?.length || 0} assets`)
           return priorityAssets?.map(a => a.id) || []
 
         case 'symbol':
@@ -84,7 +75,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           if (symbolError) {
             console.error('❌ Symbol query error:', symbolError)
           }
-          console.log(`✅ Symbol filter found ${symbolAssets?.length || 0} assets for symbols:`, rule.values)
           return symbolAssets?.map(a => a.id) || []
 
         case 'portfolio':
@@ -97,7 +87,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           }
           // Get unique asset IDs from holdings
           const uniquePortfolioAssets = [...new Set(portfolioHoldings?.map(h => h.asset_id) || [])]
-          console.log(`✅ Portfolio filter found ${uniquePortfolioAssets.length} assets for portfolios:`, rule.values)
           return uniquePortfolioAssets
 
         default:
@@ -116,13 +105,7 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
   const { data: previewData, isLoading } = useQuery({
     queryKey: ['universe-preview-full', workflowId, rules],
     queryFn: async () => {
-      console.log('🚀 Universe Preview Query Starting')
-      console.log('📊 Workflow ID:', workflowId)
-      console.log('📋 Rules received:', rules)
-      console.log('📏 Number of rules:', rules.length)
-
       if (rules.length === 0) {
-        console.log('⚠️ No rules provided, returning empty results')
         return { assets: [], totalCount: 0 }
       }
 
@@ -131,9 +114,7 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
 
       for (let i = 0; i < rules.length; i++) {
         const rule = rules[i]
-        console.log(`\n🔄 Processing rule ${i + 1}/${rules.length}:`, rule)
         const ruleAssetIds = await getAssetIdsForRule(rule)
-        console.log(`📊 Rule ${i + 1} returned ${ruleAssetIds.length} asset IDs`)
         const ruleSet = new Set(ruleAssetIds)
 
         // Apply include/exclude operator
@@ -185,8 +166,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
       }
 
       if (!resultAssetIds || resultAssetIds.size === 0) {
-        console.log('❌ No assets matched the rules')
-
         // Provide diagnostic info about why no matches
         const diagnostics = {
           totalRules: rules.length,
@@ -194,13 +173,10 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           rulesWithOr: rules.filter(r => r.combineWith === 'OR').length
         }
 
-        console.log('📊 Diagnostics:', diagnostics)
         return { assets: [], totalCount: 0, diagnostics }
       }
 
       const totalCount = resultAssetIds.size
-      console.log(`Total assets matching rules: ${totalCount}`)
-
       // Fetch full asset details for the resulting IDs
       const finalIds = Array.from(resultAssetIds).slice(0, 100)
       const { data, error } = await supabase
@@ -213,7 +189,6 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
         return { assets: [], totalCount: 0 }
       }
 
-      console.log(`Fetched ${data?.length || 0} asset details`)
       return { assets: data || [], totalCount }
     }
   })

@@ -859,7 +859,6 @@ export function EditorToolbar({
               <div className="border-t border-gray-100 my-1" />
               <button
                 onClick={() => {
-                  console.log('Inserting tableOfContents', editor.extensionManager.extensions.map((e: any) => e.name))
                   try {
                     editor.chain().focus().insertContent({
                       type: 'tableOfContents'

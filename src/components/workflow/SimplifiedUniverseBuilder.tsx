@@ -58,7 +58,6 @@ export function SimplifiedUniverseBuilder({
   themes = [],
   portfolios = []
 }: SimplifiedUniverseBuilderProps) {
-  console.log('SimplifiedUniverseBuilder analysts prop:', analysts)
   const [showAddFilter, setShowAddFilter] = useState(false)
   const [editingRule, setEditingRule] = useState<FilterRule | null>(null)
   const [selectedFilterType, setSelectedFilterType] = useState<string | null>(null)
@@ -281,15 +280,11 @@ export function SimplifiedUniverseBuilder({
 
   // Debug: log rules prop changes
   React.useEffect(() => {
-    console.log('🔄 Rules prop changed:', rules)
   }, [rules])
 
   // Add a new rule
   const addRule = (rule: FilterRule) => {
     const newRules = [...rules, { ...rule, combineWith: rules.length > 0 ? 'OR' : undefined }]
-    console.log('📝 Adding rule:', rule)
-    console.log('📝 Current rules:', rules)
-    console.log('📝 New rules array:', newRules)
     onRulesChange(newRules)
     // Save is now handled by parent component's edit mode
   }

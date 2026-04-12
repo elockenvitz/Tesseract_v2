@@ -50,7 +50,6 @@ export function useWorkflowQueries({
           filter: `parent_workflow_id=eq.${selectedWorkflowId}`
         },
         (payload) => {
-          console.log('[Realtime] Branch change detected:', payload.eventType)
           // Invalidate branches queries to trigger refetch
           queryClient.invalidateQueries({ queryKey: ['workflow-branches', selectedWorkflowId] })
           queryClient.invalidateQueries({ queryKey: ['all-workflow-branches', selectedWorkflowId] })

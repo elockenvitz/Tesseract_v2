@@ -1442,7 +1442,6 @@ function detectHeaderRows(sheet: XLSX.WorkSheet, range: XLSX.Range): HeaderRowIn
   }
 
   if (debugFirstRowValues.length > 0) {
-    console.log('[detectHeaderRows] First row values sample:', debugFirstRowValues.slice(0, 15).join(', '))
   }
 
   return headerRows
@@ -1498,21 +1497,15 @@ export function detectDynamicMappings(workbook: XLSX.WorkBook): DetectedDynamicM
   const detected: DetectedDynamicMapping[] = []
   const seen = new Set<string>() // Avoid duplicates
 
-  console.log('[detectDynamicMappings] Starting detection on', workbook.SheetNames.length, 'sheets')
-
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName]
     if (!sheet || !sheet['!ref']) {
-      console.log('[detectDynamicMappings] Sheet', sheetName, 'has no ref, skipping')
       continue
     }
 
     const range = XLSX.utils.decode_range(sheet['!ref'])
-    console.log('[detectDynamicMappings] Sheet', sheetName, 'range:', sheet['!ref'])
-
     // Find header rows with year patterns
     const headerRows = detectHeaderRows(sheet, range)
-    console.log('[detectDynamicMappings] Sheet', sheetName, 'found', headerRows.length, 'header rows:', headerRows)
     if (headerRows.length === 0) continue
 
     // For each header row, look for metric labels in common label columns
@@ -1535,7 +1528,6 @@ export function detectDynamicMappings(workbook: XLSX.WorkBook): DetectedDynamicM
       for (const labelCol of labelColsToTry) {
         const metricRows = detectMetricRows(sheet, range, labelCol)
         if (metricRows.length > 0) {
-          console.log('[detectDynamicMappings] Sheet', sheetName, 'col', labelCol, 'found', metricRows.length, 'metric rows:', metricRows.map(m => m.label))
         }
 
         for (const metricRow of metricRows) {

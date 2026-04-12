@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS org_onboarding_status (
   current_step INT DEFAULT 1,
   steps_completed JSONB DEFAULT '[]'::jsonb,   -- e.g. ["welcome","org_structure","portfolios"]
   steps_skipped JSONB DEFAULT '[]'::jsonb,     -- e.g. ["org_structure"]
+  recommended_users JSONB DEFAULT '[]'::jsonb, -- [{name, email, role, recommended_at}]
   completed_by UUID REFERENCES users(id),
   started_at TIMESTAMPTZ DEFAULT now(),
   completed_at TIMESTAMPTZ,
@@ -82,9 +83,9 @@ BEGIN
     RAISE EXCEPTION 'Organization slug "%" already exists', p_slug;
   END IF;
 
-  -- 1. Create the organization
+  -- 1. Create the organization (with pilot_mode enabled by default)
   INSERT INTO organizations (name, slug, settings, onboarding_policy)
-  VALUES (p_name, p_slug, p_settings, 'invite_only')
+  VALUES (p_name, p_slug, p_settings || '{"pilot_mode": true}'::jsonb, 'invite_only')
   RETURNING id INTO v_org_id;
 
   -- 2. Create governance record
@@ -98,18 +99,17 @@ BEGIN
   ON CONFLICT (organization_id) DO NOTHING;
 
   -- 4. Seed default rating scale
-  INSERT INTO rating_scales (name, description, organization_id, scale_type, values)
+  INSERT INTO rating_scales (name, description, organization_id, values)
   VALUES (
     'Default Rating Scale',
     'Standard 5-point rating scale',
     v_org_id,
-    'numeric',
     '[
-      {"value": "1", "label": "Strong Buy", "color": "#10b981"},
-      {"value": "2", "label": "Buy", "color": "#34d399"},
-      {"value": "3", "label": "Neutral", "color": "#9ca3af"},
-      {"value": "4", "label": "Sell", "color": "#f87171"},
-      {"value": "5", "label": "Strong Sell", "color": "#ef4444"}
+      {"value": "1", "label": "Strong Buy", "color": "#10b981", "sort": 1},
+      {"value": "2", "label": "Buy", "color": "#34d399", "sort": 2},
+      {"value": "3", "label": "Neutral", "color": "#9ca3af", "sort": 3},
+      {"value": "4", "label": "Sell", "color": "#f87171", "sort": 4},
+      {"value": "5", "label": "Strong Sell", "color": "#ef4444", "sort": 5}
     ]'::jsonb
   );
 
@@ -123,9 +123,9 @@ BEGIN
       SET is_org_admin = true, status = 'active';
   ELSE
     INSERT INTO organization_invites (
-      organization_id, email, role, invited_by, status
+      organization_id, email, invited_by, invited_is_org_admin, status
     ) VALUES (
-      v_org_id, p_admin_email, 'admin', auth.uid(), 'pending'
+      v_org_id, p_admin_email, auth.uid(), true, 'pending'
     )
     RETURNING id INTO v_invite_id;
   END IF;
@@ -133,17 +133,20 @@ BEGIN
   -- 6. Audit event
   INSERT INTO audit_events (
     actor_id, actor_type, entity_type, entity_id,
-    action_type, action_category, to_state, metadata
+    action_type, action_category, to_state, metadata,
+    org_id, checksum
   ) VALUES (
     auth.uid(), 'user', 'organization', v_org_id,
-    'provision', 'lifecycle', 'active',
+    'provision', 'lifecycle', '"active"'::jsonb,
     jsonb_build_object(
       'org_name', p_name,
       'org_slug', p_slug,
       'admin_email', p_admin_email,
       'admin_user_id', v_admin_user_id,
       'invite_id', v_invite_id
-    )
+    ),
+    v_org_id,
+    encode(sha256(convert_to(v_org_id::text || '-provision-' || now()::text, 'UTF8')), 'hex')
   );
 
   v_result := jsonb_build_object(

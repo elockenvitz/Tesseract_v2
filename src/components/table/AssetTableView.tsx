@@ -1470,12 +1470,6 @@ export function AssetTableView({
       if (allItems && allItems.length > 0) {
         // Find the target item by ID
         const targetIndex = allItems.findIndex(i => i.id === currentTargetId)
-        console.log('Insert search:', {
-          currentTargetId,
-          targetIndex,
-          allItemIds: allItems.map(i => i.id),
-          allSortOrders: allItems.map(i => i.sort_order)
-        })
         if (targetIndex !== -1) {
           targetFound = true
           targetSortOrder = allItems[targetIndex].sort_order ?? 0
@@ -1502,14 +1496,6 @@ export function AssetTableView({
       // Ensure we have a valid sort_order
       if (newSortOrder <= 0) newSortOrder = targetSortOrder + 1
       if (newSortOrder <= 0) newSortOrder = 1
-
-      console.log('Insert below:', {
-        currentTargetId,
-        targetFound,
-        targetSortOrder,
-        nextSortOrder,
-        newSortOrder
-      })
 
       // Insert the new item and get its ID
       const { data: insertedData, error } = await supabase
@@ -3829,11 +3815,9 @@ export function AssetTableView({
                                     isLoading={false}
                                     onGenerate={() => {
                                       // TODO: Implement AI generation
-                                      console.log('Generate AI content for', col.label, asset.symbol)
                                     }}
                                     onRefresh={() => {
                                       // TODO: Implement refresh
-                                      console.log('Refresh AI content for', col.label, asset.symbol)
                                     }}
                                     density={density}
                                   />

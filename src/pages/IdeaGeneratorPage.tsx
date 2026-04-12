@@ -252,7 +252,6 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
   }, [onItemSelect])
 
   const handleAuthorClick = useCallback((authorId: string) => {
-    console.log('Author clicked:', authorId)
   }, [])
 
   const handleOpenFullChart = useCallback((symbol: string) => {
@@ -294,7 +293,6 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
 
   const handleNavigateToTradeIdea = useCallback((tradeIdeaId: string) => {
     // TODO: Open trade idea modal or navigate to trade queue
-    console.log('Navigate to trade idea:', tradeIdeaId)
   }, [])
 
   // Get prefill data for create idea modal

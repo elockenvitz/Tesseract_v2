@@ -210,8 +210,6 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   // Add asset to list mutation
   const addToListMutation = useMutation({
     mutationFn: async ({ listId, assetId }: { listId: string; assetId: string }) => {
-      console.log('🚀 Adding asset to list:', { listId, assetId })
-
       const { data, error } = await supabase
         .from('asset_list_items')
         .insert([{
@@ -226,11 +224,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
         throw error
       }
 
-      console.log('✅ Asset added to list successfully:', data)
       return data
     },
     onSuccess: (_, { listId }) => {
-      console.log('🎉 Add to list mutation succeeded for listId:', listId)
       // Add to local state for immediate feedback
       setAddedToLists(prev => new Set([...prev, listId]))
       
@@ -292,17 +288,13 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   }
 
   const handleAddToList = (listId: string) => {
-    console.log('🖱️ handleAddToList called:', { listId, selectedAssetId })
-    
     // Find the list to check if asset is already added
     const targetList = assetLists?.find(list => list.id === listId)
     if (targetList?.isAdded || addedToLists.has(listId)) {
-      console.log('⚠️ Asset already in list, skipping mutation')
       return
     }
     
     if (selectedAssetId) {
-      console.log('✅ Triggering addToListMutation...')
       addToListMutation.mutate({ listId, assetId: selectedAssetId })
     } else {
       console.warn('⚠️ No selectedAssetId provided')
@@ -498,12 +490,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                         <div
                           key={list.id}
                           onClick={() => {
-                            console.log('🖱️ CLICK DETECTED on list:', list.id, list.name)
                             if (selectedAssetId) {
-                              console.log('🖱️ List card clicked for adding asset:', list.id)
                               handleAddToList(list.id)
                             } else if (onListSelect) {
-                              console.log('🖱️ List card clicked for navigation:', list.id)
                               onListSelect({
                                 id: list.id,
                                 title: list.name,
@@ -657,12 +646,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                   <div
                     key={list.id}
                     onClick={() => {
-                      console.log('🖱️ CLICK DETECTED on list:', list.id, list.name)
                       if (selectedAssetId) {
-                        console.log('🖱️ List card clicked for adding asset:', list.id)
                         handleAddToList(list.id)
                       } else if (onListSelect) {
-                        console.log('🖱️ List card clicked for navigation:', list.id)
                         onListSelect({
                           id: list.id,
                           title: list.name,

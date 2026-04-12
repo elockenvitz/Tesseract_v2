@@ -37,13 +37,6 @@ export function BranchMapModal({ isOpen, onClose, workflowName, workflowId, bran
 
   // Build the tree structure
   const branchTree = useMemo(() => {
-    console.log('BranchMapModal - Total branches received:', branches.length)
-    console.log('BranchMapModal - Branches:', branches.map(b => ({
-      name: b.name,
-      source_branch_id: b.source_branch_id,
-      deleted: b.deleted,
-      archived: b.archived
-    })))
 
     // Create a map for quick lookups
     const branchMap = new Map<string, TreeNode>()

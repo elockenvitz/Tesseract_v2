@@ -57,14 +57,11 @@ export async function backfillObjectLinks(): Promise<{
     if (assetRes.data) assetRes.data.forEach(a => tickerMap.set(a.symbol, a.id))
     if (themeRes.data) themeRes.data.forEach(t => themeMap.set(t.name.toLowerCase().replace(/\s+/g, ''), t.id))
     if (portfolioRes.data) portfolioRes.data.forEach(p => portfolioMap.set(p.name.toLowerCase().replace(/\s+/g, ''), p.id))
-    console.log(`[backfill] Loaded ${tickerMap.size} assets, ${themeMap.size} themes, ${portfolioMap.size} portfolios for plain-text resolution`)
   } catch (err) {
     console.warn('[backfill] Failed to load lookup maps, plain-text patterns will be skipped:', err)
   }
 
   for (const { table, sourceType } of NOTE_TABLES) {
-    console.log(`[backfill] Processing ${table}...`)
-
     // Fetch all non-deleted notes with content
     const { data: notes, error: fetchError } = await supabase
       .from(table)
@@ -81,11 +78,8 @@ export async function backfillObjectLinks(): Promise<{
     }
 
     if (!notes || notes.length === 0) {
-      console.log(`[backfill] ${table}: 0 notes, skipping`)
       continue
     }
-
-    console.log(`[backfill] ${table}: ${notes.length} notes to process`)
 
     // Process in batches
     for (let i = 0; i < notes.length; i += BATCH_SIZE) {
@@ -151,10 +145,8 @@ export async function backfillObjectLinks(): Promise<{
         }
       }
 
-      console.log(`[backfill] ${table}: ${Math.min(i + BATCH_SIZE, notes.length)}/${notes.length} processed`)
     }
   }
 
-  console.log(`[backfill] Complete. Processed: ${processed}, Links created: ${linksCreated}, Errors: ${errors.length}`)
   return { processed, linksCreated, errors }
 }

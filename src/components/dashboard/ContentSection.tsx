@@ -502,7 +502,6 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
           <button
             onClick={() => {
               // This would need to be handled by the parent component
-              console.log('View all:', viewAllConfig)
             }}
             className="flex items-center space-x-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
           >

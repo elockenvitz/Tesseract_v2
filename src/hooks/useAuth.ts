@@ -256,7 +256,6 @@ export function useAuth() {
         if (upsertError) {
           console.error('Failed to save user record with names:', upsertError)
         } else {
-          console.log('User record saved with names:', normalizedFirst, normalizedLast)
         }
       } catch (err) {
         console.error('Error saving user record:', err)

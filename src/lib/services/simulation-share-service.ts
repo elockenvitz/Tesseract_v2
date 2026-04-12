@@ -341,7 +341,7 @@ export async function shareTradeSheetSnapshot(params: {
     metadata: { simulation_id: simulationId, snapshot_id: snapshot.id, share_mode: 'snapshot' },
   }))
 
-  await supabase.from('notifications').insert(notificationInserts).catch(() => {})
+  await supabase.from('notifications').insert(notificationInserts).catch(e => console.warn('[SimShare] Failed to create notifications:', e))
 
   // Log events
   for (const share of shares || []) {
@@ -351,7 +351,7 @@ export async function shareTradeSheetSnapshot(params: {
       eventType: 'shared',
       actorId,
       details: { recipient_id: share.shared_with, access_level: 'view', share_mode: 'snapshot', snapshot_id: snapshot.id },
-    }).catch(() => {})
+    }).catch(e => console.warn('[SimShare] Failed to log share event:', e))
   }
 
   return { shares: shares as SimulationShare[] }

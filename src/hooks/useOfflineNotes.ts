@@ -59,12 +59,10 @@ export function useOfflineNotes(): UseOfflineNotesReturn {
   // Listen for online/offline events
   useEffect(() => {
     const handleOnline = () => {
-      console.log('Network: Online')
       setIsOnline(true)
     }
 
     const handleOffline = () => {
-      console.log('Network: Offline')
       setIsOnline(false)
     }
 
@@ -105,7 +103,6 @@ export function useOfflineNotes(): UseOfflineNotesReturn {
       return updated
     })
 
-    console.log('Saved offline:', note.id)
   }, [])
 
   // Sync pending notes to server
@@ -117,8 +114,6 @@ export function useOfflineNotes(): UseOfflineNotesReturn {
     syncInProgress.current = true
     setIsSyncing(true)
     setLastSyncAttempt(new Date())
-
-    console.log(`Syncing ${pendingNotes.length} offline notes...`)
 
     const successfulIds: string[] = []
     const failedNotes: PendingNote[] = []
@@ -139,7 +134,6 @@ export function useOfflineNotes(): UseOfflineNotesReturn {
           console.error(`Failed to sync note ${note.id}:`, error)
           failedNotes.push(note)
         } else {
-          console.log(`Synced note ${note.id}`)
           successfulIds.push(note.id)
         }
       } catch (e) {
@@ -156,7 +150,6 @@ export function useOfflineNotes(): UseOfflineNotesReturn {
     syncInProgress.current = false
 
     if (successfulIds.length > 0) {
-      console.log(`Successfully synced ${successfulIds.length} notes`)
     }
     if (failedNotes.length > 0) {
       console.warn(`Failed to sync ${failedNotes.length} notes, will retry later`)

@@ -166,10 +166,6 @@ class OrgSwitchPerfMonitor {
   logReport(label = 'Org Switch') {
     const r = this.report()
     const status = this.isOverBudget() ? 'OVER BUDGET' : 'OK'
-    console.log(
-      `[${label}] ${r.requestCount} requests, ${r.totalBytes} bytes, max ${r.maxLatencyMs}ms in ${r.durationMs}ms [${status}]` +
-        (r.errors.length > 0 ? ` (${r.errors.length} errors)` : '')
-    )
   }
 
   private reset() {

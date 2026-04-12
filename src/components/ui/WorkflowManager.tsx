@@ -111,11 +111,8 @@ export function WorkflowManager({
   const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: async () => {
-      console.log('Fetching workflows...')
       const user = await supabase.auth.getUser()
       const userId = user.data.user?.id
-      console.log('User ID:', userId)
-
       let query = supabase
         .from('org_workflows_v')
         .select('*')
@@ -123,8 +120,6 @@ export function WorkflowManager({
       if (userId) {
         // Get shared workflow IDs first
         const sharedIds = await getSharedWorkflowIds(userId)
-        console.log('Shared workflow IDs:', sharedIds)
-
         // Build the OR condition based on what we have
         if (sharedIds.length > 0) {
           // Get workflows the user owns, public workflows, or workflows shared with them
@@ -135,7 +130,6 @@ export function WorkflowManager({
         }
       } else {
         // If no user, only show public workflows
-        console.log('No user ID, showing only public workflows')
         query = query.eq('is_public', true)
       }
 
@@ -143,14 +137,11 @@ export function WorkflowManager({
         .eq('archived', false) // Only show non-archived workflows
         .order('name')
 
-      console.log('Workflows query result:', { data, error })
-
       if (error) {
         console.error('Workflows fetch error:', error)
         throw error
       }
 
-      console.log('Returning workflows:', data)
       return data as Workflow[]
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -252,8 +243,6 @@ export function WorkflowManager({
 
   const createWorkflowMutation = useMutation({
     mutationFn: async (workflowData: { workflow: Partial<Workflow>, stages: Partial<WorkflowStage>[] }) => {
-      console.log('Creating workflow:', workflowData)
-
       // Get current user
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('User not authenticated')
@@ -275,15 +264,11 @@ export function WorkflowManager({
         throw workflowError
       }
 
-      console.log('Created workflow:', newWorkflow)
-
       // Create stages
       const stagesWithWorkflowId = workflowData.stages.map(stage => ({
         ...stage,
         workflow_id: newWorkflow.id
       }))
-
-      console.log('Creating stages:', stagesWithWorkflowId)
 
       const { error: stagesError } = await supabase
         .from('workflow_stages')
@@ -297,7 +282,6 @@ export function WorkflowManager({
       return newWorkflow
     },
     onSuccess: () => {
-      console.log('Workflow created successfully')
       // Force refresh the workflows list with multiple invalidation strategies
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
@@ -317,9 +301,6 @@ export function WorkflowManager({
 
   const updateWorkflowMutation = useMutation({
     mutationFn: async (workflowData: { workflow: Partial<Workflow>, stages: WorkflowStage[] }) => {
-      console.log('Updating workflow:', workflowData)
-      console.log('Workflow cadence_days being saved:', workflowData.workflow.cadence_days)
-
       // Update workflow
       const { error: workflowError } = await supabase
         .from('workflows')
@@ -330,8 +311,6 @@ export function WorkflowManager({
         console.error('Workflow update error:', workflowError)
         throw workflowError
       }
-
-      console.log('Updated workflow')
 
       // Delete existing stages
       const { error: deleteError } = await supabase
@@ -344,8 +323,6 @@ export function WorkflowManager({
         throw deleteError
       }
 
-      console.log('Deleted existing stages')
-
       // Insert updated stages
       const { error: stagesError } = await supabase
         .from('workflow_stages')
@@ -356,10 +333,8 @@ export function WorkflowManager({
         throw stagesError
       }
 
-      console.log('Inserted updated stages')
     },
     onSuccess: () => {
-      console.log('Workflow updated successfully')
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       queryClient.invalidateQueries({ queryKey: ['workflow-stages'] })
       setEditingWorkflow(null)
@@ -499,24 +474,16 @@ export function WorkflowManager({
   }
 
   const handleSaveWorkflow = () => {
-    console.log('handleSaveWorkflow called')
-    console.log('editingWorkflow:', editingWorkflow)
-    console.log('editingStages:', editingStages)
-    console.log('isCreatingNew:', isCreatingNew)
-
     if (!editingWorkflow) {
-      console.log('No editing workflow, returning')
       return
     }
 
     if (isCreatingNew) {
-      console.log('Creating new workflow')
       createWorkflowMutation.mutate({
         workflow: editingWorkflow,
         stages: editingStages
       })
     } else {
-      console.log('Updating existing workflow')
       updateWorkflowMutation.mutate({
         workflow: editingWorkflow,
         stages: editingStages
@@ -955,15 +922,6 @@ export function WorkflowManager({
                   {(() => {
                     const isAdmin = (user as any)?.coverage_admin
                     const isCreator = workflow.created_by === user?.id
-                    console.log('Archive button check:', {
-                      workflowId: workflow.id,
-                      workflowName: workflow.name,
-                      userId: user?.id,
-                      isAdmin,
-                      isCreator,
-                      createdBy: workflow.created_by,
-                      shouldShow: isAdmin || isCreator
-                    })
                     return (isAdmin || isCreator) && (
                       <div className="mt-2 pt-2 border-t border-gray-200">
                         <button

@@ -107,7 +107,6 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
   name: 'dotCommandSuggestion',
 
   onCreate() {
-    console.log('[DotCommand] Extension created and initialized!')
   },
 
   addOptions() {
@@ -164,12 +163,8 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
 
     const getFilteredItems = (query: string): DotCommandItem[] => {
       const lowerQuery = query.toLowerCase()
-      console.log('[DotCommand] getFilteredItems called with query:', query)
-
       // Get base commands (excluding hardcoded templates)
       const baseCommands = DOT_COMMANDS.filter(cmd => !cmd.id.startsWith('template.'))
-      console.log('[DotCommand] baseCommands count:', baseCommands.length)
-
       // Create dynamic template commands from provided templates
       const templateCommands: DotCommandItem[] = (options.templates || []).map(template => ({
         id: `template.${template.shortcut}`,
@@ -189,7 +184,6 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
           cmdLower.includes(lowerQuery) ||
           cmd.description.toLowerCase().includes(lowerQuery)
       }).slice(0, 10)
-      console.log('[DotCommand] filtered items:', filtered.map(f => f.id))
       return filtered
     }
 
@@ -250,15 +244,12 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
           options.onHelpCommand?.()
           break
         case 'private':
-          console.log('[DotCommand] executing private command')
           options.onVisibilityCommand?.('private')
           break
         case 'team':
-          console.log('[DotCommand] executing team command')
           options.onVisibilityCommand?.('team')
           break
         case 'portfolio':
-          console.log('[DotCommand] executing portfolio command')
           options.onVisibilityCommand?.('portfolio')
           break
         default:
@@ -656,12 +647,9 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
               return
             }
 
-            console.log('[DotCommand] updateHandler: query found:', cmdInfo.query)
-
             // Check for symbol mode first (e.g., "chart." or "price.AA")
             const symbolMode = detectSymbolMode(cmdInfo.query)
             if (symbolMode) {
-              console.log('[DotCommand] symbol mode detected:', symbolMode.commandId, 'query:', symbolMode.symbolQuery)
               triggerPos = cmdInfo.start
               triggerAssetSearch(editorView, cmdInfo.start, symbolMode)
               return
@@ -674,12 +662,9 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
             const items = getFilteredItems(cmdInfo.query)
 
             if (items.length === 0) {
-              console.log('[DotCommand] updateHandler: no items found, closing popup')
               if (popup) closePopup()
               return
             }
-
-            console.log('[DotCommand] updateHandler: showing popup with', items.length, 'items')
 
             if (selectedIndex >= items.length) {
               selectedIndex = 0
@@ -688,7 +673,6 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
             triggerPos = cmdInfo.start
 
             showPopup(editorView, cmdInfo.start, items, (item) => {
-              console.log('[DotCommand] item selected:', item.id)
               closePopup()
               editorView.dispatch(editorView.state.tr.delete(cmdInfo.start, editorView.state.selection.from))
               executeCommand(item.id)

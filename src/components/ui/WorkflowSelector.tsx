@@ -201,33 +201,17 @@ export function WorkflowSelector({
   const isCurrentWorkflowStarted = currentWorkflowStatus?.is_started || false
 
   // Debug logging
-  console.log('🔍 WorkflowSelector Debug:', {
-    effectiveWorkflowId,
-    assetId,
-    assetIdType: typeof assetId,
-    hasOnWorkflowStart: !!onWorkflowStart,
-    hasOnWorkflowStop: !!onWorkflowStop,
-    shouldShowButtons: !!(effectiveWorkflowId && assetId && onWorkflowStart && onWorkflowStop),
-    isCurrentWorkflowStarted
-  })
 
   const handleConfirmAction = () => {
     if (!confirmDialog) {
-      console.log('❌ WorkflowSelector: No confirmDialog found')
       return
     }
 
-    console.log(`🔄 WorkflowSelector: ${confirmDialog.action} button confirmed for workflow:`, confirmDialog.workflowId)
-    console.log(`🔄 WorkflowSelector: Available handlers - onWorkflowStart:`, !!onWorkflowStart, 'onWorkflowStop:', !!onWorkflowStop)
-
     if (confirmDialog.action === 'start' && onWorkflowStart) {
-      console.log(`🚀 WorkflowSelector: Calling onWorkflowStart for workflow:`, confirmDialog.workflowId)
       onWorkflowStart(confirmDialog.workflowId)
     } else if (confirmDialog.action === 'stop' && onWorkflowStop) {
-      console.log(`⏹️ WorkflowSelector: Calling onWorkflowStop for workflow:`, confirmDialog.workflowId)
       onWorkflowStop(confirmDialog.workflowId)
     } else {
-      console.log(`❌ WorkflowSelector: No matching handler for action:`, confirmDialog.action)
     }
 
     setConfirmDialog(null)
@@ -274,16 +258,13 @@ export function WorkflowSelector({
             ) : (
               <button
                 onClick={() => {
-                  console.log(`🎯 WorkflowSelector: Play button clicked for workflow:`, effectiveWorkflowId)
                   if (effectiveWorkflowId) {
-                    console.log(`🎯 WorkflowSelector: Setting confirm dialog for start action`)
                     setConfirmDialog({
                       isOpen: true,
                       action: 'start',
                       workflowId: effectiveWorkflowId
                     })
                   } else {
-                    console.log(`❌ WorkflowSelector: No effectiveWorkflowId available`)
                   }
                 }}
                 className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white hover:bg-green-700 rounded-md transition-colors shadow-sm border border-green-700"

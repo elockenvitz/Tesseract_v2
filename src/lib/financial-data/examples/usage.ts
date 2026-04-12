@@ -22,7 +22,6 @@ async function quickSetupExample() {
       symbols: ['AAPL', 'GOOGL', 'MSFT']
     })
 
-    console.log('Current prices:', quotes.data)
   } catch (error) {
     console.error('Failed to get quotes:', error)
   }
@@ -58,15 +57,11 @@ async function customConfigExample() {
       period: '1y'
     })
 
-    console.log('Historical data points:', historicalData.data.length)
-
     // Get company profile
     const profile = await client.getCompanyProfile({
       symbol: 'AAPL'
     })
 
-    console.log('Company:', profile.data.name)
-    console.log('Sector:', profile.data.sector)
   } catch (error) {
     console.error('Failed to get data:', error)
   }
@@ -84,8 +79,6 @@ async function directAlphaVantageExample() {
       symbols: ['TSLA']
     })
 
-    console.log(`${quotes.data[0].symbol}: $${quotes.data[0].price}`)
-    console.log(`Change: ${quotes.data[0].changePercent.toFixed(2)}%`)
   } catch (error) {
     console.error('Alpha Vantage error:', error)
   }
@@ -103,7 +96,6 @@ async function yahooFinanceExample() {
     })
 
     quotes.data.forEach(quote => {
-      console.log(`${quote.symbol}: $${quote.price} (${quote.changePercent > 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%)`)
     })
   } catch (error) {
     console.error('Yahoo Finance error:', error)
@@ -121,9 +113,7 @@ async function newsAndSearchExample() {
       limit: 5
     })
 
-    console.log('Search results:')
     searchResults.data.forEach(result => {
-      console.log(`${result.symbol}: ${result.name}`)
     })
 
     // Get news for specific symbols
@@ -132,9 +122,7 @@ async function newsAndSearchExample() {
       limit: 10
     })
 
-    console.log('\nLatest news:')
     news.data.forEach(item => {
-      console.log(`${item.source}: ${item.headline}`)
     })
   } catch (error) {
     console.error('News/search error:', error)
@@ -151,14 +139,10 @@ async function errorHandlingExample() {
       symbols: ['INVALID_SYMBOL']
     })
 
-    console.log('Quotes:', quotes.data)
   } catch (error) {
     if (error instanceof RateLimitError) {
-      console.log('Rate limit hit, please wait and retry')
     } else if (error instanceof InvalidSymbolError) {
-      console.log('Invalid symbol provided')
     } else {
-      console.log('Other error:', error.message)
     }
   }
 }
@@ -185,15 +169,11 @@ async function healthMonitoringExample() {
   await client.checkAllProvidersHealth()
   const health = client.getProviderHealth()
 
-  console.log('Provider health status:')
   Object.entries(health).forEach(([name, status]) => {
-    console.log(`${name}: ${status.healthy ? 'Healthy' : 'Unhealthy'} (last check: ${status.lastCheck})`)
   })
 
   // Check cache stats
   const cacheStats = client.getCacheStats()
-  console.log(`Cache size: ${cacheStats.size} entries`)
-
   // Clean up when done
   client.destroy()
 }

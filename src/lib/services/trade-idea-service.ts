@@ -336,7 +336,6 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
   ])
 
   if (idempotencyResult) {
-    console.log(`[TRADE] Skipping duplicate request ${context.requestId}`)
     return
   }
   if (!currentTrade) {
@@ -516,7 +515,7 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
   )
 
   // Run all side-effects concurrently, don't await — let mutation resolve immediately
-  Promise.allSettled(sideEffects).catch(() => {})
+  Promise.allSettled(sideEffects).catch(e => console.warn('[TradeIdea] Side effects failed:', e))
 }
 
 /**
@@ -534,7 +533,6 @@ export async function deleteTradeIdea(params: DeleteTradeIdeaParams): Promise<vo
       actionType: 'delete',
     })
     if (isDuplicate) {
-      console.log(`[TRADE] Skipping duplicate delete request ${context.requestId}`)
       return
     }
   }
@@ -630,7 +628,6 @@ export async function archiveTradeIdea(params: {
       actionType: 'archive',
     })
     if (isDuplicate) {
-      console.log(`[TRADE] Skipping duplicate archive request ${context.requestId}`)
       return
     }
   }
@@ -706,7 +703,6 @@ export async function restoreTradeIdea(params: RestoreTradeIdeaParams): Promise<
       actionType: 'restore',
     })
     if (isDuplicate) {
-      console.log(`[TRADE] Skipping duplicate restore request ${context.requestId}`)
       return
     }
   }
@@ -1591,7 +1587,7 @@ export async function movePairTrade(params: {
   }
 
   // Run all side-effects concurrently, don't await — let mutation resolve immediately
-  Promise.allSettled(sideEffects).catch(() => {})
+  Promise.allSettled(sideEffects).catch(e => console.warn('[TradeIdea] Side effects failed:', e))
 }
 
 // ============================================================

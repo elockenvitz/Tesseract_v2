@@ -5,8 +5,8 @@
 
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useMorphSession } from '../../hooks/useMorphSession'
@@ -17,11 +17,45 @@ type Tab = 'members' | 'portfolios' | 'holdings' | 'engagement' | 'onboarding'
 export function OpsClientDetailPage() {
   const { orgId } = useParams<{ orgId: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { success, error: showError } = useToast()
   const { startMorph, isMorphing } = useMorphSession()
   const [activeTab, setActiveTab] = useState<Tab>('members')
   const [morphTargetId, setMorphTargetId] = useState<string | null>(null)
   const [morphReason, setMorphReason] = useState('')
+
+  // Member access mutations
+  const removeMemberM = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase
+        .from('organization_memberships')
+        .update({ status: 'removed' })
+        .eq('user_id', userId)
+        .eq('organization_id', orgId!)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ops-client-members', orgId] })
+      success('Access removed')
+    },
+    onError: (err: any) => showError(err.message),
+  })
+
+  const restoreMemberM = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase
+        .from('organization_memberships')
+        .update({ status: 'active' })
+        .eq('user_id', userId)
+        .eq('organization_id', orgId!)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ops-client-members', orgId] })
+      success('Access restored')
+    },
+    onError: (err: any) => showError(err.message),
+  })
 
   // Org details
   const { data: org } = useQuery({
@@ -236,32 +270,59 @@ export function OpsClientDetailPage() {
                   <p className="text-xs text-gray-400 truncate">{m.user_email}</p>
                 </div>
               </div>
-              {m.status === 'active' && (
-                morphTargetId === m.user_id ? (
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <input
-                      type="text"
-                      placeholder="Reason..."
-                      value={morphReason}
-                      onChange={(e) => setMorphReason(e.target.value)}
-                      className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500"
-                      autoFocus
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleMorph(m.user_id); if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') } }}
-                    />
-                    <button onClick={() => handleMorph(m.user_id)} disabled={!morphReason.trim() || startMorph.isPending} className="px-2 py-1 text-xs font-medium rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50">Go</button>
-                    <button onClick={() => { setMorphTargetId(null); setMorphReason('') }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
-                  </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {m.status === 'active' ? (
+                  <>
+                    {morphTargetId === m.user_id ? (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Reason..."
+                          value={morphReason}
+                          onChange={(e) => setMorphReason(e.target.value)}
+                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500"
+                          autoFocus
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleMorph(m.user_id); if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') } }}
+                        />
+                        <button onClick={() => handleMorph(m.user_id)} disabled={!morphReason.trim() || startMorph.isPending} className="px-2 py-1 text-xs font-medium rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50">Go</button>
+                        <button onClick={() => { setMorphTargetId(null); setMorphReason('') }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setMorphTargetId(m.user_id)}
+                          disabled={isMorphing}
+                          className="px-2 py-1 text-[10px] font-medium rounded border border-orange-200 text-orange-600 hover:bg-orange-50 disabled:opacity-40 transition-colors flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          Morph
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove ${m.user_email} from ${org?.name}?`)) {
+                              removeMemberM.mutate(m.user_id)
+                            }
+                          }}
+                          disabled={removeMemberM.isPending}
+                          className="px-2 py-1 text-[10px] font-medium rounded border border-red-200 text-red-500 hover:bg-red-50 transition-colors flex items-center gap-1"
+                        >
+                          <Ban className="w-3 h-3" />
+                          Remove
+                        </button>
+                      </>
+                    )}
+                  </>
                 ) : (
                   <button
-                    onClick={() => setMorphTargetId(m.user_id)}
-                    disabled={isMorphing}
-                    className="px-2 py-1 text-[10px] font-medium rounded border border-orange-200 text-orange-600 hover:bg-orange-50 disabled:opacity-40 transition-colors flex items-center gap-1 flex-shrink-0"
+                    onClick={() => restoreMemberM.mutate(m.user_id)}
+                    disabled={restoreMemberM.isPending}
+                    className="px-2 py-1 text-[10px] font-medium rounded border border-green-200 text-green-600 hover:bg-green-50 transition-colors flex items-center gap-1"
                   >
-                    <Eye className="w-3 h-3" />
-                    Morph
+                    <UserCheck className="w-3 h-3" />
+                    Restore
                   </button>
-                )
-              )}
+                )}
+              </div>
             </div>
           ))}
         </div>

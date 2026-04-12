@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import DOMPurify from 'dompurify'
 import { X, Save, Loader2, Eye, Edit3, Share2, Tag, ChevronDown, ChevronUp, AlertCircle, Zap, Type } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Template } from '../../hooks/useTemplates'
@@ -438,7 +439,7 @@ export function TemplateEditor({
                   {/* Content Preview */}
                   <div
                     className="prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: getStyledPreview() }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(getStyledPreview()) }}
                   />
                 </div>
               </div>

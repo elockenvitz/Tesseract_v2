@@ -105,7 +105,6 @@ export function ReelsFeedItem({
 
   // Debug logging for trade ideas
   if (item.type === 'trade_idea') {
-    console.log('[ReelsFeedItem] Trade idea:', { id: item.id, asset, displaySymbol, item })
   }
 
   // Get the event date for chart marker (trade idea creation date)

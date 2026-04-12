@@ -510,21 +510,17 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           }).run()
         },
         onVisibilityCommand: (type: VisibilityType, targetId?: string, targetName?: string) => {
-          console.log('[VisibilityCommand] called with type:', type)
           const currentEditor = editorRef.current
           if (!currentEditor) {
-            console.log('[VisibilityCommand] no editor ref!')
             return
           }
 
           // Insert a new visibility block (handles both selection wrap and empty insertion)
-          console.log('[VisibilityCommand] inserting visibility block')
           currentEditor.chain().focus().insertVisibilityBlock({
             visibilityType: type,
             targetId: targetId || null,
             targetName: targetName || (type === 'private' ? 'Private' : type === 'team' ? 'Team Only' : 'Portfolio Only')
           }).run()
-          console.log('[VisibilityCommand] done')
         },
         onAssetSearch: onAssetSearch ? async (query: string) => {
           const results = await onAssetSearch(query)

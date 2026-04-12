@@ -2147,7 +2147,6 @@ function FieldMappingEditor({
     const conflictingDynamic = getConflictingDynamicMapping(newMapping.field)
     if (conflictingDynamic) {
       // Remove the conflicting dynamic mapping since user is explicitly choosing a fixed mapping
-      console.log('[Conflict] Fixed mapping', newMapping.field, 'conflicts with dynamic mapping', conflictingDynamic.name, '- removing dynamic')
       onDynamicMappingsChange(dynamicMappings.filter(dm => dm.id !== conflictingDynamic.id))
     }
 
@@ -2270,7 +2269,6 @@ function FieldMappingEditor({
     for (const mapping of mappingsToAdd) {
       const conflicting = getConflictingDynamicMapping(mapping.field)
       if (conflicting) {
-        console.log('[Conflict] Fixed mapping', mapping.field, 'conflicts with dynamic mapping', conflicting.name, '- removing dynamic')
         conflictingDynamicIds.add(conflicting.id)
       }
     }
@@ -2302,7 +2300,6 @@ function FieldMappingEditor({
     const conflictingDynamic = getConflictingDynamicMapping(mapping.field)
     if (conflictingDynamic) {
       // Remove the conflicting dynamic mapping since user is explicitly choosing a fixed mapping
-      console.log('[Conflict] Fixed mapping', mapping.field, 'conflicts with dynamic mapping', conflictingDynamic.name, '- removing dynamic')
       onDynamicMappingsChange(dynamicMappings.filter(dm => dm.id !== conflictingDynamic.id))
     }
 
@@ -5184,7 +5181,6 @@ export function ExcelModelTemplateManager() {
 
         // Run dynamic mapping auto-detection
         const detectedDynamic = detectDynamicMappings(wb)
-        console.log('[Dynamic Detection] Found', detectedDynamic.length, 'potential dynamic mappings:', detectedDynamic)
         setDetectedDynamicMappings(detectedDynamic)
         // Reset accepted/rejected when loading new file
         setAcceptedDynamicIds(new Set())
@@ -5246,8 +5242,6 @@ export function ExcelModelTemplateManager() {
       // Filter out any fixed mappings that conflict with the dynamic mapping's field IDs
       const conflictingFixed = prev.fieldMappings.filter(fm => dynamicFieldIds.has(fm.field))
       if (conflictingFixed.length > 0) {
-        console.log('[Conflict] Removing', conflictingFixed.length, 'fixed mappings that conflict with dynamic mapping:',
-          conflictingFixed.map(f => f.field))
       }
       const filteredFieldMappings = prev.fieldMappings.filter(fm => !dynamicFieldIds.has(fm.field))
 

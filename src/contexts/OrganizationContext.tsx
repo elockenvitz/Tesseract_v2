@@ -106,9 +106,20 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const { data: userOrgs = [], isLoading } = useQuery({
     queryKey: ['user-organizations', user?.id],
     queryFn: async () => {
+      // Get the user's active memberships first, then fetch those orgs
+      const { data: memberships, error: memErr } = await supabase
+        .from('organization_memberships')
+        .select('organization_id')
+        .eq('user_id', user!.id)
+        .eq('status', 'active')
+      if (memErr) throw memErr
+      const orgIds = (memberships || []).map(m => m.organization_id)
+      if (orgIds.length === 0) return []
+
       const { data, error } = await supabase
         .from('organizations')
         .select('id, name, slug, logo_url')
+        .in('id', orgIds)
         .order('name')
       if (error) throw error
       const orgs = (data || []) as OrgSummary[]

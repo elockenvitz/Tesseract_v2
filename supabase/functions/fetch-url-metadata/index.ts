@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://tesseract.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
@@ -150,9 +150,18 @@ serve(async (req) => {
       )
     }
 
-    // Validate URL format
+    // Validate URL format and block SSRF
     try {
-      new URL(url)
+      const parsed = new URL(url)
+      const forbidden = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254.169.254']
+      if (forbidden.includes(parsed.hostname) ||
+          /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(parsed.hostname) ||
+          !['http:', 'https:'].includes(parsed.protocol)) {
+        return new Response(
+          JSON.stringify({ error: 'URL not allowed' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
     } catch {
       return new Response(
         JSON.stringify({ error: 'Invalid URL format' }),

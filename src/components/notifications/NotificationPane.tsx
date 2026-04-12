@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users, Share2 } from 'lucide-react'
+import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users, Share2, MessageCircle, List, ThumbsUp, ThumbsDown, Lightbulb } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -19,10 +19,10 @@ interface NotificationPaneProps {
 interface Notification {
   id: string
   user_id: string
-  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request' | 'workflow_access_request' | 'workflow_invitation' | 'simulation_shared'
+  type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'coverage_request' | 'workflow_access_request' | 'workflow_invitation' | 'simulation_shared' | 'list_suggestion_received' | 'list_suggestion_accepted' | 'list_suggestion_rejected' | 'new_message' | 'list_collaboration' | 'mention' | 'price_target_expired' | 'task_assigned' | 'share' | 'trade_idea_created'
   title: string
   message: string
-  context_type: 'asset' | 'note' | 'portfolio' | 'theme' | 'workflow'
+  context_type: 'asset' | 'note' | 'portfolio' | 'theme' | 'workflow' | 'list' | 'project' | 'price_target' | 'conversation'
   context_id: string
   context_data: any
   is_read: boolean
@@ -107,6 +107,7 @@ export function NotificationPane({
       case 'asset_stage_change':
         return <TrendingUp className="h-4 w-4 text-blue-600" />
       case 'price_target_change':
+      case 'price_target_expired':
         return <Target className="h-4 w-4 text-green-600" />
       case 'note_shared':
       case 'note_created':
@@ -116,8 +117,24 @@ export function NotificationPane({
       case 'workflow_access_request':
       case 'workflow_invitation':
         return <User className="h-4 w-4 text-orange-600" />
+      case 'task_assigned':
+        return <User className="h-4 w-4 text-orange-600" />
+      case 'trade_idea_created':
+        return <TrendingUp className="h-4 w-4 text-emerald-600" />
       case 'simulation_shared':
+      case 'share':
         return <Share2 className="h-4 w-4 text-primary-600" />
+      case 'new_message':
+      case 'mention':
+        return <MessageCircle className="h-4 w-4 text-sky-600" />
+      case 'list_suggestion_received':
+        return <Lightbulb className="h-4 w-4 text-amber-600" />
+      case 'list_suggestion_accepted':
+        return <ThumbsUp className="h-4 w-4 text-emerald-600" />
+      case 'list_suggestion_rejected':
+        return <ThumbsDown className="h-4 w-4 text-red-600" />
+      case 'list_collaboration':
+        return <List className="h-4 w-4 text-teal-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -130,6 +147,7 @@ export function NotificationPane({
       case 'asset_stage_change':
         return 'primary'
       case 'price_target_change':
+      case 'price_target_expired':
         return 'success'
       case 'note_shared':
       case 'note_created':
@@ -137,7 +155,21 @@ export function NotificationPane({
       case 'coverage_request':
         return 'purple'
       case 'simulation_shared':
+      case 'share':
         return 'primary'
+      case 'trade_idea_created':
+        return 'success'
+      case 'new_message':
+      case 'mention':
+        return 'primary'
+      case 'list_suggestion_received':
+        return 'warning'
+      case 'list_suggestion_accepted':
+        return 'success'
+      case 'list_suggestion_rejected':
+        return 'danger'
+      case 'list_collaboration':
+        return 'success'
       default:
         return 'default'
     }
@@ -173,6 +205,26 @@ export function NotificationPane({
           }
         }
       }))
+      return
+    }
+
+    // Handle new_message / mention notifications by opening DM
+    if ((notification.type === 'new_message' || notification.type === 'mention') && notification.context_data?.conversation_id) {
+      window.dispatchEvent(new CustomEvent('openDirectMessage', {
+        detail: { conversationId: notification.context_data.conversation_id }
+      }))
+      return
+    }
+
+    // Handle list notifications by navigating to the list
+    if ((notification.type === 'list_collaboration' || notification.type === 'list_suggestion_received' || notification.type === 'list_suggestion_accepted' || notification.type === 'list_suggestion_rejected') && notification.context_data?.list_id) {
+      if (onNotificationClick) {
+        onNotificationClick({
+          type: 'list',
+          id: notification.context_data.list_id,
+          title: notification.context_data.list_name || 'List'
+        })
+      }
       return
     }
 
@@ -220,7 +272,6 @@ export function NotificationPane({
         case 'workflow':
           // For task assignments, navigate to the asset
           if (notification.type === 'task_assigned' && notification.context_data?.asset_symbol) {
-            console.log('📋 NotificationPane: Task assignment notification context_data:', notification.context_data)
             navigationData = {
               id: notification.context_data.asset_id || notification.context_data.asset_symbol,
               title: notification.context_data.asset_symbol,
@@ -234,7 +285,6 @@ export function NotificationPane({
                 stageId: notification.context_data?.stage_id
               }
             }
-            console.log('📋 NotificationPane: Navigation data:', navigationData)
           }
           break
         case 'task':

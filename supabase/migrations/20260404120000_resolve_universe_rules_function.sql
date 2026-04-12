@@ -31,7 +31,8 @@ BEGIN
     SELECT rule_type, rule_config
     FROM workflow_universe_rules
     WHERE workflow_id = p_template_id
-    ORDER BY rule_order
+      AND is_active = true
+    ORDER BY sort_order
   LOOP
     v_asset_ids := '{}';
 
@@ -287,9 +288,9 @@ BEGIN
       IF v_scope_type = 'asset' THEN
         -- Copy universe rules to the run
         INSERT INTO workflow_universe_rules (
-          workflow_id, rule_type, rule_config, combination_operator, rule_order
+          workflow_id, rule_type, rule_config, combination_operator, sort_order
         )
-        SELECT v_new_branch_id, rule_type, rule_config, combination_operator, rule_order
+        SELECT v_new_branch_id, rule_type, rule_config, combination_operator, sort_order
         FROM workflow_universe_rules
         WHERE workflow_id = v_workflow_id;
 

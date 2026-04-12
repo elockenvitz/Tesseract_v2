@@ -38,8 +38,6 @@ export function PriceTargetFieldHistory({
   const { data: changes, isLoading } = useQuery({
     queryKey: ['price-target-history', priceTargetId, fieldName],
     queryFn: async () => {
-      console.log('🔍 Fetching price target history for:', { priceTargetId, fieldName, caseType })
-      
       const { data, error } = await supabase
         .from('price_target_history')
         .select(`
@@ -115,7 +113,6 @@ export function PriceTargetFieldHistory({
         change_type: record.old_value === null ? 'insert' : 'update'
       })) || []
       
-      console.log('✅ Price target history data received:', transformedData?.length || 0, 'records')
       return transformedData
     },
     enabled: expanded,

@@ -919,7 +919,7 @@ export interface Database {
       theme_type: 'sector' | 'geography' | 'strategy' | 'macro' | 'general'
       collaboration_permission: 'read' | 'write' | 'admin'
       notebook_type: 'asset' | 'theme' | 'portfolio' | 'custom'
-      notification_type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'list_suggestion_received' | 'list_suggestion_accepted' | 'list_suggestion_rejected'
+      notification_type: 'asset_field_change' | 'asset_priority_change' | 'asset_stage_change' | 'note_shared' | 'note_created' | 'price_target_change' | 'price_target_expired' | 'list_suggestion_received' | 'list_suggestion_accepted' | 'list_suggestion_rejected' | 'new_message' | 'list_collaboration' | 'mention' | 'task_assigned' | 'stage_assigned' | 'workflow_invitation' | 'workflow_access_request' | 'simulation_shared' | 'share' | 'coverage_request' | 'trade_idea_created'
       list_type: 'mutual' | 'collaborative'
       suggestion_type: 'add' | 'remove'
       suggestion_status: 'pending' | 'accepted' | 'rejected'

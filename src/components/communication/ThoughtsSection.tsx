@@ -246,7 +246,6 @@ export function ThoughtsSection({
               quickThoughtId={selectedItem.id}
               onClose={onBackToCapture}
               onNavigateToTradeIdea={(tradeIdeaId) => {
-                console.log('Navigate to trade idea:', tradeIdeaId)
               }}
               embedded
             />

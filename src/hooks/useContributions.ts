@@ -508,12 +508,6 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       const contribId = contributionId || myContribution?.id
       if (!contribId) throw new Error('No contribution to update')
 
-      console.log('Updating visibility:', {
-        contributionId: contribId,
-        visibility,
-        targetIds
-      })
-
       const { data, error } = await supabase
         .from('asset_contributions')
         .update({
@@ -530,8 +524,6 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         console.error('Error updating visibility:', error)
         throw error
       }
-
-      console.log('Visibility updated:', data)
 
       // Update visibility targets
       const { error: deleteError } = await supabase

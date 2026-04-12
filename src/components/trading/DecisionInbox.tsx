@@ -7,7 +7,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { formatDistanceToNow, addDays, addWeeks, endOfMonth, startOfDay, format } from 'date-fns'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   Inbox,
   CheckCircle2,
@@ -25,10 +25,13 @@ import {
   Minus,
   Undo2,
   Loader2,
+  Bell,
+  Beaker,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../common/Toast'
 import {
   useAllDecisionRequests,
   useUpdateDecisionRequest,
@@ -164,9 +167,15 @@ function classifyTrade(current: number, target: number): TradeClass {
 
 const URGENCY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   critical: { label: 'Urgent', color: 'text-red-700 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' },
-  high: { label: 'High', color: 'text-orange-700 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30' },
+  high: { label: 'High Urgency', color: 'text-orange-700 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30' },
   medium: { label: '', color: '', bg: '' }, // don't show for medium
   low: { label: '', color: '', bg: '' },
+}
+
+const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  high: { label: 'High Conviction', color: 'text-purple-700 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/30' },
+  medium: { label: '', color: '', bg: '' }, // don't show for medium
+  low: { label: 'Low Conviction', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700/50' },
 }
 
 // ── Main Component ──────────────────────────────────────────────
@@ -175,12 +184,62 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
   const [activeTab, setActiveTab] = useState<InboxTab>('needs_decision')
   const [waitingFilter, setWaitingFilter] = useState<'all' | 'for_me' | 'for_others'>('all')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const [nudgingRequestId, setNudgingRequestId] = useState<string | null>(null)
 
   const { user } = useAuth()
+  const toast = useToast()
   const { data: allRequests = [], isLoading } = useAllDecisionRequests(portfolioId)
   const updateMutation = useUpdateDecisionRequest()
   const acceptMutation = useAcceptFromInbox()
   const revertMutation = useRevertDecisionAccept()
+
+  // Nudge PM mutation
+  const nudgeMutation = useMutation({
+    mutationFn: async ({ request, portfolioName }: { request: DecisionRequest; portfolioName?: string }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+      // Find PMs on this portfolio
+      const { data: teamMembers } = await supabase
+        .from('portfolio_team')
+        .select('user_id, role')
+        .eq('portfolio_id', request.portfolio_id)
+      const pmIds = (teamMembers || [])
+        .filter(m => m.role?.toLowerCase().includes('manager') || m.role?.toLowerCase().includes('pm'))
+        .map(m => m.user_id)
+        .filter(id => id !== user.id) // Don't nudge yourself
+      // If no PMs found, nudge all team members except self
+      const targetIds = pmIds.length > 0 ? pmIds : (teamMembers || []).map(m => m.user_id).filter(id => id !== user.id)
+      if (targetIds.length === 0) throw new Error('No team members to nudge')
+
+      const symbol = request.trade_queue_item?.assets?.symbol || 'a trade idea'
+      const senderName = (user as any).first_name || user.email || 'A team member'
+
+      const notifications = targetIds.map(userId => ({
+        user_id: userId,
+        type: 'decision_nudge' as const,
+        title: 'Decision needed',
+        message: `${senderName} is waiting for a decision on ${symbol} (${portfolioName || 'portfolio'})`,
+        context_type: 'decision_request',
+        context_id: request.id,
+        context_data: {
+          trade_queue_item_id: request.trade_queue_item_id,
+          portfolio_id: request.portfolio_id,
+          symbol,
+          nudged_by: user.id,
+        },
+      }))
+
+      const { error } = await supabase.from('notifications').insert(notifications)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Follow-up sent')
+      setNudgingRequestId(null)
+    },
+    onError: (err: any) => {
+      toast.error('Follow-up failed', err?.message || 'Unknown error')
+      setNudgingRequestId(null)
+    },
+  })
 
   // Fetch current user's portfolio roles: { portfolioId → role }
   const { data: userPortfolioRoles } = useQuery({
@@ -436,17 +495,17 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
 
         {/* Waiting filter — right-aligned, only on needs_decision tab */}
         {activeTab === 'needs_decision' && buckets.needs_decision.length > 0 && (
-          <div className="flex items-center ml-auto pr-1 bg-gray-100 dark:bg-gray-700/50 rounded-md p-0.5">
+          <div className="flex items-center ml-auto bg-gray-100 dark:bg-gray-700/50 rounded-lg p-0.5 gap-0.5">
             {([
               { key: 'all' as const, label: 'All', count: buckets.needs_decision.length },
-              { key: 'for_me' as const, label: 'For me', count: waitingCounts.for_me },
-              { key: 'for_others' as const, label: 'Sent by me', count: waitingCounts.sent_by_me },
+              { key: 'for_me' as const, label: 'For Me', count: waitingCounts.for_me },
+              { key: 'for_others' as const, label: 'Sent by Me', count: waitingCounts.sent_by_me },
             ] as const).map(f => (
               <button
                 key={f.key}
                 onClick={() => setWaitingFilter(f.key)}
                 className={clsx(
-                  'px-2 py-1 text-[11px] font-medium rounded transition-colors',
+                  'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors',
                   waitingFilter === f.key
                     ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -455,7 +514,7 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                 {f.label}
                 {f.count > 0 && (
                   <span className={clsx(
-                    'ml-1 px-1 py-px rounded-full text-[9px] font-semibold',
+                    'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold min-w-[18px] inline-block text-center',
                     waitingFilter === f.key
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400'
                       : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
@@ -531,17 +590,32 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                             {group.symbol}
                           </button>
                           {group.companyName && (
-                            <span className="text-[13px] text-gray-400 dark:text-gray-500 truncate max-w-[180px]">{group.companyName}</span>
+                            <span className="text-[13px] text-gray-400 dark:text-gray-500">{group.companyName}</span>
+                          )}
+                          {group.rationale && (
+                            <>
+                              <span className="text-gray-300 dark:text-gray-600">—</span>
+                              <span className="text-xs text-gray-400 dark:text-gray-500 italic truncate">{group.rationale}</span>
+                            </>
                           )}
                         </>
                       )}
 
                       {showUrgency && (
-                        <span className={clsx('text-[11px] font-bold uppercase px-1.5 py-0.5 rounded flex items-center gap-0.5', urg.color, urg.bg)}>
+                        <span className={clsx('text-[11px] font-bold uppercase px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0', urg.color, urg.bg)}>
                           <AlertTriangle className="h-3.5 w-3.5" />
                           {urg.label}
                         </span>
                       )}
+
+                      {(() => {
+                        const conv = CONVICTION_CONFIG[group.conviction || '']
+                        return conv?.label ? (
+                          <span className={clsx('text-[11px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0', conv.color, conv.bg)}>
+                            {conv.label}
+                          </span>
+                        ) : null
+                      })()}
 
                       {!isExpanded && (
                         <span className="text-xs text-gray-400 ml-auto shrink-0">
@@ -549,13 +623,6 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                         </span>
                       )}
                     </div>
-
-                    {/* Line 2: Thesis snippet — directly under title */}
-                    {group.rationale && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 italic truncate pl-[26px] mt-1 leading-normal">
-                        {group.rationale}
-                      </p>
-                    )}
                   </div>
 
                   {/* ── Portfolio Decision Tiles ─────────────── */}
@@ -580,10 +647,14 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                                 requestId: `accept-${req.id}-${Date.now()}`,
                               },
                             }, {
-                              onSuccess: (result) => {
-                                window.dispatchEvent(new CustomEvent('openTradeLab', {
-                                  detail: { labId: result.labId, portfolioId: req.portfolio_id },
-                                }))
+                              onSuccess: () => {
+                                const label = group.isPairTrade
+                                  ? `Pair trade ${group.pairBuySymbols.join('/')} / ${group.pairSellSymbols.join('/')} accepted`
+                                  : `${req.trade_queue_item?.assets?.symbol || 'Trade'} accepted`
+                                toast.success(label)
+                              },
+                              onError: (err: any) => {
+                                toast.error('Accept failed', err?.message || 'Unknown error')
                               },
                             })
                           }}
@@ -601,6 +672,8 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                               },
                             })
                           }}
+                          onNudge={() => { setNudgingRequestId(req.id); nudgeMutation.mutate({ request: req }) }}
+                          isNudging={nudgingRequestId === req.id && nudgeMutation.isPending}
                           onUndo={() => handleUndo(req)}
                           isResolvedTab={activeTab === 'accepted' || activeTab === 'rejected' || activeTab === 'deferred'}
                           isPending={updateMutation.isPending || acceptMutation.isPending}
@@ -631,6 +704,8 @@ function PortfolioRow({
   onAcceptWithSizing,
   onRejectWithReason,
   onDeferWithConfig,
+  onNudge,
+  isNudging,
   onUndo,
   isResolvedTab,
   isPending,
@@ -644,6 +719,8 @@ function PortfolioRow({
   onAcceptWithSizing: (sizingInput: string, note?: string) => void
   onRejectWithReason: (reason: string) => void
   onDeferWithConfig: (deferredUntil: string | null, trigger: DeferralTrigger | null, note?: string) => void
+  onNudge?: () => void
+  isNudging?: boolean
   onUndo: () => void
   isResolvedTab?: boolean
   isPending: boolean
@@ -672,7 +749,7 @@ function PortfolioRow({
   const targetWeight = effectiveWeight != null && !isNaN(effectiveWeight) ? effectiveWeight : analystWeight
   const currentWeight = (snapshot?.baseline_weight as number) ?? 0
   const sizingCtx = snapshot?.sizing_context as any
-  const legs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null }> | null
+  const legs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; baselineWeight?: number | null; enteredValue?: string; sizingMode?: string }> | null
   const conviction = request.trade_queue_item?.conviction || null
   const analyst = formatFullName(request.requester)
   const timeAgo = fmtTime(request.created_at)
@@ -718,123 +795,171 @@ function PortfolioRow({
 
   const statusWithUndo = (badgeClassName?: string) => statusBadge ? (
     <div className="flex items-center gap-1.5 shrink-0">
-      <span className={clsx('text-[10px] font-medium px-1.5 py-0.5 rounded', statusBadge.color, badgeClassName)}>
-        {statusBadge.label}
-      </span>
+      {isAwaiting && onNudge ? (
+        <button
+          onClick={(e) => { e.stopPropagation(); onNudge() }}
+          disabled={isNudging}
+          className={clsx(
+            'text-xs font-medium px-2 py-1 rounded flex items-center gap-1 transition-colors disabled:opacity-50',
+            'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40'
+          )}
+        >
+          <Bell className="w-3 h-3" />
+          {isNudging ? 'Sending...' : 'Awaiting PM — Request Follow-up'}
+        </button>
+      ) : (
+        <span className={clsx('text-[10px] font-medium px-1.5 py-0.5 rounded', statusBadge.color, badgeClassName)}>
+          {statusBadge.label}
+        </span>
+      )}
       {undoBtn}
     </div>
   ) : undoBtn
 
+  const portfolioName = request.portfolio?.name || 'Unknown'
+  const actionLabel = tc?.label?.toLowerCase() || request.trade_queue_item?.action || 'trade'
+
   return (
-    <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
-      {/* 1. Decision type + status — primary anchor */}
-      {!isPairTrade && tc && targetWeight != null ? (
-        <div className="mb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <TcIcon className={clsx('h-4 w-4', tc.color)} />
-              <span className={clsx('text-sm font-bold', tc.color)}>{tc.label}</span>
-            </div>
-            {statusWithUndo()}
-          </div>
-          {/* Editable weight line */}
-          <div className="flex items-center gap-1 mt-0.5 text-xs tabular-nums">
-            <span className="text-gray-400">{currentWeight.toFixed(2)}%</span>
-            <span className="text-gray-300 dark:text-gray-600">→</span>
-            {showActions && editingSizing ? (
-              <input
-                type="text"
-                value={sizingValue}
-                onChange={e => setSizingValue(e.target.value)}
-                onBlur={() => {
-                  const parsed = parseFloat(sizingValue)
-                  if (!isNaN(parsed)) setOverrideWeight(sizingValue)
-                  setEditingSizing(false)
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
+    <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
+      {/* Line 1: Natural language sentence — "Add to Vision Fund 10K from 0.50% → 2.00%" */}
+      <div className="flex items-center justify-between gap-2">
+        {!isPairTrade && tc && targetWeight != null ? (
+          <p className="text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+            <span className={clsx('font-bold', tc.color)}>{tc.label}</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{portfolioName}</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <span className="text-gray-400 tabular-nums">
+              {currentWeight.toFixed(2)}% →{' '}
+              {showActions && editingSizing ? (
+                <input
+                  type="text"
+                  value={sizingValue}
+                  onChange={e => setSizingValue(e.target.value)}
+                  onBlur={() => {
                     const parsed = parseFloat(sizingValue)
                     if (!isNaN(parsed)) setOverrideWeight(sizingValue)
                     setEditingSizing(false)
-                  }
-                  if (e.key === 'Escape') { setSizingValue(String(targetWeight)); setEditingSizing(false) }
-                }}
-                autoFocus
-                className="w-16 px-1 py-0 text-xs font-semibold rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-400 tabular-nums"
-              />
-            ) : (
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const parsed = parseFloat(sizingValue)
+                      if (!isNaN(parsed)) setOverrideWeight(sizingValue)
+                      setEditingSizing(false)
+                    }
+                    if (e.key === 'Escape') { setSizingValue(String(targetWeight)); setEditingSizing(false) }
+                  }}
+                  autoFocus
+                  className="w-16 px-1 py-0 text-xs font-semibold rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-400 tabular-nums inline"
+                />
+              ) : (
+                <button
+                  onClick={() => { if (showActions) { setSizingValue(String(targetWeight)); setEditingSizing(true) } }}
+                  className={clsx(
+                    'font-semibold text-gray-900 dark:text-white tabular-nums',
+                    showActions && 'cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 border-b border-dashed border-gray-300 dark:border-gray-600'
+                  )}
+                  disabled={!showActions}
+                >
+                  {targetWeight.toFixed(2)}%
+                </button>
+              )}
+            </span>
+            {overrideWeight != null && analystWeight != null && parseFloat(overrideWeight) !== analystWeight && (
+              <span className="text-[10px] text-amber-500 ml-1">(was {analystWeight.toFixed(2)}%)</span>
+            )}
+            {request.portfolio_id && (
               <button
-                onClick={() => { if (showActions) { setSizingValue(String(targetWeight)); setEditingSizing(true) } }}
-                className={clsx(
-                  'font-semibold text-gray-900 dark:text-white',
-                  showActions && 'cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 border-b border-dashed border-gray-300 dark:border-gray-600'
-                )}
-                disabled={!showActions}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  window.dispatchEvent(new CustomEvent('openTradeLab', {
+                    detail: { portfolioId: request.portfolio_id },
+                  }))
+                }}
+                className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
               >
-                {targetWeight.toFixed(2)}%
+                <Beaker className="h-3 w-3" />
+                Trade Lab
               </button>
             )}
-            {overrideWeight != null && analystWeight != null && parseFloat(overrideWeight) !== analystWeight && (
-              <span className="text-[10px] text-amber-500 ml-1">(analyst: {analystWeight.toFixed(2)}%)</span>
+          </p>
+        ) : isPairTrade ? (
+          <div className="space-y-0.5">
+            {[...buyLegs, ...sellLegs].map((l, i) => {
+              const legWeight = l.weight ?? 0
+              const baseWeight = l.baselineWeight ?? 0
+              const absWeight = Math.abs(legWeight)
+              const isAbsolute = l.sizingMode === 'absolute'
+              const targetWt = isAbsolute ? legWeight : baseWeight + legWeight
+              const legTc = classifyTrade(baseWeight, targetWt)
+              const displayDelta = isAbsolute ? `→ ${absWeight.toFixed(2)}%` : `${legWeight > 0 ? '+' : ''}${legWeight.toFixed(2)}%`
+              return (
+                <p key={i} className="text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <span className={clsx('font-bold', legTc.color)}>
+                    {legTc.label}
+                  </span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{l.symbol}</span>
+                  <span className="text-gray-300 dark:text-gray-600">|</span>
+                  <span className="font-medium">{portfolioName}</span>
+                  <span className="text-gray-300 dark:text-gray-600">|</span>
+                  <span className="text-gray-400 tabular-nums">
+                    {baseWeight.toFixed(2)}% {displayDelta}
+                  </span>
+                  {i === 0 && request.portfolio_id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.dispatchEvent(new CustomEvent('openTradeLab', {
+                          detail: { portfolioId: request.portfolio_id },
+                        }))
+                      }}
+                      className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
+                    >
+                      <Beaker className="h-3 w-3" />
+                      Trade Lab
+                    </button>
+                  )}
+                </p>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 italic flex items-center gap-1.5">
+            <span>{actionLabel}</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <span>{portfolioName}</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <span>no sizing</span>
+            {request.portfolio_id && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  window.dispatchEvent(new CustomEvent('openTradeLab', {
+                    detail: { portfolioId: request.portfolio_id },
+                  }))
+                }}
+                className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors flex-shrink-0"
+              >
+                <Beaker className="h-3 w-3" />
+                Trade Lab
+              </button>
             )}
-          </div>
-        </div>
-      ) : isPairTrade ? (
-        <div className="mb-2">
-          <div className="flex items-start justify-between gap-2">
-            <div className="space-y-0.5">
-              {[...buyLegs, ...sellLegs].map((l, i) => {
-                const legTarget = l.weight ?? 0
-                const legTc = classifyTrade(0, legTarget)
-                const LegIcon = legTc.icon
-                return (
-                  <div key={i} className="flex items-center gap-2 text-xs tabular-nums">
-                    <LegIcon className={clsx('h-3.5 w-3.5', legTc.color)} />
-                    <span className={clsx('font-bold', legTc.color)}>{legTc.label}</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{l.symbol}</span>
-                    <span className="text-gray-400">0.00% → {legTarget.toFixed(2)}%</span>
-                  </div>
-                )
-              })}
-            </div>
-            {statusWithUndo('shrink-0')}
-          </div>
-        </div>
-      ) : (
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs text-gray-400 italic">No sizing</span>
-          {statusWithUndo()}
-        </div>
-      )}
-
-      {/* 2. Portfolio */}
-      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-        <Briefcase className="h-3 w-3" />
-        <span className="font-medium">{request.portfolio?.name || 'Unknown'}</span>
-        {request.portfolio_id && (
-          <button
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('openTradeLab', {
-                detail: { portfolioId: request.portfolio_id },
-              }))
-            }}
-            className="flex items-center gap-0.5 ml-1 text-[10px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
-          >
-            <ArrowUpRight className="h-2.5 w-2.5" />
-            Trade Lab
-          </button>
+          </p>
         )}
+        {statusWithUndo()}
       </div>
 
-      {/* 3. Analyst + time */}
-      <div className="text-[10px] text-gray-400 mt-0.5">
-        {analyst} · {timeAgo}
-      </div>
-
-      {/* 4. Rationale */}
+      {/* Line 2: Recommendation note (analyst's reasoning for this specific action) */}
       {request.context_note && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-2 leading-relaxed">{request.context_note}</p>
+        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-snug italic">{request.context_note}</p>
       )}
+
+      {/* Line 3: Who recommended + when */}
+      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+        <span className="font-medium text-gray-500 dark:text-gray-400">{analyst}</span>
+        <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+        <span>{timeAgo}</span>
+      </div>
 
       {/* 5. Actions — pending tab (default state) */}
       {showActions && !acceptMode && !rejectMode && !deferMode && (
@@ -883,9 +1008,9 @@ function PortfolioRow({
             onChange={e => setNoteValue(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter') {
-                const sizing = overrideWeight ?? (analystWeight != null ? String(analystWeight) : '')
-                if (sizing) {
-                  onAcceptWithSizing(sizing, noteValue.trim() || undefined)
+                const sizing = overrideWeight ?? (analystWeight != null ? String(analystWeight) : (isPairTrade ? 'pair' : ''))
+                if (sizing || isPairTrade) {
+                  onAcceptWithSizing(sizing || 'pair', noteValue.trim() || undefined)
                   setAcceptMode(false)
                 }
               }
@@ -898,13 +1023,13 @@ function PortfolioRow({
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => {
-                const sizing = overrideWeight ?? (analystWeight != null ? String(analystWeight) : '')
-                if (sizing) {
-                  onAcceptWithSizing(sizing, noteValue.trim() || undefined)
+                const sizing = overrideWeight ?? (analystWeight != null ? String(analystWeight) : (isPairTrade ? 'pair' : ''))
+                if (sizing || isPairTrade) {
+                  onAcceptWithSizing(sizing || 'pair', noteValue.trim() || undefined)
                   setAcceptMode(false)
                 }
               }}
-              disabled={isPending || (analystWeight == null && overrideWeight == null)}
+              disabled={isPending || (!isPairTrade && analystWeight == null && overrideWeight == null)}
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}

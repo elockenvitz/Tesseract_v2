@@ -610,7 +610,6 @@ export function UniversalNoteEditor({
 
   const createNoteMutation = useMutation({
     mutationFn: async () => {
-      console.log('💾 createNoteMutation: Starting note creation...')
       if (!user) throw new Error('User not authenticated')
       const noteData = {
         [config.foreignKey]: entityId,
@@ -620,7 +619,6 @@ export function UniversalNoteEditor({
         created_by: user.id,
         updated_by: user.id
       }
-      console.log('💾 createNoteMutation: Inserting note data:', noteData)
       const { data, error } = await supabase
         .from(config.tableName)
         .insert([noteData])
@@ -630,12 +628,9 @@ export function UniversalNoteEditor({
         console.error('❌ createNoteMutation: Error inserting note:', error)
         throw error
       }
-      console.log('✅ createNoteMutation: Note created successfully:', data)
       return data
     },
     onSuccess: async (newNote) => {
-      console.log('🎉 createNoteMutation onSuccess: Note created, calling onNoteSelect with:', newNote.id)
-
       // Auto-link portfolio notes to parent if a "Next step" action was pending
       if (config.tableName === 'portfolio_notes' && newNote?.id) {
         const linked = await usePendingLineageStore.getState().linkIfPending({
@@ -721,7 +716,6 @@ export function UniversalNoteEditor({
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
-      console.log('🗑️ Deleting note:', noteId)
       const { error } = await supabase
         .from(config.tableName)
         .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })
@@ -731,10 +725,8 @@ export function UniversalNoteEditor({
         console.error('❌ Error deleting note:', error)
         throw error
       }
-      console.log('✅ Note marked as deleted')
     },
     onSuccess: () => {
-      console.log('🗑️ Delete success, invalidating queries')
       // Invalidate all note-related queries
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
@@ -751,10 +743,8 @@ export function UniversalNoteEditor({
       if (selectedNoteId === hiddenNoteId) {
         const remainingNotes = notes?.filter(n => n.id !== selectedNoteId && !hiddenNoteIds.has(n.id)) || []
         if (remainingNotes.length > 0) {
-          console.log('🗑️ Switching to remaining note:', remainingNotes[0].id)
           onNoteSelect(remainingNotes[0].id)
         } else {
-          console.log('🗑️ No remaining notes, closing editor')
           // Close the editor completely by calling onClose if available
           if (onClose) {
             onClose()
@@ -1191,7 +1181,6 @@ export function UniversalNoteEditor({
   // Handle clicking on a note link to navigate
   const handleNoteLinkNavigate = useCallback((noteLink: NoteLinkItem) => {
     // For now, just log - in the future this could navigate to the note
-    console.log('Navigate to note:', noteLink)
     // TODO: Implement cross-entity navigation
     // If same entity type and same entity, just select the note
     if (noteLink.entityType === entityType && noteLink.entityId === entityId) {
@@ -1199,7 +1188,6 @@ export function UniversalNoteEditor({
     } else {
       // For cross-entity navigation, would need router/navigation context
       // Could emit an event or use a callback passed from parent
-      console.log('Cross-entity navigation not yet implemented')
     }
   }, [entityType, entityId, onNoteSelect])
 

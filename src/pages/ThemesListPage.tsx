@@ -68,7 +68,6 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
     queryFn: async () => {
       if (!user?.id) return []
 
-      console.log('🔍 Fetching accessible themes from database for user:', user.id)
       try {
         // Get all themes - we'll show all themes the user has any connection to
         const { data: allThemes, error: themesError } = await supabase
@@ -84,11 +83,6 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
           console.error('❌ Error fetching themes:', themesError)
           throw themesError
         }
-
-        console.log('📊 All themes:', allThemes?.length || 0, allThemes)
-        console.log('✅ Themes summary:')
-        console.log('  - Total themes:', allThemes?.length || 0)
-        console.log('  - Final themes:', allThemes)
 
         return allThemes || []
       } catch (fetchError) {

@@ -366,7 +366,144 @@ export async function bulkPromoteFromSimulation(
     }
   }
 
+  // ── Paper-trade: apply committed trades to portfolio holdings ──
+  // For pilot orgs without live holdings feeds, update portfolio_holdings
+  // so the portfolio reflects the committed trades as if they were executed.
+  await applyTradesToHoldings(portfolioId, results)
+
   return results
+}
+
+/**
+ * Apply committed trades to portfolio_holdings (paper trading).
+ *
+ * For each accepted trade:
+ * - If target_shares is set → upsert holding with that share count
+ * - If delta_shares is set → adjust existing holding by delta
+ * - If action is 'sell' and target_shares is 0 → remove holding
+ *
+ * This keeps portfolio_holdings in sync so simulations, weights, and
+ * the holdings table reflect the user's decisions.
+ */
+async function applyTradesToHoldings(
+  portfolioId: string,
+  trades: AcceptedTradeWithJoins[]
+): Promise<void> {
+  const today = new Date().toISOString().split('T')[0]
+
+  for (const trade of trades) {
+    try {
+      const price = trade.price_at_acceptance || 0
+      const assetId = trade.asset_id
+
+      // Get current holding
+      const { data: existing } = await supabase
+        .from('portfolio_holdings')
+        .select('id, shares, price')
+        .eq('portfolio_id', portfolioId)
+        .eq('asset_id', assetId)
+        .eq('date', today)
+        .maybeSingle()
+
+      let newShares: number
+
+      if (trade.target_shares != null) {
+        // Absolute target
+        newShares = trade.target_shares
+      } else if (trade.delta_shares != null) {
+        // Delta from current
+        const currentShares = existing?.shares ?? 0
+        newShares = currentShares + trade.delta_shares
+      } else {
+        // No share data — skip
+        continue
+      }
+
+      if (newShares <= 0) {
+        // Full exit — remove holding
+        if (existing) {
+          await supabase
+            .from('portfolio_holdings')
+            .delete()
+            .eq('id', existing.id)
+        }
+      } else if (existing) {
+        // Update existing
+        await supabase
+          .from('portfolio_holdings')
+          .update({ shares: newShares, price, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+      } else {
+        // New position
+        await supabase
+          .from('portfolio_holdings')
+          .insert({
+            portfolio_id: portfolioId,
+            asset_id: assetId,
+            shares: newShares,
+            price,
+            cost: price,
+            date: today,
+          })
+      }
+    } catch (e) {
+      console.warn(`[PaperTrade] Failed to apply trade for asset ${trade.asset_id}:`, e)
+    }
+  }
+
+  // Also update the snapshot positions for consistency
+  try {
+    const { data: latestSnapshot } = await supabase
+      .from('portfolio_holdings_snapshots')
+      .select('id')
+      .eq('portfolio_id', portfolioId)
+      .order('snapshot_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (latestSnapshot) {
+      for (const trade of trades) {
+        const price = trade.price_at_acceptance || 0
+        let newShares: number | null = null
+
+        if (trade.target_shares != null) {
+          newShares = trade.target_shares
+        } else if (trade.delta_shares != null) {
+          const { data: pos } = await supabase
+            .from('portfolio_holdings_positions')
+            .select('shares')
+            .eq('snapshot_id', latestSnapshot.id)
+            .eq('asset_id', trade.asset_id)
+            .maybeSingle()
+          newShares = (pos?.shares ?? 0) + trade.delta_shares
+        }
+
+        if (newShares == null) continue
+
+        if (newShares <= 0) {
+          await supabase
+            .from('portfolio_holdings_positions')
+            .delete()
+            .eq('snapshot_id', latestSnapshot.id)
+            .eq('asset_id', trade.asset_id)
+        } else {
+          await supabase
+            .from('portfolio_holdings_positions')
+            .upsert({
+              snapshot_id: latestSnapshot.id,
+              portfolio_id: portfolioId,
+              asset_id: trade.asset_id,
+              symbol: (trade as any).asset?.symbol || '',
+              shares: newShares,
+              price,
+              market_value: newShares * price,
+            }, { onConflict: 'snapshot_id,symbol' })
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[PaperTrade] Failed to update snapshot positions:', e)
+  }
 }
 
 export async function createAdHocAcceptedTrade(params: {

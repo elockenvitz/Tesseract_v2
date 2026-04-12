@@ -12,6 +12,8 @@ import { OpsClientsPage } from '../../pages/ops/OpsClientsPage'
 import { OpsClientDetailPage } from '../../pages/ops/OpsClientDetailPage'
 import { OpsHoldingsPage } from '../../pages/ops/OpsHoldingsPage'
 import { OpsSupportPage } from '../../pages/ops/OpsSupportPage'
+import { OpsSettingsPage } from '../../pages/ops/OpsSettingsPage'
+import { OpsMetricsPage } from '../../pages/ops/OpsMetricsPage'
 
 export function OpsLayout() {
   return (
@@ -25,7 +27,9 @@ export function OpsLayout() {
             <Route path="clients" element={<OpsClientsPage />} />
             <Route path="clients/:orgId" element={<OpsClientDetailPage />} />
             <Route path="holdings" element={<OpsHoldingsPage />} />
+            <Route path="metrics" element={<OpsMetricsPage />} />
             <Route path="support" element={<OpsSupportPage />} />
+            <Route path="settings" element={<OpsSettingsPage />} />
             <Route path="*" element={<Navigate to="/ops" replace />} />
           </Routes>
         </main>

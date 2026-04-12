@@ -531,18 +531,13 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
   }
 
   const handleComplete = async () => {
-    console.log('handleComplete called')
     setIsSubmitting(true)
     try {
       // Submit any pending access requests first
       if (accessRequests.length > 0) {
-        console.log('Submitting access requests...')
         await submitAccessRequestsMutation.mutateAsync(accessRequests)
-        console.log('Access requests submitted')
       }
-      console.log('Completing wizard...')
       await completeWizardMutation.mutateAsync()
-      console.log('Wizard completed, calling onComplete')
       // Navigate away after successful completion
       onComplete()
     } catch (error) {

@@ -934,17 +934,21 @@ export function TradeQueuePage() {
   }, [simulations])
 
   // Group pair trade items by pair_id (or pair_trade_id for legacy data)
+  // Uses filteredItems as the primary source, then backfills missing legs from
+  // the full tradeItems list AND the pairTrades join query. This ensures ALL
+  // legs of a pair are always displayed together even when individual legs have
+  // divergent status/stage values that cause client-side filters to exclude them.
   const pairTradeGroups = useMemo(() => {
     if (!filteredItems || !Array.isArray(filteredItems)) return new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
 
     const groups = new Map<string, { pairTrade: any; legs: TradeQueueItemWithDetails[] }>()
+    const seenLegIds = new Set<string>()
 
+    // Step 1: Group legs from filteredItems (these passed all client-side filters)
     filteredItems.filter(item => item != null).forEach(item => {
-      // Support both pair_id (new) and pair_trade_id (legacy)
       const pairId = item?.pair_id || item?.pair_trade_id
       if (pairId) {
         if (!groups.has(pairId)) {
-          // Generate pairTrade metadata from the first leg if no pair_trades join exists
           const pairTradeData = item?.pair_trades || {
             id: pairId,
             name: 'Pair Trade',
@@ -959,11 +963,39 @@ export function TradeQueuePage() {
           })
         }
         groups.get(pairId)!.legs.push(item)
+        seenLegIds.add(item.id)
       }
     })
 
+    // Step 2: Backfill missing legs from the UNFILTERED tradeItems query
+    // (catches legs excluded by client-side status/action/portfolio filters)
+    if (tradeItems && Array.isArray(tradeItems)) {
+      for (const item of tradeItems) {
+        if (!item || seenLegIds.has(item.id)) continue
+        const pairId = item.pair_id || item.pair_trade_id
+        if (!pairId || !groups.has(pairId)) continue
+        groups.get(pairId)!.legs.push(item)
+        seenLegIds.add(item.id)
+      }
+    }
+
+    // Step 3: Backfill from pairTrades join query (catches legs with partial data)
+    if (pairTrades && Array.isArray(pairTrades)) {
+      for (const pt of pairTrades) {
+        if (!pt?.id || !groups.has(pt.id)) continue
+        const group = groups.get(pt.id)!
+        const ptLegs = (pt as any).trade_queue_items as any[] | undefined
+        if (!ptLegs) continue
+        for (const leg of ptLegs) {
+          if (!leg?.id || seenLegIds.has(leg.id)) continue
+          group.legs.push(leg as TradeQueueItemWithDetails)
+          seenLegIds.add(leg.id)
+        }
+      }
+    }
+
     return groups
-  }, [filteredItems])
+  }, [filteredItems, tradeItems, pairTrades])
 
   // Get IDs of items that are part of pair trades (to exclude from individual display)
   const pairTradeItemIds = useMemo(() => {
@@ -1626,7 +1658,9 @@ export function TradeQueuePage() {
                               : "space-y-2"
                           )}>
                             {/* Pair Trade Cards */}
-                            {pairs.map(({ pairTradeId, pairTrade, legs }) => (
+                            {pairs.map(({ pairTradeId, pairTrade, legs }) => {
+                              const canMovePair = legs[0] ? canUserMoveItem(legs[0]) : false
+                              return (
                               <PairTradeCard
                                 key={pairTradeId}
                                 pairTradeId={pairTradeId}
@@ -1639,8 +1673,8 @@ export function TradeQueuePage() {
                                 onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
                                 onRecommendationClick={() => { setSelectedTradeId(pairTradeId); setSelectedTradeInitialTab('decisions') }}
                                 onLabClick={handleLabClick}
-                                canMoveLeft={!!prevStage}
-                                canMoveRight={!!nextStage}
+                                canMoveLeft={!!prevStage && canMovePair}
+                                canMoveRight={!!nextStage && canMovePair}
                                 onMoveLeft={prevStage ? () => movePairTrade({ pairTradeId, targetStatus: prevStage as any, uiSource: 'arrow_button' }) : undefined}
                                 onMoveRight={nextStage ? () => movePairTrade({ pairTradeId, targetStatus: nextStage as any, uiSource: 'arrow_button' }) : undefined}
                                 currentUserId={user?.id}
@@ -1651,7 +1685,8 @@ export function TradeQueuePage() {
                                 recStateLoading={isExpressionCountsLoading}
                                 committedTradeMap={committedTradeMap}
                               />
-                            ))}
+                              )
+                            })}
                             {/* Individual Trade Cards */}
                             {items.map(item => (
                               <TradeQueueCard
@@ -2642,15 +2677,17 @@ function PairTradeCard({
   const [showLabsDropdown, setShowLabsDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Helper to determine if a leg is long (buy) or short (sell)
+  // Helper to determine if a leg is long (buy/add) or short (sell/reduce/trim)
   const isLongLeg = (leg: TradeQueueItemWithDetails) =>
-    leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && leg.action === 'buy')
+    leg.pair_leg_type === 'long' || (leg.pair_leg_type === null && (leg.action === 'buy' || leg.action === 'add'))
   const isShortLeg = (leg: TradeQueueItemWithDetails) =>
-    leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && leg.action === 'sell')
+    leg.pair_leg_type === 'short' || (leg.pair_leg_type === null && (leg.action === 'sell' || leg.action === 'reduce' || leg.action === 'trim'))
 
-  // Separate long and short legs
+  // Separate long and short legs — unclassified legs default to short side
   const longLegs = legs.filter(isLongLeg)
-  const shortLegs = legs.filter(isShortLeg)
+  const classifiedShortLegs = legs.filter(isShortLeg)
+  const unclassifiedLegs = legs.filter(l => !isLongLeg(l) && !isShortLeg(l))
+  const shortLegs = [...classifiedShortLegs, ...unclassifiedLegs]
 
   const longSymbols = longLegs.map(l => l.assets?.symbol).filter(Boolean).join(', ') || '?'
   const shortSymbols = shortLegs.map(l => l.assets?.symbol).filter(Boolean).join(', ') || '?'
@@ -2771,12 +2808,17 @@ function PairTradeCard({
         })()}
 
         {/* Line 1: Chain link icon + BUY tickers / SELL tickers */}
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className="flex items-center gap-1.5 text-sm flex-1 min-w-0">
-            <Link2 className="h-4 w-4 text-purple-500 dark:text-purple-400 flex-shrink-0" />
-            <span className="font-semibold text-green-600 dark:text-green-400">BUY</span>
-            <span className="font-semibold text-gray-900 dark:text-white truncate">
-              {longLegs.map((l, i) => (
+        {(() => {
+          const MAX_VISIBLE = 3
+          const visibleLong = isExpanded ? longLegs : longLegs.slice(0, MAX_VISIBLE)
+          const hiddenLongCount = longLegs.length - visibleLong.length
+          const visibleShort = isExpanded ? shortLegs : shortLegs.slice(0, MAX_VISIBLE)
+          const hiddenShortCount = shortLegs.length - visibleShort.length
+          const hasOverflow = longLegs.length > MAX_VISIBLE || shortLegs.length > MAX_VISIBLE
+
+          const renderLegSymbols = (legsToRender: typeof longLegs, hiddenCount: number) => (
+            <>
+              {legsToRender.map((l, i) => (
                 <span key={l.id}>
                   {i > 0 && ', '}
                   <button
@@ -2794,31 +2836,42 @@ function PairTradeCard({
                   </button>
                 </span>
               ))}
-            </span>
-            <span className="text-gray-400 dark:text-gray-500">/</span>
-            <span className="font-semibold text-red-600 dark:text-red-400">SELL</span>
-            <span className="font-semibold text-gray-900 dark:text-white truncate">
-              {shortLegs.map((l, i) => (
-                <span key={l.id}>
-                  {i > 0 && ', '}
-                  <button
-                    className="hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const assetId = l.assets?.id || l.asset_id
-                      if (!assetId) return
-                      window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                        detail: { type: 'asset', id: assetId, title: l.assets?.symbol, data: { id: assetId, symbol: l.assets?.symbol, researchViewFilter: l.created_by } }
-                      }))
-                    }}
-                  >
-                    {l.assets?.symbol}
-                  </button>
+              {hiddenCount > 0 && (
+                <button
+                  className="text-primary-500 dark:text-primary-400 hover:underline ml-0.5"
+                  onClick={(e) => { e.stopPropagation(); setIsExpanded(true) }}
+                >
+                  +{hiddenCount}
+                </button>
+              )}
+            </>
+          )
+
+          return (
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-1.5 text-sm flex-1 min-w-0 flex-wrap">
+                <Link2 className="h-4 w-4 text-purple-500 dark:text-purple-400 flex-shrink-0" />
+                <span className="font-semibold text-green-600 dark:text-green-400">BUY</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {renderLegSymbols(visibleLong, hiddenLongCount)}
                 </span>
-              ))}
-            </span>
-          </div>
-        </div>
+                <span className="text-gray-400 dark:text-gray-500">/</span>
+                <span className="font-semibold text-red-600 dark:text-red-400">SELL</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {renderLegSymbols(visibleShort, hiddenShortCount)}
+                </span>
+                {isExpanded && hasOverflow && (
+                  <button
+                    className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-1"
+                    onClick={(e) => { e.stopPropagation(); setIsExpanded(false) }}
+                  >
+                    show less
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Line 2: Portfolio + Urgency (like TradeQueueCard) */}
         <div className="flex items-center gap-2 mb-2 relative" ref={dropdownRef}>

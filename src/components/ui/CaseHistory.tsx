@@ -31,8 +31,6 @@ export function CaseHistory({ priceTargetId, caseType, className }: CaseHistoryP
     queryFn: async () => {
       if (!priceTargetId) return []
       
-      console.log('🔍 Fetching case history for:', { priceTargetId, caseType })
-      
       const { data, error } = await supabase
         .from('price_target_history')
         .select(`
@@ -107,7 +105,6 @@ export function CaseHistory({ priceTargetId, caseType, className }: CaseHistoryP
         change_type: record.old_value === null ? 'insert' : 'update'
       })) || []
       
-      console.log('✅ Case history data received:', transformedData?.length || 0, 'records')
       return transformedData
     },
     enabled: !!priceTargetId,

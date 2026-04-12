@@ -38,11 +38,8 @@ async function fetchFeedPage(
   pageParam: number,
   filters: FeedFilters
 ): Promise<{ items: ScoredFeedItem[]; nextCursor: number | null }> {
-  console.log('[useInfiniteFeed] Fetching page:', pageParam, 'filters:', filters)
   const allItems: ScoredFeedItem[] = []
   const timeFilter = getTimeFilter(filters.timeRange)
-  console.log('[useInfiniteFeed] Time filter:', timeFilter)
-
   // Determine which types to fetch
   const typesToFetch: ItemType[] = filters.types?.length
     ? filters.types
@@ -153,22 +150,11 @@ async function fetchFeedPage(
       : Promise.resolve({ data: [], error: null })
   ])
 
-  console.log('[useInfiniteFeed] Query results:', {
-    thoughts: { count: thoughtsResult.data?.length, error: thoughtsResult.error?.message },
-    tradeIdeas: { count: tradeIdeasResult.data?.length, error: tradeIdeasResult.error?.message },
-    assetNotes: { count: assetNotesResult.data?.length, error: assetNotesResult.error?.message },
-    portfolioNotes: { count: portfolioNotesResult.data?.length, error: portfolioNotesResult.error?.message },
-    themeNotes: { count: themeNotesResult.data?.length, error: themeNotesResult.error?.message },
-    notebookNotes: { count: notebookNotesResult.data?.length, error: notebookNotesResult.error?.message },
-    thesis: { count: thesisUpdatesResult.data?.length, error: thesisUpdatesResult.error?.message }
-  })
-
   // Extra debug for trade ideas
   if (tradeIdeasResult.error) {
     console.error('[useInfiniteFeed] Trade ideas FULL error:', JSON.stringify(tradeIdeasResult.error, null, 2))
   }
   if (tradeIdeasResult.data) {
-    console.log('[useInfiniteFeed] Trade ideas data sample:', tradeIdeasResult.data.slice(0, 2))
   }
 
   // Fetch users separately for items that need them
@@ -198,8 +184,6 @@ async function fetchFeedPage(
       .from('users')
       .select('id, email, first_name, last_name')
       .in('id', Array.from(allUserIds))
-
-    console.log('[useInfiniteFeed] Users fetch:', { count: users?.length, error: usersError?.message, userIds: Array.from(allUserIds) })
 
     if (users) {
       users.forEach(u => usersMap.set(u.id, u))
@@ -242,8 +226,6 @@ async function fetchFeedPage(
 
   // Process trade ideas - fetch assets separately if needed
   if (tradeIdeasResult.data && tradeIdeasResult.data.length > 0) {
-    console.log('[useInfiniteFeed] Processing', tradeIdeasResult.data.length, 'trade ideas')
-
     // Collect unique asset IDs to fetch (deduplicated, no nulls/undefined)
     const assetIdSet = new Set<string>()
     tradeIdeasResult.data.forEach((t: any) => {
@@ -255,7 +237,6 @@ async function fetchFeedPage(
 
     // Fetch assets for trade ideas - fetch individually to avoid .in() issues
     let assetsMap = new Map<string, any>()
-    console.log('[useInfiniteFeed] Trade idea unique asset IDs:', uniqueAssetIds)
     if (uniqueAssetIds.length > 0) {
       // Fetch each asset individually in parallel to avoid .in() 400 errors
       const assetPromises = uniqueAssetIds.map(id =>
@@ -280,11 +261,6 @@ async function fetchFeedPage(
         }
       })
 
-      console.log('[useInfiniteFeed] Trade idea assets fetched:', {
-        success: successCount,
-        errors: errorCount,
-        total: uniqueAssetIds.length,
-        assetsMap: Object.fromEntries(assetsMap)
       })
     }
 
@@ -317,9 +293,7 @@ async function fetchFeedPage(
         cardSize: 'medium'
       })
     }
-    console.log('[useInfiniteFeed] Trade ideas added, allItems count:', allItems.length)
   } else {
-    console.log('[useInfiniteFeed] No trade ideas to process, error:', tradeIdeasResult.error)
   }
 
   // Process asset notes
@@ -494,8 +468,6 @@ async function fetchFeedPage(
     acc[item.type] = (acc[item.type] || 0) + 1
     return acc
   }, {} as Record<string, number>)
-  console.log('[useInfiniteFeed] Item type breakdown:', typeCounts)
-
   // Sort all items by created_at descending
   allItems.sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -510,14 +482,6 @@ async function fetchFeedPage(
     acc[item.type] = (acc[item.type] || 0) + 1
     return acc
   }, {} as Record<string, number>)
-
-  console.log('[useInfiniteFeed] Final result:', {
-    totalItems: allItems.length,
-    offset,
-    paginatedCount: paginatedItems.length,
-    paginatedTypes: paginatedTypeCounts,
-    nextCursor: paginatedItems.length === PAGE_SIZE ? pageParam + 1 : null
-  })
 
   return {
     items: paginatedItems,

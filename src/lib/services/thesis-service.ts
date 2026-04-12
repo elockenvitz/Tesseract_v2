@@ -180,7 +180,7 @@ export async function createThesis(input: CreateThesisInput): Promise<ThesisWith
     actorName: user.user_metadata?.first_name
       ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`.trim()
       : undefined,
-  }).catch(() => {})
+  }).catch(e => console.warn('[Thesis] Side effect failed:', e))
 
   return data as ThesisWithUser
 }
@@ -227,7 +227,7 @@ export async function updateThesis(
       actorName: user.user_metadata?.first_name
         ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`.trim()
         : undefined,
-    }).catch(() => {})
+    }).catch(e => console.warn('[Thesis] Side effect failed:', e))
   }
 
   return data as ThesisWithUser
@@ -273,6 +273,6 @@ export async function deleteThesis(thesisId: string): Promise<void> {
       actorName: user.user_metadata?.first_name
         ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`.trim()
         : undefined,
-    }).catch(() => {})
+    }).catch(e => console.warn('[Thesis] Side effect failed:', e))
   }
 }

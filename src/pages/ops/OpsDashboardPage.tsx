@@ -173,7 +173,7 @@ export function OpsDashboardPage() {
   const clientHealth: ClientHealth[] = useMemo(() => {
     return orgs.map((org): ClientHealth => {
       const orgMembers = memberships.filter(m => m.organization_id === org.id)
-      const activeNow = activeSessions.filter(s => s.organization_id === org.id)
+      const activeNow = new Set(activeSessions.filter(s => s.organization_id === org.id).map((s: any) => s.user_id))
       const orgSessions = recentSessions.filter(s => s.organization_id === org.id)
       const lastLogin = orgSessions[0]?.started_at || null
 
@@ -201,7 +201,7 @@ export function OpsDashboardPage() {
 
       return {
         org,
-        activeUsersNow: activeNow.length,
+        activeUsersNow: activeNow.size,
         totalMembers: orgMembers.length,
         lastLoginAt: lastLogin,
         holdingsLastDate,
@@ -213,9 +213,96 @@ export function OpsDashboardPage() {
     })
   }, [orgs, memberships, activeSessions, recentSessions, holdingsSnapshots, onboardingData, engagementData, bugCounts])
 
+  // ─── Top Users by activity ──────────────────────────────────
+
+  const { data: topUsers = [] } = useQuery({
+    queryKey: ['ops-dash-top-users'],
+    queryFn: async () => {
+      const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
+
+      const [
+        thoughtsRes, notesRes, ratingsRes, tradesRes,
+        contributionsRes, sessionsRes, ideasRes, usersRes,
+      ] = await Promise.all([
+        supabase.from('quick_thoughts').select('user_id').gte('created_at', monthAgo),
+        supabase.from('asset_notes').select('created_by').gte('created_at', monthAgo),
+        supabase.from('analyst_ratings').select('user_id').gte('updated_at', monthAgo),
+        supabase.from('accepted_trades').select('accepted_by').gte('created_at', monthAgo),
+        supabase.from('asset_contributions').select('user_id').gte('created_at', monthAgo),
+        supabase.from('user_sessions').select('user_id, duration_seconds').gte('started_at', monthAgo),
+        supabase.from('trade_queue_items').select('created_by').gte('created_at', monthAgo),
+        supabase.from('users').select('id, email, first_name, last_name'),
+      ])
+
+      // Build per-user activity counts
+      const userActivity = new Map<string, {
+        thoughts: number; notes: number; ratings: number;
+        trades: number; contributions: number; sessions: number;
+        ideas: number; totalTime: number;
+      }>()
+
+      const inc = (userId: string | null, field: string) => {
+        if (!userId) return
+        if (!userActivity.has(userId)) {
+          userActivity.set(userId, { thoughts: 0, notes: 0, ratings: 0, trades: 0, contributions: 0, sessions: 0, ideas: 0, totalTime: 0 })
+        }
+        ;(userActivity.get(userId)! as any)[field]++
+      }
+
+      for (const r of thoughtsRes.data || []) inc(r.user_id, 'thoughts')
+      for (const r of notesRes.data || []) inc(r.created_by, 'notes')
+      for (const r of ratingsRes.data || []) inc(r.user_id, 'ratings')
+      for (const r of tradesRes.data || []) inc(r.accepted_by, 'trades')
+      for (const r of contributionsRes.data || []) inc(r.user_id, 'contributions')
+      for (const r of ideasRes.data || []) inc(r.created_by, 'ideas')
+      for (const r of sessionsRes.data || []) {
+        inc(r.user_id, 'sessions')
+        if (r.user_id && userActivity.has(r.user_id)) {
+          userActivity.get(r.user_id)!.totalTime += (r.duration_seconds || 0)
+        }
+      }
+
+      // Build user lookup
+      const userMap = new Map((usersRes.data || []).map(u => [u.id, u]))
+      // Build user → org lookup
+      const userOrgMap = new Map<string, string>()
+      for (const m of memberships) userOrgMap.set(m.user_id, m.organization_id)
+      const orgMap = new Map(orgs.map(o => [o.id, o.name]))
+
+      // Rank by total actions
+      return Array.from(userActivity.entries())
+        .map(([userId, activity]) => {
+          const u = userMap.get(userId)
+          const totalActions = activity.thoughts + activity.notes + activity.ratings +
+            activity.trades + activity.contributions + activity.ideas
+          const topActivity = Object.entries(activity)
+            .filter(([k]) => k !== 'totalTime' && k !== 'sessions')
+            .sort((a, b) => (b[1] as number) - (a[1] as number))
+            .filter(([, v]) => (v as number) > 0)
+            .slice(0, 3)
+            .map(([k, v]) => ({ type: k, count: v as number }))
+
+          return {
+            userId,
+            email: u?.email || 'Unknown',
+            name: [u?.first_name, u?.last_name].filter(Boolean).join(' ') || null,
+            orgName: orgMap.get(userOrgMap.get(userId) || '') || '—',
+            totalActions,
+            sessions: activity.sessions,
+            totalTimeMin: Math.round(activity.totalTime / 60),
+            topActivity,
+          }
+        })
+        .filter(u => u.totalActions > 0 || u.sessions > 0)
+        .sort((a, b) => b.totalActions - a.totalActions)
+        .slice(0, 15)
+    },
+    enabled: memberships.length > 0 && orgs.length > 0,
+  })
+
   // ─── Aggregates ─────────────────────────────────────────────
 
-  const totalActiveNow = activeSessions.length
+  const totalActiveNow = new Set(activeSessions.map((s: any) => s.user_id)).size
   const totalMembers = memberships.length
   const totalClients = orgs.length
   const clientsWithActivity = clientHealth.filter(c => c.lastLoginAt).length
@@ -301,8 +388,78 @@ export function OpsDashboardPage() {
           </tbody>
         </table>
       </div>
+      {/* Top Users */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-800">Top Users (Last 30 Days)</h2>
+        </div>
+        {topUsers.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-400">No activity in the last 30 days</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">User</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Organization</th>
+                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Sessions</th>
+                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Time</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Most Used For</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {topUsers.map((u, i) => (
+                <tr key={u.userId} className="hover:bg-gray-50">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className={clsx(
+                        'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0',
+                        i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : i === 2 ? 'bg-amber-700' : 'bg-gray-300'
+                      )}>
+                        {i + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{u.name || u.email}</p>
+                        {u.name && <p className="text-[10px] text-gray-400 truncate">{u.email}</p>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-xs text-gray-500">{u.orgName}</td>
+                  <td className="px-5 py-3 text-center text-xs font-semibold text-gray-800">{u.totalActions}</td>
+                  <td className="px-5 py-3 text-center text-xs text-gray-600">{u.sessions}</td>
+                  <td className="px-5 py-3 text-center text-xs text-gray-600">
+                    {u.totalTimeMin > 60 ? `${Math.round(u.totalTimeMin / 60)}h` : `${u.totalTimeMin}m`}
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {u.topActivity.map(a => (
+                        <span key={a.type} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-medium">
+                          {ACTIVITY_LABELS[a.type] || a.type}
+                          <span className="text-indigo-400">{a.count}</span>
+                        </span>
+                      ))}
+                      {u.topActivity.length === 0 && (
+                        <span className="text-[10px] text-gray-300">Sessions only</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
+}
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  thoughts: 'Thoughts',
+  notes: 'Notes',
+  ratings: 'Ratings',
+  trades: 'Trades',
+  contributions: 'Research',
+  ideas: 'Ideas',
 }
 
 // ─── Sub-components ───────────────────────────────────────────

@@ -13,10 +13,9 @@ import { useAuth } from './useAuth'
 
 export const ONBOARDING_STEPS = [
   { key: 'welcome', label: 'Welcome', number: 1 },
-  { key: 'org_structure', label: 'Organization Structure', number: 2 },
-  { key: 'portfolios', label: 'Portfolios', number: 3 },
-  { key: 'invite_team', label: 'Invite Team', number: 4 },
-  { key: 'review', label: 'Review & Launch', number: 5 },
+  { key: 'portfolios', label: 'Portfolios', number: 2 },
+  { key: 'recommend_users', label: 'Recommend', number: 3 },
+  { key: 'review', label: 'Launch', number: 4 },
 ] as const
 
 export type OnboardingStepKey = typeof ONBOARDING_STEPS[number]['key']
@@ -62,12 +61,14 @@ export function useClientOnboarding(orgId: string | null) {
     status?.steps_skipped?.includes(key) || false
 
   // Complete a step and advance
+  // Accepts { key, fromStep } so the caller can pass the visible step number
   const completeStep = useMutation({
-    mutationFn: async (stepKey: OnboardingStepKey) => {
+    mutationFn: async ({ key, fromStep }: { key: OnboardingStepKey; fromStep?: number }) => {
       if (!orgId || !status) return
 
-      const completed = [...new Set([...(status.steps_completed || []), stepKey])]
-      const nextStep = Math.min((status.current_step || 1) + 1, ONBOARDING_STEPS.length)
+      const completed = [...new Set([...(status.steps_completed || []), key])]
+      const base = fromStep ?? status.current_step ?? 1
+      const nextStep = Math.min(base + 1, ONBOARDING_STEPS.length)
 
       const { error } = await supabase
         .from('org_onboarding_status')
@@ -87,11 +88,12 @@ export function useClientOnboarding(orgId: string | null) {
 
   // Skip a step and advance
   const skipStep = useMutation({
-    mutationFn: async (stepKey: OnboardingStepKey) => {
+    mutationFn: async ({ key, fromStep }: { key: OnboardingStepKey; fromStep?: number }) => {
       if (!orgId || !status) return
 
-      const skipped = [...new Set([...(status.steps_skipped || []), stepKey])]
-      const nextStep = Math.min((status.current_step || 1) + 1, ONBOARDING_STEPS.length)
+      const skipped = [...new Set([...(status.steps_skipped || []), key])]
+      const base = fromStep ?? status.current_step ?? 1
+      const nextStep = Math.min(base + 1, ONBOARDING_STEPS.length)
 
       const { error } = await supabase
         .from('org_onboarding_status')

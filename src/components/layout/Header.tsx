@@ -387,6 +387,11 @@ export function Header({
                   <span className="font-semibold text-base text-gray-800 dark:text-gray-200 max-w-[200px] truncate">
                     {currentOrg.name}
                   </span>
+                  {(currentOrg as any).settings?.pilot_mode && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
+                      Pilot
+                    </span>
+                  )}
                   {userOrgs.length > 1 && (
                     <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                   )}

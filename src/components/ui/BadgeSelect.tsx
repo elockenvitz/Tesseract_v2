@@ -49,7 +49,6 @@ export function BadgeSelect({
   }, [])
 
   const handleSelect = (optionValue: string) => {
-    console.log('🔄 BadgeSelect handleSelect called:', { from: value, to: optionValue })
     onChange(optionValue)
     setIsOpen(false)
   }

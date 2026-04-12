@@ -143,7 +143,6 @@ export function RecommendationEditorModal({
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      console.log('🔄 Starting proposal save...', { tradeIdea: tradeIdea.id, sizingValue, portfolioId: selectedPortfolioId })
       if (!user) throw new Error('Not authenticated')
       if (!selectedPortfolioId) throw new Error('Please select a portfolio')
 

@@ -312,15 +312,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const { data: analysts, isLoading: isLoadingAnalysts } = useQuery({
     queryKey: ['analysts-for-universe-wizard'],
     queryFn: async () => {
-      console.log('Fetching analysts for universe filter...')
       // Get all analysts (not just active) for the dropdown - active filter is applied during preview
       const { data, error } = await supabase
         .from('coverage')
         .select('user_id, analyst_name')
         .not('analyst_name', 'is', null)
         .order('analyst_name')
-
-      console.log('Analysts query result:', { data, error })
 
       if (error) {
         console.error('Error fetching analysts:', error)
@@ -336,7 +333,6 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       }, []) || []
 
       const result = uniqueAnalysts.map(a => ({ value: a.user_id, label: a.analyst_name }))
-      console.log('Analysts processed result:', result)
       return result
     },
     staleTime: 0 // Always refetch
@@ -559,7 +555,6 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
   // Get options for filter type
   const getOptionsForFilter = useCallback((type: string) => {
-    console.log('getOptionsForFilter called with type:', type, 'analysts:', analysts, 'isLoadingAnalysts:', isLoadingAnalysts)
     switch (type) {
       case 'analyst':
         return analysts || []
@@ -756,7 +751,6 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     const token = logicExpression[openIndex]
     // Make sure we're clicking on an opening paren
     if (token?.type !== 'paren' || token?.value !== '(') {
-      console.log('Not an opening paren:', token)
       return
     }
 
@@ -1030,18 +1024,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     setPreviewError(null)
     setShowPreviewModal(true)
 
-    console.log('Fetching preview for filters:', filters)
-    console.log('Logic expression:', logicExpression)
-
     try {
       // Evaluate the logic expression
       const matchingAssetIds = await evaluateLogicExpression()
-      console.log('Matching asset IDs:', matchingAssetIds.size)
-
       // Fetch the actual asset details
       if (matchingAssetIds.size > 0) {
         const idsArray = Array.from(matchingAssetIds).slice(0, 100)
-        console.log('Fetching asset details for IDs:', idsArray.length)
         const { data, error } = await supabase
           .from('assets')
           .select('id, symbol, company_name, sector')
@@ -1049,10 +1037,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           .order('symbol')
 
         if (error) throw error
-        console.log('Final assets:', data?.length)
         setPreviewAssets(data || [])
       } else {
-        console.log('No matching assets found')
         setPreviewAssets([])
       }
     } catch (error: any) {

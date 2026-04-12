@@ -104,7 +104,6 @@ export function useTemplates() {
 
       if (tagsResult.error) {
         // Tags tables might not exist yet, fallback to basic query
-        console.log('Tags query failed, using basic query:', tagsResult.error.message)
         const basicResult = await supabase
           .from('text_templates')
           .select('*')

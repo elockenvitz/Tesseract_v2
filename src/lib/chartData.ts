@@ -299,7 +299,6 @@ class ChartDataService {
     const maxDays = intradayMaxDays[intervalParam]
     let adjustedStartDate = startDate
     if (maxDays && days > maxDays) {
-      console.log(`Intraday interval ${intervalParam} limited to ${maxDays} days, adjusting from ${days} days`)
       adjustedStartDate = new Date(endDate.getTime() - maxDays * 24 * 60 * 60 * 1000)
       days = maxDays
     }
@@ -308,16 +307,6 @@ class ChartDataService {
     const period2 = Math.floor(endDate.getTime() / 1000)
     const rangeParam = daysToRange(days)
 
-    console.log('getCustomRangeData:', {
-      symbol,
-      originalStart: startDate.toISOString(),
-      adjustedStart: adjustedStartDate.toISOString(),
-      endDate: endDate.toISOString(),
-      interval,
-      intervalParam,
-      days,
-      rangeParam
-    })
 
     // Multiple CORS proxies for redundancy - order matters (most reliable first)
     const corsProxies = [
@@ -335,13 +324,9 @@ class ChartDataService {
     ]
 
     for (const targetUrl of targetUrls) {
-      console.log('Trying URL:', targetUrl)
-
       for (const proxyUrl of corsProxies) {
         try {
           const url = proxyUrl + encodeURIComponent(targetUrl)
-          console.log('With proxy:', proxyUrl.substring(0, 30) + '...')
-
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
@@ -352,7 +337,6 @@ class ChartDataService {
           clearTimeout(timeoutId)
 
           if (!response.ok) {
-            console.log('Response not ok:', response.status)
             continue
           }
 
@@ -366,7 +350,6 @@ class ChartDataService {
 
           const chart = data?.chart?.result?.[0]
           if (!chart) {
-            console.log('No chart result in response')
             continue
           }
 
@@ -374,7 +357,6 @@ class ChartDataService {
           const quote = chart.indicators?.quote?.[0]
 
           if (!quote || timestamps.length === 0) {
-            console.log('No quote data or timestamps')
             continue
           }
 
@@ -412,7 +394,6 @@ class ChartDataService {
           }
 
           if (result.length > 0) {
-            console.log('Success! Got', result.length, 'data points')
             return result
           }
         } catch (error: any) {
@@ -426,7 +407,6 @@ class ChartDataService {
       }
     }
 
-    console.log('All attempts failed for custom range')
     return []
   }
 }
