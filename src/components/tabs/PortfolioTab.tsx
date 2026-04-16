@@ -22,6 +22,7 @@ import { ProcessesTab } from '../portfolio/tabs/ProcessesTab'
 import { InvestableUniverseSection } from '../portfolio/InvestableUniverseSection'
 import { TradeJournalTab } from '../portfolio/tabs/TradeJournalTab'
 import { HoldingsUploadPanel } from '../portfolio/HoldingsUploadPanel'
+import { PortfolioHoldingsSourceSetting } from '../portfolio/PortfolioHoldingsSourceSetting'
 import { usePendingRationaleCount } from '../../hooks/useTradeJournal'
 
 interface PortfolioTabProps {
@@ -517,6 +518,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
           )}
           {activeTab === 'settings' && (
             <div className="space-y-6">
+              <PortfolioHoldingsSourceSetting portfolioId={portfolio.id} />
               <HoldingsUploadPanel portfolioId={portfolio.id} portfolioName={portfolio.name} />
             </div>
           )}

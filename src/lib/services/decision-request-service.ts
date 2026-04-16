@@ -80,7 +80,7 @@ const DECISION_REQUEST_SELECT = `
   requester:requested_by (id, email, first_name, last_name),
   portfolio:portfolio_id (id, name),
   trade_queue_item:trade_queue_item_id (
-    id, action, rationale, conviction, urgency, pair_trade_id, created_by, assigned_to,
+    id, action, rationale, thesis_text, conviction, urgency, pair_id, pair_trade_id, pair_leg_type, created_by, assigned_to,
     assets:asset_id (id, symbol, company_name)
   )
 `

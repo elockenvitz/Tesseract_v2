@@ -148,7 +148,10 @@ export interface DecisionRequest {
   requester?: { id: string; email: string; first_name: string | null; last_name: string | null }
   portfolio?: { id: string; name: string }
   trade_queue_item?: Pick<TradeQueueItem, 'id' | 'action' | 'rationale' | 'conviction' | 'urgency'> & {
+    thesis_text?: string | null
+    pair_id?: string | null
     pair_trade_id?: string | null
+    pair_leg_type?: PairLegType | null
     created_by?: string | null
     assigned_to?: string | null
     assets?: { id: string; symbol: string; company_name: string }
@@ -1104,7 +1107,17 @@ export type ReconciliationStatus = 'pending' | 'matched' | 'partial' | 'deviated
 export interface ReconciliationDetail {
   actual_shares?: number
   actual_weight?: number
+  /** Fraction (0.05 = 5%) of |delta_shares / expected_shares|. */
   deviation_pct?: number
+  /** Shares in the previous snapshot, for context when rendering partials. */
+  previous_shares?: number | null
+  /** Expected ending shares from the trade (target_shares, or
+   *  previous + delta_shares when only delta is set). */
+  expected_shares?: number
+  /** actual_shares - expected_shares. Negative means shortfall. */
+  delta_shares?: number
+  /** ID of the snapshot that produced this reconciliation. */
+  snapshot_id?: string
   feed_timestamp?: string
 }
 
@@ -1147,6 +1160,19 @@ export interface AcceptedTrade {
   reconciled_at: string | null
   reconciliation_detail: ReconciliationDetail | null
 
+  // Phase 0 lifecycle — activity / staleness / correction / deadline
+  /** Bumped by trigger on UPDATE and on accepted_trade_comments INSERT.
+   *  Drives the staleness sweeper. */
+  last_activity_at: string | null
+  /** Set by the sweeper when the row crosses the portfolio inactivity
+   *  window. Flag only — does NOT change reconciliation_status. */
+  staleness_flagged_at: string | null
+  /** Self-FK to the accepted_trade this row corrects (post-reconciliation
+   *  "I need to fix this" flow). Original stays visible. */
+  corrects_accepted_trade_id: string | null
+  /** Optional soft deadline for execution. Informational only. */
+  execution_expected_by: string | null
+
   // Batch grouping
   batch_id: string | null
 
@@ -1167,6 +1193,16 @@ export interface AcceptedTradeWithJoins extends AcceptedTrade {
     company_name: string
     sector: string | null
   }
+  /** Joined from trade_queue_items via accepted_trades.trade_queue_item_id.
+   *  Present only for trades that originated from a trade idea. Used by
+   *  the Trade Book to render pair legs adjacent with a "↔ pair" badge. */
+  trade_queue_item?: {
+    id: string
+    pair_id: string | null
+    pair_trade_id: string | null
+    pair_leg_type: PairLegType | null
+    action: TradeAction
+  } | null
   accepted_by_user?: {
     id: string
     email: string

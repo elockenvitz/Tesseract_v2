@@ -200,6 +200,8 @@ async function getTradeIdea(tradeId: string): Promise<TradeIdeaState | null> {
       id, stage, outcome, visibility_tier, status,
       action, urgency, asset_id, portfolio_id,
       proposed_shares, proposed_weight, rationale,
+      thesis_text, target_price, stop_loss, conviction, time_horizon,
+      pair_id, pair_trade_id,
       deleted_at, deleted_by, archived_at, previous_state,
       assets (symbol),
       portfolios (id, name)
@@ -209,6 +211,64 @@ async function getTradeIdea(tradeId: string): Promise<TradeIdeaState | null> {
 
   if (error || !data) return null
   return data as TradeIdeaState
+}
+
+/**
+ * Validate that a trade meets the prerequisites for the target stage.
+ * Returns a list of missing requirements; empty array means the trade is ready to move.
+ *
+ * Gates:
+ *   - ready_for_decision: requires rationale + thesis_text
+ *   - deciding: requires all of the above + at least 1 active recommendation
+ *
+ * Earlier stages (aware, investigate, deep_research, thesis_forming) are not gated —
+ * users should be able to freely explore ideas without upfront ceremony.
+ */
+async function validateStageRequirements(
+  trade: TradeIdeaState & { thesis_text?: string | null; target_price?: number | null; conviction?: string | null },
+  targetStage: TradeStage
+): Promise<string[]> {
+  const missing: string[] = []
+
+  // Gate for ready_for_decision
+  if (targetStage === 'ready_for_decision' || targetStage === 'deciding') {
+    if (!trade.rationale?.trim()) missing.push('Why now (rationale)')
+    if (!(trade as any).thesis_text?.toString().trim()) missing.push('Trade thesis')
+  }
+
+  // Additional gate for deciding: requires at least one active recommendation
+  if (targetStage === 'deciding') {
+    // For pair trades, check all legs; otherwise just this trade
+    const pairId = (trade as any).pair_id || (trade as any).pair_trade_id
+    let hasRec = false
+
+    if (pairId) {
+      const { data: legs } = await supabase
+        .from('trade_queue_items')
+        .select('id')
+        .eq('pair_id', pairId)
+      const legIds = (legs || []).map(l => l.id)
+      if (legIds.length > 0) {
+        const { count } = await supabase
+          .from('decision_requests')
+          .select('*', { count: 'exact', head: true })
+          .in('trade_queue_item_id', legIds)
+          .in('status', ['pending', 'under_review', 'needs_discussion'])
+        hasRec = (count || 0) > 0
+      }
+    } else {
+      const { count } = await supabase
+        .from('decision_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('trade_queue_item_id', trade.id)
+        .in('status', ['pending', 'under_review', 'needs_discussion'])
+      hasRec = (count || 0) > 0
+    }
+
+    if (!hasRec) missing.push('At least one recommendation')
+  }
+
+  return missing
 }
 
 /**
@@ -363,6 +423,31 @@ export async function moveTradeIdea(params: MoveTradeIdeaParams): Promise<void> 
     currentTrade.outcome === (target.outcome || null)
   ) {
     return
+  }
+
+  // Validate stage prerequisites — block moves forward to gated stages if
+  // required fields are missing. Moving backward is always allowed.
+  //
+  // EXCEPTION: when the move includes an outcome, we're CONCLUDING the
+  // deciding stage (e.g. accept/reject/defer), not entering it. The
+  // "needs at least one active recommendation" gate exists to prevent
+  // entering deciding without any analyst input — but by the time outcome
+  // is being set, the recommendation has been acted on and the DR is no
+  // longer in active statuses. Without this exception, accepting a
+  // recommendation throws the validation error inside the try/catch in
+  // acceptFromInboxToAcceptedTrade and the trade idea is silently left
+  // at its prior stage (causing PLTR-style ghost cards on the kanban).
+  const forwardStages: TradeStage[] = ['aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding']
+  const fromIdx = forwardStages.indexOf(currentTrade.stage as TradeStage)
+  const toIdx = forwardStages.indexOf(target.stage)
+  const isForwardMove = fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx
+  if (isForwardMove && !target.outcome) {
+    const missing = await validateStageRequirements(currentTrade, target.stage)
+    if (missing.length > 0) {
+      throw new Error(
+        `Cannot move to ${target.stage.replace(/_/g, ' ')} — missing: ${missing.join(', ')}`
+      )
+    }
   }
 
   // Build update object
@@ -1424,6 +1509,33 @@ export async function movePairTrade(params: {
     isPairIdOnly = true
   } else {
     fromStatus = pairTrade.status
+  }
+
+  // Validate stage prerequisites for forward moves. Any leg missing
+  // required fields blocks the whole pair from advancing.
+  {
+    const forwardStages: TradeStage[] = ['aware', 'investigate', 'deep_research', 'thesis_forming', 'ready_for_decision', 'deciding']
+    const fromStage = (isPairIdOnly ? legsFromPairId[0]?.stage : pairTrade?.trade_queue_items?.[0]?.stage) as TradeStage | undefined
+    const fromIdx = fromStage ? forwardStages.indexOf(fromStage) : -1
+    const toIdx = forwardStages.indexOf(target.stage)
+    const isForwardMove = fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx
+    if (isForwardMove) {
+      // Fetch first leg with full fields for validation
+      const legIds: string[] = isPairIdOnly
+        ? legsFromPairId.map(l => l.id)
+        : (pairTrade?.trade_queue_items || []).map((l: any) => l.id)
+      if (legIds.length > 0) {
+        const firstLeg = await getTradeIdea(legIds[0])
+        if (firstLeg) {
+          const missing = await validateStageRequirements(firstLeg, target.stage)
+          if (missing.length > 0) {
+            throw new Error(
+              `Cannot move pair trade to ${target.stage.replace(/_/g, ' ')} — missing: ${missing.join(', ')}`
+            )
+          }
+        }
+      }
+    }
   }
 
   const now = new Date().toISOString()

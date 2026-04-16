@@ -12,6 +12,7 @@ import {
   createAcceptedTrade,
   updateAcceptedTradeSizing,
   revertAcceptedTrade,
+  createCorrectionTrade,
   updateExecutionStatus,
   acceptFromInboxToAcceptedTrade,
   bulkPromoteFromSimulation,
@@ -31,7 +32,7 @@ import type {
   TradeAction,
   DecisionRequest,
 } from '../types/trading'
-import type { AcceptFromInboxToTradeBookParams, BulkPromoteParams } from '../lib/services/accepted-trade-service'
+import type { AcceptFromInboxToTradeBookParams, BulkPromoteParams, CreateCorrectionTradeInput } from '../lib/services/accepted-trade-service'
 
 // ---------------------------------------------------------------------------
 // Main hook
@@ -168,6 +169,18 @@ export function useAcceptedTrades(portfolioId: string | undefined) {
     },
   })
 
+  const correctM = useMutation({
+    mutationFn: (input: CreateCorrectionTradeInput) => createCorrectionTrade(input),
+    onSuccess: (newTrade) => {
+      // Append the correction to the cache. The original stays in place —
+      // corrections are additive, not replacements.
+      queryClient.setQueryData<AcceptedTradeWithJoins[]>(
+        ['accepted-trades', portfolioId],
+        (old) => (old ? [...old, newTrade] : [newTrade]),
+      )
+    },
+  })
+
   const addCommentM = useMutation({
     mutationFn: (params: { tradeId: string; userId: string; content: string; commentType?: string }) =>
       addComment(params.tradeId, params.userId, {
@@ -216,6 +229,8 @@ export function useAcceptedTrades(portfolioId: string | undefined) {
     updateExecutionStatusM,
     revert: revertM.mutateAsync,
     revertM,
+    correct: correctM.mutateAsync,
+    correctM,
     addComment: addCommentM.mutateAsync,
     addCommentM,
   }

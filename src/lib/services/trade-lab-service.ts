@@ -1084,12 +1084,25 @@ export interface IdeaLabLink {
 }
 
 /**
- * Get all lab links for a trade idea with sizing data
+ * Get all lab links for one or more trade ideas with sizing data.
+ *
+ * Accepts either a single trade_queue_item id or an array — pair trades need
+ * to fetch across all leg ids in one call. Returns the normalized flat shape
+ * (`trade_lab.portfolio`, both singular) that every render site in the app
+ * expects. The nested aliased join from PostgREST is flattened here so no
+ * caller has to re-implement the transform.
+ *
+ * Does NOT deduplicate by trade_lab_id — callers that want a per-lab view
+ * (e.g. pair trades where multiple legs link to the same lab) must dedup
+ * themselves.
  */
 export async function getIdeaLabLinks(
-  tradeQueueItemId: string
+  tradeQueueItemId: string | string[]
 ): Promise<IdeaLabLink[]> {
-  const { data, error } = await supabase
+  const ids = Array.isArray(tradeQueueItemId) ? tradeQueueItemId : [tradeQueueItemId]
+  if (ids.length === 0) return []
+
+  const query = supabase
     .from('trade_lab_idea_links')
     .select(`
       id,
@@ -1110,8 +1123,10 @@ export async function getIdeaLabLinks(
         )
       )
     `)
-    .eq('trade_queue_item_id', tradeQueueItemId)
+    .in('trade_queue_item_id', ids)
     .order('created_at')
+
+  const { data, error } = await query
 
   if (error) {
     throw new Error(`Failed to get idea lab links: ${error.message}`)

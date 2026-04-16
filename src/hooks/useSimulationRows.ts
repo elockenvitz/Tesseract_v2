@@ -47,7 +47,11 @@ export interface SimulationRow {
   activeWeight: number | null
   deltaWeight: number
   deltaShares: number
+  /** Signed delta notional: simShares × price − currentShares × price.
+   *  Positive for buys/adds, negative for sells/trims. */
   notional: number
+  /** Absolute post-trade notional value: simShares × price. */
+  simNotional: number
 
   // Derived
   derivedAction: TradeAction
@@ -62,6 +66,12 @@ export interface SimulationRow {
   /** True when the variant's computed delta conflicts with the originating idea's action direction.
    *  E.g., idea says SELL but sizing increases exposure. */
   hasIdeaDirectionConflict: boolean
+  /** True when this row has a pending accepted_trade (committed but not yet
+   *  executed or reconciled). Used by HoldingsSimulationTable to lock the row:
+   *  the PM must revert the pending trade via the Trade Book before editing
+   *  the position further. For paper/manual_eod portfolios Phase 1
+   *  auto-completes on accept so this should be false in normal operation. */
+  isCommittedPending: boolean
 }
 
 export interface SimulationRowSummary {
@@ -243,6 +253,12 @@ export function useSimulationRows({
     const acceptedTradeMap = new Map<string, AcceptedTrade>()
     acceptedTrades?.forEach(t => acceptedTradeMap.set(t.asset_id, t))
 
+    // A trade counts as "committed pending" if it exists and is neither
+    // complete nor cancelled — matches the filter used for the pro-forma
+    // baseline fold in SimulationPage.
+    const isPending = (t: AcceptedTrade | undefined) =>
+      !!t && t.execution_status !== 'complete' && t.execution_status !== 'cancelled'
+
     const totalValue = baselineHoldings.reduce((s, h) => s + h.value, 0)
     const rows: SimulationRow[] = []
 
@@ -267,14 +283,43 @@ export function useSimulationRows({
         ? quickEstimate(variant.sizing_input, holding.weight, holding.shares, price, totalValue, benchWeight)
         : null
 
-      const intendedWeight = est ? est.weight : getIntendedWeight(variant, computed, holding.weight, benchWeight)
-      const simShares = est ? est.shares : (computed?.target_shares ?? holding.shares)
-      const isRemoved = computed ? computed.target_shares === 0 : (est ? est.shares === 0 : false)
+      const rawIntendedWeight = est ? est.weight : getIntendedWeight(variant, computed, holding.weight, benchWeight)
+      const rawSimShares = est ? est.shares : (computed?.target_shares ?? holding.shares)
+      // Treat as "full exit" whenever the target weight is ≤ ~0 OR the
+      // target shares are below one lot. Using strict `=== 0` on shares
+      // misfires when the baseline has fractional shares (e.g. 1,075.12):
+      // integer lot rounding on the delta leaves ~0.12 sub-share residue,
+      // so the row is labelled "reduce/trim" instead of "close/sell".
+      // Intent comes from target weight — if the user typed "0", they
+      // want out regardless of rounding artifacts.
+      const CLOSE_WEIGHT_EPS = 0.005 // half of 2-decimal display precision
+      const CLOSE_SHARES_EPS = 1     // below one whole share → effectively gone
+      const isRemoved = computed
+        ? (computed.target_weight <= CLOSE_WEIGHT_EPS || Math.abs(computed.target_shares) < CLOSE_SHARES_EPS)
+        : (est ? (est.weight <= CLOSE_WEIGHT_EPS || Math.abs(est.shares) < CLOSE_SHARES_EPS) : false)
+
+      // When the row is "removed" (closing a position), clamp sim weight
+      // and sim shares to exactly 0. Without this clamp, fractional baseline
+      // residue leaks into Sim Wt (~0.005%), Sim Shrs (0.12), and Sim $
+      // ($12) — all of which display as confusing non-zero crumbs next to
+      // a CLOSE badge. Intent is zero; display follows intent.
+      const intendedWeight = isRemoved ? 0 : rawIntendedWeight
+      const simShares = isRemoved ? 0 : rawSimShares
 
       const dw = (computed || est) ? intendedWeight - holding.weight : 0
-      const ds = est ? simShares - holding.shares : (computed?.delta_shares ?? 0)
-      // Signed notional: positive for buys/adds, negative for sells/trims
-      const notional = est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0)
+      // Delta shares: when closing, the delta is -currentShares exactly
+      // (the user is selling everything the row holds), rounded to int.
+      const ds = isRemoved
+        ? -Math.round(holding.shares)
+        : (est ? simShares - holding.shares : (computed?.delta_shares ?? 0))
+      // Signed notional: positive for buys/adds, negative for sells/trims.
+      // For closes this is -currentValue so Δ$ reflects the full exit.
+      const notional = isRemoved
+        ? -holding.value
+        : (est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0))
+      // Absolute sim notional: post-trade position value. Exactly 0 when
+      // the position is being closed (no fractional-share residue).
+      const simNotional = isRemoved ? 0 : simShares * price
 
       // Derive action from deltas, then recompute conflict using derived action.
       // This prevents stale DB action (e.g. 'add' from initial creation) from
@@ -307,6 +352,7 @@ export function useSimulationRows({
         deltaWeight: dw,
         deltaShares: ds,
         notional,
+        simNotional,
         derivedAction: derived,
         isNew: false,
         isRemoved,
@@ -317,6 +363,7 @@ export function useSimulationRows({
         hasIdeaDirectionConflict: checkIdeaDirectionConflict(
           ideaActionByAsset?.[assetId] ?? variant?.action, ds, !!variant?.sizing_input
         ),
+        isCommittedPending: isPending(acceptedTradeMap.get(assetId)),
       })
     })
 
@@ -342,6 +389,8 @@ export function useSimulationRows({
       const ds = est ? simShares : (computed?.delta_shares ?? 0)
       // Signed notional: positive for buys, negative for sells
       const notional = est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0)
+      // Absolute sim notional: post-trade position value for the new row.
+      const simNotional = simShares * price
 
       const derivedNew = deriveAction(true, false, ds, dw, computed !== null || est !== null, variant.action)
       const conflict = (computed || est)
@@ -366,6 +415,7 @@ export function useSimulationRows({
         deltaWeight: dw,
         deltaShares: ds,
         notional,
+        simNotional,
         derivedAction: derivedNew,
         isNew: true,
         isRemoved: false,
@@ -376,6 +426,7 @@ export function useSimulationRows({
         hasIdeaDirectionConflict: checkIdeaDirectionConflict(
           ideaActionByAsset?.[assetId] ?? variant.action, ds, !!variant.sizing_input
         ),
+        isCommittedPending: isPending(acceptedTradeMap.get(assetId)),
       })
     })
 
@@ -451,9 +502,18 @@ export function useSimulationRows({
       }
     }
 
-    // Only show synthetic cash row when trades exist AND no real cash holding is in baseline
+    // Show a synthetic cash row whenever the baseline has no explicit cash
+    // holding. Previously we only rendered it when there were pending trades
+    // to show cash impact, but that hides the cash position the rest of the
+    // time — the PM can't see "how much cash do I have" at rest. Always
+    // surface cash:
+    //   - With no trades: displays the baseline cash weight (100% - sum of
+    //     position weights) with zero deltas. Often this is 0% for fully
+    //     invested portfolios, which is still correct and informative.
+    //   - With trades: cash weight + delta reflect net trade impact, same
+    //     as before.
     const hasTrades = netTradeNotional !== 0
-    const showSyntheticCash = hasTrades && !cashBaseline
+    const showSyntheticCash = !cashBaseline
     const cashRow: SimulationRow | null = showSyntheticCash ? {
       asset_id: '__cash__',
       symbol: 'CASH_USD',
@@ -477,6 +537,10 @@ export function useSimulationRows({
       deltaWeight: cashDeltaWeight,
       deltaShares: 0,
       notional: cashNotional,
+      // Sim notional for cash = target cash weight × portfolio total value.
+      // This gives the table a consistent "what's this row worth post-trade"
+      // column even for the synthetic cash line.
+      simNotional: (cashSimWeight / 100) * (totalValue || 0),
       derivedAction: cashNotional >= 0 ? 'add' : 'trim',
       isNew: !cashBaseline && cashNotional !== 0,
       isRemoved: false,
@@ -485,6 +549,7 @@ export function useSimulationRows({
       hasWarning: false,
       conflict: null,
       hasIdeaDirectionConflict: false,
+      isCommittedPending: false,
     } : null
 
     // Step 6: Summary

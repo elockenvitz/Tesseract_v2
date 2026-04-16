@@ -2,6 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import {
+  reconcilePortfolioSnapshot,
+  recordReconciliationRun,
+} from '../lib/services/trade-reconciliation-service'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -309,13 +313,53 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
         uploaded_by: user.id,
       })
 
-      return { snapshotId: snapshot.id, positionsCount: resolved.length, warnings }
+      // Reconcile accepted trades since the previous snapshot. The service
+      // gates on portfolios.holdings_source internally and no-ops for paper
+      // and live_feed portfolios, so this is safe to call unconditionally.
+      // Failures here must not fail the upload — the snapshot is already
+      // committed. Log and move on.
+      let reconcileResult: Awaited<ReturnType<typeof reconcilePortfolioSnapshot>> | null = null
+      const reconcileStartedAt = new Date().toISOString()
+      try {
+        reconcileResult = await reconcilePortfolioSnapshot(portfolioId, snapshot.id)
+      } catch (e) {
+        console.warn('[HoldingsUpload] Reconciliation threw after upload', e)
+      }
+
+      // Audit: record the reconciliation run. Only log when something was
+      // actually reconciled (skip no-op passes for paper / live_feed / first
+      // snapshots where there was nothing to diff).
+      if (reconcileResult && reconcileResult.reconciled > 0) {
+        try {
+          await recordReconciliationRun({
+            portfolioId,
+            result: reconcileResult,
+            startedAt: reconcileStartedAt,
+            reviewerId: user.id,
+            notes: `Holdings upload: ${filename}`,
+          })
+        } catch (e) {
+          console.warn('[HoldingsUpload] Failed to record reconciliation run', e)
+        }
+      }
+
+      return {
+        snapshotId: snapshot.id,
+        positionsCount: resolved.length,
+        warnings,
+        reconciliation: reconcileResult,
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['holdings-snapshots'] })
       queryClient.invalidateQueries({ queryKey: ['holdings-positions'] })
       queryClient.invalidateQueries({ queryKey: ['holdings-upload-log'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-holdings'] })
+      // Reconciliation may have updated accepted_trades + produced new
+      // trade_reconciliations rows — refresh the Trade Book views.
+      queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-reconciliations'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-runs'] })
     },
   })
 

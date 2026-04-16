@@ -71,6 +71,21 @@ export interface TeamMembership {
 
 export type PortfolioStatus = 'active' | 'archived' | 'discarded'
 
+/**
+ * Controls how accepted_trades flow into portfolio_holdings and how
+ * execution status is tracked. See accepted-trade-service
+ * (finalizeTradeForHoldingsSource) for behavior per value.
+ *
+ * - 'paper'      — hypothetical portfolio; trades auto-apply to holdings and
+ *                  auto-complete execution. No trader workflow.
+ * - 'manual_eod' — no live feed; PM uploads holdings periodically (usually
+ *                  end-of-day). Trades auto-apply so intraday pro-forma is
+ *                  honest; reconciliation diffs against the next EOD upload.
+ * - 'live_feed'  — external holdings/fills feed is the source of truth. Trades
+ *                  do NOT auto-apply; execution_status waits for fills.
+ */
+export type HoldingsSource = 'live_feed' | 'manual_eod' | 'paper'
+
 export interface Portfolio {
   id: string
   name: string
@@ -79,6 +94,7 @@ export interface Portfolio {
   description: string | null
   benchmark: string | null
   portfolio_type: string
+  holdings_source: HoldingsSource
   is_active: boolean
   status: PortfolioStatus
   archived_at: string | null

@@ -260,8 +260,6 @@ async function fetchFeedPage(
           errorCount++
         }
       })
-
-      })
     }
 
     for (const trade of tradeIdeasResult.data) {

@@ -437,6 +437,7 @@ export interface Database {
           created_at: string | null
           updated_at: string | null
           created_by: string | null
+          holdings_source: 'live_feed' | 'manual_eod' | 'paper'
         }
         Insert: {
           id?: string
@@ -446,6 +447,7 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
+          holdings_source?: 'live_feed' | 'manual_eod' | 'paper'
         }
         Update: {
           id?: string
@@ -455,6 +457,7 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
+          holdings_source?: 'live_feed' | 'manual_eod' | 'paper'
         }
       }
       themes: {

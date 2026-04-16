@@ -13,11 +13,12 @@ import {
 } from '../lib/services/decision-request-service'
 import {
   acceptFromInbox,
+  rejectFromInbox,
   revertAcceptFromInbox,
   findAcceptedTradeForDecisionRequest,
 } from '../lib/services/inbox-accept-pipeline'
 import type { CreateDecisionRequestInput, UpdateDecisionRequestInput } from '../lib/services/decision-request-service'
-import type { AcceptFromInboxParams, RevertAcceptParams } from '../lib/services/inbox-accept-pipeline'
+import type { AcceptFromInboxParams, RejectFromInboxParams, RevertAcceptParams } from '../lib/services/inbox-accept-pipeline'
 import type { DecisionRequest } from '../types/trading'
 
 /**
@@ -110,6 +111,25 @@ export function useAcceptFromInbox() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
       queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
+    },
+  })
+}
+
+/**
+ * Reject a decision request from the inbox. Iterative model: marks the DR
+ * rejected, deactivates the linked proposal, updates the per-portfolio
+ * track, and leaves the trade idea alive on the kanban so the analyst
+ * can submit a revised recommendation.
+ */
+export function useRejectFromInbox() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (params: RejectFromInboxParams) => rejectFromInbox(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
     },

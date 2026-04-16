@@ -24,6 +24,7 @@ import { useClientOnboarding, ONBOARDING_STEPS, type OnboardingStepKey } from '.
 import { useToast } from '../common/Toast'
 import { parseHoldingsCSV, autoDetectMappings, STANDARD_FIELDS, type ParsedPosition } from '../../hooks/useHoldingsUpload'
 import { TEMPLATE_PORTFOLIOS, type TemplatePortfolio } from '../../lib/pilot/template-portfolios'
+import { seedPilotDemoData } from '../../lib/pilot/seed-demo-data'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -197,6 +198,17 @@ export function ClientOnboardingWizard() {
     setIsSubmitting(true)
     try {
       await finishOnboarding.mutateAsync()
+
+      // Seed demo users + sample content into the first portfolio
+      if (currentOrgId && existingPortfolios.length > 0) {
+        try {
+          await seedPilotDemoData(currentOrgId, existingPortfolios[0].id)
+        } catch (seedErr) {
+          // Non-blocking — pilot can still use the platform without demo data
+          console.warn('Demo data seeding skipped:', seedErr)
+        }
+      }
+
       success('Welcome to Tesseract!')
     } catch (err: any) {
       showError(err.message || 'Failed to complete setup')

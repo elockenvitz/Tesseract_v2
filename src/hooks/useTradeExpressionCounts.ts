@@ -55,11 +55,23 @@ export function useTradeExpressionCounts() {
 
       if (trackError) throw trackError
 
-      // Query active recommendation counts from decision_requests
+      // Query active recommendations from trade_proposals.
+      //
+      // PREVIOUSLY this counted active decision_requests (pending /
+      // under_review / needs_discussion). That conflated two things: a
+      // `decision_request` is the PM's transient action item ("act on this
+      // recommendation"), while a `trade_proposal` IS the recommendation
+      // itself. Once a DR is accepted/rejected/deferred, it leaves the
+      // active set — but the proposal still represents the analyst's
+      // recommendation. Counting DRs caused cards with already-decided
+      // recommendations to flip back to "Needs recommendation = 0", which
+      // is wrong. Counting active proposals reflects "an analyst has
+      // submitted a recommendation for this idea" regardless of where the
+      // PM is in the decision lifecycle.
       const { data: recommendations, error: recError } = await supabase
-        .from('decision_requests')
-        .select('trade_queue_item_id, portfolio_id, requested_by')
-        .in('status', ['pending', 'under_review', 'needs_discussion'])
+        .from('trade_proposals')
+        .select('trade_queue_item_id, portfolio_id, user_id')
+        .eq('is_active', true)
 
       if (recError) throw recError
 
@@ -73,20 +85,23 @@ export function useTradeExpressionCounts() {
       const userRecSet = new Set<string>() // trade IDs where current user has a rec
 
       recommendations?.forEach((r: any) => {
+        if (!r.trade_queue_item_id) return
         // Total count per trade
         const count = recCountMap.get(r.trade_queue_item_id) || 0
         recCountMap.set(r.trade_queue_item_id, count + 1)
 
         // Per-portfolio count
-        if (!portfolioRecCountsMap.has(r.trade_queue_item_id)) {
-          portfolioRecCountsMap.set(r.trade_queue_item_id, new Map())
+        if (r.portfolio_id) {
+          if (!portfolioRecCountsMap.has(r.trade_queue_item_id)) {
+            portfolioRecCountsMap.set(r.trade_queue_item_id, new Map())
+          }
+          const portfolioCounts = portfolioRecCountsMap.get(r.trade_queue_item_id)!
+          const portfolioCount = portfolioCounts.get(r.portfolio_id) || 0
+          portfolioCounts.set(r.portfolio_id, portfolioCount + 1)
         }
-        const portfolioCounts = portfolioRecCountsMap.get(r.trade_queue_item_id)!
-        const portfolioCount = portfolioCounts.get(r.portfolio_id) || 0
-        portfolioCounts.set(r.portfolio_id, portfolioCount + 1)
 
         // Track current user's recommendations
-        if (currentUserId && r.requested_by === currentUserId) {
+        if (currentUserId && r.user_id === currentUserId) {
           userRecSet.add(r.trade_queue_item_id)
         }
       })

@@ -79,10 +79,13 @@ export async function createSuggestion(params: CreateSuggestionParams): Promise<
       notes: params.notes ?? null,
       suggested_by: params.suggestedBy,
     })
+    // NOTE: `suggested_by` FKs to auth.users (not public.users). PostgREST
+    // can't resolve cross-schema joins, so we omit the user expansion here —
+    // the client resolves display names separately if needed. Keeping the
+    // join in place returns a 400 and breaks every suggestion refetch.
     .select(`
       *,
-      asset:assets(id, symbol, company_name, sector),
-      suggested_by_user:suggested_by(id, full_name, email)
+      asset:assets(id, symbol, company_name, sector)
     `)
     .single()
 
@@ -98,10 +101,13 @@ export async function getSuggestionsForSimulation(
 ): Promise<SimulationSuggestion[]> {
   const { data, error } = await supabase
     .from('simulation_suggestions')
+    // NOTE: `suggested_by` FKs to auth.users (not public.users). PostgREST
+    // can't resolve cross-schema joins, so we omit the user expansion here —
+    // the client resolves display names separately if needed. Keeping the
+    // join in place returns a 400 and breaks every suggestion refetch.
     .select(`
       *,
-      asset:assets(id, symbol, company_name, sector),
-      suggested_by_user:suggested_by(id, full_name, email)
+      asset:assets(id, symbol, company_name, sector)
     `)
     .eq('simulation_id', simulationId)
     .order('created_at', { ascending: false })
@@ -176,10 +182,13 @@ export async function acceptSuggestion(params: AcceptSuggestionParams): Promise<
       updated_at: new Date().toISOString(),
     })
     .eq('id', params.suggestionId)
+    // NOTE: `suggested_by` FKs to auth.users (not public.users). PostgREST
+    // can't resolve cross-schema joins, so we omit the user expansion here —
+    // the client resolves display names separately if needed. Keeping the
+    // join in place returns a 400 and breaks every suggestion refetch.
     .select(`
       *,
-      asset:assets(id, symbol, company_name, sector),
-      suggested_by_user:suggested_by(id, full_name, email)
+      asset:assets(id, symbol, company_name, sector)
     `)
     .single()
 
@@ -205,10 +214,13 @@ export async function rejectSuggestion(
       updated_at: new Date().toISOString(),
     })
     .eq('id', suggestionId)
+    // NOTE: `suggested_by` FKs to auth.users (not public.users). PostgREST
+    // can't resolve cross-schema joins, so we omit the user expansion here —
+    // the client resolves display names separately if needed. Keeping the
+    // join in place returns a 400 and breaks every suggestion refetch.
     .select(`
       *,
-      asset:assets(id, symbol, company_name, sector),
-      suggested_by_user:suggested_by(id, full_name, email)
+      asset:assets(id, symbol, company_name, sector)
     `)
     .single()
 
@@ -232,10 +244,13 @@ export async function withdrawSuggestion(
       updated_at: new Date().toISOString(),
     })
     .eq('id', suggestionId)
+    // NOTE: `suggested_by` FKs to auth.users (not public.users). PostgREST
+    // can't resolve cross-schema joins, so we omit the user expansion here —
+    // the client resolves display names separately if needed. Keeping the
+    // join in place returns a 400 and breaks every suggestion refetch.
     .select(`
       *,
-      asset:assets(id, symbol, company_name, sector),
-      suggested_by_user:suggested_by(id, full_name, email)
+      asset:assets(id, symbol, company_name, sector)
     `)
     .single()
 

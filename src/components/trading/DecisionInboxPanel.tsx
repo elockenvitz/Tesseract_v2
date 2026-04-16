@@ -44,8 +44,15 @@ export function DecisionInboxPanel({
   const [resolvedPendingCount, setResolvedPendingCount] = useState<number | null>(null)
   const handlePendingCountChange = useCallback((count: number) => setResolvedPendingCount(count), [])
 
-  // Use permission-filtered count from inbox when available, fallback to prop
-  const displayCount = resolvedPendingCount ?? pendingCount
+  // The parent passes an UNFILTERED count (`pendingCount`) derived straight
+  // from decision_requests by status. DecisionInbox re-filters by permission
+  // (classifyWaiting + portfolio role) and fires onPendingCountChange with
+  // the corrected number. Showing the parent value as a fallback caused a
+  // visible flicker on hard refresh (e.g. 8 → 7). Prefer the resolved value
+  // once known and only fall back to `pendingCount` when the inbox hasn't
+  // reported yet AND the prop looks plausible (non-zero); otherwise show
+  // nothing to avoid the wrong-number flash.
+  const displayCount = resolvedPendingCount ?? null
 
   // Derive size from controlled collapsed prop or internal state
   const size: DrawerSize = controlledCollapsed === true ? 'collapsed'
@@ -94,7 +101,7 @@ export function DecisionInboxPanel({
         <div className="flex items-center gap-2">
           <Gavel className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
           <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Decision Inbox</span>
-          {displayCount > 0 && (
+          {displayCount !== null && displayCount > 0 && (
             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-full">
               {displayCount}
             </span>

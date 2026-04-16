@@ -17,6 +17,7 @@
  *   - Resolved requests are NEVER mutated
  */
 
+import { supabase } from '../supabase'
 import { upsertProposal } from './trade-lab-service'
 import {
   ensureDecisionRequestForProposal,
@@ -145,23 +146,137 @@ export async function submitRecommendation(
     submissionSnapshot.sizing_context = input.sizingContext
   }
 
-  // ── Step 3: Create or update decision request (AWAITED) ─────────────
-  // This is NOT fire-and-forget. If this fails, the caller gets a clear error.
+  // ── Step 3: Create or update decision requests (AWAITED) ────────────
+  // For singletons: one decision_request for the submitted trade_queue_item.
+  // For pair trades: one decision_request per leg, all linked to the same
+  // proposal row. Without per-leg DRs, the PM inbox shows one "representative"
+  // leg and the other legs have no presence — users can't accept/reject
+  // individual legs of a pair, and the per-leg progress counter is broken.
+  //
+  // Leg resolution: each sizing_context.leg may already carry a `legId`
+  // (preferred — caller knows the trade_queue_item_id for each leg). If not,
+  // we resolve legId by looking up trade_queue_items by (pair_id, asset_id,
+  // portfolio_id) using the submitted tradeQueueItemId's pair_id as the anchor.
   let decisionRequest: DecisionRequest
   try {
-    decisionRequest = await ensureDecisionRequestForProposal({
-      tradeQueueItemId: input.tradeQueueItemId,
-      portfolioId: input.portfolioId,
-      proposalId: proposal.id,
-      requestedBy: context.actorId,
-      urgency: input.urgency,
-      contextNote: input.notes,
-      sizingWeight: input.weight,
-      sizingShares: input.shares,
-      sizingMode: input.sizingMode,
-      requestedAction: input.requestedAction,
-      submissionSnapshot,
-    })
+    const sizingCtx = (input.sizingContext || {}) as Record<string, any>
+    const isPairTrade = sizingCtx.isPairTrade === true && Array.isArray(sizingCtx.legs) && sizingCtx.legs.length > 0
+
+    if (isPairTrade) {
+      // Resolve the submitted trade_queue_item's pair_id so we can look up
+      // siblings by asset_id if leg.legId wasn't provided by the caller.
+      let pairAnchorId: string | null = null
+      {
+        const { data } = await supabase
+          .from('trade_queue_items')
+          .select('pair_id, pair_trade_id')
+          .eq('id', input.tradeQueueItemId)
+          .maybeSingle()
+        pairAnchorId = (data as any)?.pair_id || (data as any)?.pair_trade_id || null
+      }
+
+      // Build the final leg list with resolved legIds. Always include the
+      // submitted tradeQueueItemId as one of the legs so at least one DR
+      // matches the proposal's representative leg.
+      const rawLegs = sizingCtx.legs as Array<{
+        legId?: string
+        assetId?: string
+        symbol?: string
+        action?: string
+        weight?: number | null
+        shares?: number | null
+        sizingMode?: string
+      }>
+
+      const resolvedLegs: Array<{
+        legId: string
+        action?: string
+        weight?: number | null
+        shares?: number | null
+        sizingMode?: string
+      }> = []
+
+      for (const leg of rawLegs) {
+        let legId: string | undefined = leg.legId
+        if (!legId && leg.assetId && pairAnchorId) {
+          const { data: match } = await supabase
+            .from('trade_queue_items')
+            .select('id')
+            .eq('asset_id', leg.assetId)
+            .eq('portfolio_id', input.portfolioId)
+            .or(`pair_id.eq.${pairAnchorId},pair_trade_id.eq.${pairAnchorId}`)
+            .eq('visibility_tier', 'active')
+            .limit(1)
+            .maybeSingle()
+          legId = (match as any)?.id
+        }
+        if (legId) {
+          resolvedLegs.push({
+            legId,
+            action: leg.action,
+            weight: typeof leg.weight === 'number' ? leg.weight : null,
+            shares: typeof leg.shares === 'number' ? leg.shares : null,
+            sizingMode: leg.sizingMode,
+          })
+        }
+      }
+
+      // Ensure the submitted item itself is present (defensive — covers
+      // callers that pass only partner legs in sizing_context.legs).
+      if (!resolvedLegs.some(l => l.legId === input.tradeQueueItemId)) {
+        resolvedLegs.unshift({
+          legId: input.tradeQueueItemId,
+          action: input.requestedAction,
+          weight: input.weight ?? null,
+          shares: input.shares ?? null,
+          sizingMode: typeof input.sizingMode === 'string' ? input.sizingMode : undefined,
+        })
+      }
+
+      if (resolvedLegs.length === 0) {
+        throw new Error('Pair recommendation has no resolvable legs to create decision requests for')
+      }
+
+      // Create/update DRs for every leg in parallel. All share the same
+      // proposal_id and submission_snapshot so the PM inbox can group them.
+      const drs = await Promise.all(
+        resolvedLegs.map(leg =>
+          ensureDecisionRequestForProposal({
+            tradeQueueItemId: leg.legId,
+            portfolioId: input.portfolioId,
+            proposalId: proposal.id,
+            requestedBy: context.actorId,
+            urgency: input.urgency,
+            contextNote: input.notes,
+            sizingWeight: leg.weight ?? null,
+            sizingShares: leg.shares ?? null,
+            sizingMode: (leg.sizingMode || input.sizingMode) as TradeSizingMode | undefined,
+            requestedAction: (leg.action || input.requestedAction) as any,
+            submissionSnapshot,
+          }),
+        ),
+      )
+
+      // Return the DR for the submitted leg as the representative; fall back
+      // to the first DR if for some reason the submitted leg isn't in the set.
+      decisionRequest =
+        drs.find(d => d.trade_queue_item_id === input.tradeQueueItemId) || drs[0]
+    } else {
+      // Singleton path — unchanged
+      decisionRequest = await ensureDecisionRequestForProposal({
+        tradeQueueItemId: input.tradeQueueItemId,
+        portfolioId: input.portfolioId,
+        proposalId: proposal.id,
+        requestedBy: context.actorId,
+        urgency: input.urgency,
+        contextNote: input.notes,
+        sizingWeight: input.weight,
+        sizingShares: input.shares,
+        sizingMode: input.sizingMode,
+        requestedAction: input.requestedAction,
+        submissionSnapshot,
+      })
+    }
   } catch (err) {
     // Proposal succeeded but decision request failed — partial failure.
     // Surface this clearly so the user can retry.
@@ -191,7 +306,76 @@ export async function submitRecommendation(
     }
   }
 
+  // ── Step 4: Notify PMs of the target portfolio (best-effort) ─────────
+  // Push signal so the PM doesn't have to manually check the inbox to know
+  // a new recommendation arrived. Notifies anyone with a PM role on the
+  // portfolio. The notifier is the analyst who just submitted.
+  notifyPortfolioPMsOfRecommendation({
+    proposalId: proposal.id,
+    tradeQueueItemId: input.tradeQueueItemId,
+    portfolioId: input.portfolioId,
+    actorId: context.actorId,
+    actorName: context.actorName,
+    assetSymbol: input.assetSymbol || null,
+    portfolioName: input.portfolioName || null,
+    isPairTrade: !!(input.sizingContext as any)?.isPairTrade,
+  }).catch(e => console.warn('[submitRecommendation] PM notification failed:', e))
+
   return { proposal, decisionRequest }
+}
+
+/**
+ * Best-effort: notify all PMs on a portfolio that a new recommendation
+ * has been submitted. Errors are logged and swallowed — notification
+ * delivery should never block the recommendation flow.
+ */
+async function notifyPortfolioPMsOfRecommendation(params: {
+  proposalId: string
+  tradeQueueItemId: string
+  portfolioId: string
+  actorId: string
+  actorName?: string | null
+  assetSymbol: string | null
+  portfolioName: string | null
+  isPairTrade: boolean
+}): Promise<void> {
+  // Find PMs on the portfolio (excluding the analyst themselves).
+  const { data: members, error: membersErr } = await supabase
+    .from('portfolio_team')
+    .select('user_id, role')
+    .eq('portfolio_id', params.portfolioId)
+  if (membersErr || !members) return
+
+  const pmRoleHints = ['portfolio manager', 'pm', 'manager']
+  const recipients = members
+    .filter(m => {
+      const role = (m as any).role?.toLowerCase() || ''
+      return pmRoleHints.some(hint => role.includes(hint)) && (m as any).user_id !== params.actorId
+    })
+    .map(m => (m as any).user_id as string)
+
+  if (recipients.length === 0) return
+
+  const symbolPart = params.assetSymbol ? ` on ${params.assetSymbol}` : ''
+  const portfolioPart = params.portfolioName ? ` for ${params.portfolioName}` : ''
+  const actorPart = params.actorName || 'An analyst'
+  const kindPart = params.isPairTrade ? 'a pair recommendation' : 'a recommendation'
+
+  const notifications = recipients.map(userId => ({
+    user_id: userId,
+    type: 'recommendation_submitted' as const,
+    title: `New recommendation${symbolPart}`,
+    message: `${actorPart} submitted ${kindPart}${portfolioPart}.`,
+    context_type: 'trade_idea' as const,
+    context_id: params.tradeQueueItemId,
+    context_data: {
+      proposal_id: params.proposalId,
+      portfolio_id: params.portfolioId,
+      is_pair_trade: params.isPairTrade,
+    },
+  }))
+
+  await supabase.from('notifications').insert(notifications)
 }
 
 // Re-export status helpers for convenience

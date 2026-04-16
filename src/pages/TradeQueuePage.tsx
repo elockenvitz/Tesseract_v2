@@ -15,6 +15,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Info,
+  X,
   PlayCircle,
   GripVertical,
   Archive,
@@ -100,6 +102,34 @@ const STAGE_ICON: Record<ResearchStage, React.ElementType> = {
   ready_for_decision: Gavel,
 }
 
+const STAGE_DESCRIPTION: Record<ResearchStage, { purpose: string; activity: string; advance: string }> = {
+  aware: {
+    purpose: 'Initial catalyst or observation. You\'ve noticed something worth watching — a news item, price move, or gut feeling.',
+    activity: 'No commitment yet. Just flag it. Capture the initial observation and why it caught your eye.',
+    advance: 'When you\'re ready to investigate further.',
+  },
+  investigate: {
+    purpose: 'Early diligence. Reading filings, studying the business, identifying key drivers.',
+    activity: 'Build a working understanding of the setup. Identify whether there\'s a real opportunity here.',
+    advance: 'When you have a working hypothesis and want to go deeper.',
+  },
+  deep_research: {
+    purpose: 'Serious work. Modeling, expert calls, primary research, scenario analysis.',
+    activity: 'Test the thesis against data. Stress-test assumptions. Quantify the risk/reward.',
+    advance: 'When you have conviction in the underlying view and are ready to frame it as a trade.',
+  },
+  thesis_forming: {
+    purpose: 'Crystallizing the trade thesis. Defining what you believe, why now, and how you\'d size it.',
+    activity: 'Write the thesis. Set reference levels (entry, stop, target). Define conviction and time horizon.',
+    advance: 'When rationale, thesis, and reference levels are all in place.',
+  },
+  ready_for_decision: {
+    purpose: 'Handoff to PM. Rationale, thesis, and reference levels are complete. Ready for sizing recommendation.',
+    activity: 'Submit a portfolio-specific sizing recommendation. PM will accept, reject, or defer from the Decision Inbox.',
+    advance: 'When a PM makes a decision.',
+  },
+}
+
 const ACTION_CONFIG: Record<TradeAction, { label: string; color: string; icon: React.ElementType }> = {
   buy: { label: 'Buy', color: 'text-green-600 dark:text-green-400', icon: TrendingUp },
   sell: { label: 'Sell', color: 'text-red-600 dark:text-red-400', icon: TrendingDown },
@@ -153,6 +183,7 @@ export function TradeQueuePage() {
   // Note: Post Trade section removed - outcomes are now discoverable via Outcomes page
   const [fourthColumnView, setFourthColumnView] = useState<'deciding' | 'executed' | 'rejected' | 'deferred' | 'archived' | 'deleted'>('deciding')
   const [fullscreenColumn, setFullscreenColumn] = useState<ResearchStage | TradeQueueStatus | 'archived' | null>(null)
+  const [stageInfoPopover, setStageInfoPopover] = useState<ResearchStage | null>(null)
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
 
   // Listen for openTradeIdeaModal event to open a specific idea's modal
@@ -833,13 +864,24 @@ export function TradeQueuePage() {
         // Multi-select: action
         if (multiFilters.actions.length > 0 && !multiFilters.actions.includes(item.action)) return false
 
-        // Multi-select: portfolio filtering with track awareness
+        // Multi-select: portfolio filtering with per-portfolio track awareness.
+        // An idea drops out of the filtered view when EVERY selected portfolio
+        // it's linked to has a terminal decision (accepted / rejected / deferred /
+        // accepted_with_modification). If at least one selected portfolio is
+        // still unresolved, the idea remains visible.
+        const TERMINAL_OUTCOMES = ['accepted', 'accepted_with_modification', 'rejected', 'deferred']
         if (multiFilters.portfolios.length > 0) {
           const labInfo = expressionCounts?.get(item.id)
-          const isLinkedToAnySelected = multiFilters.portfolios.some(pid =>
+          const linkedSelectedPids = multiFilters.portfolios.filter(pid =>
             item.portfolio_id === pid || labInfo?.portfolioIds?.includes(pid)
           )
-          if (!isLinkedToAnySelected) return false
+          if (linkedSelectedPids.length === 0) return false
+          // Hide if ALL linked-selected portfolios are resolved
+          const allResolved = linkedSelectedPids.every(pid => {
+            const status = labInfo?.portfolioTrackStatus?.get(pid)
+            return status && TERMINAL_OUTCOMES.includes(status.decisionOutcome || '')
+          })
+          if (allResolved) return false
         } else if (filters.portfolio_id && filters.portfolio_id !== 'all') {
           // Legacy single-portfolio path (for decision inbox pass-through)
           const labInfo = expressionCounts?.get(item.id)
@@ -847,12 +889,8 @@ export function TradeQueuePage() {
             labInfo?.portfolioIds?.includes(filters.portfolio_id)
           if (!isLinkedToPortfolio) return false
           const portfolioTrackStatus = labInfo?.portfolioTrackStatus?.get(filters.portfolio_id)
-          if (portfolioTrackStatus) {
-            if (portfolioTrackStatus.decisionOutcome === 'accepted' ||
-                portfolioTrackStatus.decisionOutcome === 'deferred' ||
-                portfolioTrackStatus.decisionOutcome === 'rejected') {
-              return false
-            }
+          if (portfolioTrackStatus && TERMINAL_OUTCOMES.includes(portfolioTrackStatus.decisionOutcome || '')) {
+            return false
           }
         }
 
@@ -1168,16 +1206,11 @@ export function TradeQueuePage() {
         }
       }
 
-      // When moving to deciding/ready_for_decision, show proposal modal first
-      if (targetStatus === 'deciding' || targetStatus === 'ready_for_decision') {
-        setProposalPairTrade({ pairTradeId: itemId, pairTrade: pairTradeGroup.pairTrade, legs: pairTradeGroup.legs })
-        setProposalTradeId(itemId)
-        setShowProposalModal(true)
-        setDraggedItem(null)
-        return
-      }
-
-      // Use audited service for pair trade move
+      // Stage transitions and recommendation submissions are decoupled.
+      // Dropping on Ready for Decision just moves the workflow state — it
+      // does NOT auto-prompt for a recommendation. If the pair has no
+      // active recommendations, the card will show a "Needs recommendation"
+      // indicator that explicitly opens the pair recommendation flow.
       movePairTrade({ pairTradeId: itemId, targetStatus, uiSource: 'drag_drop' })
       setDraggedItem(null)
       return
@@ -1214,16 +1247,10 @@ export function TradeQueuePage() {
       }
     }
 
-    // When moving to deciding/ready_for_decision, show proposal modal first
-    if (targetStatus === 'deciding' || targetStatus === 'ready_for_decision') {
-      setProposalTradeId(itemId)
-      setProposalTrade(item)
-      setShowProposalModal(true)
-      setDraggedItem(null)
-      return
-    }
-
-    // Use audited service for trade move — pass research stage directly
+    // Stage transitions and recommendation submissions are decoupled — see
+    // comment in the pair-trade branch above. Just move the stage; if the
+    // idea has no active recommendations, the card surfaces a "Needs
+    // recommendation" indicator that opens the recommendation flow on click.
     moveTrade({ tradeId: itemId, targetStatus: targetStatus as TradeQueueStatus, uiSource: 'drag_drop' })
     setDraggedItem(null)
   }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id])
@@ -1591,11 +1618,18 @@ export function TradeQueuePage() {
                     if (fullscreenColumn && fullscreenColumn !== stage) return null
 
                     return (
-                      <div key={stage} className="flex items-center gap-2 px-2 pb-1 border-b border-gray-100 dark:border-gray-700/50">
+                      <div key={stage} className="relative flex items-center gap-2 px-2 pb-1 border-b border-gray-100 dark:border-gray-700/50">
                         <StageIcon className={clsx("h-4.5 w-4.5", stageConfig.iconColor)} />
                         <h2 className="font-semibold text-gray-900 dark:text-white text-sm truncate" title={stageConfig.label}>
                           {stageConfig.shortLabel}
                         </h2>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setStageInfoPopover(stageInfoPopover === stage ? null : stage) }}
+                          className="p-0.5 text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 transition-colors shrink-0"
+                          title="What belongs in this stage?"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
                         {(items.length + pairs.length) > 0 ? (
                           <span className="ml-auto shrink-0 flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full bg-gray-100 dark:bg-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-300 tabular-nums">
                             {items.length + pairs.length}
@@ -1616,6 +1650,58 @@ export function TradeQueuePage() {
                             <Maximize2 className="h-4 w-4 text-gray-400" />
                           )}
                         </button>
+                        {stageInfoPopover === stage && (() => {
+                          const desc = STAGE_DESCRIPTION[stage]
+                          return (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setStageInfoPopover(null)} />
+                              <div className="absolute left-0 top-full mt-2 z-50 w-[340px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl text-left overflow-hidden ring-1 ring-black/5 dark:ring-white/5">
+                                {/* Caret pointing up to the info button */}
+                                <div className="absolute -top-1.5 left-4 w-3 h-3 bg-white dark:bg-gray-900 border-l border-t border-gray-200 dark:border-gray-700 rotate-45" />
+                                {/* Header band */}
+                                <div className="flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800/60 dark:to-gray-900 border-b border-gray-100 dark:border-gray-800">
+                                  <div className="flex items-center justify-center h-8 w-8 rounded-lg shrink-0 bg-gray-100 dark:bg-gray-800">
+                                    <StageIcon className={clsx("h-4 w-4", stageConfig?.iconColor)} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold text-sm text-gray-900 dark:text-white leading-tight">{stageConfig?.label}</h3>
+                                    <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-0.5">Research Stage</p>
+                                  </div>
+                                  <button
+                                    onClick={() => setStageInfoPopover(null)}
+                                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                                {/* Body */}
+                                <div className="px-4 py-3 space-y-3">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <Lightbulb className="h-3 w-3 text-amber-500" />
+                                      <div className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Purpose</div>
+                                    </div>
+                                    <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed">{desc.purpose}</p>
+                                  </div>
+                                  <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <Wrench className="h-3 w-3 text-sky-500" />
+                                      <div className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">What to do</div>
+                                    </div>
+                                    <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed">{desc.activity}</p>
+                                  </div>
+                                  <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <ChevronRight className="h-3 w-3 text-emerald-500" />
+                                      <div className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Advance when</div>
+                                    </div>
+                                    <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed">{desc.advance}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </div>
                     )
                   })}
@@ -1670,6 +1756,7 @@ export function TradeQueuePage() {
                                 onDragStart={(e) => handlePairTradeDragStart(e, pairTradeId)}
                                 onDragEnd={handleDragEnd}
                                 expressionCounts={expressionCounts}
+                                proposals={proposalsByTradeId}
                                 onPairClick={(pairId) => { setSelectedTradeId(pairId); setSelectedTradeInitialTab('details') }}
                                 onRecommendationClick={() => { setSelectedTradeId(pairTradeId); setSelectedTradeInitialTab('decisions') }}
                                 onLabClick={handleLabClick}
@@ -2708,15 +2795,26 @@ function PairTradeCard({
   const labCount = labInfo?.count || 0
   const hasMultipleLabs = labCount > 1
 
-  // Collect all proposals for this pair trade's legs
+  // Collect all proposals for this pair trade's legs, deduped by proposal id.
+  // A pair recommendation is stored as ONE trade_proposals row linked to a
+  // representative leg's trade_queue_item_id, with sizing_context.legs holding
+  // all legs. But under the per-leg decision model, each leg has its own
+  // decision_request referencing the SAME proposal — so proposals.get(leg.id)
+  // can return the same proposal for multiple legs. Dedupe by id so downstream
+  // counters report "1 pair recommendation", not "N copies of the same rec".
   const pairTradeProposals = useMemo(() => {
     if (!proposals) return []
-    const allProposals: ProposalData[] = []
+    const seen = new Set<string>()
+    const deduped: ProposalData[] = []
     for (const leg of legs) {
       const legProposals = proposals.get(leg.id) || []
-      allProposals.push(...legProposals)
+      for (const p of legProposals) {
+        if (seen.has(p.id)) continue
+        seen.add(p.id)
+        deduped.push(p)
+      }
     }
-    return allProposals
+    return deduped
   }, [proposals, legs])
 
   // Group proposals by portfolio for display
@@ -2755,7 +2853,7 @@ function PairTradeCard({
       onDragEnd={onDragEnd}
       onClick={() => onPairClick(pairTradeId)}
       className={clsx(
-        "relative group bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer",
+        "relative group bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer flex flex-col h-full",
         isDragging && "opacity-50 rotate-2 scale-105",
         "border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600"
       )}
@@ -2788,13 +2886,16 @@ function PairTradeCard({
         </button>
       )}
 
-      <div className="p-3 relative">
+      <div className="p-3 relative flex-1 flex flex-col">
         {/* Missing requirement alert — upper right */}
         {(() => {
           const stage = firstLeg?.stage || firstLeg?.status
           const hasThesis = legs.some(l => !!(l as any).thesis_text)
           const hasRationale = !!pairTrade.rationale
-          const pairRecCount = legs.reduce((sum, leg) => sum + (expressionCounts?.get(leg.id)?.recommendationCount || 0), 0) || pairTradeProposals.length
+          // A pair recommendation is ONE recommendation regardless of how
+          // many legs have their own decision_requests. Use the deduped
+          // pair proposal count as the source of truth.
+          const pairRecCount = pairTradeProposals.length
           const missing: string[] = []
           if (!hasRationale) missing.push('Why now')
           if (['thesis_forming', 'ready_for_decision', 'deciding'].includes(stage) && !hasThesis) missing.push('Trade thesis')
@@ -2802,7 +2903,13 @@ function PairTradeCard({
           if (missing.length === 0) return null
           return (
             <div className="absolute top-2 right-2">
-              <MissingReqAlert missing={missing} />
+              <MissingReqAlert missing={missing} onItemClick={(item) => {
+                if (item === 'Recommendation') {
+                  onRecommendationClick?.()
+                } else {
+                  onPairClick(pairTradeId)
+                }
+              }} />
             </div>
           )
         })()}
@@ -2968,7 +3075,10 @@ function PairTradeCard({
           if (recStateLoading && !!onProposalClick) {
             return <div className="mb-2"><div className="h-7 w-full rounded-md bg-gray-100 dark:bg-gray-700/50 animate-pulse" /></div>
           }
-          const recCount = legs.reduce((sum, leg) => sum + (expressionCounts?.get(leg.id)?.recommendationCount || 0), 0) || pairTradeProposals.length
+          // A pair recommendation is ONE recommendation regardless of how
+          // many legs have their own decision_requests under the per-leg
+          // decision model. Summing across legs N-counts it (once per leg).
+          const recCount = pairTradeProposals.length
           const hasMyRec = legs.some(leg => expressionCounts?.get(leg.id)?.hasCurrentUserRecommendation)
           const isReadyForDecision = !!onProposalClick
 
@@ -2982,16 +3092,20 @@ function PairTradeCard({
                   className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400 border border-teal-200 dark:border-teal-800/40 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors"
                 >
                   <FileCheck className="h-2.5 w-2.5" />
-                  {recCount} {recCount === 1 ? 'recommendation' : 'recs'}
+                  {recCount} {recCount === 1 ? 'recommendation' : 'recommendations'}
                 </button>
               )}
+              {/* "Needs recommendation" CTA — shown when the pair is in
+                  Ready for Decision with no active recommendations. Replaces
+                  the old auto-prompt-on-drop behavior with an explicit click. */}
               {isReadyForDecision && recCount === 0 && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onProposalClick!() }}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                  onClick={(e) => { e.stopPropagation(); onRecommendationClick?.() }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                  title="Submit a pair recommendation"
                 >
-                  <Gavel className="h-2.5 w-2.5" />
-                  Submit rec
+                  <Scale className="h-2.5 w-2.5" />
+                  Needs recommendation
                 </button>
               )}
               {du && (() => {
@@ -3006,12 +3120,10 @@ function PairTradeCard({
           ) : null
         })()}
 
-        {/* Rationale - prominent like TradeQueueCard */}
-        {pairTrade.rationale && (
-          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mb-2 leading-relaxed">
-            {pairTrade.rationale}
-          </p>
-        )}
+        {/* Rationale - 2 lines, always reserve space */}
+        <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2 mb-2 leading-relaxed min-h-[2.5rem]">
+          {pairTrade.rationale || <span className="text-gray-300 dark:text-gray-600 italic">No rationale</span>}
+        </p>
 
         {/* Collapsible Legs Display */}
         {isExpanded && (
@@ -3072,70 +3184,13 @@ function PairTradeCard({
           </div>
         )}
 
-        {/* Proposals Section - shown when pair trade has proposals (in Deciding) */}
-        {hasRecs && (
-          <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 -mx-3 px-3 pb-2">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Gavel className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-                {pairTradeProposals.length} Portfolio {pairTradeProposals.length !== 1 ? 'Recommendations' : 'Recommendation'}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {Array.from(proposalsByPortfolio.entries()).map(([portfolioId, { portfolioName, proposals: portfolioProposals }]) => (
-                <div key={portfolioId} className="text-xs bg-white dark:bg-gray-800 rounded p-2 border border-amber-200 dark:border-amber-800">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Briefcase className="h-3 w-3 text-gray-400" />
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{portfolioName}</span>
-                  </div>
-                  {/* Show all legs from sizing_context */}
-                  {portfolioProposals.map(p => {
-                    // sizing_context may be a string (from DB) or object
-                    let sizingContext = p.sizing_context
-                    if (typeof sizingContext === 'string') {
-                      try {
-                        sizingContext = JSON.parse(sizingContext)
-                      } catch {
-                        sizingContext = null
-                      }
-                    }
-                    const isPairTrade = sizingContext?.isPairTrade
-                    const contextLegs = sizingContext?.legs
-
-                    if (isPairTrade && contextLegs && contextLegs.length > 0) {
-                      // Pair trade proposal - show all legs
-                      return (
-                        <div key={p.id} className="flex flex-wrap gap-x-3 gap-y-1">
-                          {contextLegs.map((leg, idx) => (
-                            <span key={idx} className={clsx(
-                              "font-medium",
-                              leg.action === 'buy' ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-                            )}>
-                              {leg.action === 'buy' ? 'BUY' : 'SELL'} {leg.symbol}: {leg.weight != null ? `${leg.weight.toFixed(1)}%` : '—'}
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    } else {
-                      // Single trade proposal fallback
-                      const tradeItem = p.trade_queue_items
-                      const symbol = tradeItem?.assets?.symbol || '?'
-                      const weight = p.weight
-                      return (
-                        <span key={p.id} className="text-gray-600 dark:text-gray-400">
-                          {symbol}: {weight?.toFixed(1) ?? '?'}%
-                        </span>
-                      )
-                    }
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Proposals section removed — the compact "N recommendations"
+            badge in the card header is sufficient context, and expanding
+            per-portfolio leg breakdowns here duplicated info available in
+            the pair trade modal's decisions tab. */}
 
         {/* Footer: Author + Pipeline Age + Comments/Votes */}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-1.5">
             <User className="h-3 w-3" />
             <span>{creatorName}</span>
@@ -3872,7 +3927,7 @@ interface TradeQueueCardProps {
   committedTradeMap?: Map<string, Set<string>>
 }
 
-function MissingReqAlert({ missing }: { missing: string[] }) {
+function MissingReqAlert({ missing, onItemClick }: { missing: string[]; onItemClick?: (item: string) => void }) {
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
@@ -3886,10 +3941,17 @@ function MissingReqAlert({ missing }: { missing: string[] }) {
       {show && (
         <>
           <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setShow(false) }} />
-          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg min-w-[160px] py-1.5 px-3">
+          <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg min-w-[160px] py-1.5 px-3">
             <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1">Needs</div>
             {missing.map(m => (
-              <div key={m} className="text-xs text-gray-600 dark:text-gray-300 py-0.5">{m}</div>
+              <button
+                key={m}
+                onClick={(e) => { e.stopPropagation(); setShow(false); onItemClick?.(m) }}
+                className="flex items-center gap-1.5 w-full text-left text-xs text-gray-600 dark:text-gray-300 py-1 px-1 -mx-1 rounded hover:bg-primary-50 hover:text-primary-700 dark:hover:bg-primary-900/20 dark:hover:text-primary-400 transition-colors cursor-pointer"
+              >
+                <Circle className="h-1.5 w-1.5 fill-current flex-shrink-0" />
+                {m}
+              </button>
             ))}
           </div>
         </>
@@ -3983,7 +4045,7 @@ function TradeQueueCard({
       }}
       onClick={onClick}
       className={clsx(
-        "relative group bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer",
+        "relative group bg-white dark:bg-gray-800 rounded-lg border shadow-sm transition-all cursor-pointer flex flex-col h-full",
         isDragging && "opacity-50 rotate-2 scale-105",
         isArchived
           ? "border-gray-200 dark:border-gray-700 opacity-75"
@@ -4018,7 +4080,7 @@ function TradeQueueCard({
         </button>
       )}
 
-      <div className="p-3 relative">
+      <div className="p-3 relative flex-1 flex flex-col">
         {/* Missing requirement alert — upper right */}
         {(() => {
           const stage = item.stage || item.status
@@ -4031,7 +4093,13 @@ function TradeQueueCard({
           if (missing.length === 0) return null
           return (
             <div className="absolute top-2 right-2">
-              <MissingReqAlert missing={missing} />
+              <MissingReqAlert missing={missing} onItemClick={(m) => {
+                if (m === 'Recommendation') {
+                  onRecommendationClick?.()
+                } else {
+                  onClick?.()
+                }
+              }} />
             </div>
           )
         })()}
@@ -4276,8 +4344,11 @@ function TradeQueueCard({
           />
         )}
 
-        {/* Recommendation badge + urgency alert — same line */}
-        {(recCount > 0 || getDerivedUrgency(item.stage || item.status, item.updated_at || item.created_at)) && (
+        {/* Recommendation badge + urgency alert — same line.
+            Includes a "Needs recommendation" CTA when the idea is in
+            Deciding with zero active recommendations. Replaces the old
+            auto-prompt-on-drop with an explicit click action. */}
+        {(recCount > 0 || (isDeciding && recCount === 0) || getDerivedUrgency(item.stage || item.status, item.updated_at || item.created_at)) && (
           <div className="flex items-center gap-2 mb-1.5">
             {recCount > 0 && (
               <button
@@ -4285,7 +4356,17 @@ function TradeQueueCard({
                 className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400 border border-teal-200 dark:border-teal-800/40 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors"
               >
                 <FileCheck className="h-2.5 w-2.5" />
-                {recCount} {recCount === 1 ? 'recommendation' : 'recs'}
+                {recCount} {recCount === 1 ? 'recommendation' : 'recommendations'}
+              </button>
+            )}
+            {isDeciding && recCount === 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRecommendationClick?.() }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                title="Submit a recommendation"
+              >
+                <Scale className="h-2.5 w-2.5" />
+                Needs recommendation
               </button>
             )}
             {(() => {
@@ -4301,15 +4382,13 @@ function TradeQueueCard({
           </div>
         )}
 
-        {/* Rationale */}
-        {item.rationale && (
-          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mb-2 leading-relaxed">
-            {item.rationale}
-          </p>
-        )}
+        {/* Rationale - 2 lines, always reserve space */}
+        <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2 mb-2 leading-relaxed min-h-[2.5rem]">
+          {item.rationale || <span className="text-gray-300 dark:text-gray-600 italic">No rationale</span>}
+        </p>
 
         {/* Footer: Author + Pipeline Age + Comments/Votes */}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-1.5">
             <User className="h-3 w-3" />
             <span>{creatorName}</span>

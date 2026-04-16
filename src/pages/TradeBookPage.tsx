@@ -10,7 +10,7 @@
  * Trade Sheets are snapshot artifacts only and must not mutate decision state.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { BookOpen, Layers, List, Briefcase, ChevronDown, Search, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useQuery } from '@tanstack/react-query'
@@ -18,8 +18,25 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useAcceptedTrades, useTradeBatches } from '../hooks/useAcceptedTrades'
 import { AcceptedTradesTable } from '../components/trading/AcceptedTradesTable'
+import { buildPairInfoByAsset } from '../lib/trade-lab/pair-info'
+import { markStaleAcceptedTrades } from '../lib/services/trade-reconciliation-service'
 import { BatchListView } from '../components/trading/BatchListView'
+import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
+
+// Stable key for TabStateManager — there's only ever one Trade Book
+// tab open, so a literal id is fine. Used to persist view toggle,
+// selected batch, and selected portfolio across tab switches so
+// returning to the Trade Book puts the PM right back where they left
+// off. Stored in sessionStorage via TabStateManager — clears on logout
+// or explicit reset, not on page navigation within the session.
+const TRADE_BOOK_TAB_ID = 'trade-book'
+
+interface PersistedTradeBookState {
+  view?: BookView
+  selectedBatchId?: string | null
+  selectedPortfolioId?: string
+}
 
 // ---------------------------------------------------------------------------
 // View toggle type
@@ -37,8 +54,46 @@ interface TradeBookPageProps {
 
 export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   const { user } = useAuth()
-  const [view, setView] = useState<BookView>('trades')
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null)
+
+  // Hydrate from session-persisted state once, at mount. TabStateManager
+  // stores state keyed by tab id in sessionStorage so tab-switch round
+  // trips restore the user's exact context (view, selected batch,
+  // selected portfolio) instead of reverting to defaults. Loaded
+  // synchronously in the useState initializer so there's no first-paint
+  // flash of default state before the hydration effect runs.
+  const persisted: PersistedTradeBookState = useMemo(
+    () => (TabStateManager.loadTabState(TRADE_BOOK_TAB_ID) as PersistedTradeBookState) || {},
+    // Intentional: read once on mount. Later writes are driven by the
+    // save effect, and reading again would erase in-flight local state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
+  // Batches view is the default — trades come in coherent groups
+  // (rebalances, cash raises, individual ideas) and the batch rationale
+  // + name carry the context a PM needs to recall the intent behind a
+  // commit. The flat trades list is a drill-down, not the overview.
+  const [view, setView] = useState<BookView>(persisted.view || 'batches')
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
+    persisted.selectedBatchId ?? null,
+  )
+  // Transient "pre-fill the Trades view search with this string"
+  // signal. Set ONLY by handleViewBatchTrades (explicit "Open in
+  // Trades" from the Batches detail panel). Intentionally NOT
+  // persisted — on tab-switch return this stays null, so the Trades
+  // view's search is blank unless the user just explicitly asked
+  // for a batch-scoped view. This decouples "batch is selected in
+  // the Batches view" from "trades view should be pre-filtered"
+  // which was previously entangled and caused stale V2B-style
+  // pre-fills after tab-switching.
+  const [pendingTradesSearch, setPendingTradesSearch] = useState<string | null>(null)
+
+  // Clear the pending search whenever we leave the Trades view. On
+  // re-entry the value will either be null (toggle button) or
+  // freshly-set (Open in Trades from Batches detail).
+  useEffect(() => {
+    if (view !== 'trades') setPendingTradesSearch(null)
+  }, [view])
 
   // Portfolio selector
   const { data: portfolios = [] } = useQuery({
@@ -46,14 +101,31 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
     queryFn: async () => {
       const { data } = await supabase
         .from('portfolios')
-        .select('id, name, portfolio_id')
+        .select('id, name, portfolio_id, holdings_source')
         .order('name')
       return data || []
     },
     staleTime: 60_000,
   })
 
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(initialPortfolioId)
+  // Prefer the explicit initialPortfolioId prop (e.g. when the user
+  // navigates in with a specific portfolio context) over the persisted
+  // value. Fall back to persisted only when the prop isn't supplied.
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(
+    initialPortfolioId ?? persisted.selectedPortfolioId,
+  )
+
+  // Persist state whenever any of the tracked fields change. The
+  // initial render writes the hydrated values straight back — cheap
+  // and keeps a single source of truth, so no "wait for first
+  // initialization" flag is needed.
+  useEffect(() => {
+    TabStateManager.saveTabState(TRADE_BOOK_TAB_ID, {
+      view,
+      selectedBatchId,
+      selectedPortfolioId,
+    } satisfies PersistedTradeBookState)
+  }, [view, selectedBatchId, selectedPortfolioId])
   const portfolioId = selectedPortfolioId || portfolios[0]?.id
   const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false)
   const [portfolioSearch, setPortfolioSearch] = useState('')
@@ -107,10 +179,67 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
     updateExecutionStatus,
     updateSizing,
     revert,
+    correct,
     addComment,
   } = useAcceptedTrades(portfolioId)
 
   const { batches } = useTradeBatches(portfolioId)
+
+  // Staleness sweep: flag pending accepted_trades whose activity clock has
+  // crossed the portfolio's inactivity window. Fire once per portfolio mount
+  // — the sweep is idempotent and cheap, and the Trade Book is the primary
+  // surface where stale rows matter. Errors are swallowed: a failed sweep
+  // must not block the page.
+  const sweptPortfoliosRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!portfolioId) return
+    if (sweptPortfoliosRef.current.has(portfolioId)) return
+    sweptPortfoliosRef.current.add(portfolioId)
+    markStaleAcceptedTrades(portfolioId).catch((e) =>
+      console.warn('[TradeBook] Staleness sweep failed', e),
+    )
+  }, [portfolioId])
+
+  // Full pair context for the Trade Book. Even if only one leg of a pair
+  // has been committed to accepted_trades, we want its row to show the full
+  // pair badge with all partner symbols. To do that we fetch trade_queue_items
+  // for every pair_id referenced by the current accepted_trades, which gives
+  // us a complete picture of every leg in each pair (accepted or not).
+  const pairIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of trades) {
+      const pid = t.trade_queue_item?.pair_id || t.trade_queue_item?.pair_trade_id
+      if (pid) set.add(pid)
+    }
+    return Array.from(set)
+  }, [trades])
+
+  const { data: pairContextItems = [] } = useQuery({
+    queryKey: ['trade-book-pair-context', portfolioId, pairIds.sort().join(',')],
+    enabled: pairIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('trade_queue_items')
+        .select('id, asset_id, pair_id, pair_trade_id, pair_leg_type, action, assets:asset_id(symbol)')
+        .or(`pair_id.in.(${pairIds.join(',')}),pair_trade_id.in.(${pairIds.join(',')})`)
+      if (error) throw error
+      return data || []
+    },
+    staleTime: 60_000,
+  })
+
+  const pairInfoByAsset = useMemo(() => {
+    return buildPairInfoByAsset(
+      pairContextItems.map((it: any) => ({
+        asset_id: it.asset_id,
+        symbol: it.assets?.symbol,
+        pair_id: it.pair_id,
+        pair_trade_id: it.pair_trade_id,
+        pair_leg_type: it.pair_leg_type,
+        action: it.action,
+      })),
+    )
+  }, [pairContextItems])
 
   // Role-based permissions
   const isPM = userRole === 'pm' || userRole === 'admin'
@@ -147,6 +276,23 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
     [revert]
   )
 
+  const handleCreateCorrection = useCallback(
+    (originalTradeId: string, sizingInput: string, note: string, context: ActionContext) => {
+      if (!user) return
+      correct({
+        originalTradeId,
+        acceptedBy: context.actorId || user.id,
+        sizing_input: sizingInput,
+        note,
+      }).catch((e: any) => {
+        // Surface failures inline — the prompt flow has no toast harness.
+        console.error('[TradeBook] Correction failed', e)
+        window.alert(`Correction failed: ${e?.message || 'unknown error'}`)
+      })
+    },
+    [user, correct]
+  )
+
   const handleAddComment = useCallback(
     (tradeId: string, content: string) => {
       if (!user) return
@@ -159,11 +305,18 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
     setSelectedBatchId(batchId)
   }, [])
 
-  // "View Trades" from batch detail → switch to Trades view filtered to that batch
+  // "View Trades" from batch detail → switch to Trades view pre-filled
+  // with the batch's NAME in the search. The batch-id is also kept as
+  // the current `selectedBatchId` (so returning to Batches still shows
+  // it selected), but the Trades view reads from `pendingTradesSearch`,
+  // NOT `selectedBatchId`, so tab-switch persistence doesn't cause a
+  // stale pre-fill.
   const handleViewBatchTrades = useCallback((batchId: string) => {
+    const b = batches.find((x) => x.id === batchId)
+    setPendingTradesSearch(b?.name || null)
     setSelectedBatchId(batchId)
     setView('trades')
-  }, [])
+  }, [batches])
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
@@ -244,20 +397,9 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
           {/* Separator */}
           <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
 
-          {/* View toggle */}
+          {/* View toggle — Batches first because it's the default
+              (reading surface), Trades second (operations surface). */}
           <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-            <button
-              onClick={() => setView('trades')}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                view === 'trades'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              )}
-            >
-              <List className="w-3.5 h-3.5" />
-              Trades
-            </button>
             <button
               onClick={() => setView('batches')}
               className={clsx(
@@ -269,16 +411,18 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
             >
               <Layers className="w-3.5 h-3.5" />
               Batches
-              {batches.length > 0 && (
-                <span className={clsx(
-                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
-                  view === 'batches'
-                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
-                    : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                )}>
-                  {batches.length}
-                </span>
+            </button>
+            <button
+              onClick={() => setView('trades')}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                view === 'trades'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               )}
+            >
+              <List className="w-3.5 h-3.5" />
+              Trades
             </button>
           </div>
         </div>
@@ -302,10 +446,13 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
           <AcceptedTradesTable
             trades={trades}
             batches={batches}
-            initialBatchFilter={selectedBatchId}
+            initialSearchQuery={pendingTradesSearch}
+            holdingsSource={(portfolios.find((p: any) => p.id === portfolioId) as any)?.holdings_source}
+            pairInfoByAsset={pairInfoByAsset}
             onUpdateExecutionStatus={handleUpdateExecutionStatus}
             onUpdateSizing={handleUpdateSizing}
             onRevert={handleRevert}
+            onCreateCorrection={handleCreateCorrection}
             onAddComment={handleAddComment}
             canEdit={canEdit}
             canUpdateExecution={canUpdateExecution}

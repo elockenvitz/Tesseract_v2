@@ -31,6 +31,7 @@ import {
   Plus,
   Check,
   Briefcase,
+  Search,
   SearchCode,
   Microscope,
   BrainCircuit,
@@ -39,6 +40,7 @@ import {
   TrendingUp,
   TrendingDown,
   Copy,
+  Loader2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { emitAuditEvent } from '../../lib/audit'
@@ -157,6 +159,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Track which field is the "source" for each leg (the field user entered, others are auto-calc)
   // Key format: `${portfolioId}-${legIdx}`, value: 'target' | 'deltaPort' | 'deltaBench'
   const [pairProposalSourceFields, setPairProposalSourceFields] = useState<Record<string, 'target' | 'deltaPort' | 'deltaBench'>>({})
+  // New pair recommendation form
+  const [showNewPairRec, setShowNewPairRec] = useState(false)
+  const [newPairRecLegs, setNewPairRecLegs] = useState<Array<{ assetId: string; symbol: string; action: string; weight: string }>>([])
+  const [newPairRecNotes, setNewPairRecNotes] = useState('')
+  const [newPairRecPortfolioId, setNewPairRecPortfolioId] = useState<string>('')
 
   // Portfolio context with holdings info
   interface PortfolioContext {
@@ -234,6 +241,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Assignment state
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false)
   const [showCollaboratorsDropdown, setShowCollaboratorsDropdown] = useState(false)
+  // Pending (unsaved) collaborator selection — committed only on Save
+  const [pendingCollaborators, setPendingCollaborators] = useState<string[] | null>(null)
+  // Pending (unsaved) Lead assignee — undefined = not editing, null = unassign, string = user id
+  const [pendingAssignee, setPendingAssignee] = useState<string | null | undefined>(undefined)
   const assigneeDropdownRef = useRef<HTMLDivElement>(null)
   const collaboratorsDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -347,7 +358,12 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
       if (pairLegsError) throw pairLegsError
       if (pairLegs && pairLegs.length > 0) {
-        // Build a synthetic pair trade object from the legs
+        // Build a synthetic pair trade object from the legs. rationale and
+        // thesis_text are read from the first leg — the pair_id-only code
+        // path writes them to every leg in unison, so any leg is authoritative.
+        // IMPORTANT: thesis_summary must NOT be aliased onto a legs-sourced
+        // pair; it only exists on rows in the pair_trades table. Mixing them
+        // caused Trade Thesis saves to overwrite "Why Now" rationale.
         const firstLeg = pairLegs[0]
         return {
           type: 'pair_from_legs' as const,
@@ -355,8 +371,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             id: tradeId,
             name: 'Pairs Trade',
             rationale: firstLeg.rationale,
+            thesis_text: firstLeg.thesis_text,
             urgency: firstLeg.urgency,
             status: firstLeg.status,
+            stage: firstLeg.stage,
             created_at: firstLeg.created_at,
             created_by: firstLeg.created_by,
             portfolios: firstLeg.portfolios,
@@ -666,35 +684,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   const { data: labLinks = [], refetch: refetchLabLinks } = useQuery({
     queryKey: ['idea-lab-links', tradeId, pairTradeLegIds],
     queryFn: async () => {
+      // Both single and pair trades go through getIdeaLabLinks — it handles
+      // id-or-array and returns the normalized flat shape. For pair trades,
+      // deduplicate by trade_lab_id since multiple legs typically link to
+      // the same lab (we only want one row per lab in the modal).
       if (isPairTrade && pairTradeLegIds.length > 0) {
-        // For pair trades, fetch lab links for all leg IDs and deduplicate by portfolio
-        const { data, error } = await supabase
-          .from('trade_lab_idea_links')
-          .select(`
-            id,
-            trade_lab_id,
-            trade_queue_item_id,
-            proposed_weight,
-            proposed_shares,
-            created_by,
-            created_at,
-            trade_labs:trade_lab_id (
-              id,
-              name,
-              portfolio_id,
-              portfolios:portfolio_id (
-                id,
-                name,
-                benchmark
-              )
-            )
-          `)
-          .in('trade_queue_item_id', pairTradeLegIds)
-          .order('created_at')
-        if (error) throw error
-        // Deduplicate by trade_lab_id (same portfolio may be linked via multiple legs)
+        const links = await getIdeaLabLinks(pairTradeLegIds)
         const seen = new Set<string>()
-        return (data || []).filter((link: any) => {
+        return links.filter(link => {
           if (seen.has(link.trade_lab_id)) return false
           seen.add(link.trade_lab_id)
           return true
@@ -832,19 +829,28 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Get portfolio IDs from lab links
   const linkedPortfolioIds = labLinks.map(l => l.trade_lab?.portfolio_id).filter(Boolean) as string[]
 
-  // Fetch members of linked portfolios (for stakeholder/participant display)
+  // Include pair trade's direct portfolio_id and single trade's portfolio_id
+  // so membership checks work even when there are no lab links
+  const allRelevantPortfolioIds = useMemo(() => {
+    const ids = new Set(linkedPortfolioIds)
+    if (pairTradePortfolioId) ids.add(pairTradePortfolioId)
+    if (trade?.portfolio_id) ids.add(trade.portfolio_id)
+    return Array.from(ids)
+  }, [linkedPortfolioIds, pairTradePortfolioId, trade?.portfolio_id])
+
+  // Fetch members of all relevant portfolios (for stakeholder/participant display)
   const { data: linkedPortfolioMembers = [] } = useQuery({
-    queryKey: ['portfolio-members', linkedPortfolioIds],
+    queryKey: ['portfolio-members', allRelevantPortfolioIds],
     queryFn: async () => {
-      if (linkedPortfolioIds.length === 0) return []
+      if (allRelevantPortfolioIds.length === 0) return []
       const { data, error } = await supabase
         .from('portfolio_memberships')
         .select('user_id, portfolio_id, is_portfolio_manager')
-        .in('portfolio_id', linkedPortfolioIds)
+        .in('portfolio_id', allRelevantPortfolioIds)
       if (error) return []
       return data || []
     },
-    enabled: isOpen && linkedPortfolioIds.length > 0,
+    enabled: isOpen && allRelevantPortfolioIds.length > 0,
     staleTime: 60_000,
   })
 
@@ -986,7 +992,24 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           }
         }
       })
-      setPortfolioTargets(targets)
+      // Guard against a render loop: only set state when the derived targets
+      // actually differ from current. Without this, a new object reference is
+      // written every time labLinks ticks even if its contents are unchanged,
+      // and any downstream consumer of portfolioTargets that feeds back into
+      // a query key can trigger Max update depth exceeded.
+      setPortfolioTargets(prev => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(targets)
+        if (prevKeys.length !== nextKeys.length) return targets
+        for (const k of nextKeys) {
+          const p = prev[k]
+          const n = targets[k]
+          if (!p || p.absoluteWeight !== n.absoluteWeight || p.absoluteShares !== n.absoluteShares || p.sourceField !== n.sourceField) {
+            return targets
+          }
+        }
+        return prev
+      })
     }
   }, [labLinks])
 
@@ -999,8 +1022,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   }, [user?.id, linkedPortfolioMembers])
 
   useEffect(() => {
+    let contexts: PortfolioContext[] = []
+
     if (labLinks.length > 0 && portfolioHoldings) {
-      const contexts: PortfolioContext[] = labLinks
+      contexts = labLinks
         .filter(link => {
           const portfolioId = link.trade_lab?.portfolio_id
           // Only show portfolios the current user is a member of
@@ -1010,7 +1035,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           const portfolioId = link.trade_lab?.portfolio_id
           const portfolioName = link.trade_lab?.portfolio?.name || 'Unknown Portfolio'
           const benchmark = (link.trade_lab?.portfolio as any)?.benchmark || null
-          const holdingData = portfolioHoldings.find(h => h.portfolioId === portfolioId)
+          const holdingData = portfolioHoldings?.find(h => h.portfolioId === portfolioId)
 
           return {
             id: portfolioId || '',
@@ -1025,7 +1050,45 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
             portfolioTotalValue: holdingData?.totalPortfolioValue || 0,
           }
         }).filter(c => c.id)
+    }
 
+    // Fallback for pair trades with a direct portfolio_id but no lab links
+    if (contexts.length === 0 && isPairTrade && pairTradePortfolioId && userPortfolioIds.has(pairTradePortfolioId)) {
+      const portfolioName = pairTradeData?.portfolios?.name || 'Unknown Portfolio'
+      const holdingData = portfolioHoldings?.find(h => h.portfolioId === pairTradePortfolioId)
+      contexts = [{
+        id: pairTradePortfolioId,
+        name: portfolioName,
+        benchmark: (pairTradeData?.portfolios as any)?.benchmark || null,
+        currentShares: holdingData?.shares || 0,
+        currentPrice: holdingData?.price || 0,
+        currentValue: holdingData?.marketValue || 0,
+        currentWeight: holdingData?.weight || 0,
+        benchmarkWeight: null,
+        activeWeight: null,
+        portfolioTotalValue: holdingData?.totalPortfolioValue || 0,
+      }]
+    }
+
+    // Also fallback for single trades with a direct portfolio_id but no lab links
+    if (contexts.length === 0 && !isPairTrade && trade?.portfolio_id && userPortfolioIds.has(trade.portfolio_id)) {
+      const portfolioName = trade?.portfolios?.name || 'Unknown Portfolio'
+      const holdingData = portfolioHoldings?.find(h => h.portfolioId === trade.portfolio_id)
+      contexts = [{
+        id: trade.portfolio_id,
+        name: portfolioName,
+        benchmark: (trade?.portfolios as any)?.benchmark || null,
+        currentShares: holdingData?.shares || 0,
+        currentPrice: holdingData?.price || 0,
+        currentValue: holdingData?.marketValue || 0,
+        currentWeight: holdingData?.weight || 0,
+        benchmarkWeight: null,
+        activeWeight: null,
+        portfolioTotalValue: holdingData?.totalPortfolioValue || 0,
+      }]
+    }
+
+    if (contexts.length > 0) {
       setPortfolioContexts(contexts)
 
       // Initialize inline proposals for each portfolio
@@ -1050,7 +1113,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       })
       setInlineProposals(initialProposals)
     }
-  }, [labLinks, portfolioHoldings, proposals, user?.id])
+  }, [labLinks, portfolioHoldings, proposals, user?.id, isPairTrade, pairTradePortfolioId, pairTradeData, trade])
 
   // Mutation for updating per-portfolio sizing
   const updatePortfolioSizingMutation = useMutation({
@@ -1527,8 +1590,74 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   })
 
   // Update assignee mutation
+  // Helper: notify newly added users that they were assigned to this trade idea
+  const notifyUsersAdded = async (
+    userIds: string[],
+    role: 'Lead Analyst' | 'Analyst',
+  ) => {
+    if (!user?.id || userIds.length === 0) return
+    const assignerName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || 'Someone'
+
+    // Get trade context for notification
+    let tradeLabel = 'a trade idea'
+    let assetSymbol: string | null = null
+    let assetName: string | null = null
+    let assetId: string | null = null
+    let notifContextType: 'asset' | 'workflow' = 'asset'
+    let notifContextId: string = tradeId
+
+    if (isPairTrade && pairTradeData) {
+      const legs = pairTradeData.trade_queue_items || pairTradeData.legs || []
+      const buys = legs.filter((l: any) => l.action === 'buy' || l.action === 'add').map((l: any) => l.assets?.symbol).filter(Boolean)
+      const sells = legs.filter((l: any) => l.action === 'sell' || l.action === 'reduce').map((l: any) => l.assets?.symbol).filter(Boolean)
+      tradeLabel = `pair trade ${buys.join(',')}/${sells.join(',')}`
+      if (legs[0]?.asset_id) {
+        assetId = legs[0].asset_id
+        assetSymbol = legs[0].assets?.symbol || null
+        assetName = legs[0].assets?.company_name || null
+        notifContextId = assetId
+      }
+    } else if (trade) {
+      assetSymbol = trade.assets?.symbol || null
+      assetName = trade.assets?.company_name || null
+      assetId = trade.asset_id || trade.assets?.id || null
+      tradeLabel = `${trade.action?.toUpperCase() || 'trade'} ${assetSymbol || 'idea'}`
+      if (assetId) notifContextId = assetId
+    }
+
+    const notifications = userIds
+      .filter(uid => uid !== user.id) // don't notify yourself
+      .map(uid => ({
+        user_id: uid,
+        type: 'task_assigned',
+        title: `Added as ${role}`,
+        message: `${assignerName} added you as ${role} on ${tradeLabel}`,
+        context_type: notifContextType,
+        context_id: notifContextId,
+        context_data: {
+          trade_idea_id: tradeId,
+          is_pair_trade: isPairTrade,
+          role,
+          added_by: user.id,
+          added_by_name: assignerName,
+          asset_id: assetId,
+          asset_symbol: assetSymbol,
+          asset_name: assetName,
+        },
+      }))
+
+    if (notifications.length > 0) {
+      try {
+        await supabase.from('notifications').insert(notifications)
+      } catch (e) {
+        console.error('[Assignment notify] failed:', e)
+      }
+    }
+  }
+
   const updateAssigneeMutation = useMutation({
     mutationFn: async (assigneeId: string | null) => {
+      const prevAssignee = trade?.assigned_to
       const { error } = await supabase
         .from('trade_queue_items')
         .update({ assigned_to: assigneeId })
@@ -1536,6 +1665,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
       if (error) throw error
       emitFieldEdit(['assigned_to'])
+
+      // Notify if a new user was assigned
+      if (assigneeId && assigneeId !== prevAssignee) {
+        await notifyUsersAdded([assigneeId], 'Lead Analyst')
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
@@ -1548,6 +1682,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Update collaborators mutation
   const updateCollaboratorsMutation = useMutation({
     mutationFn: async (collaboratorIds: string[]) => {
+      const prevCollaborators: string[] = (trade as any)?.collaborators || []
       const { error } = await supabase
         .from('trade_queue_items')
         .update({ collaborators: collaboratorIds })
@@ -1555,6 +1690,12 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
       if (error) throw error
       emitFieldEdit(['collaborators'])
+
+      // Notify only newly added users
+      const newlyAdded = collaboratorIds.filter(id => !prevCollaborators.includes(id))
+      if (newlyAdded.length > 0) {
+        await notifyUsersAdded(newlyAdded, 'Analyst')
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
@@ -1563,26 +1704,28 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     }
   })
 
-  // Update pair trade thesis mutation
-  // For pair_trades table: updates thesis_summary field
-  // For pair_id-only trades: updates rationale on all legs (temporary until schema supports shared thesis)
-  const updatePairTradeRationaleMutation = useMutation({
-    mutationFn: async (newThesis: string | null) => {
+  // Update pair trade RATIONALE (a.k.a. "why now") mutation.
+  // For pair_trades table: updates rationale on the pair row.
+  // For pair_id-only trades: updates rationale on all legs.
+  //
+  // NOTE: There used to be a single `updatePairTradeRationaleMutation` that
+  // handled BOTH rationale and thesis edits, and it hardcoded which column
+  // it wrote to per branch — causing rationale edits on pair_trades to
+  // clobber thesis_summary, and thesis edits on pair_id-only pairs to
+  // clobber rationale. Split into two explicit mutations.
+  const updatePairRationaleMutation = useMutation({
+    mutationFn: async (newRationale: string | null) => {
       const isPairTradesTable = tradeData?.type === 'pair'
-
       if (isPairTradesTable) {
-        // Update the pair_trades table thesis_summary field
         const { error } = await supabase
           .from('pair_trades')
-          .update({ thesis_summary: newThesis, updated_at: new Date().toISOString() })
+          .update({ rationale: newRationale, updated_at: new Date().toISOString() })
           .eq('id', tradeId)
         if (error) throw error
       } else {
-        // For pair_id-only trades, update rationale on all legs
-        // NOTE: This is temporary - ideally would have a shared thesis field
         const { error } = await supabase
           .from('trade_queue_items')
-          .update({ rationale: newThesis, updated_at: new Date().toISOString() })
+          .update({ rationale: newRationale, updated_at: new Date().toISOString() })
           .eq('pair_id', tradeId)
         if (error) throw error
       }
@@ -1593,6 +1736,37 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       invalidateActivityCaches()
       setIsEditingRationale(false)
       setEditedRationale('')
+    }
+  })
+
+  // Update pair trade THESIS mutation.
+  // For pair_trades table: updates thesis_summary on the pair row.
+  // For pair_id-only trades: updates thesis_text on all legs (trade_queue_items
+  // already has a thesis_text column — no need for the old "temporary"
+  // write-to-rationale hack that was overwriting "why now").
+  const updatePairThesisMutation = useMutation({
+    mutationFn: async (newThesis: string | null) => {
+      const isPairTradesTable = tradeData?.type === 'pair'
+      if (isPairTradesTable) {
+        const { error } = await supabase
+          .from('pair_trades')
+          .update({ thesis_summary: newThesis, updated_at: new Date().toISOString() })
+          .eq('id', tradeId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('trade_queue_items')
+          .update({ thesis_text: newThesis, updated_at: new Date().toISOString() })
+          .eq('pair_id', tradeId)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      invalidateActivityCaches()
+      setIsEditingThesis(false)
+      setEditedThesis('')
     }
   })
 
@@ -1636,6 +1810,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Update pair trade assignee mutation (updates all legs)
   const updatePairTradeAssigneeMutation = useMutation({
     mutationFn: async (assigneeId: string | null) => {
+      const prevAssignee = pairTradeData?.assigned_to
       const { error } = await supabase
         .from('trade_queue_items')
         .update({ assigned_to: assigneeId, updated_at: new Date().toISOString() })
@@ -1643,6 +1818,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
       if (error) throw error
       emitFieldEdit(['assigned_to'])
+
+      if (assigneeId && assigneeId !== prevAssignee) {
+        await notifyUsersAdded([assigneeId], 'Lead Analyst')
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
@@ -1655,6 +1834,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
   // Update pair trade collaborators mutation (updates all legs)
   const updatePairTradeCollaboratorsMutation = useMutation({
     mutationFn: async (collaboratorIds: string[]) => {
+      const prevCollaborators: string[] = pairTradeData?.collaborators || []
       const { error } = await supabase
         .from('trade_queue_items')
         .update({ collaborators: collaboratorIds, updated_at: new Date().toISOString() })
@@ -1662,6 +1842,11 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
       if (error) throw error
       emitFieldEdit(['collaborators'])
+
+      const newlyAdded = collaboratorIds.filter(id => !prevCollaborators.includes(id))
+      if (newlyAdded.length > 0) {
+        await notifyUsersAdded(newlyAdded, 'Analyst')
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-detail', tradeId] })
@@ -2071,23 +2256,41 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           <div className="flex items-center justify-between mb-3">
             {/* Single Trade Header */}
             {trade && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={clsx(
-                  "font-semibold uppercase text-base",
-                  trade.action === 'buy' || trade.action === 'add'
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-red-600 dark:text-red-400"
-                )}>
-                  {trade.action}
-                </span>
-                <span className="font-bold text-lg text-gray-900 dark:text-white">
-                  {trade.assets?.symbol}
-                </span>
-                <span className="text-gray-500 dark:text-gray-400">
-                  {trade.assets?.company_name}
-                </span>
-                {/* Portfolio pills + add button */}
-                <div className="relative flex items-center gap-1.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={clsx(
+                    "font-semibold uppercase text-base",
+                    trade.action === 'buy' || trade.action === 'add'
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-red-600 dark:text-red-400"
+                  )}>
+                    {trade.action}
+                  </span>
+                  <span className="font-bold text-lg text-gray-900 dark:text-white">
+                    {trade.assets?.symbol}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {trade.assets?.company_name}
+                  </span>
+                  {trade.conviction && (
+                    <span className={clsx(
+                      "text-[11px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded",
+                      trade.conviction === 'high' ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-900/20" :
+                      trade.conviction === 'medium' ? "text-blue-700 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20" :
+                      "text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-700"
+                    )}>
+                      <span className={clsx(
+                        "inline-block h-1.5 w-1.5 rounded-full",
+                        trade.conviction === 'high' ? "bg-green-500" :
+                        trade.conviction === 'medium' ? "bg-blue-500" :
+                        "bg-gray-400"
+                      )} />
+                      {trade.conviction === 'high' ? 'High Conviction' : trade.conviction === 'medium' ? 'Med Conviction' : 'Low Conviction'}
+                    </span>
+                  )}
+                </div>
+                {/* Portfolio pills — second line */}
+                <div className="relative flex items-center gap-1.5 mt-1.5">
                   {labLinks.map((link: any) => {
                     const name = link.trade_lab?.portfolio?.name || link.trade_lab?.name || 'Unknown'
                     return (
@@ -2143,22 +2346,6 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     </>
                   )}
                 </div>
-                {trade.conviction && (
-                  <span className={clsx(
-                    "text-[11px] font-medium flex items-center gap-1",
-                    trade.conviction === 'high' ? "text-green-600 dark:text-green-400" :
-                    trade.conviction === 'medium' ? "text-blue-600 dark:text-blue-400" :
-                    "text-gray-500 dark:text-gray-400"
-                  )}>
-                    {trade.conviction === 'high' ? 'High' : trade.conviction === 'medium' ? 'Med' : 'Low'}
-                    <span className={clsx(
-                      "inline-block h-1.5 w-1.5 rounded-full",
-                      trade.conviction === 'high' ? "bg-green-500" :
-                      trade.conviction === 'medium' ? "bg-blue-500" :
-                      "bg-gray-400"
-                    )} />
-                  </span>
-                )}
               </div>
             )}
             {/* Pair Trade Header */}
@@ -2174,41 +2361,57 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               const buySymbols = longLegs.map((l: any) => l.assets?.symbol || '?').join(', ')
               const sellSymbols = shortLegs.map((l: any) => l.assets?.symbol || '?').join(', ')
 
+              const firstLeg = legs[0]
+              const conv = firstLeg?.conviction
+
               return (
-                <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-                  {/* Pair Trade icon badge */}
-                  <div className="p-1.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 flex-shrink-0">
-                    <Link2 className="h-4 w-4" />
-                  </div>
-                  {/* Trade structure */}
-                  <span className="font-semibold uppercase text-base text-green-600 dark:text-green-400">BUY</span>
-                  <span className="font-bold text-lg text-gray-900 dark:text-white">{buySymbols}</span>
-                  <span className="text-gray-400 dark:text-gray-500">·</span>
-                  <span className="font-semibold uppercase text-base text-red-600 dark:text-red-400">SELL</span>
-                  <span className="font-bold text-lg text-gray-900 dark:text-white">{sellSymbols}</span>
-                  {/* Urgency badge */}
-                  {/* Conviction indicator — replaces manual urgency */}
-                  {(() => {
-                    const firstLeg = (pairTradeData.trade_queue_items || pairTradeData.legs || [])[0]
-                    const conv = firstLeg?.conviction
-                    if (!conv) return null
-                    return (
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {/* Pair Trade icon badge */}
+                    <div className="p-1.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 flex-shrink-0">
+                      <Link2 className="h-4 w-4" />
+                    </div>
+                    {/* Trade structure */}
+                    <span className="font-semibold uppercase text-base text-green-600 dark:text-green-400">BUY</span>
+                    <span className="font-bold text-lg text-gray-900 dark:text-white">{buySymbols}</span>
+                    <span className="text-gray-400 dark:text-gray-500">·</span>
+                    <span className="font-semibold uppercase text-base text-red-600 dark:text-red-400">SELL</span>
+                    <span className="font-bold text-lg text-gray-900 dark:text-white">{sellSymbols}</span>
+                    {conv && (
                       <span className={clsx(
-                        "text-[11px] font-medium flex items-center gap-1",
-                        conv === 'high' ? "text-green-600 dark:text-green-400" :
-                        conv === 'medium' ? "text-blue-600 dark:text-blue-400" :
-                        "text-gray-500 dark:text-gray-400"
+                        "text-[11px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded",
+                        conv === 'high' ? "text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-900/20" :
+                        conv === 'medium' ? "text-blue-700 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20" :
+                        "text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-700"
                       )}>
-                        {conv === 'high' ? 'High' : conv === 'medium' ? 'Med' : 'Low'}
                         <span className={clsx(
                           "inline-block h-1.5 w-1.5 rounded-full",
                           conv === 'high' ? "bg-green-500" :
                           conv === 'medium' ? "bg-blue-500" :
                           "bg-gray-400"
                         )} />
+                        {conv === 'high' ? 'High Conviction' : conv === 'medium' ? 'Med Conviction' : 'Low Conviction'}
                       </span>
-                    )
-                  })()}
+                    )}
+                  </div>
+                  {/* Portfolio pills — second line */}
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {labLinks.map((link: any) => {
+                      const name = link.trade_lab?.portfolio?.name || link.trade_lab?.name || 'Unknown'
+                      return (
+                        <span key={link.id} className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                          <Briefcase className="w-3 h-3 text-gray-400" />
+                          {name}
+                        </span>
+                      )
+                    })}
+                    {pairTradePortfolioId && labLinks.length === 0 && pairTradeData.portfolios?.name && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                        <Briefcase className="w-3 h-3 text-gray-400" />
+                        {pairTradeData.portfolios.name}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             })()}
@@ -2358,10 +2561,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         <textarea
                           autoFocus
                           value={editedRationale}
-                          onChange={(e) => setEditedRationale(e.target.value)}
+                          onChange={(e) => {
+                            setEditedRationale(e.target.value.slice(0, 300))
+                            e.target.style.height = 'auto'
+                            e.target.style.height = e.target.scrollHeight + 'px'
+                          }}
+                          ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                           placeholder="Why is this pair trade worth investigating now?"
-                          rows={4}
-                          className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 resize-none border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent leading-relaxed"
+                          rows={1}
+                          maxLength={300}
+                          className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 resize-none border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent leading-relaxed overflow-hidden"
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') {
                               setIsEditingRationale(false)
@@ -2369,37 +2578,38 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             }
                           }}
                         />
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex items-center gap-2 mt-2">
                           <button
                             onClick={() => {
                               setIsEditingRationale(false)
                               setEditedRationale('')
                             }}
-                            disabled={updatePairTradeRationaleMutation.isPending}
+                            disabled={updatePairRationaleMutation.isPending}
                             className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                           >
                             Cancel
                           </button>
                           <button
-                            onClick={() => updatePairTradeRationaleMutation.mutate(editedRationale || null)}
-                            disabled={updatePairTradeRationaleMutation.isPending}
+                            onClick={() => updatePairRationaleMutation.mutate(editedRationale || null)}
+                            disabled={updatePairRationaleMutation.isPending}
                             className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
                           >
-                            {updatePairTradeRationaleMutation.isPending ? 'Saving...' : 'Save'}
+                            {updatePairRationaleMutation.isPending ? 'Saving...' : 'Save'}
                           </button>
+                          <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedRationale.length}/300</span>
                         </div>
                       </>
                     ) : (
                       <div className="group">
-                        {(pairTradeData.thesis_summary || pairTradeData.rationale) ? (
+                        {pairTradeData.rationale ? (
                           <div className="flex gap-2">
                             <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                              {pairTradeData.thesis_summary || pairTradeData.rationale}
+                              {pairTradeData.rationale}
                             </p>
                             {isPairTradeOwner && (
                               <button
                                 onClick={() => {
-                                  setEditedRationale(pairTradeData.thesis_summary || pairTradeData.rationale || '')
+                                  setEditedRationale(pairTradeData.rationale || '')
                                   setIsEditingRationale(true)
                                 }}
                                 className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -2441,10 +2651,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             <textarea
                               autoFocus
                               value={editedThesis}
-                              onChange={(e) => setEditedThesis(e.target.value)}
+                              onChange={(e) => {
+                                setEditedThesis(e.target.value.slice(0, 300))
+                                e.target.style.height = 'auto'
+                                e.target.style.height = e.target.scrollHeight + 'px'
+                              }}
+                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                               placeholder="Write the trade thesis — what is your conviction based on? What are the key drivers?"
-                              rows={6}
-                              className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 resize-none border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent leading-relaxed"
+                              rows={1}
+                              maxLength={300}
+                              className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 resize-none border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent leading-relaxed overflow-hidden"
                               onKeyDown={(e) => {
                                 if (e.key === 'Escape') {
                                   setIsEditingThesis(false)
@@ -2452,40 +2668,39 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 }
                               }}
                             />
-                            <div className="flex gap-2 mt-2">
+                            <div className="flex items-center gap-2 mt-2">
                               <button
                                 onClick={() => { setIsEditingThesis(false); setEditedThesis('') }}
-                                disabled={updatePairTradeRationaleMutation.isPending}
+                                disabled={updatePairThesisMutation.isPending}
                                 className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                               >
                                 Cancel
                               </button>
                               <button
                                 onClick={() => {
-                                  // For pair trades, thesis is stored in thesis_summary on the pair_trades table
-                                  // We reuse the existing mutation but this is conceptually separate
-                                  updatePairTradeRationaleMutation.mutate(editedThesis || null)
-                                  setIsEditingThesis(false)
-                                  setEditedThesis('')
+                                  // Thesis goes to pair_trades.thesis_summary or
+                                  // trade_queue_items.thesis_text (per leg) — NOT rationale.
+                                  updatePairThesisMutation.mutate(editedThesis || null)
                                 }}
-                                disabled={updatePairTradeRationaleMutation.isPending}
+                                disabled={updatePairThesisMutation.isPending}
                                 className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
                               >
-                                {updatePairTradeRationaleMutation.isPending ? 'Saving...' : 'Save'}
+                                {updatePairThesisMutation.isPending ? 'Saving...' : 'Save'}
                               </button>
+                              <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedThesis.length}/300</span>
                             </div>
                           </>
                         ) : (
                           <div className="group">
-                            {pairTradeData.thesis_summary ? (
+                            {(pairTradeData.thesis_summary || (pairTradeData as any).thesis_text) ? (
                               <div className="flex gap-2">
                                 <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                                  {pairTradeData.thesis_summary}
+                                  {pairTradeData.thesis_summary || (pairTradeData as any).thesis_text}
                                 </p>
                                 {isPairTradeOwner && (
                                   <button
                                     onClick={() => {
-                                      setEditedThesis(pairTradeData.thesis_summary || '')
+                                      setEditedThesis(pairTradeData.thesis_summary || (pairTradeData as any).thesis_text || '')
                                       setIsEditingThesis(true)
                                     }}
                                     className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -2540,18 +2755,19 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== REFERENCE LEVELS ========== */}
                   <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => setIsSizingExpanded(!isSizingExpanded)}
-                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
-                      >
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 py-1 rounded transition-colors"
+                      onClick={() => setIsSizingExpanded(!isSizingExpanded)}
+                    >
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300">
                         {isSizingExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         <Target className="h-3.5 w-3.5" />
                         Reference Levels
-                      </button>
+                      </div>
                       {isPairTradeOwner && !isEditingPairReferenceLevels && isSizingExpanded && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             const legs = pairTradeData.trade_queue_items || pairTradeData.legs || []
                             const initial: Record<string, { targetPrice: string; stopLoss: string; takeProfit: string }> = {}
                             legs.forEach((leg: any) => {
@@ -2687,18 +2903,19 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== CONVICTION & TIME HORIZON ========== */}
                   <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => setIsRiskExpanded(!isRiskExpanded)}
-                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
-                      >
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 py-1 rounded transition-colors"
+                      onClick={() => setIsRiskExpanded(!isRiskExpanded)}
+                    >
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300">
                         {isRiskExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         <Gauge className="h-3.5 w-3.5" />
                         Conviction &amp; Time Horizon
-                      </button>
+                      </div>
                       {isPairTradeOwner && !isEditingPairConviction && isRiskExpanded && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             const firstLeg = (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]
                             setEditedPairConviction(firstLeg?.conviction || null)
                             setEditedPairTimeHorizon(firstLeg?.time_horizon || null)
@@ -2773,8 +2990,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           </div>
                         ) : (
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 block">Conviction</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Conviction</span>
                               <span className={clsx(
                                 "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
                                 (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction === 'low' && "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
@@ -2785,8 +3002,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 {(pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.conviction ? (pairTradeData.trade_queue_items || pairTradeData.legs)[0].conviction.charAt(0).toUpperCase() + (pairTradeData.trade_queue_items || pairTradeData.legs)[0].conviction.slice(1) : '—'}
                               </span>
                             </div>
-                            <div>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 block">Time Horizon</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Time Horizon</span>
                               <span className={clsx(
                                 "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
                                 (pairTradeData.trade_queue_items || pairTradeData.legs)?.[0]?.time_horizon && "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300",
@@ -2803,14 +3020,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== RESEARCH OWNERSHIP ========== */}
                   <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
-                    <button
+                    <div
+                      className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 py-1 rounded transition-colors"
                       onClick={() => setIsOwnershipExpanded(!isOwnershipExpanded)}
-                      className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
                     >
                       {isOwnershipExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       <Users className="h-3.5 w-3.5" />
                       Research Ownership
-                    </button>
+                    </div>
                     {isOwnershipExpanded && (
                       <div className="mt-3 space-y-2.5">
                         {/* Owner */}
@@ -2825,131 +3042,288 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         </div>
 
                         {/* Assigned Analyst */}
-                        <div className="flex items-center justify-between relative" ref={assigneeDropdownRef}>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Analyst</span>
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {isPairTradeOwner ? (
-                              <button
-                                onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
-                                className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                              >
-                                {pairTradeData.assigned_user ? (
-                                  <>
-                                    <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
+                        <div className="relative" ref={assigneeDropdownRef}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Lead</span>
+                            <div className="flex items-center gap-1.5 text-xs">
+                              {isPairTradeOwner ? (
+                                <button
+                                  onClick={() => {
+                                    if (!showAssigneeDropdown) {
+                                      setPendingAssignee(pairTradeData.assigned_to ?? null)
+                                    }
+                                    setShowAssigneeDropdown(!showAssigneeDropdown)
+                                  }}
+                                  className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                >
+                                  {pairTradeData.assigned_user ? (
+                                    <>
+                                      <div className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center text-[10px] font-medium">
+                                        {getUserInitials(pairTradeData.assigned_user)}
+                                      </div>
+                                      <span className="font-medium">{getUserDisplayName(pairTradeData.assigned_user)}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-gray-400">+ Assign</span>
+                                  )}
+                                  <ChevronDown className={clsx("h-3 w-3 text-gray-400 transition-transform", showAssigneeDropdown && "rotate-180")} />
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  {pairTradeData.assigned_user && (
+                                    <div className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center text-[10px] font-medium">
                                       {getUserInitials(pairTradeData.assigned_user)}
                                     </div>
-                                    <span className="font-medium">{getUserDisplayName(pairTradeData.assigned_user)}</span>
-                                  </>
-                                ) : (
-                                  <span className="text-gray-400">+ Assign</span>
-                                )}
-                                <ChevronDown className={clsx("h-3 w-3 text-gray-400 transition-transform", showAssigneeDropdown && "rotate-180")} />
-                              </button>
-                            ) : (
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {pairTradeData.assigned_user ? getUserDisplayName(pairTradeData.assigned_user) : 'Not assigned'}
-                              </span>
-                            )}
-
-                            {showAssigneeDropdown && isPairTradeOwner && (
-                              <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
-                                <button
-                                  onClick={() => updatePairTradeAssigneeMutation.mutate(null)}
-                                  disabled={updatePairTradeAssigneeMutation.isPending}
-                                  className={clsx(
-                                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
-                                    !pairTradeData.assigned_to && "bg-gray-50 dark:bg-gray-700"
                                   )}
-                                >
-                                  <XCircle className="h-4 w-4 text-gray-400" />
-                                  <span className="text-sm text-gray-600 dark:text-gray-300">Unassign</span>
-                                </button>
-                                {teamMembers?.filter(m => m.id !== user?.id).map(member => (
-                                  <button
-                                    key={member.id}
-                                    onClick={() => updatePairTradeAssigneeMutation.mutate(member.id)}
-                                    disabled={updatePairTradeAssigneeMutation.isPending}
-                                    className={clsx(
-                                      "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
-                                      pairTradeData.assigned_to === member.id && "bg-primary-50 dark:bg-primary-900/20"
-                                    )}
-                                  >
-                                    <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
-                                      {getUserInitials(member)}
-                                    </div>
-                                    <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                                  <span className="text-gray-700 dark:text-gray-300">
+                                    {pairTradeData.assigned_user ? getUserDisplayName(pairTradeData.assigned_user) : 'Not assigned'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                           </div>
+                          {showAssigneeDropdown && isPairTradeOwner && (() => {
+                            const workingLead = pendingAssignee !== undefined ? pendingAssignee : (pairTradeData.assigned_to ?? null)
+                            const originalLead = pairTradeData.assigned_to ?? null
+                            const hasChanges = workingLead !== originalLead
+                            const closeAndReset = () => {
+                              setShowAssigneeDropdown(false)
+                              setPendingAssignee(undefined)
+                            }
+                            return (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); closeAndReset() }} />
+                              <div className="absolute right-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 min-w-[280px]">
+                                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                                    <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                    <input
+                                      type="text"
+                                      placeholder="Search team..."
+                                      className="flex-1 text-sm bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
+                                      onChange={(e) => {
+                                        const el = e.target.closest('[data-people-list]')?.querySelectorAll('[data-person]')
+                                        el?.forEach((item: any) => {
+                                          const name = item.dataset.person?.toLowerCase() || ''
+                                          item.style.display = name.includes(e.target.value.toLowerCase()) ? '' : 'none'
+                                        })
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="max-h-[200px] overflow-y-auto py-1" data-people-list>
+                                  <button
+                                    data-person="unassign"
+                                    onClick={(e) => { e.stopPropagation(); setPendingAssignee(null) }}
+                                    className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", workingLead === null && "bg-gray-100 dark:bg-gray-700")}
+                                  >
+                                    <XCircle className="h-4 w-4 text-gray-400" />
+                                    <span className="text-sm text-gray-500">Unassign</span>
+                                  </button>
+                                  {teamMembers?.filter(m => m.id !== user?.id).map(member => {
+                                    const isSelected = workingLead === member.id
+                                    return (
+                                      <button
+                                        key={member.id}
+                                        data-person={getUserDisplayName(member)}
+                                        onClick={(e) => { e.stopPropagation(); setPendingAssignee(member.id) }}
+                                        className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", isSelected && "bg-primary-50 dark:bg-primary-900/20")}
+                                      >
+                                        <div className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold", isSelected ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300")}>
+                                          {getUserInitials(member)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{getUserDisplayName(member)}</div>
+                                          {member.email && <div className="text-[10px] text-gray-400 truncate">{member.email}</div>}
+                                        </div>
+                                        {isSelected && <Check className="h-4 w-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <div className="flex items-center justify-end gap-1.5 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); closeAndReset() }}
+                                    className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    disabled={!hasChanges || updatePairTradeAssigneeMutation.isPending}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      updatePairTradeAssigneeMutation.mutate(workingLead, {
+                                        onSuccess: () => { setPendingAssignee(undefined) },
+                                      })
+                                    }}
+                                    className="px-2.5 py-1 text-[11px] font-semibold rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                  >
+                                    {updatePairTradeAssigneeMutation.isPending ? 'Saving…' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                            )
+                          })()}
                         </div>
 
-                        {/* Contributors / Co-analysts */}
-                        <div className="flex items-center justify-between relative" ref={collaboratorsDropdownRef}>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Contributors</span>
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {isPairTradeOwner ? (
-                              <button
-                                onClick={() => setShowCollaboratorsDropdown(!showCollaboratorsDropdown)}
-                                className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                              >
-                                <span>
-                                  {(pairTradeData.collaborators?.length > 0)
-                                    ? `${pairTradeData.collaborators.length} co-analyst${pairTradeData.collaborators.length > 1 ? 's' : ''}`
-                                    : '+ Add'}
-                                </span>
-                                <ChevronDown className={clsx("h-3 w-3 text-gray-400 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
-                              </button>
-                            ) : (
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {(pairTradeData.collaborators?.length > 0)
-                                  ? `${pairTradeData.collaborators.length} co-analyst${pairTradeData.collaborators.length > 1 ? 's' : ''}`
-                                  : 'None'}
-                              </span>
-                            )}
-
-                            {showCollaboratorsDropdown && isPairTradeOwner && (
-                              <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
-                                {teamMembers?.filter(m => m.id !== user?.id && m.id !== pairTradeData.assigned_to).map(member => {
-                                  const currentCollaborators: string[] = pairTradeData.collaborators || []
-                                  const isCollaborator = currentCollaborators.includes(member.id)
-                                  return (
-                                    <button
-                                      key={member.id}
-                                      onClick={() => {
-                                        const newCollaborators = isCollaborator
-                                          ? currentCollaborators.filter(id => id !== member.id)
-                                          : [...currentCollaborators, member.id]
-                                        updatePairTradeCollaboratorsMutation.mutate(newCollaborators)
-                                      }}
-                                      disabled={updatePairTradeCollaboratorsMutation.isPending}
-                                      className={clsx(
-                                        "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
-                                        isCollaborator && "bg-primary-50 dark:bg-primary-900/20"
+                        {/* Analysts (multi-select) */}
+                        <div className="relative" ref={collaboratorsDropdownRef}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Analysts</span>
+                            <div className="flex items-center gap-1 text-xs">
+                              {isPairTradeOwner ? (
+                                <>
+                                  {/* Show selected avatars inline */}
+                                  {pairTradeData.collaborators?.length > 0 && (
+                                    <div className="flex items-center -space-x-1 mr-1">
+                                      {pairTradeData.collaborators.slice(0, 4).map((collabId: string) => {
+                                        const member = teamMembers?.find(m => m.id === collabId)
+                                        return member ? (
+                                          <div key={collabId} className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800" title={getUserDisplayName(member)}>
+                                            {getUserInitials(member)}
+                                          </div>
+                                        ) : null
+                                      })}
+                                      {pairTradeData.collaborators.length > 4 && (
+                                        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 text-gray-500 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800">
+                                          +{pairTradeData.collaborators.length - 4}
+                                        </div>
                                       )}
-                                    >
-                                      <div className={clsx(
-                                        "w-4 h-4 border rounded flex items-center justify-center",
-                                        isCollaborator
-                                          ? "border-primary-500 bg-primary-500 text-white"
-                                          : "border-gray-300 dark:border-gray-600"
-                                      )}>
-                                        {isCollaborator && <Check className="h-3 w-3" />}
-                                      </div>
-                                      <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
-                                        {getUserInitials(member)}
-                                      </div>
-                                      <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
-                                    </button>
-                                  )
-                                })}
-                                {(!teamMembers || teamMembers.filter(m => m.id !== user?.id && m.id !== pairTradeData.assigned_to).length === 0) && (
-                                  <div className="px-3 py-2 text-sm text-gray-500">No team members available</div>
-                                )}
-                              </div>
-                            )}
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      if (!showCollaboratorsDropdown) {
+                                        setPendingCollaborators(pairTradeData.collaborators || [])
+                                      }
+                                      setShowCollaboratorsDropdown(!showCollaboratorsDropdown)
+                                    }}
+                                    className="flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                  >
+                                    <span>{pairTradeData.collaborators?.length > 0 ? 'Edit' : '+ Add'}</span>
+                                    <ChevronDown className={clsx("h-3 w-3 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  {pairTradeData.collaborators?.length > 0 ? (
+                                    <div className="flex items-center -space-x-1">
+                                      {pairTradeData.collaborators.slice(0, 4).map((collabId: string) => {
+                                        const member = teamMembers?.find(m => m.id === collabId)
+                                        return member ? (
+                                          <div key={collabId} className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800" title={getUserDisplayName(member)}>
+                                            {getUserInitials(member)}
+                                          </div>
+                                        ) : null
+                                      })}
+                                      {pairTradeData.collaborators.length > 4 && (
+                                        <span className="text-gray-400 ml-1">+{pairTradeData.collaborators.length - 4}</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400">None</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
+                          {showCollaboratorsDropdown && isPairTradeOwner && (() => {
+                            const working = pendingCollaborators ?? (pairTradeData.collaborators || [])
+                            const original: string[] = pairTradeData.collaborators || []
+                            const addedCount = working.filter(id => !original.includes(id)).length
+                            const removedCount = original.filter(id => !working.includes(id)).length
+                            const hasChanges = addedCount > 0 || removedCount > 0
+                            const closeAndReset = () => {
+                              setShowCollaboratorsDropdown(false)
+                              setPendingCollaborators(null)
+                            }
+                            return (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); closeAndReset() }} />
+                              <div className="absolute right-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 min-w-[280px]">
+                                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                                    <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                    <input
+                                      type="text"
+                                      placeholder="Search team..."
+                                      className="flex-1 text-sm bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
+                                      onChange={(e) => {
+                                        const el = e.target.closest('[data-people-list]')?.querySelectorAll('[data-person]')
+                                        el?.forEach((item: any) => {
+                                          const name = item.dataset.person?.toLowerCase() || ''
+                                          item.style.display = name.includes(e.target.value.toLowerCase()) ? '' : 'none'
+                                        })
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="max-h-[200px] overflow-y-auto py-1" data-people-list>
+                                  {teamMembers?.filter(m => m.id !== user?.id && m.id !== pairTradeData.assigned_to).map(member => {
+                                    const isSelected = working.includes(member.id)
+                                    return (
+                                      <button
+                                        key={member.id}
+                                        data-person={getUserDisplayName(member)}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setPendingCollaborators(isSelected
+                                            ? working.filter(id => id !== member.id)
+                                            : [...working, member.id])
+                                        }}
+                                        className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", isSelected && "bg-primary-50 dark:bg-primary-900/20")}
+                                      >
+                                        <div className={clsx("w-4 h-4 border rounded flex items-center justify-center flex-shrink-0", isSelected ? "border-primary-500 bg-primary-500 text-white" : "border-gray-300 dark:border-gray-600")}>
+                                          {isSelected && <Check className="h-3 w-3" />}
+                                        </div>
+                                        <div className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0", isSelected ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300")}>
+                                          {getUserInitials(member)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{getUserDisplayName(member)}</div>
+                                          {member.email && <div className="text-[10px] text-gray-400 truncate">{member.email}</div>}
+                                        </div>
+                                      </button>
+                                    )
+                                  })}
+                                  {(!teamMembers || teamMembers.filter(m => m.id !== user?.id && m.id !== pairTradeData.assigned_to).length === 0) && (
+                                    <div className="px-3 py-2 text-sm text-gray-500">No team members available</div>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                    {working.length} selected
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); closeAndReset() }}
+                                      className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      disabled={!hasChanges || updatePairTradeCollaboratorsMutation.isPending}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        updatePairTradeCollaboratorsMutation.mutate(working, {
+                                          onSuccess: () => { setPendingCollaborators(null) },
+                                        })
+                                      }}
+                                      className="px-2.5 py-1 text-[11px] font-semibold rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                      {updatePairTradeCollaboratorsMutation.isPending ? 'Saving…' : 'Save'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                            )
+                          })()}
                         </div>
 
                       </div>
@@ -3651,6 +4025,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   )
                                 })()}
 
+                                {/* Rationale (notes) — the analyst's reasoning
+                                    for this recommendation. Was missing from the
+                                    pair decisions tab; now matches the singleton
+                                    proposal display style. */}
+                                {proposal.notes && (
+                                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+                                    <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">Rationale</div>
+                                    <div className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{proposal.notes}</div>
+                                  </div>
+                                )}
+
                                 {/* Proposal Actions */}
                                 <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700/50">
                                   {/* Left: Edit/Withdraw (own proposals only) */}
@@ -3722,7 +4107,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                                   assetCompanyName: proposal.trade_queue_items?.assets?.company_name || null,
                                                 }, context)
                                                 refetchProposals()
-                                                queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+                                                queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
                                                 invalidateActivityCaches()
                                                 setEditingPairProposalId(null)
                                                 setEditedPairProposalLegs([])
@@ -3776,7 +4161,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                                   const { error } = await supabase.from('trade_proposals').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', proposal.id).eq('user_id', user?.id)
                                                   if (!error) {
                                                     await supabase.from('trade_events').insert({ trade_queue_item_id: proposal.trade_queue_item_id, event_type: 'proposal_withdrawn', actor_id: user?.id, proposal_id: proposal.id, metadata: { portfolio_id: proposal.portfolio_id, portfolio_name: proposal.portfolio?.name || null, weight: proposal.weight != null ? Number(proposal.weight) : null, is_pair_trade: true } })
-                                                    refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches()
+                                                    refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches()
                                                   }
                                                 }} className="px-3 py-1 text-[11px] font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors">Confirm Withdraw</button>
                                                 <button type="button" onClick={() => setConfirmWithdrawId(null)} className="text-[11px] text-gray-500 hover:text-gray-700">Cancel</button>
@@ -3799,21 +4184,214 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         )
                       })}
 
-                    </div>
-                  </div>
-                )
-              })()}
+                      {/* Submit New Recommendation for Pair Trade */}
+                      {(() => {
+                        // Check if current user already has a proposal for any portfolio
+                        const userHasProposal = proposals.some(p => p.user_id === user?.id && p.is_active)
+                        if (userHasProposal) return null
 
-              {/* Legacy support: Keep original structure for portfolios without proposals */}
-              {activeTab === 'decisions' && Object.keys(proposals.reduce((acc, p) => { acc[p.portfolio_id || 'unknown'] = true; return acc }, {} as Record<string, boolean>)).length === 0 && (() => {
-                const pairLegs = pairTradeData?.trade_queue_items || pairTradeData?.legs || []
+                        // Build available portfolios from all sources
+                        const availablePortfolios: Array<{ id: string; name: string }> = []
+                        const seenIds = new Set<string>()
 
-                return (
-                  <div className="p-4">
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      <Scale className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm font-medium">No recommendations yet</p>
-                      <p className="text-xs mt-1">Analysts can submit portfolio-specific sizing recommendations</p>
+                        // From discussion portfolios (lab links + fallback)
+                        for (const p of discussionPortfolios) {
+                          if (!seenIds.has(p.id)) { availablePortfolios.push(p); seenIds.add(p.id) }
+                        }
+
+                        // From pair trade's direct portfolio
+                        if (pairTradePortfolioId && !seenIds.has(pairTradePortfolioId)) {
+                          const name = pairTradeData?.portfolios?.name || 'Portfolio'
+                          availablePortfolios.push({ id: pairTradePortfolioId, name })
+                          seenIds.add(pairTradePortfolioId)
+                        }
+
+                        // From individual legs' portfolios
+                        for (const leg of pairLegs) {
+                          const pid = (leg as any).portfolio_id
+                          const pname = (leg as any).portfolios?.name
+                          if (pid && !seenIds.has(pid)) { availablePortfolios.push({ id: pid, name: pname || 'Portfolio' }); seenIds.add(pid) }
+                        }
+
+                        if (availablePortfolios.length === 0) return null
+
+                        return (
+                          <div className="p-4">
+                            {!showNewPairRec ? (
+                              <div className="text-center">
+                                {proposals.length === 0 && (
+                                  <div className="py-4 text-gray-500 dark:text-gray-400 mb-3">
+                                    <Scale className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                                    <p className="text-sm font-medium">No recommendations yet</p>
+                                  </div>
+                                )}
+                                {availablePortfolios.length > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      const portfolioId = availablePortfolios[0].id
+                                      setNewPairRecPortfolioId(portfolioId)
+                                      setNewPairRecLegs(pairLegs.map((leg: any) => ({
+                                        assetId: leg.asset_id || leg.assets?.id || '',
+                                        symbol: leg.assets?.symbol || '?',
+                                        action: leg.action || (leg.pair_leg_type === 'long' ? 'buy' : 'sell'),
+                                        weight: '',
+                                      })))
+                                      setNewPairRecNotes('')
+                                      setShowNewPairRec(true)
+                                    }}
+                                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                    Submit Recommendation
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/10 p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white">New Recommendation</h4>
+                                  <button
+                                    onClick={() => setShowNewPairRec(false)}
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+
+                                {/* Portfolio selector (if multiple) */}
+                                {availablePortfolios.length > 1 && (
+                                  <div>
+                                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">Portfolio</label>
+                                    <select
+                                      value={newPairRecPortfolioId}
+                                      onChange={e => setNewPairRecPortfolioId(e.target.value)}
+                                      className="w-full text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-2 py-1.5"
+                                    >
+                                      {availablePortfolios.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                                {availablePortfolios.length === 1 && (
+                                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <Briefcase className="h-3.5 w-3.5" />
+                                    <span className="font-medium">{availablePortfolios[0].name}</span>
+                                  </div>
+                                )}
+
+                                {/* Per-leg weight inputs */}
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Target weight per leg</label>
+                                  {newPairRecLegs.map((leg, idx) => {
+                                    const isLong = leg.action === 'buy' || leg.action === 'add'
+                                    return (
+                                      <div key={idx} className="flex items-center gap-2">
+                                        <span className={clsx('text-[10px] font-bold uppercase w-8', isLong ? 'text-green-600' : 'text-red-600')}>
+                                          {isLong ? 'BUY' : 'SELL'}
+                                        </span>
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white w-14">{leg.symbol}</span>
+                                        <input
+                                          type="text"
+                                          value={leg.weight}
+                                          onChange={e => {
+                                            const updated = [...newPairRecLegs]
+                                            updated[idx] = { ...updated[idx], weight: e.target.value }
+                                            setNewPairRecLegs(updated)
+                                          }}
+                                          placeholder="e.g. 2.5"
+                                          className="flex-1 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400 tabular-nums"
+                                        />
+                                        <span className="text-xs text-gray-400">%</span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+
+                                {/* Notes */}
+                                <div>
+                                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">Rationale</label>
+                                  <textarea
+                                    value={newPairRecNotes}
+                                    onChange={e => setNewPairRecNotes(e.target.value)}
+                                    placeholder="Rationale for this recommendation..."
+                                    rows={2}
+                                    className="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400 resize-none"
+                                  />
+                                </div>
+
+                                {/* Submit / Cancel */}
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    disabled={isSavingPairProposal || newPairRecLegs.every(l => !l.weight.trim())}
+                                    onClick={async () => {
+                                      setIsSavingPairProposal(true)
+                                      try {
+                                        const context: ActionContext = {
+                                          actorId: user!.id,
+                                          actorName: [user!.first_name, user!.last_name].filter(Boolean).join(' ') || user!.email || '',
+                                          actorEmail: user!.email || '',
+                                          actorRole: (user!.role as 'analyst' | 'pm' | 'admin' | 'system') || 'analyst',
+                                          requestId: crypto.randomUUID(),
+                                          uiSource: 'modal',
+                                        }
+                                        const legsPayload = newPairRecLegs.map(leg => ({
+                                          assetId: leg.assetId,
+                                          symbol: leg.symbol,
+                                          action: leg.action,
+                                          weight: leg.weight.trim() ? parseFloat(leg.weight) : null,
+                                          sizingMode: 'absolute',
+                                          enteredValue: leg.weight.trim(),
+                                        }))
+                                        const firstLegId = pairTradeLegIds[0]
+                                        // submitRecommendation signature is (input, context, options?) —
+                                        // context must be the second positional arg, not nested inside input.
+                                        await submitRecommendation(
+                                          {
+                                            tradeQueueItemId: firstLegId,
+                                            portfolioId: newPairRecPortfolioId,
+                                            weight: null,
+                                            shares: null,
+                                            sizingMode: 'absolute' as TradeSizingMode,
+                                            sizingContext: {
+                                              isPairTrade: true,
+                                              sizingMode: 'absolute',
+                                              legs: legsPayload,
+                                            },
+                                            notes: newPairRecNotes || null,
+                                          },
+                                          context,
+                                        )
+                                        setShowNewPairRec(false)
+                                        setNewPairRecLegs([])
+                                        setNewPairRecNotes('')
+                                        refetchProposals()
+                                        queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
+                                        queryClient.invalidateQueries({ queryKey: ['trade-events'] })
+                                      } catch (e) {
+                                        console.error('[Submit pair recommendation] failed:', e)
+                                      } finally {
+                                        setIsSavingPairProposal(false)
+                                      }
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    {isSavingPairProposal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                    Submit
+                                  </button>
+                                  <button
+                                    onClick={() => setShowNewPairRec(false)}
+                                    className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+
                     </div>
                   </div>
                 )
@@ -4177,15 +4755,21 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         <textarea
                           autoFocus
                           value={editedRationale}
-                          onChange={(e) => setEditedRationale(e.target.value)}
+                          onChange={(e) => {
+                            setEditedRationale(e.target.value.slice(0, 300))
+                            e.target.style.height = 'auto'
+                            e.target.style.height = e.target.scrollHeight + 'px'
+                          }}
+                          ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                           placeholder="Why is this trade idea worth investigating now?"
-                          rows={4}
-                          className="w-full p-0 text-sm bg-transparent text-gray-900 dark:text-white placeholder-gray-400 resize-none border-none focus:ring-0 focus:outline-none leading-relaxed"
+                          rows={1}
+                          maxLength={300}
+                          className="w-full p-0 text-sm bg-transparent text-gray-900 dark:text-white placeholder-gray-400 resize-none border-none focus:ring-0 focus:outline-none leading-relaxed overflow-hidden"
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') cancelEditRationale()
                           }}
                         />
-                        <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                           <button
                             onClick={cancelEditRationale}
                             disabled={isUpdating}
@@ -4200,6 +4784,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           >
                             {isUpdating ? 'Saving...' : 'Save'}
                           </button>
+                          <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedRationale.length}/300</span>
                         </div>
                       </>
                     ) : (
@@ -4276,15 +4861,21 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             <textarea
                               autoFocus
                               value={editedThesis}
-                              onChange={(e) => setEditedThesis(e.target.value)}
+                              onChange={(e) => {
+                                setEditedThesis(e.target.value.slice(0, 300))
+                                e.target.style.height = 'auto'
+                                e.target.style.height = e.target.scrollHeight + 'px'
+                              }}
+                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                               placeholder="Explain why this trade should work."
-                              rows={6}
-                              className="w-full p-0 text-sm bg-transparent text-gray-900 dark:text-white placeholder-gray-400 resize-none border-none focus:ring-0 focus:outline-none leading-relaxed"
+                              rows={1}
+                              maxLength={300}
+                              className="w-full p-0 text-sm bg-transparent text-gray-900 dark:text-white placeholder-gray-400 resize-none border-none focus:ring-0 focus:outline-none leading-relaxed overflow-hidden"
                               onKeyDown={(e) => {
                                 if (e.key === 'Escape') cancelEditThesis()
                               }}
                             />
-                            <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                               <button
                                 onClick={cancelEditThesis}
                                 disabled={isUpdating}
@@ -4299,6 +4890,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               >
                                 {isUpdating ? 'Saving...' : 'Save'}
                               </button>
+                              <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{editedThesis.length}/300</span>
                             </div>
                           </>
                         ) : (
@@ -4335,18 +4927,18 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== REFERENCE LEVELS ========== */}
                   <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => setIsSizingExpanded(!isSizingExpanded)}
-                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
-                      >
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 py-1 rounded transition-colors"
+                      onClick={() => setIsSizingExpanded(!isSizingExpanded)}
+                    >
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300">
                         {isSizingExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         <Target className="h-3.5 w-3.5" />
                         Reference Levels
-                      </button>
+                      </div>
                       {isOwner && !isEditingSizing && isSizingExpanded && (
                         <button
-                          onClick={startEditSizing}
+                          onClick={(e) => { e.stopPropagation(); startEditSizing() }}
                           className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -4356,51 +4948,47 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     {isSizingExpanded && (
                       <div className="mt-3">
                         {isEditingSizing ? (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-[10px] text-gray-400 mb-1">Entry Price</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={editedSizing.targetPrice}
-                                  onChange={(e) => setEditedSizing(s => ({ ...s, targetPrice: e.target.value }))}
-                                  className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                                  placeholder="e.g. 150.00"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-gray-400 mb-1">Stop Loss</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={editedSizing.stopLoss}
-                                  onChange={(e) => setEditedSizing(s => ({ ...s, stopLoss: e.target.value }))}
-                                  className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                                  placeholder="e.g. 140.00"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-gray-400 mb-1">Take Profit</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={editedSizing.takeProfit}
-                                  onChange={(e) => setEditedSizing(s => ({ ...s, takeProfit: e.target.value }))}
-                                  className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                                  placeholder="e.g. 180.00"
-                                />
-                              </div>
+                          <div className="flex items-end gap-2">
+                            <div className="flex-1">
+                              <label className="block text-[10px] text-gray-400 mb-1">Entry Price</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editedSizing.targetPrice}
+                                onChange={(e) => setEditedSizing(s => ({ ...s, targetPrice: e.target.value }))}
+                                className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                placeholder="e.g. 150.00"
+                              />
                             </div>
-                            <div className="flex gap-2 justify-end">
-                              <Button size="sm" variant="ghost" onClick={cancelEditSizing} disabled={isUpdating}>
-                                Cancel
-                              </Button>
-                              <Button size="sm" onClick={saveSizing} disabled={isUpdating} loading={isUpdating}>
-                                <Save className="h-3.5 w-3.5 mr-1" />
-                                Save
-                              </Button>
+                            <div className="flex-1">
+                              <label className="block text-[10px] text-gray-400 mb-1">Stop Loss</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editedSizing.stopLoss}
+                                onChange={(e) => setEditedSizing(s => ({ ...s, stopLoss: e.target.value }))}
+                                className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                placeholder="e.g. 140.00"
+                              />
                             </div>
+                            <div className="flex-1">
+                              <label className="block text-[10px] text-gray-400 mb-1">Take Profit</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editedSizing.takeProfit}
+                                onChange={(e) => setEditedSizing(s => ({ ...s, takeProfit: e.target.value }))}
+                                className="w-full h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                placeholder="e.g. 180.00"
+                              />
+                            </div>
+                            <Button size="sm" variant="ghost" onClick={cancelEditSizing} disabled={isUpdating} className="h-8">
+                              Cancel
+                            </Button>
+                            <Button size="sm" onClick={saveSizing} disabled={isUpdating} loading={isUpdating} className="h-8">
+                              <Save className="h-3.5 w-3.5 mr-1" />
+                              Save
+                            </Button>
                           </div>
                         ) : (
                           <div className="grid grid-cols-3 gap-4 text-sm">
@@ -4430,18 +5018,18 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== CONVICTION & TIME HORIZON ========== */}
                   <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => setIsRiskExpanded(!isRiskExpanded)}
-                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
-                      >
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 py-1 rounded transition-colors"
+                      onClick={() => setIsRiskExpanded(!isRiskExpanded)}
+                    >
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300">
                         {isRiskExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         <Gauge className="h-3.5 w-3.5" />
                         Conviction &amp; Time Horizon
-                      </button>
+                      </div>
                       {isOwner && !isEditingRisk && isRiskExpanded && (
                         <button
-                          onClick={startEditRisk}
+                          onClick={(e) => { e.stopPropagation(); startEditRisk() }}
                           className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -4504,8 +5092,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           </div>
                         ) : (
                           <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 block">Conviction</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Conviction</span>
                               <span className={clsx(
                                 "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
                                 (trade as any)?.conviction === 'low' && "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
@@ -4516,8 +5104,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 {(trade as any)?.conviction ? (trade as any).conviction.charAt(0).toUpperCase() + (trade as any).conviction.slice(1) : '—'}
                               </span>
                             </div>
-                            <div>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 block">Time Horizon</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Time Horizon</span>
                               <span className={clsx(
                                 "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
                                 (trade as any)?.time_horizon && "bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300",
@@ -4534,14 +5122,14 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                   {/* ========== RESEARCH OWNERSHIP ========== */}
                   <div className="pb-3 border-b border-gray-200 dark:border-gray-700">
-                    <button
+                    <div
+                      className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-2 px-2 py-1 rounded transition-colors"
                       onClick={() => setIsOwnershipExpanded(!isOwnershipExpanded)}
-                      className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"
                     >
                       {isOwnershipExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       <Users className="h-3.5 w-3.5" />
                       Research Ownership
-                    </button>
+                    </div>
                     {isOwnershipExpanded && (
                       <div className="mt-3 space-y-2.5">
                         {/* Owner */}
@@ -4556,132 +5144,289 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                         </div>
 
                         {/* Assigned Analyst */}
-                        <div className="flex items-center justify-between relative" ref={assigneeDropdownRef}>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Analyst</span>
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {isOwner ? (
-                              <button
-                                onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
-                                className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                              >
-                                {(trade as any).assigned_user ? (
-                                  <>
-                                    <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
+                        <div className="relative" ref={assigneeDropdownRef}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Lead</span>
+                            <div className="flex items-center gap-1.5 text-xs">
+                              {isOwner ? (
+                                <button
+                                  onClick={() => {
+                                    if (!showAssigneeDropdown) {
+                                      setPendingAssignee(trade.assigned_to ?? null)
+                                    }
+                                    setShowAssigneeDropdown(!showAssigneeDropdown)
+                                  }}
+                                  className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                >
+                                  {(trade as any).assigned_user ? (
+                                    <>
+                                      <div className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center text-[10px] font-medium">
+                                        {getUserInitials((trade as any).assigned_user)}
+                                      </div>
+                                      <span className="font-medium">{getUserDisplayName((trade as any).assigned_user)}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-gray-400">+ Assign</span>
+                                  )}
+                                  <ChevronDown className={clsx("h-3 w-3 text-gray-400 transition-transform", showAssigneeDropdown && "rotate-180")} />
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  {(trade as any).assigned_user && (
+                                    <div className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center text-[10px] font-medium">
                                       {getUserInitials((trade as any).assigned_user)}
                                     </div>
-                                    <span className="font-medium">{getUserDisplayName((trade as any).assigned_user)}</span>
-                                  </>
-                                ) : (
-                                  <span className="text-gray-400">+ Assign</span>
-                                )}
-                                <ChevronDown className={clsx("h-3 w-3 text-gray-400 transition-transform", showAssigneeDropdown && "rotate-180")} />
-                              </button>
-                            ) : (
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {(trade as any).assigned_user ? getUserDisplayName((trade as any).assigned_user) : 'Not assigned'}
-                              </span>
-                            )}
-
-                            {showAssigneeDropdown && isOwner && (
-                              <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
-                                <button
-                                  onClick={() => updateAssigneeMutation.mutate(null)}
-                                  disabled={updateAssigneeMutation.isPending}
-                                  className={clsx(
-                                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
-                                    !trade.assigned_to && "bg-gray-50 dark:bg-gray-700"
                                   )}
-                                >
-                                  <XCircle className="h-4 w-4 text-gray-400" />
-                                  <span className="text-sm text-gray-600 dark:text-gray-300">Unassign</span>
-                                </button>
-                                {teamMembers?.filter(m => m.id !== user?.id).map(member => (
-                                  <button
-                                    key={member.id}
-                                    onClick={() => updateAssigneeMutation.mutate(member.id)}
-                                    disabled={updateAssigneeMutation.isPending}
-                                    className={clsx(
-                                      "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
-                                      trade.assigned_to === member.id && "bg-primary-50 dark:bg-primary-900/20"
-                                    )}
-                                  >
-                                    <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
-                                      {getUserInitials(member)}
-                                    </div>
-                                    <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                                  <span className="text-gray-700 dark:text-gray-300">
+                                    {(trade as any).assigned_user ? getUserDisplayName((trade as any).assigned_user) : 'Not assigned'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                           </div>
+                          {showAssigneeDropdown && isOwner && (() => {
+                            const workingLead = pendingAssignee !== undefined ? pendingAssignee : (trade.assigned_to ?? null)
+                            const originalLead = trade.assigned_to ?? null
+                            const hasChanges = workingLead !== originalLead
+                            const closeAndReset = () => {
+                              setShowAssigneeDropdown(false)
+                              setPendingAssignee(undefined)
+                            }
+                            return (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); closeAndReset() }} />
+                              <div className="absolute right-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 min-w-[280px]">
+                                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                                    <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                    <input
+                                      type="text"
+                                      placeholder="Search team..."
+                                      className="flex-1 text-sm bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
+                                      onChange={(e) => {
+                                        const el = e.target.closest('[data-people-list]')?.querySelectorAll('[data-person]')
+                                        el?.forEach((item: any) => {
+                                          const name = item.dataset.person?.toLowerCase() || ''
+                                          item.style.display = name.includes(e.target.value.toLowerCase()) ? '' : 'none'
+                                        })
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="max-h-[200px] overflow-y-auto py-1" data-people-list>
+                                  <button
+                                    data-person="unassign"
+                                    onClick={(e) => { e.stopPropagation(); setPendingAssignee(null) }}
+                                    className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", workingLead === null && "bg-gray-100 dark:bg-gray-700")}
+                                  >
+                                    <XCircle className="h-4 w-4 text-gray-400" />
+                                    <span className="text-sm text-gray-500">Unassign</span>
+                                  </button>
+                                  {teamMembers?.filter(m => m.id !== user?.id).map(member => {
+                                    const isSelected = workingLead === member.id
+                                    return (
+                                      <button
+                                        key={member.id}
+                                        data-person={getUserDisplayName(member)}
+                                        onClick={(e) => { e.stopPropagation(); setPendingAssignee(member.id) }}
+                                        className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", isSelected && "bg-primary-50 dark:bg-primary-900/20")}
+                                      >
+                                        <div className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold", isSelected ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300")}>
+                                          {getUserInitials(member)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{getUserDisplayName(member)}</div>
+                                          {member.email && <div className="text-[10px] text-gray-400 truncate">{member.email}</div>}
+                                        </div>
+                                        {isSelected && <Check className="h-4 w-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <div className="flex items-center justify-end gap-1.5 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); closeAndReset() }}
+                                    className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    disabled={!hasChanges || updateAssigneeMutation.isPending}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      updateAssigneeMutation.mutate(workingLead, {
+                                        onSuccess: () => { setPendingAssignee(undefined) },
+                                      })
+                                    }}
+                                    className="px-2.5 py-1 text-[11px] font-semibold rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                  >
+                                    {updateAssigneeMutation.isPending ? 'Saving…' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                            )
+                          })()}
                         </div>
 
-                        {/* Contributors / Co-analysts */}
-                        <div className="flex items-center justify-between relative" ref={collaboratorsDropdownRef}>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Contributors</span>
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {isOwner ? (
-                              <button
-                                onClick={() => setShowCollaboratorsDropdown(!showCollaboratorsDropdown)}
-                                className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                              >
-                                <span>
-                                  {((trade as any).collaborators?.length > 0)
-                                    ? `${(trade as any).collaborators.length} co-analyst${(trade as any).collaborators.length > 1 ? 's' : ''}`
-                                    : '+ Add'}
-                                </span>
-                                <ChevronDown className={clsx("h-3 w-3 text-gray-400 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
-                              </button>
-                            ) : (
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {((trade as any).collaborators?.length > 0)
-                                  ? `${(trade as any).collaborators.length} co-analyst${(trade as any).collaborators.length > 1 ? 's' : ''}`
-                                  : 'None'}
-                              </span>
-                            )}
-
-                            {showCollaboratorsDropdown && isOwner && (
-                              <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[220px] max-h-[180px] overflow-y-auto">
-                                {teamMembers?.filter(m => m.id !== user?.id && m.id !== trade.assigned_to).map(member => {
-                                  const currentCollaborators: string[] = (trade as any).collaborators || []
-                                  const isCollaborator = currentCollaborators.includes(member.id)
-                                  return (
-                                    <button
-                                      key={member.id}
-                                      onClick={() => {
-                                        const newCollaborators = isCollaborator
-                                          ? currentCollaborators.filter(id => id !== member.id)
-                                          : [...currentCollaborators, member.id]
-                                        updateCollaboratorsMutation.mutate(newCollaborators)
-                                      }}
-                                      disabled={updateCollaboratorsMutation.isPending}
-                                      className={clsx(
-                                        "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors",
-                                        isCollaborator && "bg-primary-50 dark:bg-primary-900/20"
+                        {/* Analysts (multi-select) */}
+                        <div className="relative" ref={collaboratorsDropdownRef}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Analysts</span>
+                            <div className="flex items-center gap-1 text-xs">
+                              {isOwner ? (
+                                <>
+                                  {(trade as any).collaborators?.length > 0 && (
+                                    <div className="flex items-center -space-x-1 mr-1">
+                                      {(trade as any).collaborators.slice(0, 4).map((collabId: string) => {
+                                        const member = teamMembers?.find(m => m.id === collabId)
+                                        return member ? (
+                                          <div key={collabId} className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800" title={getUserDisplayName(member)}>
+                                            {getUserInitials(member)}
+                                          </div>
+                                        ) : null
+                                      })}
+                                      {(trade as any).collaborators.length > 4 && (
+                                        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 text-gray-500 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800">
+                                          +{(trade as any).collaborators.length - 4}
+                                        </div>
                                       )}
-                                    >
-                                      <div className={clsx(
-                                        "w-4 h-4 border rounded flex items-center justify-center",
-                                        isCollaborator
-                                          ? "border-primary-500 bg-primary-500 text-white"
-                                          : "border-gray-300 dark:border-gray-600"
-                                      )}>
-                                        {isCollaborator && <Check className="h-3 w-3" />}
-                                      </div>
-                                      <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
-                                        {getUserInitials(member)}
-                                      </div>
-                                      <span className="text-sm text-gray-900 dark:text-white">{getUserDisplayName(member)}</span>
-                                    </button>
-                                  )
-                                })}
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      if (!showCollaboratorsDropdown) {
+                                        setPendingCollaborators((trade as any).collaborators || [])
+                                      }
+                                      setShowCollaboratorsDropdown(!showCollaboratorsDropdown)
+                                    }}
+                                    className="flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                  >
+                                    <span>{(trade as any).collaborators?.length > 0 ? 'Edit' : '+ Add'}</span>
+                                    <ChevronDown className={clsx("h-3 w-3 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  {(trade as any).collaborators?.length > 0 ? (
+                                    <div className="flex items-center -space-x-1">
+                                      {(trade as any).collaborators.slice(0, 4).map((collabId: string) => {
+                                        const member = teamMembers?.find(m => m.id === collabId)
+                                        return member ? (
+                                          <div key={collabId} className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800" title={getUserDisplayName(member)}>
+                                            {getUserInitials(member)}
+                                          </div>
+                                        ) : null
+                                      })}
+                                      {(trade as any).collaborators.length > 4 && (
+                                        <span className="text-gray-400 ml-1">+{(trade as any).collaborators.length - 4}</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400">None</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {showCollaboratorsDropdown && isOwner && (() => {
+                            const working = pendingCollaborators ?? ((trade as any).collaborators || [])
+                            const original: string[] = (trade as any).collaborators || []
+                            const addedCount = working.filter((id: string) => !original.includes(id)).length
+                            const removedCount = original.filter((id: string) => !working.includes(id)).length
+                            const hasChanges = addedCount > 0 || removedCount > 0
+                            const closeAndReset = () => {
+                              setShowCollaboratorsDropdown(false)
+                              setPendingCollaborators(null)
+                            }
+                            return (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); closeAndReset() }} />
+                              <div className="absolute right-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 min-w-[280px]">
+                                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                                    <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                    <input
+                                      type="text"
+                                      placeholder="Search team..."
+                                      className="flex-1 text-sm bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
+                                      onChange={(e) => {
+                                        const el = e.target.closest('[data-people-list]')?.querySelectorAll('[data-person]')
+                                        el?.forEach((item: any) => {
+                                          const name = item.dataset.person?.toLowerCase() || ''
+                                          item.style.display = name.includes(e.target.value.toLowerCase()) ? '' : 'none'
+                                        })
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="max-h-[200px] overflow-y-auto py-1" data-people-list>
+                                  {teamMembers?.filter(m => m.id !== user?.id && m.id !== trade.assigned_to).map(member => {
+                                    const isSelected = working.includes(member.id)
+                                    return (
+                                      <button
+                                        key={member.id}
+                                        data-person={getUserDisplayName(member)}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setPendingCollaborators(isSelected
+                                            ? working.filter((id: string) => id !== member.id)
+                                            : [...working, member.id])
+                                        }}
+                                        className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", isSelected && "bg-primary-50 dark:bg-primary-900/20")}
+                                      >
+                                        <div className={clsx("w-4 h-4 border rounded flex items-center justify-center flex-shrink-0", isSelected ? "border-primary-500 bg-primary-500 text-white" : "border-gray-300 dark:border-gray-600")}>
+                                          {isSelected && <Check className="h-3 w-3" />}
+                                        </div>
+                                        <div className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0", isSelected ? "bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300")}>
+                                          {getUserInitials(member)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{getUserDisplayName(member)}</div>
+                                          {member.email && <div className="text-[10px] text-gray-400 truncate">{member.email}</div>}
+                                        </div>
+                                      </button>
+                                    )
+                                  })}
                                 {(!teamMembers || teamMembers.filter(m => m.id !== user?.id && m.id !== trade.assigned_to).length === 0) && (
                                   <div className="px-3 py-2 text-sm text-gray-500">No team members available</div>
                                 )}
+                                </div>
+                                <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                    {working.length} selected
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); closeAndReset() }}
+                                      className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      disabled={!hasChanges || updateCollaboratorsMutation.isPending}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        updateCollaboratorsMutation.mutate(working, {
+                                          onSuccess: () => { setPendingCollaborators(null) },
+                                        })
+                                      }}
+                                      className="px-2.5 py-1 text-[11px] font-semibold rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                      {updateCollaboratorsMutation.isPending ? 'Saving…' : 'Save'}
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            )}
-                          </div>
+                            </>
+                            )
+                          })()}
                         </div>
+
                       </div>
                     )}
                   </div>
@@ -5282,7 +6027,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                                       assetCompanyName: trade?.assets?.company_name || null,
                                                     }, context)
                                                     refetchProposals()
-                                                    queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+                                                    queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
                                                     invalidateActivityCaches()
                                                     setEditingPairProposalId(null)
                                                     setEditedPairProposalLegs([])
@@ -5688,7 +6433,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                                 await supabase.from('trade_proposals').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', proposal.id).eq('user_id', user?.id)
                                                 await supabase.from('trade_events').insert({ trade_queue_item_id: tradeId, event_type: 'proposal_withdrawn', actor_id: user?.id, proposal_id: proposal.id, metadata: { portfolio_id: portfolio.id, portfolio_name: portfolio.name, weight: proposal.weight != null ? Number(proposal.weight) : null } })
                                               } catch (e) { console.error('[Withdraw] failed:', e) }
-                                              finally { refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches() }
+                                              finally { refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches() }
                                             }} className="px-3 py-1 text-[11px] font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors">Confirm Withdraw</button>
                                             <button type="button" onClick={() => setConfirmWithdrawId(null)} className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">Cancel</button>
                                           </div>
@@ -5996,7 +6741,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                                         // Background sync
                                         refetchProposals()
-                                        queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+                                        queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
                                         queryClient.invalidateQueries({ queryKey: ['trade-events'] })
                                         invalidateActivityCaches()
                                       } catch (e) {
@@ -6050,7 +6795,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                             await supabase.from('trade_proposals').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', userProposal.id).eq('user_id', user?.id)
                                             await supabase.from('trade_events').insert({ trade_queue_item_id: tradeId, event_type: 'proposal_withdrawn', actor_id: user?.id, proposal_id: userProposal.id, metadata: { portfolio_id: portfolio.id, portfolio_name: portfolio.name, weight: userProposal.weight != null ? Number(userProposal.weight) : null } })
                                           } catch (e) { console.error('[Withdraw] failed:', e) }
-                                          finally { refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches() }
+                                          finally { refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches() }
                                         }} className="px-3 py-1 text-[11px] font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors">Confirm Withdraw</button>
                                         <button type="button" onClick={() => setConfirmWithdrawId(null)} className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">Cancel</button>
                                       </div>
@@ -6539,7 +7284,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
 
                       // Refresh proposals, decision inbox, and activity
                       queryClient.invalidateQueries({ queryKey: ['trade-proposals', tradeId] })
-                      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+                      queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
                       invalidateActivityCaches()
 
                       // Close modal and reset

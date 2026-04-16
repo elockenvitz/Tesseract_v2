@@ -1,7 +1,15 @@
 /**
  * Chart data fetching utilities for the charting system
- * Provides historical OHLC data for different timeframes
+ * Provides historical OHLC data for different timeframes.
+ *
+ * Historically fetched Yahoo Finance via public CORS proxies
+ * (corsproxy.io / allorigins / codetabs). Those proxies have been
+ * paywalled or rate-limited to uselessness, silently breaking every
+ * chart in the app simultaneously. We now proxy Yahoo through the
+ * `yahoo-chart-proxy` Supabase edge function which runs server-side
+ * and has no CORS constraints.
  */
+import { supabase } from './supabase'
 
 export interface CandlestickData {
   time: string // YYYY-MM-DD format for daily, or unix timestamp
@@ -81,6 +89,87 @@ const intradayMaxDays: Record<string, number> = {
   '1h': 730,
 }
 
+/**
+ * Call the yahoo-chart-proxy edge function and return the raw Yahoo
+ * response body (shape: `{ chart: { result: [...], error: ... } }`).
+ * Returns null on any error — callers should treat null as "no data".
+ */
+async function fetchYahooChart(params: {
+  symbol: string
+  interval: string
+  range?: string
+  period1?: number
+  period2?: number
+}): Promise<any | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('yahoo-chart-proxy', {
+      body: params,
+    })
+    if (error) {
+      console.warn('[chartData] yahoo-chart-proxy error:', error.message || error)
+      return null
+    }
+    if (data?.error) {
+      console.warn('[chartData] yahoo-chart-proxy returned error:', data.error, data.detail)
+      return null
+    }
+    return data
+  } catch (e: any) {
+    console.warn('[chartData] yahoo-chart-proxy invoke threw:', e?.message || e)
+    return null
+  }
+}
+
+/**
+ * Parse a Yahoo chart JSON response into CandlestickData[]. Null values
+ * from Yahoo (holidays, gaps) are skipped. Daily/weekly/monthly bars are
+ * emitted as YYYY-MM-DD; intraday bars as unix-seconds strings, matching
+ * what `lightweight-charts` expects.
+ */
+function parseYahooChart(
+  data: any,
+  interval: string,
+): CandlestickData[] {
+  const chart = data?.chart?.result?.[0]
+  if (!chart) return []
+
+  const timestamps: number[] = chart.timestamp || []
+  const quote = chart.indicators?.quote?.[0]
+  if (!quote) return []
+
+  const opens = quote.open || []
+  const highs = quote.high || []
+  const lows = quote.low || []
+  const closes = quote.close || []
+  const volumes = quote.volume || []
+
+  const dailyIntervals = new Set(['1d', '1wk', '1mo'])
+  const result: CandlestickData[] = []
+
+  for (let i = 0; i < timestamps.length; i++) {
+    if (closes[i] == null || opens[i] == null || highs[i] == null || lows[i] == null) {
+      continue
+    }
+    const timestamp = timestamps[i]
+    const date = new Date(timestamp * 1000)
+
+    const time = dailyIntervals.has(interval)
+      ? date.toISOString().split('T')[0]
+      : String(timestamp)
+
+    result.push({
+      time,
+      open: opens[i],
+      high: highs[i],
+      low: lows[i],
+      close: closes[i],
+      volume: volumes[i] || 0,
+    })
+  }
+
+  return result
+}
+
 class ChartDataService {
   private cache: Map<string, { data: CandlestickData[]; timestamp: number }> = new Map()
   private readonly CACHE_TTL = 60 * 1000 // 1 minute cache for chart data
@@ -114,83 +203,9 @@ class ChartDataService {
     const interval = intervalMap[request.interval] || '1d'
     const range = rangeMap[request.range] || '1mo'
 
-    // Multiple CORS proxies for redundancy - order matters (most reliable first)
-    const corsProxies = [
-      'https://corsproxy.io/?',
-      'https://api.allorigins.win/raw?url=',
-      'https://api.codetabs.com/v1/proxy?quest='
-    ]
-
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${request.symbol}?interval=${interval}&range=${range}`
-
-    for (const proxyUrl of corsProxies) {
-      try {
-        const url = proxyUrl + encodeURIComponent(targetUrl)
-
-        // Add timeout to prevent hanging
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 8000)
-
-        const response = await fetch(url, { signal: controller.signal })
-        clearTimeout(timeoutId)
-
-        if (!response.ok) continue
-
-        const data = await response.json()
-        const chart = data?.chart?.result?.[0]
-
-        if (!chart) continue
-
-        const timestamps = chart.timestamp || []
-        const quote = chart.indicators?.quote?.[0]
-
-        if (!quote) continue
-
-        const opens = quote.open || []
-        const highs = quote.high || []
-        const lows = quote.low || []
-        const closes = quote.close || []
-        const volumes = quote.volume || []
-
-        const result: CandlestickData[] = []
-
-        for (let i = 0; i < timestamps.length; i++) {
-          // Skip null/undefined values
-          if (closes[i] == null || opens[i] == null || highs[i] == null || lows[i] == null) {
-            continue
-          }
-
-          const timestamp = timestamps[i]
-          const date = new Date(timestamp * 1000)
-
-          // For daily/weekly/monthly data, use YYYY-MM-DD format
-          // For intraday, use the unix timestamp
-          let time: string
-          if (['1d', '1wk', '1mo'].includes(interval)) {
-            time = date.toISOString().split('T')[0]
-          } else {
-            // For intraday, lightweight-charts expects unix timestamp in seconds
-            time = String(timestamp)
-          }
-
-          result.push({
-            time,
-            open: opens[i],
-            high: highs[i],
-            low: lows[i],
-            close: closes[i],
-            volume: volumes[i] || 0
-          })
-        }
-
-        return result
-      } catch (error) {
-        console.warn(`Proxy ${proxyUrl} failed:`, error)
-        continue
-      }
-    }
-
-    return []
+    const data = await fetchYahooChart({ symbol: request.symbol, interval, range })
+    if (!data) return []
+    return parseYahooChart(data, interval)
   }
 
   clearCache() {
@@ -208,79 +223,9 @@ class ChartDataService {
     const period2 = Math.floor(endTime)
     const intervalParam = intervalMap[interval] || '1d'
 
-    // Multiple CORS proxies for redundancy - order matters (most reliable first)
-    const corsProxies = [
-      'https://corsproxy.io/?',
-      'https://api.allorigins.win/raw?url=',
-      'https://api.codetabs.com/v1/proxy?quest='
-    ]
-
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${intervalParam}&period1=${period1}&period2=${period2}`
-
-    for (const proxyUrl of corsProxies) {
-      try {
-        const url = proxyUrl + encodeURIComponent(targetUrl)
-
-        // Add timeout to prevent hanging
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 8000)
-
-        const response = await fetch(url, { signal: controller.signal })
-        clearTimeout(timeoutId)
-
-        if (!response.ok) continue
-
-        const data = await response.json()
-        const chart = data?.chart?.result?.[0]
-
-        if (!chart) continue
-
-        const timestamps = chart.timestamp || []
-        const quote = chart.indicators?.quote?.[0]
-
-        if (!quote) continue
-
-        const opens = quote.open || []
-        const highs = quote.high || []
-        const lows = quote.low || []
-        const closes = quote.close || []
-        const volumes = quote.volume || []
-
-        const result: CandlestickData[] = []
-
-        for (let i = 0; i < timestamps.length; i++) {
-          if (closes[i] == null || opens[i] == null || highs[i] == null || lows[i] == null) {
-            continue
-          }
-
-          const timestamp = timestamps[i]
-          const date = new Date(timestamp * 1000)
-
-          let time: string
-          if (['1d', '1wk', '1mo'].includes(intervalParam)) {
-            time = date.toISOString().split('T')[0]
-          } else {
-            time = String(timestamp)
-          }
-
-          result.push({
-            time,
-            open: opens[i],
-            high: highs[i],
-            low: lows[i],
-            close: closes[i],
-            volume: volumes[i] || 0
-          })
-        }
-
-        return result
-      } catch (error) {
-        console.warn(`Proxy ${proxyUrl} failed for historical data:`, error)
-        continue
-      }
-    }
-
-    return []
+    const data = await fetchYahooChart({ symbol, interval: intervalParam, period1, period2 })
+    if (!data) return []
+    return parseYahooChart(data, intervalParam)
   }
 
   // Fetch data for a custom date range
@@ -308,106 +253,16 @@ class ChartDataService {
     const rangeParam = daysToRange(days)
 
 
-    // Multiple CORS proxies for redundancy - order matters (most reliable first)
-    const corsProxies = [
-      'https://corsproxy.io/?',
-      'https://api.allorigins.win/raw?url=',
-      'https://api.codetabs.com/v1/proxy?quest='
-    ]
-
-    // Try range-based URL first (more reliable), then period-based as fallback
-    const targetUrls = [
-      // Range-based is more reliable for standard ranges
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${intervalParam}&range=${rangeParam}`,
-      // Period-based for exact dates
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${intervalParam}&period1=${period1}&period2=${period2}`
-    ]
-
-    for (const targetUrl of targetUrls) {
-      for (const proxyUrl of corsProxies) {
-        try {
-          const url = proxyUrl + encodeURIComponent(targetUrl)
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
-
-          const response = await fetch(url, {
-            headers: { 'Accept': 'application/json' },
-            signal: controller.signal
-          })
-          clearTimeout(timeoutId)
-
-          if (!response.ok) {
-            continue
-          }
-
-          const data = await response.json()
-
-          // Check for API errors
-          if (data?.chart?.error) {
-            console.warn('Yahoo API error:', data.chart.error?.description || data.chart.error)
-            continue
-          }
-
-          const chart = data?.chart?.result?.[0]
-          if (!chart) {
-            continue
-          }
-
-          const timestamps = chart.timestamp || []
-          const quote = chart.indicators?.quote?.[0]
-
-          if (!quote || timestamps.length === 0) {
-            continue
-          }
-
-          const opens = quote.open || []
-          const highs = quote.high || []
-          const lows = quote.low || []
-          const closes = quote.close || []
-          const volumes = quote.volume || []
-
-          const result: CandlestickData[] = []
-
-          for (let i = 0; i < timestamps.length; i++) {
-            if (closes[i] == null || opens[i] == null || highs[i] == null || lows[i] == null) {
-              continue
-            }
-
-            const timestamp = timestamps[i]
-            const date = new Date(timestamp * 1000)
-
-            let time: string
-            if (['1d', '1wk', '1mo'].includes(intervalParam)) {
-              time = date.toISOString().split('T')[0]
-            } else {
-              time = String(timestamp)
-            }
-
-            result.push({
-              time,
-              open: opens[i],
-              high: highs[i],
-              low: lows[i],
-              close: closes[i],
-              volume: volumes[i] || 0
-            })
-          }
-
-          if (result.length > 0) {
-            return result
-          }
-        } catch (error: any) {
-          if (error.name === 'AbortError') {
-            console.warn(`Timeout for proxy ${proxyUrl.substring(0, 25)}...`)
-          } else {
-            console.warn(`Proxy failed:`, error.message || error)
-          }
-          continue
-        }
-      }
+    // Try range-based first (more reliable for standard ranges), then
+    // fall back to period-based for exact date windows.
+    if (rangeParam) {
+      const rangeData = await fetchYahooChart({ symbol, interval: intervalParam, range: rangeParam })
+      const rangeParsed = rangeData ? parseYahooChart(rangeData, intervalParam) : []
+      if (rangeParsed.length > 0) return rangeParsed
     }
 
-    return []
+    const periodData = await fetchYahooChart({ symbol, interval: intervalParam, period1, period2 })
+    return periodData ? parseYahooChart(periodData, intervalParam) : []
   }
 }
 

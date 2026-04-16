@@ -7,11 +7,13 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, ChevronDown, ChevronRight, FileCheck, FileText, Info, MessageSquare, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, ChevronDown, ChevronRight, FileCheck, FileText, Info, MessageSquare, Plus, Search, Trash2, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { SimulationRow, SimulationRowSummary } from '../../hooks/useSimulationRows'
 import type { TradeAction, ExecutionStatus } from '../../types/trading'
 import { AcceptedTradeBadge } from './AcceptedTradeBadge'
+import { PairBadge } from './PairBadge'
+import type { PairLegInfo } from '../../lib/trade-lab/pair-info'
 import type { SimulationSuggestion } from '../../hooks/useSimulationSuggestions'
 import { SuggestionIndicator } from './SuggestionIndicator'
 
@@ -56,14 +58,15 @@ const COL = {
   ACTIVE: 5,
   SIM_WT: 6,
   SIM_SHARES: 7,
-  DELTA_WT: 8,
-  DELTA_SHARES: 9,
-  DELTA_NOTIONAL: 10,
+  SIM_NOTIONAL: 8,
+  DELTA_WT: 9,
+  DELTA_SHARES: 10,
+  DELTA_NOTIONAL: 11,
 } as const
 
 type ColKey = keyof typeof COL
 
-const COL_COUNT = 11
+const COL_COUNT = 12
 
 type GroupBy = 'none' | 'sector' | 'action' | 'change'
 type SortDir = 'asc' | 'desc' | null
@@ -96,6 +99,7 @@ const COLUMNS: ColDef[] = [
   { key: 'ACTIVE',        label: 'Active',    align: 'right', sortable: true,  filterable: true },
   { key: 'SIM_WT',        label: 'Sim Wt',    align: 'right', sortable: true,  filterable: true },
   { key: 'SIM_SHARES',    label: 'Sim Shrs',  align: 'right', sortable: true,  filterable: true },
+  { key: 'SIM_NOTIONAL',  label: 'Sim $',     align: 'right', sortable: true,  filterable: true },
   { key: 'DELTA_WT',      label: 'Δ Wt',      align: 'right', sortable: true,  filterable: true },
   { key: 'DELTA_SHARES',  label: 'Δ Shrs',    align: 'right', sortable: true,  filterable: true },
   { key: 'DELTA_NOTIONAL', label: 'Δ $',      align: 'right', sortable: true,  filterable: true },
@@ -112,8 +116,26 @@ function fmtNotional(v: number): string {
 }
 
 function fmtWt(v: number, signed = false): string {
+  // Clamp near-zero values to exactly 0 so floating-point residue from
+  // 100 − sum-of-weights doesn't surface as "-0.00%". Anything within
+  // half-a-bp is visually zero after 2-decimal formatting anyway.
+  if (!Number.isFinite(v) || Math.abs(v) < 0.005) v = 0
   if (signed) return `${v > 0 ? '+' : ''}${v.toFixed(2)}%`
   return `${v.toFixed(2)}%`
+}
+
+/** Parse a user-typed dollar amount. Accepts `$1,000,000`, `1M`, `500K`,
+ *  `2.5B`, plain numbers, and optional `$` prefix. Returns null on
+ *  unparseable input so callers can short-circuit. */
+function parseDollars(input: string): number | null {
+  const s = input.trim().replace(/[$,\s]/g, '').toUpperCase()
+  if (!s) return null
+  const m = s.match(/^([+-]?\d*\.?\d+)([KMB])?$/)
+  if (!m) return null
+  const num = parseFloat(m[1])
+  if (!Number.isFinite(num)) return null
+  const mult = m[2] === 'B' ? 1_000_000_000 : m[2] === 'M' ? 1_000_000 : m[2] === 'K' ? 1_000 : 1
+  return num * mult
 }
 
 function fmtShares(v: number, signed = false): string {
@@ -160,6 +182,7 @@ function getSortValue(row: SimulationRow, col: ColKey): string | number {
     case 'ACTIVE': return row.activeWeight ?? -Infinity
     case 'SIM_WT': return row.simWeight
     case 'SIM_SHARES': return row.simShares
+    case 'SIM_NOTIONAL': return row.simNotional
     case 'DELTA_WT': return row.deltaWeight
     case 'DELTA_SHARES': return row.deltaShares
     case 'DELTA_NOTIONAL': return row.notional
@@ -176,6 +199,7 @@ function getNumericValue(row: SimulationRow, col: ColKey): number | null {
     case 'ACTIVE': return row.activeWeight
     case 'SIM_WT': return row.simWeight
     case 'SIM_SHARES': return row.simShares
+    case 'SIM_NOTIONAL': return row.simNotional
     case 'DELTA_WT': return row.deltaWeight
     case 'DELTA_SHARES': return row.deltaShares
     case 'DELTA_NOTIONAL': return row.notional
@@ -236,6 +260,15 @@ export interface HoldingsSimulationTableProps {
   onRemoveAsset?: (assetId: string) => void
   onCreateVariant: (assetId: string, action: TradeAction) => void
   onFixConflict: (variantId: string, suggestedAction: TradeAction) => void
+  /** Pro-rata cash rebalance. Given a target cash weight (0-100), scale
+   *  every non-cash baseline position proportionally so the residual
+   *  lands at the target. Creating/updating a variant per holding is
+   *  the caller's responsibility. */
+  onSetCashTarget?: (targetCashWeightPct: number) => void
+  /** Wipe every in-progress trade (variants + simulation_trades) from
+   *  the current simulation. Fired from the "Clear all" button in the
+   *  summary bar. Parent should prompt for confirmation before calling. */
+  onClearAllTrades?: () => void
   onAddAsset: (asset: { id: string; symbol: string; company_name: string; sector: string | null }) => void
   assetSearchResults?: { id: string; symbol: string; company_name: string; sector: string | null }[]
   onAssetSearchChange?: (query: string) => void
@@ -253,8 +286,23 @@ export interface HoldingsSimulationTableProps {
   pendingSuggestionCount?: number
   onOpenSuggestionReview?: () => void
   // Promote to Trade Book
-  onBulkPromote?: (variantIds: string[]) => void
+  onBulkPromote?: (
+    variantIds: string[],
+    opts?: {
+      batchName?: string | null
+      /** Batch-level rationale. Lands on trade_batch.description. */
+      batchDescription?: string | null
+      /** Optional per-variant PM rationale typed in the Execute modal.
+       *  Keys are variant IDs. Empty/missing values mean "PM wants to
+       *  contextualize later in the Trade Book / Outcomes surface." */
+      reasons?: Record<string, string>
+    },
+  ) => void
   isBulkPromoting?: boolean
+  /** Map of asset_id → pair info. Rows whose asset is part of a pair render
+   *  a "↔ pair" badge alongside the symbol. Derived from trade_queue_items
+   *  pair_id/pair_leg_type in SimulationPage. */
+  pairInfoByAsset?: Map<string, import('../../lib/trade-lab/pair-info').PairLegInfo>
 }
 
 // =============================================================================
@@ -272,7 +320,8 @@ function HoldingRow({
   row, rowIndex, isEven, focusedCol, isEditing,
   onUpdateVariant, onFocusCell, onStartEdit, onStopEdit, onCreateVariantAndEdit, onClickEditableCell, rowRef,
   suggestMode, onSubmitSuggestion, pendingSuggestions, onOpenSuggestionReview,
-  promoteSelected, onTogglePromote,
+  promoteSelected, onTogglePromote, showCheckboxCol,
+  pairInfo,
 }: {
   row: SimulationRow
   rowIndex: number
@@ -292,6 +341,10 @@ function HoldingRow({
   onOpenSuggestionReview?: () => void
   promoteSelected?: boolean
   onTogglePromote?: (variantId: string) => void
+  /** When true, render a leading checkbox column (empty on rows with no
+   *  trade). */
+  showCheckboxCol?: boolean
+  pairInfo?: PairLegInfo
 }) {
   const v = row.variant
   const isFocused = focusedCol !== null
@@ -306,7 +359,12 @@ function HoldingRow({
     if (isEditing) {
       const raw = v?.sizing_input || ''
       const isSharesInput = raw.trim().startsWith('#')
-      if (focusedCol === COL.SIM_SHARES && raw && !isSharesInput) {
+      if (focusedCol === COL.SIM_NOTIONAL) {
+        // Editing dollar column: prefill with the current sim notional as a
+        // plain number (no $, no suffix). User can type `$1M` or `500000`
+        // or `100K` — parseDollars handles all of them on commit.
+        setEditValue(row.simNotional > 0 ? String(Math.round(row.simNotional)) : '')
+      } else if (focusedCol === COL.SIM_SHARES && raw && !isSharesInput) {
         // Editing shares column but input is weight-based → show shares equivalent
         setEditValue(`#${row.simShares}`)
       } else if (focusedCol === COL.SIM_WT && raw && isSharesInput) {
@@ -321,25 +379,52 @@ function HoldingRow({
 
   const cf = (col: number) => focusedCol === col ? CELL_FOCUS : ''
 
+  /** Transform the raw editor value into a canonical sizing_input based on
+   *  which column is being edited. For Sim $, the user types a dollar
+   *  amount — we convert it to shares using the row's effective price and
+   *  emit a `#<shares>` string so the server's sizing pipeline handles
+   *  it like any other shares-based input. Returns null if the input is
+   *  unparseable / unusable (caller should treat as cancel). */
+  const canonicalizeSizingInput = (raw: string): string | null => {
+    const trimmed = raw.trim()
+    if (!trimmed) return ''
+    if (focusedCol !== COL.SIM_NOTIONAL) return trimmed
+
+    const dollars = parseDollars(trimmed)
+    if (dollars == null) return null
+    // Derive price: baseline holdings have it directly; new positions
+    // can derive from simNotional / simShares when sizing already exists.
+    const effectivePrice = row.baseline?.price
+      ?? (row.simShares > 0 ? row.simNotional / row.simShares : 0)
+    if (!Number.isFinite(effectivePrice) || effectivePrice <= 0) return null
+    const targetShares = Math.max(0, Math.round(dollars / effectivePrice))
+    return `#${targetShares}`
+  }
+
   const handleEditBlur = () => {
     if (cancelledRef.current) {
       cancelledRef.current = false
       onStopEdit() // No value → parent may cleanup empty variant
       return
     }
-    const trimmed = editValue.trim()
-    if (suggestMode) {
-      // Suggest mode: submit a suggestion instead of updating the variant
-      if (trimmed && onSubmitSuggestion) {
-        onSubmitSuggestion(row.asset_id, trimmed)
-      }
-      onStopEdit(trimmed || undefined)
+    const canonical = canonicalizeSizingInput(editValue)
+    if (canonical === null) {
+      // Unparseable dollar input → treat as cancel.
+      onStopEdit()
       return
     }
-    if (v && trimmed !== (v.sizing_input || '').trim()) {
-      onUpdateVariant(v.id, { sizingInput: trimmed })
+    if (suggestMode) {
+      // Suggest mode: submit a suggestion instead of updating the variant
+      if (canonical && onSubmitSuggestion) {
+        onSubmitSuggestion(row.asset_id, canonical)
+      }
+      onStopEdit(canonical || undefined)
+      return
     }
-    onStopEdit(trimmed || undefined)
+    if (v && canonical !== (v.sizing_input || '').trim()) {
+      onUpdateVariant(v.id, { sizingInput: canonical })
+    }
+    onStopEdit(canonical || undefined)
   }
 
   const sizingEditor = () => (
@@ -366,19 +451,28 @@ function HoldingRow({
         } else if (e.key === 'Enter') {
           e.preventDefault()
           // Commit directly without blur — preserves table focus for arrow key navigation
-          const trimmed = editValue.trim()
-          if (suggestMode) {
-            if (trimmed && onSubmitSuggestion) onSubmitSuggestion(row.asset_id, trimmed)
-            onStopEdit(trimmed || undefined)
+          const canonical = canonicalizeSizingInput(editValue)
+          if (canonical === null) {
+            // Unparseable dollar input — treat as cancel.
+            onStopEdit()
             return
           }
-          if (v && trimmed !== (v.sizing_input || '').trim()) {
-            onUpdateVariant(v.id, { sizingInput: trimmed })
+          if (suggestMode) {
+            if (canonical && onSubmitSuggestion) onSubmitSuggestion(row.asset_id, canonical)
+            onStopEdit(canonical || undefined)
+            return
           }
-          onStopEdit(trimmed || undefined)
+          if (v && canonical !== (v.sizing_input || '').trim()) {
+            onUpdateVariant(v.id, { sizingInput: canonical })
+          }
+          onStopEdit(canonical || undefined)
         }
       }}
-      placeholder={focusedCol === COL.SIM_SHARES ? '#500' : '2.5'}
+      placeholder={
+        focusedCol === COL.SIM_NOTIONAL ? '$1M'
+        : focusedCol === COL.SIM_SHARES ? '#500'
+        : '2.5'
+      }
       className="w-20 h-5 text-[13px] font-mono tabular-nums text-right px-1.5 -my-0.5 rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-1 focus:ring-primary-400"
     />
   )
@@ -388,10 +482,11 @@ function HoldingRow({
     // propagated to the row yet (instant open on click).
     if (isEditing && focusedCol === COL.SIM_WT) return sizingEditor()
 
-    if (!v && !suggestMode) {
+    // Has active sizing → show the computed sim weight.
+    if (v?.sizing_input) {
       return (
-        <span className={clsx(DIM, 'group-hover/row:text-gray-500 dark:group-hover/row:text-gray-400 transition-colors')}>
-          {fmtWt(row.currentWeight)}
+        <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>
+          {fmtWt(row.simWeight)}
           {pendingSuggestions && pendingSuggestions.length > 0 && (
             <SuggestionIndicator suggestions={pendingSuggestions} onClick={onOpenSuggestionReview} />
           )}
@@ -399,18 +494,18 @@ function HoldingRow({
       )
     }
 
-    if (!v && suggestMode) {
+    // No sizing: for existing baseline holdings, show the current weight as
+    // the sim weight (untraded → sim equals current). For genuine new
+    // positions with zero baseline, show the "enter size" placeholder. This
+    // prevents the confusing blank-cell look when a row has a stray empty
+    // variant (left over from a click-to-edit that was abandoned).
+    if (!row.isNew) {
+      const hoverClass = suggestMode
+        ? 'group-hover/row:text-amber-500 dark:group-hover/row:text-amber-400'
+        : 'group-hover/row:text-gray-500 dark:group-hover/row:text-gray-400'
       return (
-        <span className={clsx(DIM, 'group-hover/row:text-amber-500 dark:group-hover/row:text-amber-400 transition-colors')}>
+        <span className={clsx(DIM, hoverClass, 'transition-colors')}>
           {fmtWt(row.currentWeight)}
-        </span>
-      )
-    }
-
-    if (v?.sizing_input) {
-      return (
-        <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>
-          {fmtWt(row.simWeight)}
           {pendingSuggestions && pendingSuggestions.length > 0 && (
             <SuggestionIndicator suggestions={pendingSuggestions} onClick={onOpenSuggestionReview} />
           )}
@@ -429,7 +524,13 @@ function HoldingRow({
     // Editor check first — instant open before variant propagates
     if (isEditing && focusedCol === COL.SIM_SHARES) return sizingEditor()
 
-    if (!v) {
+    if (v?.sizing_input) {
+      return <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>{row.simShares < 0 ? fmtShares(row.simShares, true) : fmtShares(row.simShares)}</span>
+    }
+
+    // No sizing: existing baseline → show current shares as sim shares.
+    // New position with zero baseline → "enter size" placeholder.
+    if (!row.isNew) {
       return (
         <span className={clsx(DIM, 'group-hover/row:text-gray-500 dark:group-hover/row:text-gray-400 transition-colors')}>
           {fmtShares(row.currentShares)}
@@ -437,8 +538,38 @@ function HoldingRow({
       )
     }
 
-    if (v.sizing_input) {
-      return <span className={clsx(NUM, hasSizing ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>{row.simShares < 0 ? fmtShares(row.simShares, true) : fmtShares(row.simShares)}</span>
+    return (
+      <span className="text-[13px] text-gray-300 dark:text-gray-600 italic">
+        enter size
+      </span>
+    )
+  }
+
+  const simNotionalContent = () => {
+    // Editor check first — instant open before variant propagates.
+    if (isEditing && focusedCol === COL.SIM_NOTIONAL) return sizingEditor()
+
+    // Has active sizing → always render the sim $ figure, including
+    // exactly $0 when the row is a CLOSE. Previously we rendered `—`
+    // for `simNotional === 0`, which made a sold-to-zero row look
+    // identical to an untouched/unknown row. $0 is the correct value
+    // and should be shown.
+    if (v?.sizing_input) {
+      return (
+        <span className={clsx(NUM, hasSizing ? 'font-medium text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>
+          {fmtNotional(row.simNotional)}
+        </span>
+      )
+    }
+
+    // No sizing: existing baseline → show current notional as sim notional.
+    // New position with zero baseline → "enter size" placeholder.
+    if (!row.isNew) {
+      return (
+        <span className={clsx(DIM, 'group-hover/row:text-gray-500 dark:group-hover/row:text-gray-400 transition-colors')}>
+          {fmtNotional(row.simNotional)}
+        </span>
+      )
     }
 
     return (
@@ -471,21 +602,31 @@ function HoldingRow({
         isFocused && '!bg-primary-50/40 dark:!bg-primary-950/10',
       )}
     >
+      {/* CHECKBOX column — only present when bulk-promote mode is active.
+          Rows without sizing render an empty cell so column alignment stays
+          stable. */}
+      {showCheckboxCol && (
+        <td
+          className="pl-2 pr-1 py-1.5 w-6 align-middle"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onTogglePromote && hasSizing && v ? (
+            <input
+              type="checkbox"
+              checked={promoteSelected ?? false}
+              onChange={(e) => { e.stopPropagation(); onTogglePromote(v.id) }}
+              className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              title="Select for execution"
+            />
+          ) : null}
+        </td>
+      )}
       {/* SYMBOL */}
       <td
         className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap', leftBorder, cf(COL.SYMBOL))}
         onClick={() => onFocusCell(rowIndex, COL.SYMBOL)}
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          {onTogglePromote && hasSizing && v && (
-            <input
-              type="checkbox"
-              checked={promoteSelected ?? false}
-              onChange={(e) => { e.stopPropagation(); onTogglePromote(v.id) }}
-              className="w-3 h-3 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 flex-shrink-0 cursor-pointer"
-              title="Select for execution"
-            />
-          )}
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
             {row.symbol}
           </span>
@@ -514,6 +655,7 @@ function HoldingRow({
               className="flex-shrink-0"
             />
           )}
+          {pairInfo && <PairBadge info={pairInfo} className="flex-shrink-0" />}
         </div>
       </td>
 
@@ -547,22 +689,48 @@ function HoldingRow({
       {/* SIM WEIGHT */}
       <td
         className={clsx(
-          'px-2 py-1.5 text-right whitespace-nowrap cursor-default',
+          'px-2 py-1.5 text-right whitespace-nowrap',
           cf(COL.SIM_WT),
-          !v && !isFocused && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
+          row.isCommittedPending
+            ? 'cursor-not-allowed opacity-60'
+            : 'cursor-default',
+          !v && !isFocused && !row.isCommittedPending && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
         )}
+        title={row.isCommittedPending ? 'Committed trade pending — revert via Trade Book to edit' : undefined}
         onClick={() => onClickEditableCell(rowIndex, COL.SIM_WT, row.asset_id, !!v)}
       >{simWtContent()}</td>
 
       {/* SIM SHARES */}
       <td
         className={clsx(
-          'px-2 py-1.5 text-right whitespace-nowrap cursor-default',
+          'px-2 py-1.5 text-right whitespace-nowrap',
           cf(COL.SIM_SHARES),
-          !v && !isFocused && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
+          row.isCommittedPending
+            ? 'cursor-not-allowed opacity-60'
+            : 'cursor-default',
+          !v && !isFocused && !row.isCommittedPending && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
         )}
+        title={row.isCommittedPending ? 'Committed trade pending — revert via Trade Book to edit' : undefined}
         onClick={() => onClickEditableCell(rowIndex, COL.SIM_SHARES, row.asset_id, !!v)}
       >{simSharesContent()}</td>
+
+      {/* SIM NOTIONAL — editable: type a dollar amount (accepts `$1M`,
+          `500K`, `1,000,000`, etc.). Value is converted to shares using
+          the row's effective price and stored as `#<shares>` in the
+          variant's sizing_input so the server's normal sizing pipeline
+          handles the rest. */}
+      <td
+        className={clsx(
+          'px-2 py-1.5 text-right whitespace-nowrap',
+          cf(COL.SIM_NOTIONAL),
+          row.isCommittedPending
+            ? 'cursor-not-allowed opacity-60'
+            : 'cursor-default',
+          !v && !isFocused && !row.isCommittedPending && 'group-hover/row:[&_span]:underline group-hover/row:[&_span]:decoration-dashed group-hover/row:[&_span]:decoration-gray-300 dark:group-hover/row:[&_span]:decoration-gray-600 group-hover/row:[&_span]:underline-offset-2',
+        )}
+        title={row.isCommittedPending ? 'Committed trade pending — revert via Trade Book to edit' : undefined}
+        onClick={() => onClickEditableCell(rowIndex, COL.SIM_NOTIONAL, row.asset_id, !!v)}
+      >{simNotionalContent()}</td>
 
       {/* Δ WT */}
       <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', cf(COL.DELTA_WT))} onClick={() => onFocusCell(rowIndex, COL.DELTA_WT)}>
@@ -592,12 +760,13 @@ function HoldingRow({
 // GROUP HEADER
 // =============================================================================
 
-function GroupHeaderRow({ groupName, count, totalWeight, isCollapsed, onToggle }: {
+function GroupHeaderRow({ groupName, count, totalWeight, isCollapsed, onToggle, showCheckboxCol }: {
   groupName: string; count: number; totalWeight: number; isCollapsed: boolean; onToggle: () => void
+  showCheckboxCol?: boolean
 }) {
   return (
     <tr className="bg-gray-100/80 dark:bg-gray-800/60 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-75" onClick={onToggle}>
-      <td className="px-3 py-1" colSpan={COL_COUNT}>
+      <td className="px-3 py-1" colSpan={COL_COUNT + (showCheckboxCol ? 1 : 0)}>
         <div className="flex items-center gap-2">
           {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
           <span className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide">{groupName}</span>
@@ -614,7 +783,7 @@ function GroupHeaderRow({ groupName, count, totalWeight, isCollapsed, onToggle }
 
 function PhantomRow({
   search, onSearchChange, results, highlightIndex, onHighlightChange,
-  onSelect, onClose, inputRef,
+  onSelect, onClose, inputRef, showCheckboxCol,
 }: {
   search: string
   onSearchChange: (v: string) => void
@@ -624,12 +793,16 @@ function PhantomRow({
   onSelect: (asset: { id: string; symbol: string; company_name: string; sector: string | null }) => void
   onClose: () => void
   inputRef: React.RefObject<HTMLInputElement | null>
+  showCheckboxCol?: boolean
 }) {
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   return (
-    <tr className="bg-primary-50/30 dark:bg-primary-950/10 border-t border-dashed border-primary-300 dark:border-primary-700">
-      <td className="pl-3 pr-2 py-1.5 border-l-2 border-l-primary-400" colSpan={2}>
+    <tr className="bg-primary-50/30 dark:bg-primary-950/10">
+      {showCheckboxCol && (
+        <td className="pl-2 pr-1 py-1.5 w-6 border-t border-dashed border-primary-300 dark:border-primary-700" />
+      )}
+      <td className="pl-3 pr-2 py-1.5 border-l-2 border-l-primary-400 border-t border-dashed border-primary-300 dark:border-primary-700" colSpan={2}>
         <div className="relative">
           <div className="flex items-center gap-1.5">
             <Search className="w-3.5 h-3.5 text-primary-400 flex-shrink-0" />
@@ -705,7 +878,7 @@ function PhantomRow({
         </div>
       </td>
       {/* Empty cells for remaining columns */}
-      <td colSpan={COL_COUNT - 2} className="px-2 py-1.5">
+      <td colSpan={COL_COUNT - 2} className="px-2 py-1.5 border-t border-dashed border-primary-300 dark:border-primary-700">
         <span className="text-[11px] text-gray-400 dark:text-gray-500 italic">Type to search...</span>
       </td>
     </tr>
@@ -724,108 +897,6 @@ function SortIcon({ dir, className }: { dir: SortDir; className?: string }) {
 }
 
 // =============================================================================
-// SUMMARY PANEL (bottom bar, expandable)
-// =============================================================================
-
-function SummaryPanel({ summary, tradedRows, onAddTrade: onShowPhantom, onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet }: {
-  summary: SimulationRowSummary
-  tradedRows: SimulationRow[]
-  onAddTrade: () => void
-  onCreateTradeSheet?: () => void
-  canCreateTradeSheet?: boolean
-  isCreatingTradeSheet?: boolean
-}) {
-  const [expanded, setExpanded] = useState(false)
-
-  const buys = tradedRows.filter(r => r.derivedAction === 'buy' || r.derivedAction === 'add')
-  const sells = tradedRows.filter(r => r.derivedAction === 'sell' || r.derivedAction === 'trim')
-
-  return (
-    <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
-      {/* Summary bar */}
-      <div className="flex items-center gap-4 px-3 py-2">
-        <button onClick={onShowPhantom} tabIndex={-1}
-          className="inline-flex items-center gap-1 text-[11px] text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-semibold transition-colors"
-        ><Plus className="w-3 h-3" />Add Trade</button>
-
-        <div className="h-3 w-px bg-gray-300 dark:bg-gray-600" />
-
-        <div className="flex items-center gap-3 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
-          <span><span className="font-medium text-gray-700 dark:text-gray-300">{summary.totalPositions}</span> positions</span>
-          {summary.tradedCount > 0 && (
-            <>
-              <span className="text-gray-300 dark:text-gray-600">&middot;</span>
-              <span><span className="font-medium text-emerald-600 dark:text-emerald-400">{buys.length}</span> buy{buys.length !== 1 ? 's' : ''}</span>
-              <span><span className="font-medium text-red-600 dark:text-red-400">{sells.length}</span> sell{sells.length !== 1 ? 's' : ''}</span>
-              <span className="text-gray-300 dark:text-gray-600">&middot;</span>
-              <span>Δ wt <span className={clsx('font-medium', summary.netDeltaWeight !== 0 ? dc(summary.netDeltaWeight) : '')}>{fmtWt(summary.netDeltaWeight, true)}</span></span>
-              <span>notional <span className="font-medium text-gray-700 dark:text-gray-300">{fmtNotional(summary.totalNotional)}</span></span>
-            </>
-          )}
-        </div>
-
-        <div className="ml-auto flex items-center gap-3">
-          {summary.tradedCount > 0 && (
-            <button
-              onClick={() => setExpanded(p => !p)}
-              tabIndex={-1}
-              className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-            >
-              {expanded ? 'Hide' : 'Show'} trades
-              {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            </button>
-          )}
-
-        </div>
-      </div>
-
-      {/* Expanded trade list */}
-      {expanded && summary.tradedCount > 0 && (
-        <div className="border-t border-gray-200/60 dark:border-gray-700/40 max-h-[11rem] overflow-y-auto">
-          <table className="w-full text-[11px] tabular-nums">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">Action</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">Symbol</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">Name</th>
-                <th className="px-2 py-1.5 text-right text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">Δ Wt</th>
-                <th className="px-2 py-1.5 text-right text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400">Δ Shrs</th>
-                <th className="px-2 py-1.5 text-right text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 pr-3">Δ $</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tradedRows.map((row, i) => {
-                const action = row.derivedAction
-                const isBuy = action === 'buy' || action === 'add'
-                return (
-                  <tr key={row.asset_id} className={clsx(
-                    'border-b border-gray-100 dark:border-gray-700/30',
-                    i % 2 === 0 ? ROW_EVEN : ROW_ODD,
-                  )}>
-                    <td className="px-3 py-1.5">
-                      <span className={clsx(
-                        'inline-block font-bold uppercase text-[8px] px-1.5 py-0.5 rounded-full whitespace-nowrap',
-                        isBuy ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                               : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                      )}>{actionLabel(action, row.isNew, row.isRemoved)}</span>
-                    </td>
-                    <td className="px-2 py-1.5 font-medium text-gray-900 dark:text-white">{row.symbol}</td>
-                    <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400 truncate max-w-[10rem]">{row.company_name}</td>
-                    <td className={clsx('px-2 py-1.5 text-right font-medium', row.deltaWeight !== 0 ? dc(row.deltaWeight) : 'text-gray-400 dark:text-gray-500')}>{fmtWt(row.deltaWeight, true)}</td>
-                    <td className={clsx('px-2 py-1.5 text-right font-medium', row.deltaShares !== 0 ? dc(row.deltaShares) : 'text-gray-400 dark:text-gray-500')}>{fmtShares(row.deltaShares, true)}</td>
-                    <td className={clsx('px-2 py-1.5 text-right pr-3 font-medium', row.notional !== 0 ? dc(row.notional) : 'text-gray-400 dark:text-gray-500')}>{row.notional !== 0 ? fmtNotional(row.notional) : '$0'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// =============================================================================
 // MAIN TABLE
 // =============================================================================
 
@@ -833,11 +904,13 @@ export function HoldingsSimulationTable({
   rows, cashRow, tradedRows, untradedRows, newPositionRows, summary,
   portfolioTotalValue, hasBenchmark, priceMap,
   onUpdateVariant, onDeleteVariant, onRemoveAsset, onCreateVariant, onFixConflict,
+  onSetCashTarget, onClearAllTrades,
   onAddAsset, assetSearchResults, onAssetSearchChange,
   onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet,
   groupBy: externalGroupBy, onGroupByChange, readOnly = false, className = '',
   suggestMode, onSubmitSuggestion, pendingSuggestionsByAsset, pendingSuggestionCount, onOpenSuggestionReview,
   onBulkPromote, isBulkPromoting,
+  pairInfoByAsset,
 }: HoldingsSimulationTableProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<GroupBy>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -849,6 +922,33 @@ export function HoldingsSimulationTable({
 
   // Execute confirmation modal
   const [showExecuteConfirm, setShowExecuteConfirm] = useState(false)
+  // Optional batch name the PM can type in the Execute Trades modal.
+  // Passed through to executeSimVariants so the resulting trade_batch
+  // row is labelled in the Trade Book. Cleared on every modal open.
+  const [executeBatchName, setExecuteBatchName] = useState('')
+  // Optional batch-level rationale — the overall "why" behind the
+  // whole batch. Lands on trade_batch.description in the Trade Book.
+  const [executeBatchDescription, setExecuteBatchDescription] = useState('')
+  // Optional per-row rationale / why-now for each committed trade.
+  // Keyed by variant id. Empty entries mean "PM will contextualize
+  // later in Trade Book / Outcomes." Cleared on modal open.
+  const [executeReasons, setExecuteReasons] = useState<Record<string, string>>({})
+
+  // Clear-all confirmation modal — styled, app-native, matches the
+  // Execute Trades modal pattern instead of using window.confirm.
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+
+  // Summary bar expansion (inlined into the sticky tfoot so it shares the
+  // same DOM block as the totals row — no gap between them).
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
+
+  // Cash row inline editor: the synthetic CASH_USD row isn't tied to a
+  // variant, so it bypasses the normal sizingEditor flow. The PM types a
+  // target cash weight (or shares via `#` prefix → weight via
+  // notional/total) and on commit we call onSetCashTarget to fan the
+  // delta out pro-rata across every non-cash baseline holding.
+  const [editingCash, setEditingCash] = useState(false)
+  const [cashEditValue, setCashEditValue] = useState('')
 
   // Popover state (conflicts + sizing help)
   const [showConflictPopover, setShowConflictPopover] = useState(false)
@@ -897,6 +997,59 @@ export function HoldingsSimulationTable({
     rows.filter(r => r.variant?.sizing_input && !r.isCash),
     [rows]
   )
+
+  // Prune the selection against the current variant set. When a bulk
+  // execute commits a subset of selected trades, those variants vanish
+  // from `rows` on the next render — we drop them from the checked set
+  // so only the leftover (failed or pending) ones stay visually
+  // selected. Conversely, if execute fails wholesale and the variants
+  // remain, the selection is untouched, so the user can retry without
+  // re-checking anything.
+  useEffect(() => {
+    if (selectedForPromote.size === 0) return
+    const liveVariantIds = new Set(
+      rows
+        .map(r => r.variant?.id)
+        .filter((id): id is string => !!id),
+    )
+    let changed = false
+    const next = new Set<string>()
+    for (const id of selectedForPromote) {
+      if (liveVariantIds.has(id)) {
+        next.add(id)
+      } else {
+        changed = true
+      }
+    }
+    if (changed) setSelectedForPromote(next)
+  }, [rows, selectedForPromote])
+
+  // Dedicated checkbox column — only rendered when the user can actually
+  // bulk-promote. In shared/readonly/suggest views the column is hidden.
+  const showCheckboxCol = !readOnly && !suggestMode && !!onBulkPromote
+
+  // Select-all state: 'none' | 'some' | 'all'. Drives the header checkbox's
+  // checked + indeterminate attributes. Computed against promotableRows so
+  // untraded rows are not part of the denominator.
+  const selectAllState: 'none' | 'some' | 'all' = useMemo(() => {
+    if (promotableRows.length === 0 || selectedForPromote.size === 0) return 'none'
+    const allSelected = promotableRows.every(r => r.variant && selectedForPromote.has(r.variant.id))
+    if (allSelected) return 'all'
+    return 'some'
+  }, [promotableRows, selectedForPromote])
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedForPromote(prev => {
+      // If anything is currently selected, clear. Otherwise select all
+      // promotable rows. Matches the behavior of a tri-state select-all.
+      if (prev.size > 0) return new Set()
+      const next = new Set<string>()
+      for (const r of promotableRows) {
+        if (r.variant) next.add(r.variant.id)
+      }
+      return next
+    })
+  }, [promotableRows])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
@@ -1111,7 +1264,7 @@ export function HoldingsSimulationTable({
     if (readOnly && !suggestMode) return
     if (r < 0 || r >= displayRows.length) return
     const row = displayRows[r]
-    if (c === COL.SIM_WT || c === COL.SIM_SHARES) {
+    if (c === COL.SIM_WT || c === COL.SIM_SHARES || c === COL.SIM_NOTIONAL) {
       if (suggestMode) {
         // Suggest mode: open inline editor for suggestion input (no variant needed)
         setFocusRow(r)
@@ -1156,10 +1309,10 @@ export function HoldingsSimulationTable({
       case 'ArrowLeft': case 'h': e.preventDefault(); setFocusCol(p => Math.max(p - 1, 0)); break
       case 'Enter': e.preventDefault(); activateCell(focusRow, focusCol); break
       case 'e':
-        if (focusRow >= 0 && displayRows[focusRow]?.variant) {
+        if (focusRow >= 0 && displayRows[focusRow]?.variant && !displayRows[focusRow]?.isCommittedPending) {
           e.preventDefault()
           // If already on an editable col, stay there; otherwise default to SIM_WT
-          if (focusCol !== COL.SIM_WT && focusCol !== COL.SIM_SHARES) setFocusCol(COL.SIM_WT)
+          if (focusCol !== COL.SIM_WT && focusCol !== COL.SIM_SHARES && focusCol !== COL.SIM_NOTIONAL) setFocusCol(COL.SIM_WT)
           setEditing(true)
         }
         break
@@ -1167,6 +1320,8 @@ export function HoldingsSimulationTable({
         if (focusRow < 0) break
         const delRow = displayRows[focusRow]
         if (!delRow) break
+        // Locked: committed-pending rows must be reverted via Trade Book
+        if (delRow.isCommittedPending) break
         e.preventDefault()
         if (delRow.baseline && !delRow.isNew) {
           // Existing position: remove variant + simulation_trade to revert to baseline.
@@ -1222,6 +1377,14 @@ export function HoldingsSimulationTable({
   // so the editor opens instantly in the same render cycle.
   const handleClickEditable = useCallback((r: number, c: number, assetId: string, hasVariant: boolean) => {
     if (readOnly && !suggestMode) { setFocusRow(r); setFocusCol(c); return }
+    // Committed-pending rows: an accepted_trade is in flight for this asset.
+    // Editing is locked — the PM must revert the pending trade in the Trade
+    // Book before making further changes to this position. Allow focus so
+    // the row stays keyboard-navigable.
+    const rowData = displayRows[r]
+    if (rowData?.isCommittedPending) {
+      setFocusRow(r); setFocusCol(c); return
+    }
     if (suggestMode) {
       // Suggest mode: just open the editor — no variant needed
       setFocusRow(r); setFocusCol(c); setEditing(true)
@@ -1242,7 +1405,7 @@ export function HoldingsSimulationTable({
       setPendingEditAssetId(assetId)
       setPendingEditCol(c)
     }
-  }, [editing, focusRow, cleanupEmptyVariant, onCreateVariant, readOnly, suggestMode])
+  }, [editing, focusRow, cleanupEmptyVariant, onCreateVariant, readOnly, suggestMode, displayRows])
 
   const handleStopEdit = useCallback((committedValue?: string) => {
     if (suggestMode) {
@@ -1318,6 +1481,7 @@ export function HoldingsSimulationTable({
       bench: src.reduce((s, r) => s + (r.benchWeight ?? 0), 0),
       active: src.reduce((s, r) => s + (r.activeWeight ?? 0), 0),
       simWt: src.reduce((s, r) => s + r.simWeight, 0) + cashWt,
+      simNotional: src.reduce((s, r) => s + r.simNotional, 0) + (cashRow?.simNotional ?? 0),
       deltaWt: src.reduce((s, r) => s + r.deltaWeight, 0) + cashDeltaWt,
       notional: src.reduce((s, r) => s + r.notional, 0),
     }
@@ -1336,6 +1500,8 @@ export function HoldingsSimulationTable({
       onOpenSuggestionReview={onOpenSuggestionReview}
       promoteSelected={row.variant ? selectedForPromote.has(row.variant.id) : false}
       onTogglePromote={!readOnly && !suggestMode && onBulkPromote ? togglePromoteSelection : undefined}
+      showCheckboxCol={showCheckboxCol}
+      pairInfo={pairInfoByAsset?.get(row.asset_id)}
     />
   )
 
@@ -1466,6 +1632,9 @@ export function HoldingsSimulationTable({
           <button
             onClick={() => {
               if (selectedForPromote.size === 0) return
+              setExecuteBatchName('')
+              setExecuteBatchDescription('')
+              setExecuteReasons({})
               setShowExecuteConfirm(true)
             }}
             disabled={selectedForPromote.size === 0 || isBulkPromoting}
@@ -1559,19 +1728,32 @@ export function HoldingsSimulationTable({
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse">
+        {/* border-separate + border-spacing-0 instead of border-collapse.
+            Rationale: border-collapse breaks sticky row backgrounds — the
+            browser composites the collapsed-border layer over the cell bg,
+            producing 1-2px edge bleed on sticky thead/tfoot. With
+            border-separate, sticky works cleanly. Cost: borders on <tr>
+            don't render in this box model, so row separators have to live
+            on the tds. The filter row, cash row, phantom row, and tfoot
+            are all migrated accordingly. */}
+        <table className="w-full border-separate border-spacing-0">
           <thead className="sticky top-0 z-20 bg-white dark:bg-gray-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
             {/* Column headers */}
             <tr className="bg-white dark:bg-gray-900">
+              {/* Empty th to keep alignment — the select-all lives in the
+                  filter row below. */}
+              {showCheckboxCol && (
+                <th className="pl-2 pr-1 py-2.5 w-6 bg-white dark:bg-gray-900" />
+              )}
               {COLUMNS.map((col) => {
                 const colIdx = COL[col.key]
                 const isSorted = sortCol === col.key
-                const isEditable = col.key === 'SIM_WT' || col.key === 'SIM_SHARES'
+                const isEditable = col.key === 'SIM_WT' || col.key === 'SIM_SHARES' || col.key === 'SIM_NOTIONAL'
                 return (
                   <th
                     key={col.key}
                     className={clsx(
-                      'group/th px-2 py-2.5 whitespace-nowrap select-none',
+                      'group/th px-2 py-2.5 whitespace-nowrap select-none bg-white dark:bg-gray-900',
                       col.align === 'left' ? 'text-left' : 'text-right',
                       colIdx === 0 && 'pl-3',
                       col.sortable && 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors',
@@ -1602,9 +1784,26 @@ export function HoldingsSimulationTable({
             </tr>
 
             {/* Filter row — always visible, solid bg so content doesn't show through */}
-            <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            <tr className="bg-gray-100 dark:bg-gray-800">
+              {/* Select-all checkbox. Tri-state: none / some / all. Clicking
+                  clears selection if anything is selected, otherwise selects
+                  every row with sizing. Lives in the filter row for better
+                  vertical alignment with per-row checkboxes. */}
+              {showCheckboxCol && (
+                <td className="pl-2 pr-1 py-0.5 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 w-6 align-middle">
+                  <input
+                    type="checkbox"
+                    ref={(el) => { if (el) el.indeterminate = selectAllState === 'some' }}
+                    checked={selectAllState === 'all'}
+                    onChange={toggleSelectAll}
+                    disabled={promotableRows.length === 0}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={selectAllState === 'all' ? 'Clear selection' : 'Select all trades'}
+                  />
+                </td>
+              )}
               {COLUMNS.map((col) => (
-                <td key={col.key} className={clsx('px-2 py-0.5', col.key === 'SYMBOL' && 'pl-3')}>
+                <td key={col.key} className={clsx('px-2 py-0.5 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700', col.key === 'SYMBOL' && 'pl-3')}>
                   {col.filterable ? (
                     <div className="relative">
                       <input
@@ -1635,7 +1834,7 @@ export function HoldingsSimulationTable({
           <tbody>
             {displayRows.length === 0 && rows.length === 0 && !showPhantomRow ? (
               <tr>
-                <td colSpan={COL_COUNT} className="px-4 py-20 text-center">
+                <td colSpan={COL_COUNT + (showCheckboxCol ? 1 : 0)} className="px-4 py-20 text-center">
                   <div className="flex flex-col items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                       <Plus className="w-6 h-6 text-gray-300 dark:text-gray-600" />
@@ -1654,7 +1853,7 @@ export function HoldingsSimulationTable({
               </tr>
             ) : displayRows.length === 0 && rows.length > 0 && !showPhantomRow ? (
               <tr>
-                <td colSpan={COL_COUNT} className="px-4 py-12 text-center">
+                <td colSpan={COL_COUNT + (showCheckboxCol ? 1 : 0)} className="px-4 py-12 text-center">
                   <p className="text-sm text-gray-400 dark:text-gray-500">No results match your filters</p>
                   <button onClick={clearFilters} className="text-xs text-primary-600 dark:text-primary-400 hover:underline mt-1">Clear filters</button>
                 </td>
@@ -1666,7 +1865,8 @@ export function HoldingsSimulationTable({
                   return groupedRows.map(group => (
                     <React.Fragment key={group.name}>
                       <GroupHeaderRow groupName={group.name} count={group.count} totalWeight={group.totalWeight}
-                        isCollapsed={collapsedGroups.has(group.name)} onToggle={() => toggleGroup(group.name)} />
+                        isCollapsed={collapsedGroups.has(group.name)} onToggle={() => toggleGroup(group.name)}
+                        showCheckboxCol={showCheckboxCol} />
                       {!collapsedGroups.has(group.name) && group.rows.map(row => renderRow(row, flatIdx++))}
                     </React.Fragment>
                   ))
@@ -1685,172 +1885,626 @@ export function HoldingsSimulationTable({
                 onSelect={handlePhantomSelect}
                 onClose={handlePhantomClose}
                 inputRef={phantomInputRef}
+                showCheckboxCol={showCheckboxCol}
               />
             )}
 
             {/* Synthetic cash row — pinned at bottom, shows net cash impact of trades */}
-            {cashRow && (
-              <tr className="border-t border-dashed border-gray-300 dark:border-gray-600 bg-gray-50/50 dark:bg-gray-800/40">
-                <td className="pl-3 pr-2 py-1.5 border-l-2 border-l-transparent whitespace-nowrap">
+            {cashRow && (() => {
+              // With border-separate, row-level borders don't render. The
+              // top dashed separator lives on every td instead.
+              const cashSep = 'border-t border-dashed border-gray-300 dark:border-gray-600 bg-gray-50/50 dark:bg-gray-800/40'
+              return (
+              <tr>
+                {showCheckboxCol && <td className={clsx('px-2 py-1.5 w-6', cashSep)} />}
+                <td className={clsx('pl-3 pr-2 py-1.5 border-l-2 border-l-transparent whitespace-nowrap', cashSep)}>
                   <span className="text-[13px] font-semibold text-gray-600 dark:text-gray-300">CASH_USD</span>
                 </td>
-                <td className="px-2 py-1.5 whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 whitespace-nowrap', cashSep)}>
                   <span className="text-[12px] text-gray-400 dark:text-gray-500">Cash &amp; Equivalents</span>
                 </td>
                 {/* Shares — not applicable */}
-                <td className="px-2 py-1.5" />
+                <td className={clsx('px-2 py-1.5', cashSep)} />
                 {/* Wt% */}
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', cashSep)}>
                   <span className={DIM}>{cashRow.currentWeight !== 0 ? fmtWt(cashRow.currentWeight) : '—'}</span>
                 </td>
                 {/* Bench */}
-                <td className="px-2 py-1.5" />
+                <td className={clsx('px-2 py-1.5', cashSep)} />
                 {/* Active */}
-                <td className="px-2 py-1.5" />
-                {/* Sim Wt */}
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                  <span className={clsx(NUM, 'text-gray-600 dark:text-gray-300')}>{fmtWt(cashRow.simWeight)}</span>
+                <td className={clsx('px-2 py-1.5', cashSep)} />
+                {/* Sim Wt — editable: click to set a target cash weight that
+                    rebalances every non-cash position pro-rata. */}
+                <td
+                  className={clsx(
+                    'px-2 py-1.5 text-right whitespace-nowrap',
+                    cashSep,
+                    onSetCashTarget && !readOnly && 'cursor-pointer hover:bg-primary-50/40 dark:hover:bg-primary-900/10',
+                  )}
+                  onClick={() => {
+                    if (!onSetCashTarget || readOnly) return
+                    setCashEditValue(
+                      Math.abs(cashRow.simWeight) < 0.005 ? '0' : cashRow.simWeight.toFixed(2),
+                    )
+                    setEditingCash(true)
+                  }}
+                  title={onSetCashTarget && !readOnly ? 'Click to set a target cash weight — rebalances all positions pro-rata' : undefined}
+                >
+                  {editingCash && onSetCashTarget ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={cashEditValue}
+                      onChange={(e) => setCashEditValue(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={() => {
+                        const parsed = parseFloat(cashEditValue.replace(/[%\s]/g, ''))
+                        setEditingCash(false)
+                        if (!Number.isFinite(parsed)) return
+                        // Clamp to [0, 100] — negative cash or >100% cash don't
+                        // describe a realizable rebalance.
+                        const clamped = Math.max(0, Math.min(100, parsed))
+                        onSetCashTarget!(clamped)
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        if (e.key === 'Escape') { setEditingCash(false); return }
+                        if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
+                      }}
+                      placeholder="5"
+                      className="w-16 h-5 text-[13px] font-mono tabular-nums text-right px-1.5 -my-0.5 rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-1 focus:ring-primary-400"
+                    />
+                  ) : (
+                    <span className={clsx(NUM, 'text-gray-600 dark:text-gray-300')}>{fmtWt(cashRow.simWeight)}</span>
+                  )}
                 </td>
                 {/* Sim Shrs — not applicable */}
-                <td className="px-2 py-1.5" />
+                <td className={clsx('px-2 py-1.5', cashSep)} />
+                {/* Sim $ — post-trade cash value = target weight × total.
+                    Always show a dollar figure for cash (clamped at $0
+                    for negative/rounding-noise values) instead of '—',
+                    so the row is informative even when the portfolio
+                    is fully invested. */}
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', cashSep)}>
+                  <span className={clsx(NUM, 'font-medium text-gray-600 dark:text-gray-300')}>
+                    {fmtNotional(Math.max(0, cashRow.simNotional))}
+                  </span>
+                </td>
                 {/* Δ Wt */}
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', cashSep)}>
                   <span className={clsx(NUM, 'font-medium', dc(cashRow.deltaWeight))}>{fmtWt(cashRow.deltaWeight, true)}</span>
                 </td>
                 {/* Δ Shrs — not applicable */}
-                <td className="px-2 py-1.5" />
+                <td className={clsx('px-2 py-1.5', cashSep)} />
                 {/* Δ $ */}
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', cashSep)}>
                   <span className={clsx(NUM, 'font-medium', dc(cashRow.notional))}>{fmtNotional(cashRow.notional)}</span>
                 </td>
               </tr>
-            )}
+              )
+            })()}
           </tbody>
 
-          {displayRows.length > 0 && (
+          {displayRows.length > 0 && (() => {
+            // Combined sticky footer: summary bar + totals row, both in the
+            // same <tfoot> so there's zero visual gap between them. With
+            // border-separate + border-spacing-0 sticky works cleanly.
+            // Each td carries its own bg (tr bg doesn't reliably paint
+            // during sticky layout) and totals cells carry their own top
+            // border (tr borders don't render in border-separate).
+            const hasSummaryBar = !readOnly && rows.length > 0
+            // Combined row: Add Trade + positions + totals all on one line.
+            // 2px top border is the visual boundary with scrolling content.
+            const footCell = 'bg-gray-100 dark:bg-gray-800 border-t-2 border-gray-300 dark:border-gray-600'
+            const buys = tradedRows.filter(r => r.derivedAction === 'buy' || r.derivedAction === 'add')
+            const sells = tradedRows.filter(r => r.derivedAction === 'sell' || r.derivedAction === 'trim')
+            return (
             <tfoot className="sticky bottom-0 z-10">
-              <tr className="bg-gray-100 dark:bg-gray-800 border-t-2 border-gray-300 dark:border-gray-600">
-                <td className="pl-3 pr-2 py-1.5 border-l-2 border-l-transparent">
-                  <span className="text-[11px] font-semibold text-gray-600 dark:text-gray-300">{displayRows.length} positions</span>
+              {/* Single combined row: Add Trade + positions count occupy the
+                  Symbol + Name columns, totals fill the remaining columns.
+                  Everything on one line. */}
+              <tr>
+                {/* Leading empty td to align with the checkbox column. */}
+                {showCheckboxCol && <td className={clsx('px-2 py-1.5 w-6', footCell)} />}
+                {/* Symbol column → Add Trade button (or empty in readOnly) */}
+                <td className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap', footCell)}>
+                  {hasSummaryBar && (
+                    <button
+                      onClick={handleShowPhantom}
+                      tabIndex={-1}
+                      className="inline-flex items-center gap-1 text-[11px] text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-semibold transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />Add Trade
+                    </button>
+                  )}
                 </td>
-                <td className="px-2 py-1.5" />
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                  <span className={clsx(NUM, 'font-semibold text-gray-600 dark:text-gray-300')}>{fmtShares(totals.shares)}</span>
+                {/* Name column → positions count + buys/sells + Show trades toggle */}
+                <td className={clsx('px-2 py-1.5 whitespace-nowrap', footCell)}>
+                  <div className="flex items-center gap-2 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                    <span>
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">{summary.totalPositions}</span> positions
+                    </span>
+                    {summary.tradedCount > 0 && (
+                      <>
+                        <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+                        <span>
+                          <span className="font-medium text-emerald-600 dark:text-emerald-400">{buys.length}</span>
+                          <span className="text-gray-400 dark:text-gray-500"> buy{buys.length !== 1 ? 's' : ''}</span>
+                        </span>
+                        <span>
+                          <span className="font-medium text-red-600 dark:text-red-400">{sells.length}</span>
+                          <span className="text-gray-400 dark:text-gray-500"> sell{sells.length !== 1 ? 's' : ''}</span>
+                        </span>
+                        {hasSummaryBar && (
+                          <button
+                            onClick={() => setSummaryExpanded(p => !p)}
+                            tabIndex={-1}
+                            className="flex items-center gap-0.5 text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors ml-1"
+                            title={summaryExpanded ? 'Hide trades' : 'Show trades'}
+                          >
+                            {summaryExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                          </button>
+                        )}
+                        {hasSummaryBar && onClearAllTrades && (
+                          <>
+                            <span className="text-gray-300 dark:text-gray-600">&middot;</span>
+                            <button
+                              onClick={() => setShowClearConfirm(true)}
+                              tabIndex={-1}
+                              className="text-[11px] font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors ml-1"
+                              title="Remove every pending trade from the simulation"
+                            >
+                              Clear all
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </td>
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                {/* Totals — aligned to their columns */}
+                {/* Shares — no total (summing share counts across tickers
+                    isn't a meaningful number for the PM). Matches Sim Shrs
+                    and Δ Shrs which are also blank in the footer. */}
+                <td className={clsx('px-2 py-1.5', footCell)} />
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
                   <span className={clsx(NUM, 'font-semibold text-gray-600 dark:text-gray-300')}>{fmtWt(totals.weight)}</span>
                 </td>
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
                   <span className={clsx(NUM, 'text-gray-500 dark:text-gray-400')}>{fmtWt(totals.bench)}</span>
                 </td>
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
                   <span className={clsx(NUM, 'text-gray-500 dark:text-gray-400')}>{fmtWt(totals.active, true)}</span>
                 </td>
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
                   <span className={clsx(NUM, 'font-semibold text-gray-600 dark:text-gray-300')}>{fmtWt(totals.simWt)}</span>
                 </td>
                 {/* Sim Shrs — no total */}
-                <td className="px-2 py-1.5" />
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5', footCell)} />
+                {/* Sim $ total — total portfolio value at simulated prices */}
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
+                  <span className={clsx(NUM, 'font-semibold text-gray-600 dark:text-gray-300')}>
+                    {fmtNotional(totals.simNotional)}
+                  </span>
+                </td>
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
                   <span className={clsx(NUM, 'font-semibold', totals.deltaWt !== 0 ? dc(totals.deltaWt) : 'text-gray-500 dark:text-gray-400')}>{fmtWt(totals.deltaWt, true)}</span>
                 </td>
                 {/* Δ Shrs — no total */}
-                <td className="px-2 py-1.5" />
-                <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                <td className={clsx('px-2 py-1.5', footCell)} />
+                <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', footCell)}>
                   <span className={clsx(NUM, 'font-semibold', totals.notional !== 0 ? dc(totals.notional) : 'text-gray-500 dark:text-gray-400')}>{totals.notional !== 0 ? fmtNotional(totals.notional) : '$0'}</span>
                 </td>
               </tr>
+
+              {/* Expanded trade list — optional second row below the combined bar */}
+              {hasSummaryBar && summaryExpanded && summary.tradedCount > 0 && (
+                <tr>
+                  <td colSpan={COL_COUNT + (showCheckboxCol ? 1 : 0)} className="bg-gray-100 dark:bg-gray-800 border-t border-gray-200/60 dark:border-gray-700/40">
+                    <div className="max-h-[11rem] overflow-y-auto">
+                      <table className="w-full text-[11px] tabular-nums border-separate border-spacing-0">
+                        <thead>
+                          <tr>
+                            <th className="px-3 py-1.5 text-left text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Action</th>
+                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Symbol</th>
+                            <th className="px-2 py-1.5 text-left text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Name</th>
+                            <th className="px-2 py-1.5 text-right text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Δ Wt</th>
+                            <th className="px-2 py-1.5 text-right text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Δ Shrs</th>
+                            <th className="px-2 py-1.5 text-right text-[10px] font-semibold tracking-wide text-gray-500 dark:text-gray-400 pr-3 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Δ $</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tradedRows.map((row, i) => {
+                            const action = row.derivedAction
+                            const isBuy = action === 'buy' || action === 'add'
+                            return (
+                              <tr key={row.asset_id} className={clsx(i % 2 === 0 ? ROW_EVEN : ROW_ODD)}>
+                                <td className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-700/30">
+                                  <span className={clsx(
+                                    'inline-block font-bold uppercase text-[8px] px-1.5 py-0.5 rounded-full whitespace-nowrap',
+                                    isBuy ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                           : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                                  )}>{actionLabel(action, row.isNew, row.isRemoved)}</span>
+                                </td>
+                                <td className="px-2 py-1.5 font-medium text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700/30">{row.symbol}</td>
+                                <td className="px-2 py-1.5 text-gray-500 dark:text-gray-400 truncate max-w-[10rem] border-b border-gray-100 dark:border-gray-700/30">{row.company_name}</td>
+                                <td className={clsx('px-2 py-1.5 text-right font-medium border-b border-gray-100 dark:border-gray-700/30', row.deltaWeight !== 0 ? dc(row.deltaWeight) : 'text-gray-400 dark:text-gray-500')}>{fmtWt(row.deltaWeight, true)}</td>
+                                <td className={clsx('px-2 py-1.5 text-right font-medium border-b border-gray-100 dark:border-gray-700/30', row.deltaShares !== 0 ? dc(row.deltaShares) : 'text-gray-400 dark:text-gray-500')}>{fmtShares(row.deltaShares, true)}</td>
+                                <td className={clsx('px-2 py-1.5 text-right pr-3 font-medium border-b border-gray-100 dark:border-gray-700/30', row.notional !== 0 ? dc(row.notional) : 'text-gray-400 dark:text-gray-500')}>{row.notional !== 0 ? fmtNotional(row.notional) : '$0'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tfoot>
-          )}
+            )
+          })()}
 
         </table>
       </div>
 
-      {/* Bottom Summary Panel */}
-      {!readOnly && rows.length > 0 && (
-        <SummaryPanel
-          summary={summary}
-          tradedRows={tradedRows}
-          onAddTrade={handleShowPhantom}
-          onCreateTradeSheet={onCreateTradeSheet}
-          canCreateTradeSheet={canCreateTradeSheet}
-          isCreatingTradeSheet={isCreatingTradeSheet}
-        />
-      )}
+      {/* Summary bar is now inlined into the sticky <tfoot> above — no
+          separate panel here. See the tfoot render for the Add Trade
+          button + stats + expandable trade list. */}
 
       {/* Execute Trades Confirmation Modal */}
       {showExecuteConfirm && onBulkPromote && (() => {
         const selectedRows = rows.filter(r => r.variant && selectedForPromote.has(r.variant.id))
         const totalNotional = selectedRows.reduce((s, r) => s + Math.abs(r.notional), 0)
-        const fmtN = (v: number) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}K` : `$${v.toFixed(0)}`
+        // Signed cash impact: buys consume cash (negative), sells add cash
+        // (positive). row.notional is already signed (positive for buys,
+        // negative for sells), so cash impact = -sum(notional).
+        const netNotional = selectedRows.reduce((s, r) => s + r.notional, 0)
+        const cashImpact = -netNotional
+        const fmtN = (v: number) => {
+          const abs = Math.abs(v)
+          const body = abs >= 1_000_000
+            ? `$${(abs / 1_000_000).toFixed(1)}M`
+            : abs >= 1_000
+              ? `$${(abs / 1_000).toFixed(0)}K`
+              : `$${abs.toFixed(0)}`
+          return v < 0 ? `-${body}` : body
+        }
+        const fmtSignedN = (v: number) => v > 0 ? `+${fmtN(v)}` : fmtN(v)
+        // Shared submit helper so the batch-name Enter path and the
+        // primary Execute button don't drift out of sync.
+        const submitExecute = () => {
+          setShowExecuteConfirm(false)
+          const trimmedName = executeBatchName.trim()
+          const trimmedDesc = executeBatchDescription.trim()
+          const trimmedReasons: Record<string, string> = {}
+          for (const [vid, text] of Object.entries(executeReasons)) {
+            const t = text.trim()
+            if (t) trimmedReasons[vid] = t
+          }
+          onBulkPromote(Array.from(selectedForPromote), {
+            batchName: trimmedName || null,
+            batchDescription: trimmedDesc || null,
+            reasons: trimmedReasons,
+          })
+          setExecuteBatchName('')
+          setExecuteBatchDescription('')
+          setExecuteReasons({})
+        }
+        const reasonCount = Object.values(executeReasons).filter(r => r.trim()).length
         return (
           <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setShowExecuteConfirm(false)}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div
+                className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-auto border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]"
+                onClick={e => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="execute-confirm-title"
+              >
+                {/* Header */}
+                <div className="flex items-start gap-4 px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-800">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3
+                      id="execute-confirm-title"
+                      className="text-base font-semibold text-gray-900 dark:text-white"
+                    >
+                      Execute {selectedRows.length} Trade{selectedRows.length !== 1 ? 's' : ''}
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Commit to Trade Book. Add context now or fill it in later from{' '}
+                      <span className="font-medium text-gray-600 dark:text-gray-300">Trade Book → Outcomes</span>.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowExecuteConfirm(false)}
+                    className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors p-1 -m-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+                    aria-label="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Scrollable body */}
+                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+                  {/* Batch context: name + description, side by side on wide
+                      screens, stacked on mobile. */}
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-3">
+                    <div>
+                      <label
+                        htmlFor="execute-batch-name"
+                        className="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5"
+                      >
+                        Batch name
+                      </label>
+                      <input
+                        id="execute-batch-name"
+                        type="text"
+                        autoFocus
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-form-type="other"
+                        name="execute-batch-name"
+                        value={executeBatchName}
+                        onChange={(e) => setExecuteBatchName(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (e.key === 'Enter' && !isBulkPromoting) {
+                            e.preventDefault()
+                            submitExecute()
+                          }
+                        }}
+                        placeholder="Morning rebalance"
+                        maxLength={120}
+                        className="w-full text-sm px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="execute-batch-description"
+                        className="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5"
+                      >
+                        Batch rationale <span className="normal-case font-normal text-gray-400 dark:text-gray-500">(overall why)</span>
+                      </label>
+                      <input
+                        id="execute-batch-description"
+                        type="text"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-form-type="other"
+                        name="execute-batch-description"
+                        value={executeBatchDescription}
+                        onChange={(e) => setExecuteBatchDescription(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (e.key === 'Enter' && !isBulkPromoting) {
+                            e.preventDefault()
+                            submitExecute()
+                          }
+                        }}
+                        placeholder="e.g. Quarterly rebalance — trim winners, redeploy into PLTR / V"
+                        maxLength={500}
+                        className="w-full text-sm px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Per-trade list */}
+                  <div>
+                    <div className="flex items-baseline justify-between mb-2">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Trades
+                      </h4>
+                      <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                        {reasonCount > 0
+                          ? `${reasonCount} of ${selectedRows.length} with reason`
+                          : executeBatchDescription.trim()
+                            ? 'Inheriting batch rationale'
+                            : 'Reasons optional'}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-950/40 overflow-hidden">
+                      <div className="max-h-[340px] overflow-y-auto divide-y divide-gray-200/70 dark:divide-gray-800/80">
+                        {selectedRows.map(row => {
+                          const fromWt = row.currentWeight
+                          const toWt = row.computed?.target_weight ?? row.simWeight
+                          const rowNotional = row.notional
+                          const variantId = row.variant?.id
+                          const reason = variantId ? (executeReasons[variantId] || '') : ''
+                          const isBuySide = row.derivedAction === 'buy' || row.derivedAction === 'add'
+                          return (
+                            <div
+                              key={row.asset_id}
+                              className="px-4 py-3 hover:bg-white dark:hover:bg-gray-900/40 transition-colors"
+                            >
+                              {/* Row header: action · symbol · weight change · notional */}
+                              <div className="flex items-center gap-3 text-xs mb-2">
+                                <span className={clsx(
+                                  'px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex-shrink-0',
+                                  isBuySide
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+                                )}>
+                                  {actionLabel(row.derivedAction, row.isNew, row.isRemoved)}
+                                </span>
+                                <span className="font-semibold text-sm text-gray-900 dark:text-white">{row.symbol}</span>
+                                <span className="text-gray-500 dark:text-gray-400 font-mono tabular-nums">
+                                  {fromWt.toFixed(2)}% → {toWt.toFixed(2)}%
+                                </span>
+                                <span className={clsx(
+                                  'ml-auto font-mono tabular-nums text-xs font-semibold',
+                                  rowNotional > 0
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : rowNotional < 0
+                                      ? 'text-red-600 dark:text-red-400'
+                                      : 'text-gray-400 dark:text-gray-500',
+                                )}>
+                                  {rowNotional !== 0 ? fmtSignedN(rowNotional) : '—'}
+                                </span>
+                              </div>
+                              {/* Reason field — full width, easy to type in.
+                                  When the PM has written an overall batch
+                                  rationale, the placeholder signals that
+                                  leaving this blank is fine — the batch
+                                  rationale will inherit onto this trade's
+                                  acceptance_note. */}
+                              {variantId && (() => {
+                                const hasBatchRationale = !!executeBatchDescription.trim()
+                                const rowAction = actionLabel(row.derivedAction, row.isNew, row.isRemoved).toLowerCase()
+                                const placeholder = hasBatchRationale
+                                  ? `Override batch rationale for ${row.symbol} (optional)`
+                                  : `Why ${rowAction} ${row.symbol}?`
+                                return (
+                                  <input
+                                    type="text"
+                                    value={reason}
+                                    onChange={(e) => {
+                                      const val = e.target.value
+                                      setExecuteReasons((prev) => ({ ...prev, [variantId]: val }))
+                                    }}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                    data-lpignore="true"
+                                    data-form-type="other"
+                                    placeholder={placeholder}
+                                    maxLength={280}
+                                    className={clsx(
+                                      'w-full text-xs px-3 py-1.5 rounded-md border bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 transition-colors',
+                                      hasBatchRationale && !reason
+                                        ? 'border-dashed border-gray-300 dark:border-gray-700'
+                                        : 'border-gray-200 dark:border-gray-700',
+                                    )}
+                                  />
+                                )
+                              })()}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Totals footer */}
+                      <div className="px-4 py-2.5 bg-gray-100 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between gap-3 text-xs">
+                        <span className="font-medium text-gray-600 dark:text-gray-300">
+                          {selectedRows.length} trade{selectedRows.length !== 1 ? 's' : ''}
+                        </span>
+                        <span className="font-medium text-gray-500 dark:text-gray-400 tabular-nums">
+                          {fmtN(totalNotional)} notional
+                        </span>
+                        <span className={clsx(
+                          'font-semibold tabular-nums',
+                          cashImpact > 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : cashImpact < 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-gray-500 dark:text-gray-400',
+                        )}>
+                          Cash {fmtSignedN(cashImpact)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer actions */}
+                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 rounded-b-2xl flex items-center gap-3">
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 flex-1">
+                    {executeBatchDescription.trim()
+                      ? <>Each trade inherits the batch rationale unless you override it per-row.</>
+                      : <>Blank reasons can be filled in later in <span className="font-medium text-gray-500 dark:text-gray-400">Trade Book → Outcomes</span>.</>
+                    }
+                  </p>
+                  <button
+                    onClick={() => setShowExecuteConfirm(false)}
+                    className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitExecute}
+                    disabled={isBulkPromoting}
+                    className="px-5 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50"
+                  >
+                    {isBulkPromoting ? 'Executing…' : `Execute ${selectedRows.length} Trade${selectedRows.length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Clear-all confirmation modal — same structure as Execute, red
+          destructive styling, and a brief breakdown of what will be cleared. */}
+      {showClearConfirm && onClearAllTrades && (() => {
+        const clearedBuys = tradedRows.filter(r => r.derivedAction === 'buy' || r.derivedAction === 'add').length
+        const clearedSells = tradedRows.filter(r => r.derivedAction === 'sell' || r.derivedAction === 'trim').length
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setShowClearConfirm(false)}>
             <div className="fixed inset-0 bg-black/50" />
             <div className="flex min-h-full items-center justify-center p-4">
-              <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto" onClick={e => e.stopPropagation()}>
+              <div
+                className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-auto"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="clear-confirm-title"
+              >
                 <div className="p-6">
                   <div className="flex items-center justify-center mb-4">
-                    <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
-                      <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                    <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center">
+                      <Trash2 className="h-6 w-6 text-red-600 dark:text-red-400" />
                     </div>
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1">
-                    Execute {selectedRows.length} Trade{selectedRows.length !== 1 ? 's' : ''}?
+                  <h3
+                    id="clear-confirm-title"
+                    className="text-lg font-semibold text-gray-900 dark:text-white text-center mb-1"
+                  >
+                    Clear {summary.tradedCount} pending trade{summary.tradedCount !== 1 ? 's' : ''}?
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
-                    These trades will be committed to Trade Book and removed from the simulation.
+                    This removes every draft variant from the current simulation. Committed trades in the Trade Book are not affected.
                   </p>
 
-                  {/* Trade summary */}
+                  {/* What gets cleared */}
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 mb-4 overflow-hidden">
-                    <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
-                      {selectedRows.map(row => (
-                        <div key={row.asset_id} className="flex items-center gap-2 px-3 py-2 text-xs">
-                          <span className={clsx(
-                            'px-1.5 py-0.5 rounded text-[9px] font-bold uppercase',
-                            row.derivedAction === 'buy' || row.derivedAction === 'add'
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                          )}>
-                            {row.derivedAction}
-                          </span>
-                          <span className="font-semibold text-gray-900 dark:text-white">{row.symbol}</span>
-                          <span className="text-gray-500 dark:text-gray-400 ml-auto font-mono">
-                            {row.variant?.sizing_input}
-                          </span>
-                          {row.computed?.target_weight != null && (
-                            <span className="text-gray-400 dark:text-gray-500 font-mono">→ {row.computed.target_weight.toFixed(2)}%</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="px-3 py-2 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs">
-                      <span className="font-medium text-gray-600 dark:text-gray-300">{selectedRows.length} trade{selectedRows.length !== 1 ? 's' : ''}</span>
-                      <span className="font-medium text-gray-600 dark:text-gray-300">{fmtN(totalNotional)} notional</span>
+                    <div className="px-3 py-2 flex items-center justify-between text-xs">
+                      <span className="font-medium text-gray-600 dark:text-gray-300">{summary.tradedCount} trade{summary.tradedCount !== 1 ? 's' : ''}</span>
+                      <span className="flex items-center gap-2 font-mono tabular-nums">
+                        <span className="text-emerald-600 dark:text-emerald-400">{clearedBuys} buy{clearedBuys !== 1 ? 's' : ''}</span>
+                        <span className="text-gray-300 dark:text-gray-600">·</span>
+                        <span className="text-red-600 dark:text-red-400">{clearedSells} sell{clearedSells !== 1 ? 's' : ''}</span>
+                      </span>
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center mb-4">
-                    Trades become actionable for execution immediately.
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center mb-4 flex items-center justify-center gap-1">
+                    <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                    This cannot be undone — you&rsquo;ll need to re-enter sizing.
                   </p>
 
                   <div className="flex gap-3">
                     <button
-                      onClick={() => setShowExecuteConfirm(false)}
+                      onClick={() => setShowClearConfirm(false)}
                       className="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => {
-                        setShowExecuteConfirm(false)
-                        onBulkPromote(Array.from(selectedForPromote))
-                        setSelectedForPromote(new Set())
+                        setShowClearConfirm(false)
+                        onClearAllTrades()
                       }}
-                      disabled={isBulkPromoting}
-                      className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50"
+                      className="flex-1 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 shadow-sm transition-colors"
                     >
-                      {isBulkPromoting ? 'Executing...' : 'Execute Trades'}
+                      Clear all trades
                     </button>
                   </div>
                 </div>

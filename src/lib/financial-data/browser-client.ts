@@ -206,98 +206,61 @@ export class BrowserFinancialService {
   }
 
   private async fetchFromYahooFinance(symbol: string): Promise<Quote | null> {
+    // Route through the yahoo-chart-proxy Supabase edge function.
+    // Yahoo blocks direct browser requests via CORS and the free public
+    // CORS proxies this method used to rotate through have been paywalled
+    // or rate-limited to nothing — all quotes were silently failing.
     try {
-      // Multiple CORS proxies for redundancy - order matters (most reliable first)
-      const corsProxies = [
-        'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url=',
-        'https://api.codetabs.com/v1/proxy?quest='
-      ]
-
-      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
-
-      // Try each proxy until one works
-      for (const proxyUrl of corsProxies) {
-        try {
-          const url = proxyUrl + encodeURIComponent(targetUrl)
-          // Add timeout to prevent hanging
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 8000)
-
-          const response = await fetch(url, { signal: controller.signal })
-          clearTimeout(timeoutId)
-
-          if (!response.ok) {
-            console.warn(`Proxy ${proxyUrl.substring(0, 25)}... failed: ${response.status}`)
-            continue // Try next proxy
-          }
-
-          const data = await response.json()
-          const chart = data?.chart?.result?.[0]
-          if (!chart) {
-            console.warn('No chart data returned from Yahoo Finance')
-            continue // Try next proxy
-          }
-
-          const meta = chart.meta
-          const quote = chart.indicators?.quote?.[0]
-
-          if (!meta || !quote) {
-            console.warn('Invalid data structure from Yahoo Finance')
-            continue // Try next proxy
-          }
-
-          // Get the latest data points
-          const prices = quote.close || []
-          const volumes = quote.volume || []
-          const opens = quote.open || []
-          const highs = quote.high || []
-          const lows = quote.low || []
-
-          const latestIndex = prices.length - 1
-          if (latestIndex < 0) {
-            console.warn('No price data available from Yahoo Finance')
-            continue // Try next proxy
-          }
-
-          const currentPrice = prices[latestIndex]
-          const previousClose = meta.previousClose || currentPrice
-          const change = currentPrice - previousClose
-          const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
-
-          const result = {
-            symbol: meta.symbol || symbol.toUpperCase(),
-            price: currentPrice,
-            change: change,
-            changePercent: changePercent,
-            open: opens[latestIndex] || currentPrice,
-            high: highs[latestIndex] || currentPrice,
-            low: lows[latestIndex] || currentPrice,
-            previousClose: previousClose,
-            volume: meta.regularMarketVolume || 0,
-            marketCap: meta.marketCap,
-            timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
-            dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
-            dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice
-          }
-
-          return result
-
-        } catch (proxyError: any) {
-          if (proxyError.name === 'AbortError') {
-            console.warn(`Proxy ${proxyUrl.substring(0, 25)}... timed out`)
-          } else {
-            console.warn(`Proxy ${proxyUrl.substring(0, 25)}... failed:`, proxyError.message || proxyError)
-          }
-          continue // Try next proxy
-        }
+      const { supabase } = await import('../supabase')
+      const { data, error } = await supabase.functions.invoke('yahoo-chart-proxy', {
+        body: { symbol, interval: '1d', range: '5d' },
+      })
+      if (error) {
+        console.warn('[browser-client] yahoo-chart-proxy error:', error.message || error)
+        return null
+      }
+      if (data?.error) {
+        console.warn('[browser-client] yahoo-chart-proxy returned error:', data.error)
+        return null
       }
 
-      // All proxies failed
-      console.warn('All Yahoo Finance proxies failed for', symbol)
-      return null
-    } catch (error) {
-      console.warn('Yahoo Finance request failed:', error)
+      const chart = data?.chart?.result?.[0]
+      if (!chart) return null
+
+      const meta = chart.meta
+      const quote = chart.indicators?.quote?.[0]
+      if (!meta || !quote) return null
+
+      const prices = quote.close || []
+      const opens = quote.open || []
+      const highs = quote.high || []
+      const lows = quote.low || []
+
+      const latestIndex = prices.length - 1
+      if (latestIndex < 0) return null
+
+      const currentPrice = prices[latestIndex]
+      const previousClose = meta.previousClose || currentPrice
+      const change = currentPrice - previousClose
+      const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
+
+      return {
+        symbol: meta.symbol || symbol.toUpperCase(),
+        price: currentPrice,
+        change,
+        changePercent,
+        open: opens[latestIndex] || currentPrice,
+        high: highs[latestIndex] || currentPrice,
+        low: lows[latestIndex] || currentPrice,
+        previousClose,
+        volume: meta.regularMarketVolume || 0,
+        marketCap: meta.marketCap,
+        timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
+        dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
+        dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice,
+      }
+    } catch (e) {
+      console.warn('[browser-client] yahoo-chart-proxy invoke threw:', e)
       return null
     }
   }

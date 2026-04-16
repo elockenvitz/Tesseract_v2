@@ -629,13 +629,71 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
         context: buildActionContext(user, params.uiSource),
       })
     },
-    onSuccess: () => {
-      invalidateQueries()
-      toast.success('Trade idea updated')
+    // Optimistic update — patch cache immediately so the UI reflects the change without waiting for the server
+    onMutate: async (params) => {
+      await queryClient.cancelQueries({ queryKey: ['trade-detail', params.tradeId] })
+      const previousDetail = queryClient.getQueryData(['trade-detail', params.tradeId])
+
+      // Map camelCase to snake_case for cache patching
+      const fieldMap: Record<string, string> = {
+        rationale: 'rationale',
+        thesisText: 'thesis_text',
+        proposedWeight: 'proposed_weight',
+        proposedShares: 'proposed_shares',
+        targetPrice: 'target_price',
+        stopLoss: 'stop_loss',
+        takeProfit: 'take_profit',
+        conviction: 'conviction',
+        timeHorizon: 'time_horizon',
+        urgency: 'urgency',
+        expectedPositionSize: 'expected_position_size',
+        maxPositionSize: 'max_position_size',
+        sharingVisibility: 'sharing_visibility',
+        contextTags: 'context_tags',
+      }
+      const dbPatch: Record<string, any> = { updated_at: new Date().toISOString() }
+      for (const [camel, snake] of Object.entries(fieldMap)) {
+        if ((params.updates as any)[camel] !== undefined) {
+          dbPatch[snake] = (params.updates as any)[camel]
+        }
+      }
+
+      // Patch detail cache
+      queryClient.setQueryData(['trade-detail', params.tradeId], (old: any) => {
+        if (!old) return old
+        if (old.type === 'single' && old.data) {
+          return { ...old, data: { ...old.data, ...dbPatch } }
+        }
+        if ((old.type === 'pair' || old.type === 'pair_from_legs') && old.data) {
+          return { ...old, data: { ...old.data, ...dbPatch } }
+        }
+        return old
+      })
+
+      // Patch list cache
+      queryClient.setQueriesData({ queryKey: ['trade-queue-items'] }, (old: any) => {
+        if (!Array.isArray(old)) return old
+        return old.map((item: any) => item?.id === params.tradeId ? { ...item, ...dbPatch } : item)
+      })
+
+      return { previousDetail }
+    },
+    onError: (error, params, context) => {
+      // Rollback
+      if (context?.previousDetail) {
+        queryClient.setQueryData(['trade-detail', params.tradeId], context.previousDetail)
+      }
+      toast.error(error instanceof Error ? error.message : 'Failed to update trade idea')
+    },
+    onSuccess: (_data, params) => {
+      // Surgical refetch — just the detail to reconcile with server truth
+      queryClient.invalidateQueries({ queryKey: ['trade-detail', params.tradeId] })
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] })
       options.onUpdateSuccess?.()
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to update trade idea')
+    onSettled: (_data, _error, params) => {
+      // Background refetch of list for consistency — optimistic data already matches
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
     },
   })
 

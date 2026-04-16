@@ -116,6 +116,15 @@ export function DashboardPage() {
   const [activeTabId, setActiveTabId] = useState(initialState.activeTabId)
   const [isInitialized, setIsInitialized] = useState(true)
 
+  // Ref mirror of activeTabId — used inside handlers that are captured by
+  // long-lived event listeners (registered with [] deps). Reading the ref
+  // inside the handler avoids stale-closure bugs where the handler sees the
+  // first render's activeTabId forever.
+  const activeTabIdRef = useRef(activeTabId)
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId
+  }, [activeTabId])
+
   // Session tracking (heartbeat-based)
   useSessionTracking()
 
@@ -233,79 +242,65 @@ export function DashboardPage() {
       }
     }
 
-    // Check if a tab with this ID or symbol already exists (for asset tabs)
-    // Also check for singleton tabs by type (only one tab of this type allowed)
-    const existingTab = tabs.find(tab => {
-      if (tab.id === result.id) return true
-      // For asset tabs, also check by symbol
-      if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
-      if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
-      // For singleton tabs, check by type (only one tab of this type allowed)
-      if (result.type === 'coverage' && tab.type === 'coverage') return true
-      if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
-      if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
-      if (result.type === 'trade-book' && tab.type === 'trade-book') return true
-      if (result.type === 'workflows' && tab.type === 'workflows') return true
-      if (result.type === 'priorities' && tab.type === 'priorities') return true
-      return false
-    })
-
-    if (existingTab) {
-      // If tab exists, update its data (merge with existing) and activate it
-      // Also update the title in case it was renamed (e.g. "All Priorities" → "My Priorities")
-      setTabs(tabs.map(tab => ({
-        ...tab,
-        isActive: tab.id === existingTab.id,
-        ...(tab.id === existingTab.id ? {
-          title: result.title || tab.title,
-          ...(result.data ? { data: { ...tab.data, ...result.data } } : {})
-        } : {})
-      })))
-      setActiveTabId(existingTab.id)
-      return
-    }
-    
     // For portfolios, prefer mnemonic (portfolio_id) as tab title
     const tabTitle = result.type === 'portfolio' && result.data?.portfolio_id
       ? result.data.portfolio_id
       : result.title
 
-    const activeTab = tabs.find(tab => tab.id === activeTabId)
+    // All state reads happen inside the functional updater so this is safe
+    // to call from stale-captured event listeners AND after async awaits.
+    // The updater decides: activate existing tab, replace blank tab, or append new tab.
+    let finalActiveId: string | null = null
+    setTabs(prev => {
+      const existingTab = prev.find(tab => {
+        if (tab.id === result.id) return true
+        if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
+        if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
+        // Singleton tabs: only one allowed per type
+        if (result.type === 'coverage' && tab.type === 'coverage') return true
+        if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
+        if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
+        if (result.type === 'trade-book' && tab.type === 'trade-book') return true
+        if (result.type === 'workflows' && tab.type === 'workflows') return true
+        if (result.type === 'priorities' && tab.type === 'priorities') return true
+        return false
+      })
 
-    // If we're in a blank tab, replace it instead of creating a new one
-    if (activeTab?.isBlank) {
-      const updatedTab: Tab = {
-        id: result.id,
-        title: tabTitle,
-        type: result.type,
-        data: result.data,
-        isActive: true
+      if (existingTab) {
+        finalActiveId = existingTab.id
+        return prev.map(tab => ({
+          ...tab,
+          isActive: tab.id === existingTab.id,
+          ...(tab.id === existingTab.id ? {
+            title: result.title || tab.title,
+            ...(result.data ? { data: { ...tab.data, ...result.data } } : {})
+          } : {})
+        }))
       }
-      
-      // Replace the blank tab with the new content
-      const updatedTabs = tabs.map(tab => 
-        tab.id === activeTabId 
-          ? updatedTab 
-          : { ...tab, isActive: false }
-      )
-      setTabs(updatedTabs)
-      setActiveTabId(result.id)
-      return
-    }
-    
-    const newTab: Tab = {
-      id: result.id,
-      title: tabTitle,
-      type: result.type,
-      data: result.data,
-      isActive: false
-    }
-    
-    // Add new tab and switch to it
-    const updatedTabs = tabs.map(tab => ({ ...tab, isActive: false }))
-    updatedTabs.push({ ...newTab, isActive: true })
-    setTabs(updatedTabs)
-    setActiveTabId(result.id)
+
+      // Read latest activeTabId via ref (not closure) so this is safe under
+      // stale-closure invocation and post-await races.
+      const currentActiveId = activeTabIdRef.current
+      const activeTab = prev.find(tab => tab.id === currentActiveId)
+
+      // If we're in a blank tab, replace it instead of creating a new one
+      if (activeTab?.isBlank) {
+        finalActiveId = result.id
+        return prev.map(tab =>
+          tab.id === currentActiveId
+            ? { id: result.id, title: tabTitle, type: result.type, data: result.data, isActive: true }
+            : { ...tab, isActive: false }
+        )
+      }
+
+      // Append new tab and switch to it
+      finalActiveId = result.id
+      return [
+        ...prev.map(tab => ({ ...tab, isActive: false })),
+        { id: result.id, title: tabTitle, type: result.type, data: result.data, isActive: true },
+      ]
+    })
+    if (finalActiveId) setActiveTabId(finalActiveId)
   }
 
   // Keep navigate ref in sync with latest handleSearchResult
@@ -350,11 +345,11 @@ export function DashboardPage() {
         })
         return
       }
-      handleSearchResult(detail)
+      navigateRef.current(detail)
     }
     window.addEventListener('decision-engine-action', handler)
     return () => window.removeEventListener('decision-engine-action', handler)
-  })
+  }, [])
 
   const handleTabChange = (tabId: string) => {
     // If tab doesn't exist yet (e.g. synthetic parent from grouped tabs), create it directly
@@ -534,7 +529,7 @@ export function DashboardPage() {
       const { labId, labName, portfolioId } = event.detail || {}
       // Navigate to trade-lab tab with the portfolio/lab ID
       // Always use "Trade Lab" as the tab title for consistency
-      handleSearchResult({
+      navigateRef.current({
         id: labId || 'trade-lab',
         title: 'Trade Lab',
         type: 'trade-lab',
@@ -551,7 +546,7 @@ export function DashboardPage() {
     const handleOpenPortfolio = (event: CustomEvent) => {
       const { id, name } = event.detail || {}
       if (!id) return
-      handleSearchResult({
+      navigateRef.current({
         id,
         title: name || 'Portfolio',
         type: 'portfolio',
@@ -567,7 +562,7 @@ export function DashboardPage() {
     const handleOpenSharedSimulation = (event: CustomEvent) => {
       const { share } = event.detail || {}
       if (!share) return
-      handleSearchResult({
+      navigateRef.current({
         id: `shared-${share.share_id}`,
         title: `Shared: ${share.name}`,
         type: 'trade-lab',
@@ -583,7 +578,7 @@ export function DashboardPage() {
     const handleOpenIdeasTab = (event: CustomEvent) => {
       const { filters } = event.detail || {}
       // Navigate to idea-generator tab with initial filters
-      handleSearchResult({
+      navigateRef.current({
         id: 'idea-generator',
         title: 'Ideas',
         type: 'idea-generator',
@@ -598,7 +593,7 @@ export function DashboardPage() {
   // Listen for custom event to navigate to an asset (e.g., from coverage matrix)
   useEffect(() => {
     const handleNavigateToAsset = (event: CustomEvent) => {
-      handleSearchResult(event.detail)
+      navigateRef.current(event.detail)
     }
     window.addEventListener('navigate-to-asset', handleNavigateToAsset as EventListener)
     return () => window.removeEventListener('navigate-to-asset', handleNavigateToAsset as EventListener)
@@ -609,7 +604,7 @@ export function DashboardPage() {
     const handleOpenTradeQueue = (event: CustomEvent) => {
       const { selectedTradeId, openDecisionDrawer } = event.detail || {}
 
-      handleSearchResult({
+      navigateRef.current({
         id: 'trade-queue',
         title: 'Idea Pipeline',
         type: 'trade-queue',

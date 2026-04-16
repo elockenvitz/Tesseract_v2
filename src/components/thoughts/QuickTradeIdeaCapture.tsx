@@ -882,16 +882,21 @@ export function QuickTradeIdeaCapture({
         </div>
       )}
 
-      {/* Rationale */}
+      {/* Rationale (Why Now) — 300 char limit matches the trade idea
+          detail modal so long-form thoughts go in the thesis field instead */}
       <textarea
         ref={textareaRef}
         value={rationale}
-        onChange={(e) => setRationale(e.target.value)}
+        onChange={(e) => setRationale(e.target.value.slice(0, 300))}
         onKeyDown={handleKeyDown}
         placeholder="Why now? What's the catalyst or risk? (optional)"
-        className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 caret-gray-900 min-h-[60px] mb-3"
+        maxLength={300}
+        className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 caret-gray-900 min-h-[60px]"
         rows={2}
       />
+      <div className="mt-1 mb-3 text-[10px] text-gray-400 tabular-nums text-right">
+        {rationale.length}/300
+      </div>
 
       {/* Portfolio selector */}
       {portfolios && portfolios.length > 0 && (

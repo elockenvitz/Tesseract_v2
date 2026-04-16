@@ -581,7 +581,7 @@ export function AddTradeIdeaModal({
     // Shared
     setSelectedPortfolioIds(preselectedPortfolioId ? [preselectedPortfolioId] : [])
     setShowPortfolioDropdown(false)
-    setUrgency('medium')
+    // Urgency is system-derived (const at line 96) — no setter to call here.
     setRationale('')
     setContextTags([])
     setVisibility('private')
@@ -1292,18 +1292,23 @@ export function AddTradeIdeaModal({
             )}
 
             {/* Urgency - pill style matching QuickTradeIdeaCapture */}
-            {/* Combined Rationale/Thesis field */}
+            {/* Combined Rationale/Thesis field — 300 char limit matches the
+                trade idea detail modal so long-form thoughts go to thesis */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
                 Why now / What's the catalyst?
               </label>
               <textarea
                 value={rationale}
-                onChange={(e) => setRationale(e.target.value)}
+                onChange={(e) => setRationale(e.target.value.slice(0, 300))}
                 placeholder="Why now? What's the catalyst or risk? (optional)"
+                maxLength={300}
                 className="w-full resize-none border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 min-h-[70px]"
                 rows={2}
               />
+              <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums text-right">
+                {rationale.length}/300
+              </div>
             </div>
 
             {/* Visibility Selector */}
