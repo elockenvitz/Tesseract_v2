@@ -91,7 +91,7 @@ interface WorkflowWithStats {
   deleted?: boolean
   deleted_at?: string
   deleted_by?: string
-  scope_type?: 'asset' | 'portfolio' | 'general'
+  scope_type?: 'asset' | 'portfolio' | 'general' | 'theme'
 }
 
 interface WorkflowStage {

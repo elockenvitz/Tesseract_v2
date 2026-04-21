@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Orbit, FolderKanban, ListTodo, Beaker, BookOpen, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity, Flag } from 'lucide-react'
+import { X, Plus, TrendingUp, Briefcase, Tag, FileText, Home, File, List, User, Users, Settings, Lightbulb, Workflow, ChevronLeft, ChevronRight, Repeat, FolderKanban, ListTodo, Beaker, BookOpen, Clock, PieChart, Calendar, Building2, Target, FolderOpen, LineChart, ChevronDown, Check, Activity, Flag } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   DndContext,
@@ -761,7 +761,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       case 'portfolio': return <Briefcase className="h-3.5 w-3.5" />
       case 'theme': return <Tag className="h-3.5 w-3.5" />
       case 'note': return <FileText className="h-3.5 w-3.5" />
-      case 'workflows': return <Orbit className="h-3.5 w-3.5" />
+      case 'workflows': return <Repeat className="h-3.5 w-3.5" />
       case 'projects-list': return <FolderKanban className="h-3.5 w-3.5" />
       case 'project': return <FolderKanban className="h-3.5 w-3.5" />
       case 'trade-queue': return <ListTodo className="h-3.5 w-3.5" />

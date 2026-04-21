@@ -17,7 +17,8 @@ import {
   TrendingDown, Bell, RefreshCw, Activity, Settings2, GripVertical, Eye, EyeOff,
   ChevronRight, ChevronLeft, Pin, PinOff, Save, Columns3, GitBranch, FolderTree,
   Layers, GripHorizontal, FolderOpen, Folder, Maximize2, Minimize2, Users, FileEdit,
-  Flag, Keyboard, HelpCircle, Sparkles, AlertTriangle, Zap, WrapText, FolderPlus
+  Flag, Keyboard, HelpCircle, Sparkles, AlertTriangle, Zap, WrapText, FolderPlus,
+  CircleDot
 } from 'lucide-react'
 import { PriorityBadge } from '../ui/PriorityBadge'
 import { supabase } from '../../lib/supabase'
@@ -39,8 +40,10 @@ import { MetricPopover } from './MetricPopover'
 import { FilterBar } from './FilterBar'
 import { KeyboardHelpModal } from './KeyboardHelpModal'
 import { formatPrice, formatPriceChange, getPriceChangeClass, formatRelativeTime, getTimestampFreshness, truncateText, getInitials } from './tableUtils'
+import { AssetDetailCarousel } from './AssetDetailCarousel'
 import { useColumnContentSource, type ContentSourceType } from '../../hooks/useColumnContentSource'
-import { useAIColumns, useAIColumnCache } from '../../hooks/useAIColumns'
+import { useAIColumns, useAIColumnCache, useAIColumnCacheBulk } from '../../hooks/useAIColumns'
+import { useGenerateAIColumn } from '../../hooks/useGenerateAIColumn'
 import { ContentSourceSelector } from './ContentSourceSelector'
 import { AIColumnLibraryDropdown } from './AIColumnLibraryDropdown'
 import { CreateAIColumnModal } from './CreateAIColumnModal'
@@ -56,7 +59,7 @@ import './table-styles.css'
 // ============================================================================
 
 type ViewMode = 'table' | 'kanban'
-type GroupByOption = 'none' | 'sector' | 'priority' | 'stage' | 'listGroup' | 'contributor'
+type GroupByOption = 'none' | 'sector' | 'priority' | 'stage' | 'listGroup' | 'contributor' | 'status'
 type DensityMode = 'comfortable' | 'compact' | 'ultra'
 type KanbanOrganization = 'priority' | 'stage'
 
@@ -240,6 +243,8 @@ interface AssetTableViewProps {
   existingAssetIds?: string[]
   /** List group data for 'listGroup' grouping mode */
   listGroupData?: { id: string; name: string; color: string | null; sort_order: number }[]
+  /** List status taxonomy for 'status' grouping mode (list-scoped) */
+  listStatusData?: { id: string; name: string; color: string; sort_order: number }[]
   /** Override the initial groupBy option (e.g., 'contributor' for collaborative lists) */
   initialGroupBy?: GroupByOption
   /** Callback for manual reorder drag within a list */
@@ -280,6 +285,21 @@ interface AssetTableViewProps {
   onAssignToKanbanLane?: (laneId: string, assetId: string) => void
   /** Callback to remove an asset from its lane (takes asset ID) */
   onRemoveFromKanbanLane?: (assetId: string) => void
+  /** Cell renderer for `extraColumns` entries. Called for any column whose id
+   *  isn't handled by the built-in column set. If this returns undefined/null
+   *  the cell falls through to the default empty-cell rendering. */
+  renderExtraCell?: (columnId: string, asset: any) => React.ReactNode
+  /** Replace the default expanded-row detail panel with custom content.
+   *  When provided, takes over rendering inside the expanded row (the close
+   *  button + outer container remain AssetTableView's). Gets the asset and
+   *  the row ID (`_rowId` in list contexts, else asset.id). */
+  expandedRowSlot?: (asset: any, rowId: string) => React.ReactNode
+  /** Optional slot rendered in the toolbar area, between active filters and
+   *  selection actions. Use for list-scoped filter chips. */
+  filterBarSlot?: React.ReactNode
+  /** Optional per-row accent overrides (list-scoped). Returns a color for the
+   *  left-border accent, and `dim: true` to mute rows in terminal states. */
+  rowAccentFn?: (asset: any) => { color?: string | null; dim?: boolean } | null | undefined
 }
 
 // ============================================================================
@@ -306,6 +326,7 @@ export function AssetTableView({
   listId,
   existingAssetIds = [],
   listGroupData,
+  listStatusData,
   initialGroupBy,
   onReorderItem,
   onMoveItemToGroup,
@@ -325,7 +346,11 @@ export function AssetTableView({
   onDeleteKanbanLane,
   onRenameKanbanLane,
   onAssignToKanbanLane,
-  onRemoveFromKanbanLane
+  onRemoveFromKanbanLane,
+  renderExtraCell,
+  expandedRowSlot,
+  filterBarSlot,
+  rowAccentFn
 }: AssetTableViewProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -532,6 +557,20 @@ export function AssetTableView({
   const groupByMenuRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // Visible width of the horizontally-scrollable table container — used to
+  // size the expanded-row content so it stays pinned to the left edge of
+  // the viewport regardless of horizontal scroll position (sticky + width).
+  const [tableVisibleWidth, setTableVisibleWidth] = useState(0)
+  useEffect(() => {
+    const el = tableContainerRef.current
+    if (!el) return
+    const update = () => setTableVisibleWidth(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [viewMode, fillHeight])
+
   // Keyboard help modal state
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
 
@@ -550,6 +589,50 @@ export function AssetTableView({
   const [showCreateAIColumnModal, setShowCreateAIColumnModal] = useState(false)
   const [showQuickPrompt, setShowQuickPrompt] = useState<{ x: number; y: number } | null>(null)
   const [quickPromptColumn, setQuickPromptColumn] = useState<{ id: string; name: string; prompt: string } | null>(null)
+
+  // ── AI column generation wiring ────────────────────────────────────
+  // Bulk-fetch cache for every (column, asset) pair currently visible so
+  // each cell reads from a single shared query rather than fanning out.
+  const aiColumnIds = useMemo(() => aiActiveColumns.map(c => c.id), [aiActiveColumns])
+  const allAssetIds = useMemo(() => assets.map(a => a.id), [assets])
+  const aiCache = useAIColumnCacheBulk(aiColumnIds, allAssetIds)
+  const generateAIColumn = useGenerateAIColumn()
+
+  // Per-cell loading state: "columnId:assetId" → true while generating.
+  const [aiLoadingKeys, setAiLoadingKeys] = useState<Set<string>>(new Set())
+  const [aiErrorKeys, setAiErrorKeys] = useState<Map<string, string>>(new Map())
+
+  const handleGenerateAIColumn = useCallback(async (columnId: string, assetId: string) => {
+    const column = aiActiveColumns.find(c => c.id === columnId)
+    if (!column) return
+    const key = `${columnId}:${assetId}`
+
+    setAiLoadingKeys(prev => { const next = new Set(prev); next.add(key); return next })
+    setAiErrorKeys(prev => { const next = new Map(prev); next.delete(key); return next })
+
+    try {
+      const response = await generateAIColumn.mutateAsync({
+        columnId,
+        assetId,
+        prompt: column.prompt,
+        contextConfig: column.context_config
+      })
+      aiCache.saveCache(columnId, assetId, response)
+    } catch (err: any) {
+      setAiErrorKeys(prev => {
+        const next = new Map(prev)
+        next.set(key, err?.message || 'Generation failed')
+        return next
+      })
+    } finally {
+      setAiLoadingKeys(prev => { const next = new Set(prev); next.delete(key); return next })
+    }
+  }, [aiActiveColumns, generateAIColumn, aiCache])
+
+  const handleRefreshAIColumn = useCallback((columnId: string, assetId: string) => {
+    // Refresh = regenerate; saveCache upserts so no need to clear first.
+    handleGenerateAIColumn(columnId, assetId)
+  }, [handleGenerateAIColumn])
 
   // Content source state (optional feature)
   const contentSourceHook = useColumnContentSource()
@@ -913,6 +996,7 @@ export function AssetTableView({
         case 'stage': key = asset.process_stage || 'unassigned'; break
         case 'listGroup': key = asset._listGroupId || '__ungrouped__'; break
         case 'contributor': key = asset._addedBy || '__unknown__'; break
+        case 'status': key = asset._statusId || '__no_status__'; break
         default: key = 'Other'
       }
       if (!groupMap.has(key)) groupMap.set(key, [])
@@ -953,6 +1037,14 @@ export function AssetTableView({
           else if (u?.email) label = u.email
           else label = key
         }
+      } else if (groupBy === 'status') {
+        if (key === '__no_status__') {
+          label = 'No status'
+        } else {
+          const sd = listStatusData?.find(s => s.id === key)
+          label = sd?.name || 'Unknown'
+          if (sd?.color) color = sd.color
+        }
       }
 
       groups.push({ key, label, color, assets: groupAssets })
@@ -964,6 +1056,16 @@ export function AssetTableView({
       listGroupData.forEach(gd => {
         if (!existingKeys.has(gd.id)) {
           groups.push({ key: gd.id, label: gd.name, color: gd.color || undefined, assets: [] })
+        }
+      })
+    }
+
+    // For status mode, include empty status columns so the taxonomy is always visible
+    if (groupBy === 'status' && listStatusData) {
+      const existingKeys = new Set(groups.map(g => g.key))
+      listStatusData.forEach(sd => {
+        if (!existingKeys.has(sd.id)) {
+          groups.push({ key: sd.id, label: sd.name, color: sd.color, assets: [] })
         }
       })
     }
@@ -990,12 +1092,20 @@ export function AssetTableView({
         if (b.key === '__unknown__') return -1
         return a.label.localeCompare(b.label)
       })
+    } else if (groupBy === 'status') {
+      const orderMap = new Map<string, number>()
+      listStatusData?.forEach(s => orderMap.set(s.id, s.sort_order))
+      groups.sort((a, b) => {
+        if (a.key === '__no_status__') return 1
+        if (b.key === '__no_status__') return -1
+        return (orderMap.get(a.key) ?? 999) - (orderMap.get(b.key) ?? 999)
+      })
     } else {
       groups.sort((a, b) => a.label.localeCompare(b.label))
     }
 
     return groups
-  }, [filteredAssets, groupBy, listGroupData, user?.id])
+  }, [filteredAssets, groupBy, listGroupData, listStatusData, user?.id])
 
   // Active filters
   const activeFilters = useMemo(() => {
@@ -1310,14 +1420,16 @@ export function AssetTableView({
     }
   }, [expandedRowId, filteredAssets, rowVirtualizer])
 
-  // Handle pending scroll after virtualizer remounts
+  // Handle pending scroll after virtualizer remounts.
+  // Use `align: 'auto'` so we don't slam the expanded row to the top of
+  // the viewport — the virtualizer only scrolls if the row (and its new
+  // expansion height) would otherwise fall outside the visible area.
   useEffect(() => {
     if (pendingScrollIndexRef.current !== null) {
       const scrollIndex = pendingScrollIndexRef.current
       pendingScrollIndexRef.current = null
-      // Use requestAnimationFrame to ensure virtualizer is ready
       requestAnimationFrame(() => {
-        rowVirtualizer.scrollToIndex(scrollIndex, { align: 'start' })
+        rowVirtualizer.scrollToIndex(scrollIndex, { align: 'auto' })
       })
     }
   }, [virtualizerVersion, rowVirtualizer])
@@ -1352,14 +1464,36 @@ export function AssetTableView({
     },
     onSelectAll: selectAllFiltered,
     scrollToRow: (rowIndex) => {
-      // Only scroll if row is outside the visible range (with some buffer)
-      const virtualItems = rowVirtualizer.getVirtualItems()
-      if (virtualItems.length === 0) return
-      const firstVisible = virtualItems[0]?.index ?? 0
-      const lastVisible = virtualItems[virtualItems.length - 1]?.index ?? 0
-      // Add buffer of 2 rows - only scroll if actually out of view
-      if (rowIndex < firstVisible + 2 || rowIndex > lastVisible - 2) {
+      // Synchronous single-pass scroll: read the row's virtual position
+      // and the container geometry, compute the target scrollTop once,
+      // and assign it. No virtualizer.scrollToIndex + rAF chain —
+      // that combo fights itself under rapid keydown repeats (held
+      // arrow keys) and causes jitter.
+      const container = tableContainerRef.current
+      if (!container) return
+
+      const item = rowVirtualizer.getVirtualItems().find(i => i.index === rowIndex)
+      if (!item) {
+        // Row is outside the virtualized range (unlikely for single-row
+        // nav with default overscan). Let the virtualizer bring it in,
+        // then bail — the next keystroke will correct any final offset.
         rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+        return
+      }
+
+      const headerEl = container.querySelector<HTMLElement>('.pro-table-header')
+      const headerHeight = headerEl?.offsetHeight ?? 0
+      const bottomPad = listId ? densityRowHeight : 0
+
+      const viewportTop = container.scrollTop + headerHeight
+      const viewportBottom = container.scrollTop + container.clientHeight - bottomPad
+      const rowTop = item.start
+      const rowBottom = item.start + item.size
+
+      if (rowTop < viewportTop) {
+        container.scrollTop = Math.max(0, rowTop - headerHeight)
+      } else if (rowBottom > viewportBottom) {
+        container.scrollTop = rowBottom - container.clientHeight + bottomPad
       }
     },
   })
@@ -1541,24 +1675,31 @@ export function AssetTableView({
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
 
-      // Handle Enter separately (expand row with metric-specific details)
-      if (e.key === 'Enter' && focusedCell && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      // Handle Enter — expand row. Works with focusedCell (metric-specific
+      // detail) OR just focusedAsset (row-level expansion without a cell focus).
+      if (e.key === 'Enter' && (focusedCell || focusedAsset) && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
-        const asset = filteredAssets[focusedCell.rowIndex]
+        const asset = focusedCell ? filteredAssets[focusedCell.rowIndex] : focusedAsset
         if (asset) {
           const isCurrentlyExpanded = expandedRows.has(asset.id)
-          const isSameMetric = expandedMetricColumn?.assetId === asset.id && expandedMetricColumn?.columnId === focusedCell.columnId
+          const isSameMetric = focusedCell
+            && expandedMetricColumn?.assetId === asset.id
+            && expandedMetricColumn?.columnId === focusedCell.columnId
 
           if (isCurrentlyExpanded && isSameMetric) {
-            // Collapse if same cell pressed again
+            toggleRowExpansion(asset.id)
+            setExpandedMetricColumn(null)
+          } else if (isCurrentlyExpanded && !focusedCell) {
+            // Row-level Enter: toggle closed
             toggleRowExpansion(asset.id)
             setExpandedMetricColumn(null)
           } else {
-            // Expand row and set metric column
-            if (!isCurrentlyExpanded) {
-              toggleRowExpansion(asset.id)
+            if (!isCurrentlyExpanded) toggleRowExpansion(asset.id)
+            if (focusedCell) {
+              setExpandedMetricColumn({ assetId: asset.id, columnId: focusedCell.columnId })
+            } else {
+              setExpandedMetricColumn(null)
             }
-            setExpandedMetricColumn({ assetId: asset.id, columnId: focusedCell.columnId })
           }
         }
         return
@@ -1954,456 +2095,20 @@ export function AssetTableView({
   }, [showGroupByMenu, columnContextMenu, activeTableFilter, workflowPopover, rowContextMenu, addColumnDropdown, priorityColumnPicker, prioritySourceSelector, groupKebabMenu])
 
   // Render metric detail expansion panel
+  // Render metric detail expansion panel — delegates to AssetDetailCarousel,
+  // which handles column-specific landing + peek-ahead navigation between panels.
   const renderMetricDetail = useCallback((asset: any, columnId: string, quote: any, coverage: any[], workflows: any[]) => {
-    const price = quote?.price || asset.current_price
-    const changeP = quote?.changePercent
-
-    // --- LEFT ZONE: Price + sparkline + stats ---
-    const leftZone = (
-      <div className="flex flex-col h-full">
-        <div className="mb-1.5">
-          <div className="text-xl font-bold text-gray-900 font-mono leading-none">
-            {formatPrice(price)}
-          </div>
-          {changeP !== undefined && (
-            <div className={clsx(
-              'text-xs font-medium font-mono flex items-center gap-0.5 mt-1',
-              changeP >= 0 ? 'text-green-600' : 'text-red-600'
-            )}>
-              {changeP >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {formatPriceChange(changeP)}
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-h-0 rounded bg-gray-50/60 border border-gray-100 p-1">
-          <MiniChart symbol={asset.symbol} height={80} days={30} showPrice={false} showChange={false} />
-        </div>
-        <div className="mt-1.5 space-y-0.5 text-[11px]">
-          {quote?.volume != null && (
-            <div className="flex justify-between"><span className="text-gray-400">Vol</span><span className="font-mono text-gray-600">{(quote.volume / 1e6).toFixed(1)}M</span></div>
-          )}
-          {quote?.high != null && (
-            <div className="flex justify-between"><span className="text-gray-400">High</span><span className="font-mono text-green-600">{formatPrice(quote.high)}</span></div>
-          )}
-          {quote?.low != null && (
-            <div className="flex justify-between"><span className="text-gray-400">Low</span><span className="font-mono text-red-600">{formatPrice(quote.low)}</span></div>
-          )}
-        </div>
-      </div>
-    )
-
-    // --- RIGHT ZONE: Price targets + meta ---
-    const rightZone = (
-      <div className="flex flex-col h-full overflow-hidden">
-        <PriceTargetsSummary
-          assetId={asset.id}
-          currentPrice={price}
-          className="!border-gray-100 !shadow-none !rounded-md"
-        />
-        <div className="mt-auto pt-1.5 space-y-1 text-[11px]">
-          {coverage.length > 0 && (
-            <div className="text-gray-500 flex items-center gap-1">
-              <Users className="w-3 h-3 flex-shrink-0" />
-              {coverage.length} analyst{coverage.length !== 1 ? 's' : ''}
-            </div>
-          )}
-          {asset.updated_at && (
-            <div className="text-gray-400 flex items-center gap-1">
-              <Clock className="w-3 h-3 flex-shrink-0" />
-              Updated {formatRelativeTime(asset.updated_at)}
-            </div>
-          )}
-        </div>
-      </div>
-    )
-
-    // --- CENTER ZONE ---
-    let centerZone: React.ReactNode
-
-    switch (columnId) {
-      // ── Price / Change: enlarged chart with key stats alongside ──
-      case 'price':
-      case 'change':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex-shrink-0">30-Day Price Chart</h5>
-            <div className="flex-1 min-h-0 rounded bg-gray-50/40 border border-gray-100 p-1">
-              <MiniChart symbol={asset.symbol} height={120} days={30} showPrice={false} showChange={false} />
-            </div>
-            {/* Inline stats row below chart */}
-            <div className="mt-1.5 flex gap-4 text-[11px] text-gray-500 flex-shrink-0">
-              {asset.market_cap && <span>Mkt Cap <span className="font-mono text-gray-700">{formatPrice(asset.market_cap)}</span></span>}
-              {quote?.volume != null && <span>Vol <span className="font-mono text-gray-700">{(quote.volume / 1e6).toFixed(1)}M</span></span>}
-              {asset.pe_ratio && <span>P/E <span className="font-mono text-gray-700">{Number(asset.pe_ratio).toFixed(1)}</span></span>}
-            </div>
-          </div>
-        )
-        break
-
-      // ── Ticker / Company / Sector: profile + research preview ──
-      case 'ticker':
-      case 'companyName':
-      case 'sector':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex items-baseline gap-2 mb-1 flex-shrink-0">
-              <span className="text-base font-bold text-gray-900 leading-none">{asset.symbol}</span>
-              <span className="text-sm text-gray-600 truncate">{asset.company_name}</span>
-            </div>
-            <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
-              {asset.sector && <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px] font-medium">{asset.sector}</span>}
-              {asset.industry && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[11px]">{asset.industry}</span>}
-              {asset.market_cap && <span className="text-[11px] text-gray-400 ml-1">Mkt Cap {formatPrice(asset.market_cap)}</span>}
-            </div>
-            {asset.description && (
-              <p className="text-xs text-gray-600 leading-relaxed line-clamp-2 mb-2 flex-shrink-0">{asset.description}</p>
-            )}
-            {/* Research preview cards */}
-            <div className="grid grid-cols-2 gap-1.5 flex-shrink-0">
-              {asset.thesis && (
-                <div className="col-span-2 bg-gray-50 border border-gray-100 rounded p-1.5">
-                  <h6 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Thesis</h6>
-                  <p className="text-[11px] text-gray-700 line-clamp-2">{asset.thesis}</p>
-                </div>
-              )}
-              {asset.bull_case && (
-                <div className="bg-green-50/50 border border-green-100 rounded p-1.5">
-                  <h6 className="text-[10px] font-semibold text-green-700 uppercase tracking-wide mb-0.5">Bull</h6>
-                  <p className="text-[11px] text-green-900 line-clamp-1">{asset.bull_case}</p>
-                </div>
-              )}
-              {asset.bear_case && (
-                <div className="bg-red-50/50 border border-red-100 rounded p-1.5">
-                  <h6 className="text-[10px] font-semibold text-red-700 uppercase tracking-wide mb-0.5">Bear</h6>
-                  <p className="text-[11px] text-red-900 line-clamp-1">{asset.bear_case}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )
-        break
-
-      // ── Research fields: 3×2 grid, triggered field highlighted ──
-      case 'thesis':
-      case 'bull_case':
-      case 'bear_case':
-      case 'base_case':
-      case 'where_different':
-      case 'risks_to_thesis':
-        centerZone = (
-          <div className="h-full overflow-hidden">
-            <div className="grid grid-cols-3 grid-rows-2 gap-1.5 h-full">
-              {RESEARCH_FIELDS.map(({ key, label }) => {
-                const val = asset[key]
-                const isTriggered = key === columnId
-                return (
-                  <div
-                    key={key}
-                    className={clsx(
-                      'rounded p-2 flex flex-col overflow-hidden',
-                      isTriggered
-                        ? 'bg-blue-50 border border-blue-200 ring-1 ring-blue-300/50'
-                        : 'bg-gray-50/80 border border-gray-100'
-                    )}
-                  >
-                    <h6 className={clsx(
-                      'text-[10px] font-semibold uppercase tracking-wide mb-0.5 flex-shrink-0',
-                      isTriggered ? 'text-blue-600' : 'text-gray-400'
-                    )}>
-                      {label}
-                    </h6>
-                    {val ? (
-                      <p className={clsx(
-                        'text-[11px] leading-snug flex-1 overflow-hidden',
-                        isTriggered ? 'text-blue-900 line-clamp-6' : 'text-gray-600 line-clamp-2'
-                      )}>
-                        {val}
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-gray-300 italic">—</p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-        break
-
-      // ── Coverage: analyst cards + thesis context ──
-      case 'coverage':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Analyst Coverage</h5>
-            {coverage.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No coverage assigned</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {coverage.map((analyst, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-100 rounded">
-                    <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[9px] font-semibold flex-shrink-0">
-                      {getInitials(analyst.analyst)}
-                    </div>
-                    <span className="text-[11px] font-medium text-gray-900">{analyst.analyst}</span>
-                    {analyst.isLead && <span className="px-1 py-px text-[9px] font-medium bg-blue-100 text-blue-700 rounded">Lead</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* Thesis preview for context */}
-            {asset.thesis && (
-              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
-                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
-                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
-              </div>
-            )}
-          </div>
-        )
-        break
-
-      // ── Priority: picker buttons ──
-      case 'priority': {
-        const currentPriority = getUserPriority(asset.id)
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Set Priority</h5>
-            <div className="flex flex-wrap gap-1.5">
-              {PRIORITY_OPTIONS.map(priority => {
-                const config = PRIORITY_CONFIG[priority]
-                const IconComponent = config.icon
-                const isSelected = currentPriority === priority || (!currentPriority && priority === 'none')
-                return (
-                  <button
-                    key={priority}
-                    onClick={() => {
-                      setUserPriorityMutation.mutate({ assetId: asset.id, priority })
-                      setExpandedMetricColumn(null)
-                      toggleRowExpansion(asset.id)
-                    }}
-                    className={clsx(
-                      'px-3 py-2 rounded text-xs font-medium transition-all text-white flex items-center gap-1.5',
-                      config.bg,
-                      isSelected ? 'ring-2 ring-offset-1 ring-blue-400' : 'opacity-70 hover:opacity-100'
-                    )}
-                  >
-                    <IconComponent className="w-3.5 h-3.5" />
-                    <span>{config.label}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5" />}
-                  </button>
-                )
-              })}
-            </div>
-            {/* Context: thesis or note below */}
-            {asset.thesis && (
-              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
-                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
-                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
-              </div>
-            )}
-          </div>
-        )
-        break
-      }
-
-      // ── Notes: styled note block + research context ──
-      case 'notes':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex-shrink-0">Quick Note</h5>
-            {asset.quick_note ? (
-              <div className="bg-amber-50/50 border border-amber-100 rounded p-2 flex-shrink-0">
-                <p className="text-xs text-gray-700 leading-relaxed italic line-clamp-4">"{asset.quick_note}"</p>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400 italic mb-2">No quick note</p>
-            )}
-            {asset.thesis && (
-              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
-                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
-                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
-              </div>
-            )}
-          </div>
-        )
-        break
-
-      // ── List Note: styled note block + research context ──
-      case 'listNote':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 flex-shrink-0">List Note</h5>
-            {asset._listNotes ? (
-              <div className="bg-gray-50 border border-gray-100 rounded p-2 flex-shrink-0">
-                <p className="text-xs text-gray-700 leading-relaxed line-clamp-4">{asset._listNotes}</p>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400 italic mb-2">No list note</p>
-            )}
-            {asset.thesis && (
-              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
-                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
-                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
-              </div>
-            )}
-          </div>
-        )
-        break
-
-      // ── Workflows: cards + stage info ──
-      case 'workflows':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Active Processes</h5>
-            {workflows.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No active processes</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {workflows.map((wf, idx) => (
-                  <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-50 border border-gray-100 rounded">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: wf.color }} />
-                    <span className="text-xs font-medium text-gray-900">{wf.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* Stage + coverage context */}
-            <div className="border-t border-gray-100 pt-1.5 mt-auto flex gap-4 text-[11px] text-gray-500 flex-shrink-0">
-              {asset.process_stage && <span>Stage: <span className="text-gray-700 font-medium">{PROCESS_STAGES[asset.process_stage]?.label || asset.process_stage}</span></span>}
-              {coverage.length > 0 && <span>{coverage.length} analyst{coverage.length !== 1 ? 's' : ''}</span>}
-            </div>
-          </div>
-        )
-        break
-
-      // ── Updated: timeline + context ──
-      case 'updated':
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex-shrink-0">Timeline</h5>
-            <div className="space-y-2 flex-shrink-0">
-              {asset.updated_at && (
-                <div className="flex items-center gap-2 text-xs">
-                  <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <span className="text-gray-700">Last updated {formatRelativeTime(asset.updated_at)}</span>
-                </div>
-              )}
-              {asset.created_at && (
-                <div className="flex items-center gap-2 text-xs">
-                  <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <span className="text-gray-500">Created {formatRelativeTime(asset.created_at)}</span>
-                </div>
-              )}
-              {asset.process_stage && (
-                <div className="flex items-center gap-2 text-xs">
-                  <Target className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <span className="text-gray-700">Stage: {PROCESS_STAGES[asset.process_stage]?.label || asset.process_stage}</span>
-                </div>
-              )}
-            </div>
-            {asset.thesis && (
-              <div className="border-t border-gray-100 pt-1.5 mt-auto flex-shrink-0">
-                <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Thesis</h6>
-                <p className="text-[11px] text-gray-600 line-clamp-2">{asset.thesis}</p>
-              </div>
-            )}
-          </div>
-        )
-        break
-
-      // ── Default (chevron): research overview ──
-      default:
-        centerZone = (
-          <div className="flex flex-col h-full overflow-hidden">
-            {/* Thesis */}
-            {asset.thesis && (
-              <div className="mb-1.5 flex-shrink-0">
-                <h6 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Thesis</h6>
-                <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{asset.thesis}</p>
-              </div>
-            )}
-            {/* Bull / Bear */}
-            <div className="grid grid-cols-2 gap-1.5 mb-1.5 flex-shrink-0">
-              <div className="bg-green-50/50 border border-green-100 rounded p-1.5">
-                <h6 className="text-[10px] font-semibold text-green-700 uppercase tracking-wide mb-0.5">Bull Case</h6>
-                <p className="text-[11px] text-green-900 line-clamp-2">{asset.bull_case || <span className="text-gray-400 italic">—</span>}</p>
-              </div>
-              <div className="bg-red-50/50 border border-red-100 rounded p-1.5">
-                <h6 className="text-[10px] font-semibold text-red-700 uppercase tracking-wide mb-0.5">Bear Case</h6>
-                <p className="text-[11px] text-red-900 line-clamp-2">{asset.bear_case || <span className="text-gray-400 italic">—</span>}</p>
-              </div>
-            </div>
-            {/* Base / Where Different / Risks in tight row */}
-            <div className="grid grid-cols-3 gap-1.5 flex-shrink-0">
-              {asset.base_case && (
-                <div className="bg-gray-50 border border-gray-100 rounded p-1.5">
-                  <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Base</h6>
-                  <p className="text-[11px] text-gray-600 line-clamp-1">{asset.base_case}</p>
-                </div>
-              )}
-              {asset.where_different && (
-                <div className="bg-gray-50 border border-gray-100 rounded p-1.5">
-                  <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Diff. View</h6>
-                  <p className="text-[11px] text-gray-600 line-clamp-1">{asset.where_different}</p>
-                </div>
-              )}
-              {asset.risks_to_thesis && (
-                <div className="bg-gray-50 border border-gray-100 rounded p-1.5">
-                  <h6 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Risks</h6>
-                  <p className="text-[11px] text-gray-600 line-clamp-1">{asset.risks_to_thesis}</p>
-                </div>
-              )}
-            </div>
-            {!asset.thesis && !asset.bull_case && !asset.bear_case && (
-              <p className="text-xs text-gray-400 italic">No research details available</p>
-            )}
-          </div>
-        )
-        break
-    }
-
-    // --- ASSEMBLE 3-ZONE LAYOUT ---
     return (
-      <div className="flex flex-col h-full overflow-hidden">
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Left zone */}
-          <div className="w-44 flex-shrink-0 overflow-hidden pr-3">
-            {leftZone}
-          </div>
-          {/* Divider */}
-          <div className="w-px bg-gray-200 flex-shrink-0" />
-          {/* Center zone */}
-          <div className="flex-1 min-w-0 overflow-hidden px-4">
-            {centerZone}
-          </div>
-          {/* Divider */}
-          <div className="w-px bg-gray-200 flex-shrink-0" />
-          {/* Right zone */}
-          <div className="w-48 flex-shrink-0 overflow-hidden pl-3">
-            {rightZone}
-          </div>
-        </div>
-        {/* Action buttons */}
-        <div className="mt-1.5 pt-1.5 border-t border-gray-200 flex items-center gap-3 flex-shrink-0">
-          <button
-            onClick={() => handleAssetClick(asset)}
-            className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-          >
-            Open Asset
-            <ChevronRight className="w-3 h-3" />
-          </button>
-          {onCreateTradeIdea && (
-            <button
-              onClick={() => onCreateTradeIdea(asset.id)}
-              className="text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-            >
-              <Tag className="w-3 h-3" />
-              Create Trade Idea
-            </button>
-          )}
-        </div>
-      </div>
+      <AssetDetailCarousel
+        asset={asset}
+        columnId={columnId}
+        quote={quote}
+        coverage={coverage}
+        workflows={workflows}
+        onOpenAsset={onAssetSelect ? () => onAssetSelect(asset) : undefined}
+      />
     )
-  }, [getUserPriority, setUserPriorityMutation, handleAssetClick, toggleRowExpansion, onCreateTradeIdea])
+  }, [onAssetSelect])
 
   // Quick action buttons rendered at the bottom of expanded rows
   const renderExpandedActions = useCallback((asset: any) => (
@@ -2659,6 +2364,7 @@ export function AssetTableView({
                     {[
                       ...GROUP_BY_OPTIONS,
                       ...(listGroupData ? [{ value: 'listGroup' as GroupByOption, label: 'By Custom', icon: FolderTree }] : []),
+                      ...(listStatusData ? [{ value: 'status' as GroupByOption, label: 'By Status', icon: CircleDot }] : []),
                       ...(listId ? [{ value: 'contributor' as GroupByOption, label: 'By Contributor', icon: Users }] : []),
                     ].find(o => o.value === groupBy)?.label || ''}
                   </span>
@@ -2764,6 +2470,13 @@ export function AssetTableView({
             </span>
           ))}
           <button onClick={clearAllFilters} className="text-xs text-gray-500 hover:text-gray-700 ml-1">Clear</button>
+        </div>
+      )}
+
+      {/* External filter slot (list-scoped filter chips etc.) */}
+      {!hideToolbar && filterBarSlot && (
+        <div className="pb-2">
+          {filterBarSlot}
         </div>
       )}
 
@@ -3406,6 +3119,9 @@ export function AssetTableView({
                     // Shift rows BELOW the selected row down to make room for insert input
                     const insertOffset = (insertAboveRow !== null && virtualRow.index > insertAboveRow) ? densityRowHeight : 0
 
+                    // List-scoped row accent (left-border color + dim)
+                    const accent = rowAccentFn?.(asset) || null
+
                     return (
                       <div
                         key={asset._rowId || asset.id}
@@ -3420,7 +3136,8 @@ export function AssetTableView({
                           flagColor && `flag-${flagColor}`,
                           hasWrapTextColumn && !isExpanded && 'wrap-enabled',
                           isExpanded && 'expanded flex flex-col',
-                          dragRowIndex === virtualRow.index && 'opacity-50'
+                          dragRowIndex === virtualRow.index && 'opacity-50',
+                          accent?.dim && !isExpanded && 'opacity-55'
                         )}
                         data-row-index={virtualRow.index}
                         draggable={canDragRows}
@@ -3431,7 +3148,9 @@ export function AssetTableView({
                         style={{
                           height: isExpanded ? expandedRowHeight : (hasWrapTextColumn ? 'auto' : densityRowHeight),
                           minHeight: hasWrapTextColumn && !isExpanded ? densityRowHeight : undefined,
-                          transform: `translateY(${virtualRow.start + insertOffset}px)`
+                          transform: `translateY(${virtualRow.start + insertOffset}px)`,
+                          boxShadow: accent?.color ? `inset 3px 0 0 0 ${accent.color}` : 'inset 0 0 0 0 transparent',
+                          transition: 'box-shadow 200ms ease-out, opacity 200ms ease-out'
                         }}>
                         {/* Drop indicator line */}
                         {canDragRows && dropTargetIndex === virtualRow.index && dragRowIndex !== null && dragRowIndex !== virtualRow.index && (
@@ -3609,7 +3328,7 @@ export function AssetTableView({
 
                                   const content = config ? (
                                     <span className={clsx(
-                                      'inline-flex items-center justify-center rounded font-medium text-white',
+                                      'inline-flex items-center justify-center rounded font-medium text-white text-[11px]',
                                       isMicro ? 'px-1.5 py-0' : isMicroOrUltra ? 'gap-1 px-1.5 py-0' : 'gap-1 px-2 py-0.5',
                                       config.bg
                                     )}>
@@ -3811,42 +3530,43 @@ export function AssetTableView({
                                     columnName={col.label}
                                     assetId={asset.id}
                                     assetSymbol={asset.symbol}
-                                    content={null} // TODO: Wire up actual cache
-                                    isLoading={false}
-                                    onGenerate={() => {
-                                      // TODO: Implement AI generation
-                                    }}
-                                    onRefresh={() => {
-                                      // TODO: Implement refresh
-                                    }}
+                                    content={aiCache.getCachedContent(col.aiColumnId, asset.id)}
+                                    isLoading={aiLoadingKeys.has(`${col.aiColumnId}:${asset.id}`)}
+                                    error={aiErrorKeys.get(`${col.aiColumnId}:${asset.id}`) ?? null}
+                                    onGenerate={() => handleGenerateAIColumn(col.aiColumnId!, asset.id)}
+                                    onRefresh={() => handleRefreshAIColumn(col.aiColumnId!, asset.id)}
                                     density={density}
                                   />
                                 )}
                                 {col.id === 'actions' && renderRowActions && renderRowActions(asset)}
+                                {/* Extra-column cell renderer — for caller-provided columns
+                                    not handled by any built-in col.id branch above. */}
+                                {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset)}
                               </div>
                             )
                           })}
                         </div>
                         {isExpanded && (
-                          <div className="pro-expanded-row px-5 py-3 overflow-hidden" style={{ height: expandedRowHeight - densityRowHeight }}>
+                          <div
+                          className="pro-expanded-row px-5 py-2 overflow-hidden"
+                          style={{
+                            height: expandedRowHeight - densityRowHeight,
+                            position: 'sticky',
+                            left: 0,
+                            width: tableVisibleWidth || '100%'
+                          }}
+                        >
                             <div className="h-full flex flex-col overflow-hidden">
-                              <div className="flex items-center justify-end mb-0 -mt-1 -mr-2">
-                                <button
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => { toggleRowExpansion(asset.id); setExpandedMetricColumn(null) }}
-                                  className="p-0.5 hover:bg-gray-200/60 rounded transition-colors"
-                                >
-                                  <X className="w-3.5 h-3.5 text-gray-400" />
-                                </button>
-                              </div>
                               <div className="flex-1 min-h-0 overflow-hidden">
-                                {renderMetricDetail(
-                                  asset,
-                                  expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
-                                  quote,
-                                  coverage,
-                                  workflows
-                                )}
+                                {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
+                                  ? expandedRowSlot(asset, asset._rowId || asset.id)
+                                  : renderMetricDetail(
+                                      asset,
+                                      expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
+                                      quote,
+                                      coverage,
+                                      workflows
+                                    )}
                               </div>
                             </div>
                           </div>
@@ -4285,6 +4005,7 @@ export function AssetTableView({
                           const flagColor = getFlagColor(asset.id)
                           const flagStyles = getFlagStyles(flagColor)
                           const isEvenRow = rowIdx % 2 === 1
+                          const accent = rowAccentFn?.(asset) || null
 
                           return (
                             <div
@@ -4296,11 +4017,16 @@ export function AssetTableView({
                                 flagColor && 'flagged',
                                 flagColor && `flag-${flagColor}`,
                                 isExpanded && 'expanded flex flex-col',
-                                canDragGroupedRows && dragGroupAssetId === asset.id && 'opacity-30'
+                                canDragGroupedRows && dragGroupAssetId === asset.id && 'opacity-30',
+                                accent?.dim && !isExpanded && 'opacity-55'
                               )}
                               draggable={canDragGroupedRows}
                               onDragStart={canDragGroupedRows ? (e) => handleGroupedRowDragStart(e, asset.id, asset.symbol, group.key) : undefined}
                               onDragEnd={canDragGroupedRows ? handleGroupedRowDragEnd : undefined}
+                              style={{
+                                boxShadow: accent?.color ? `inset 3px 0 0 0 ${accent.color}` : 'inset 0 0 0 0 transparent',
+                                transition: 'box-shadow 200ms ease-out, opacity 200ms ease-out'
+                              }}
                             >
                               <div
                                 className={clsx('flex items-center', isExpanded ? 'h-auto' : 'h-full')}
@@ -4460,7 +4186,7 @@ export function AssetTableView({
 
                                         const content = config ? (
                                           <span className={clsx(
-                                            'inline-flex items-center justify-center rounded font-medium text-white',
+                                            'inline-flex items-center justify-center rounded font-medium text-white text-[11px]',
                                             isMicro ? 'px-1.5 py-0' : isMicroOrUltra ? 'gap-1 px-1.5 py-0' : 'gap-1 px-2 py-0.5',
                                             config.bg
                                           )}>
@@ -4495,7 +4221,7 @@ export function AssetTableView({
                                         )
                                       })()}
                                       {col.id === 'sector' && (
-                                        <span className={clsx('truncate', density === 'micro' ? 'text-[9px]' : 'text-xs text-gray-600')}>
+                                        <span className={clsx('truncate text-gray-600', density === 'micro' && 'text-[9px]')}>
                                           {asset.sector || '\u2014'}
                                         </span>
                                       )}
@@ -4652,10 +4378,17 @@ export function AssetTableView({
                                           </div>
                                         )
                                       })()}
-                                      {col.isCustomAI && (
+                                      {col.isCustomAI && col.aiColumnId && (
                                         <AIColumnCell
-                                          asset={asset}
-                                          column={col}
+                                          columnId={col.aiColumnId}
+                                          columnName={col.label}
+                                          assetId={asset.id}
+                                          assetSymbol={asset.symbol}
+                                          content={aiCache.getCachedContent(col.aiColumnId, asset.id)}
+                                          isLoading={aiLoadingKeys.has(`${col.aiColumnId}:${asset.id}`)}
+                                          error={aiErrorKeys.get(`${col.aiColumnId}:${asset.id}`) ?? null}
+                                          onGenerate={() => handleGenerateAIColumn(col.aiColumnId!, asset.id)}
+                                          onRefresh={() => handleRefreshAIColumn(col.aiColumnId!, asset.id)}
                                           density={density}
                                         />
                                       )}
@@ -4664,31 +4397,34 @@ export function AssetTableView({
                                           {renderRowActions(asset)}
                                         </div>
                                       )}
+                                      {/* Extra-column cell renderer (grouped view) */}
+                                      {renderExtraCell && !col.isCustomAI && col.id !== 'actions' && renderExtraCell(col.id, asset)}
                                     </div>
                                   )
                                 })}
                               </div>
                               {/* Expanded content */}
                               {isExpanded && (
-                                <div className="pro-expanded-row px-5 py-3 overflow-hidden" style={{ height: expandedRowHeight - densityRowHeight }}>
+                                <div
+                          className="pro-expanded-row px-5 py-2 overflow-hidden"
+                          style={{
+                            height: expandedRowHeight - densityRowHeight,
+                            position: 'sticky',
+                            left: 0,
+                            width: tableVisibleWidth || '100%'
+                          }}
+                        >
                                   <div className="h-full flex flex-col overflow-hidden">
-                                    <div className="flex items-center justify-end mb-0 -mt-1 -mr-2">
-                                      <button
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onClick={() => { toggleRowExpansion(asset.id); setExpandedMetricColumn(null) }}
-                                        className="p-0.5 hover:bg-gray-200/60 rounded transition-colors"
-                                      >
-                                        <X className="w-3.5 h-3.5 text-gray-400" />
-                                      </button>
-                                    </div>
                                     <div className="flex-1 min-h-0 overflow-hidden">
-                                      {renderMetricDetail(
-                                        asset,
-                                        expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
-                                        quote,
-                                        coverage,
-                                        workflows
-                                      )}
+                                      {expandedRowSlot && !(expandedMetricColumn?.assetId === asset.id)
+                                        ? expandedRowSlot(asset, asset._rowId || asset.id)
+                                        : renderMetricDetail(
+                                            asset,
+                                            expandedMetricColumn?.assetId === asset.id ? expandedMetricColumn.columnId : 'default',
+                                            quote,
+                                            coverage,
+                                            workflows
+                                          )}
                                     </div>
                                   </div>
                                 </div>

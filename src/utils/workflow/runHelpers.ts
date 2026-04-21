@@ -273,6 +273,7 @@ export function getScopeColor(scopeType: string | null | undefined): string {
     case 'asset': return '#3b82f6'      // blue-500
     case 'portfolio': return '#8b5cf6'  // violet-500
     case 'general': return '#f59e0b'    // amber-500
+    case 'theme': return '#10b981'      // emerald-500
     default: return '#6b7280'           // gray-500
   }
 }

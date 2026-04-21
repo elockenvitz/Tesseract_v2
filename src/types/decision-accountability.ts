@@ -119,9 +119,10 @@ export type SizeBasis = 'market_value_delta' | 'qty_times_price' | 'weight_only'
 // ============================================================
 
 export type RowSource = 'decision' | 'discretionary'
+export type DecisionCategory = 'acted' | 'passed'
 
 export interface AccountabilityRow {
-  /** trade_queue_item ID (or trade event ID for discretionary) */
+  /** trade_queue_item ID (or trade event ID for discretionary, or decision_request ID for passed) */
   decision_id: string
   created_at: string
   approved_at: string | null
@@ -129,10 +130,19 @@ export interface AccountabilityRow {
   /** Where this row originated */
   source: RowSource
 
+  /** Whether this was acted on or explicitly passed */
+  category: DecisionCategory
+
   /** Decision info */
   direction: DecisionDirection
   stage: DecisionStage
   rationale_text: string | null
+
+  /** PM's note when rejecting/deferring (passed decisions) */
+  decision_note: string | null
+
+  /** Deferred until date (passed-deferred decisions) */
+  deferred_until: string | null
 
   /** Asset */
   asset_id: string | null

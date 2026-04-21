@@ -199,6 +199,8 @@ export interface Database {
           is_default: boolean | null
           list_type: 'mutual' | 'collaborative'
           portfolio_id: string | null
+          content_mode: 'manual' | 'screen'
+          screen_criteria: Record<string, unknown> | null
           created_at: string | null
           updated_at: string | null
           created_by: string | null
@@ -212,6 +214,8 @@ export interface Database {
           is_default?: boolean | null
           list_type?: 'mutual' | 'collaborative'
           portfolio_id?: string | null
+          content_mode?: 'manual' | 'screen'
+          screen_criteria?: Record<string, unknown> | null
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
@@ -225,6 +229,8 @@ export interface Database {
           is_default?: boolean | null
           list_type?: 'mutual' | 'collaborative'
           portfolio_id?: string | null
+          content_mode?: 'manual' | 'screen'
+          screen_criteria?: Record<string, unknown> | null
           created_at?: string | null
           updated_at?: string | null
           created_by?: string | null
@@ -467,8 +473,14 @@ export interface Database {
           theme_type: 'sector' | 'geography' | 'strategy' | 'macro' | 'general' | null
           color: string | null
           description: string | null
+          lifecycle_status: 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
+          is_archived: boolean
+          is_public: boolean | null
+          organization_id: string
           created_at: string | null
           created_by: string | null
+          updated_at: string | null
+          updated_by: string | null
         }
         Insert: {
           id?: string
@@ -476,8 +488,14 @@ export interface Database {
           theme_type?: 'sector' | 'geography' | 'strategy' | 'macro' | 'general' | null
           color?: string | null
           description?: string | null
+          lifecycle_status?: 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
+          is_archived?: boolean
+          is_public?: boolean | null
+          organization_id: string
           created_at?: string | null
           created_by?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
         }
         Update: {
           id?: string
@@ -485,8 +503,14 @@ export interface Database {
           theme_type?: 'sector' | 'geography' | 'strategy' | 'macro' | 'general' | null
           color?: string | null
           description?: string | null
+          lifecycle_status?: 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
+          is_archived?: boolean
+          is_public?: boolean | null
+          organization_id?: string
           created_at?: string | null
           created_by?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
         }
       }
       theme_assets: {

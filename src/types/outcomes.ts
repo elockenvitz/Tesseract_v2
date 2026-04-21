@@ -212,32 +212,24 @@ export interface OutcomeFilters {
   portfolioIds: string[]
   ownerUserIds: string[]
   assetSearch: string
-  stages: DecisionStage[]
   directions: DecisionDirection[]
   urgencies: DecisionUrgency[]
-  showApproved: boolean
-  showRejected: boolean
-  showArchived: boolean
-  hasRationale: boolean | null // null = show all
-  executionStatus: ('pending' | 'executed' | 'partial' | 'missed' | 'unknown')[]
+  showCompleted: boolean
+  showPending: boolean
 }
 
 export const DEFAULT_OUTCOME_FILTERS: OutcomeFilters = {
   dateRange: {
-    start: null, // Will be set to 90 days ago
-    end: null,   // Will be set to today
+    start: null,
+    end: null,
   },
   portfolioIds: [],
   ownerUserIds: [],
   assetSearch: '',
-  stages: ['approved'],
   directions: [],
   urgencies: [],
-  showApproved: true,
-  showRejected: false,
-  showArchived: false,
-  hasRationale: null,
-  executionStatus: [],
+  showCompleted: true,
+  showPending: true,
 }
 
 // ============================================================

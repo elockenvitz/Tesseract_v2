@@ -9,6 +9,9 @@ import { Badge } from '../ui/Badge'
 import { Input } from '../ui/Input'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ListTypeSelector, ListType } from './ListTypeSelector'
+import { Filter as FilterIcon, List as ListIconForMode } from 'lucide-react'
+
+type ContentMode = 'manual' | 'screen'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 
@@ -57,6 +60,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const [newListDescription, setNewListDescription] = useState('')
   const [newListColor, setNewListColor] = useState('#3b82f6')
   const [newListType, setNewListType] = useState<ListType>('mutual')
+  const [newContentMode, setNewContentMode] = useState<ContentMode>('manual')
   const [showListMenu, setShowListMenu] = useState<string | null>(null)
   const [editingListId, setEditingListId] = useState<string | null>(null)
   const [addedToLists, setAddedToLists] = useState<Set<string>>(new Set())
@@ -152,7 +156,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
 
   // Create list mutation
   const createListMutation = useMutation({
-    mutationFn: async ({ name, description, color, list_type }: { name: string; description: string; color: string; list_type: ListType }) => {
+    mutationFn: async ({ name, description, color, list_type, content_mode }: { name: string; description: string; color: string; list_type: ListType; content_mode: ContentMode }) => {
       const { error } = await supabase
         .from('asset_lists')
         .insert([{
@@ -160,6 +164,11 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           description,
           color,
           list_type,
+          content_mode,
+          // Screens start with an empty AND group — user fills rules via the criteria panel
+          screen_criteria: content_mode === 'screen'
+            ? { id: crypto.randomUUID(), combinator: 'AND', rules: [] }
+            : null,
           created_by: user?.id
         }])
 
@@ -172,6 +181,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       setNewListDescription('')
       setNewListColor('#3b82f6')
       setNewListType('mutual')
+      setNewContentMode('manual')
     }
   })
 
@@ -269,7 +279,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       name: newListName.trim(),
       description: newListDescription.trim(),
       color: newListColor,
-      list_type: newListType
+      // Screens ignore the mutual/collaborative distinction (no per-row ownership).
+      list_type: newContentMode === 'screen' ? 'mutual' : newListType,
+      content_mode: newContentMode
     })
   }
 
@@ -411,10 +423,56 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       </div>
                     </div>
 
-                    <ListTypeSelector
-                      value={newListType}
-                      onChange={setNewListType}
-                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Content mode
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewContentMode('manual')}
+                          className={clsx(
+                            'text-left p-3 rounded-lg border-2 transition-colors',
+                            newContentMode === 'manual'
+                              ? 'border-primary-500 bg-primary-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <ListIconForMode className="h-4 w-4 text-gray-700" />
+                            <span className="text-sm font-semibold text-gray-900">Manual</span>
+                          </div>
+                          <p className="text-xs text-gray-600">
+                            Add assets one by one. Assign status, tags, owner per row.
+                          </p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewContentMode('screen')}
+                          className={clsx(
+                            'text-left p-3 rounded-lg border-2 transition-colors',
+                            newContentMode === 'screen'
+                              ? 'border-primary-500 bg-primary-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <FilterIcon className="h-4 w-4 text-gray-700" />
+                            <span className="text-sm font-semibold text-gray-900">Screen</span>
+                          </div>
+                          <p className="text-xs text-gray-600">
+                            Auto-populated by criteria across the asset universe.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+
+                    {newContentMode === 'manual' && (
+                      <ListTypeSelector
+                        value={newListType}
+                        onChange={setNewListType}
+                      />
+                    )}
 
                     <div className="flex space-x-3">
                       <Button
@@ -425,6 +483,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                           setNewListDescription('')
                           setNewListColor('#3b82f6')
                           setNewListType('mutual')
+                          setNewContentMode('manual')
                         }}
                         className="flex-1"
                       >

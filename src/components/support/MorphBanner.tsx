@@ -27,6 +27,15 @@ export function MorphBanner() {
     return () => clearInterval(interval)
   }, [activeSession?.expires_at])
 
+  // Push the rest of the app down by the banner height so the fixed bar
+  // doesn't overlap the sticky header / page content.
+  useEffect(() => {
+    if (!isMorphing) return
+    const prev = document.body.style.paddingTop
+    document.body.style.paddingTop = '32px'
+    return () => { document.body.style.paddingTop = prev }
+  }, [isMorphing])
+
   if (!isMorphing || !activeSession) return null
 
   const minutes = Math.floor(remainingMs / 60000)

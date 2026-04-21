@@ -283,16 +283,17 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         query = query.in('status', ['approved', 'executed'])
       }
 
-      // Date range — if dateRange object exists with null start, show all time
+      // Date range — always filter on created_at for consistency
+      // (approved_at is null for many legacy rows; created_at is always set)
       if (filters?.dateRange?.start) {
-        query = query.gte('approved_at', filters.dateRange.start)
+        query = query.gte('created_at', filters.dateRange.start)
       } else if (!filters?.dateRange) {
         // No dateRange set at all — default to last 90 days
         query = query.gte('created_at', subDays(new Date(), 90).toISOString())
       }
       // If dateRange exists but start is null → no date filter (ALL)
       if (filters?.dateRange?.end) {
-        query = query.lte('approved_at', filters.dateRange.end)
+        query = query.lte('created_at', filters.dateRange.end)
       }
 
       // Portfolio filter
@@ -467,6 +468,54 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     staleTime: 120_000,
   })
 
+  // ── Step 5b: Fetch passed decisions (rejected/deferred) ────────
+  const passedDecisionsQuery = useQuery({
+    queryKey: ['decision-accountability', 'passed', filters?.portfolioIds, filters?.dateRange],
+    queryFn: async () => {
+      let q = supabase
+        .from('decision_requests')
+        .select(`
+          id, status, decision_note, urgency, requested_action,
+          reviewed_by, reviewed_at, created_at, deferred_until,
+          portfolio_id,
+          portfolios:portfolio_id ( id, name ),
+          trade_idea:trade_queue_items!inner (
+            id, rationale, thesis_text, asset_id,
+            assets:asset_id ( id, symbol, company_name ),
+            created_by_user:created_by ( id, email, first_name, last_name )
+          ),
+          reviewer:reviewed_by ( id, email, first_name, last_name )
+        `)
+        .in('status', ['rejected', 'deferred'])
+
+      // Date filter
+      const dateStart = filters?.dateRange?.start
+      if (dateStart) {
+        q = q.gte('created_at', dateStart)
+      } else if (!filters?.dateRange) {
+        q = q.gte('created_at', subDays(new Date(), 90).toISOString())
+      }
+      if (filters?.dateRange?.end) {
+        q = q.lte('created_at', filters.dateRange.end)
+      }
+
+      // Portfolio filter
+      if (filters?.portfolioIds && filters.portfolioIds.length > 0) {
+        q = q.in('portfolio_id', filters.portfolioIds)
+      }
+
+      q = q.order('created_at', { ascending: false }).limit(200)
+
+      const { data, error } = await q
+      if (error) throw error
+      return data || []
+    },
+    enabled: enabled && (filters?.showRejected !== false),
+    staleTime: 30_000,
+  })
+
+  const passedData = passedDecisionsQuery.data || []
+
   // ── Step 6: Match decisions to executions + enrich with impact ─
   const rows: AccountabilityRow[] = useMemo(() => {
     const events = eventData
@@ -573,9 +622,12 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           created_at: item.created_at,
           approved_at: item.approved_at,
           source: 'decision' as const,
+          category: 'passed' as const,
           direction,
           stage: effectiveStage as any,
           rationale_text: item.rationale || null,
+          decision_note: null,
+          deferred_until: null,
           asset_id: item.asset_id,
           asset_symbol: item.assets?.symbol || null,
           asset_name: item.assets?.company_name || null,
@@ -681,9 +733,13 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         decision_id: item.id,
         created_at: item.created_at,
         approved_at: item.approved_at,
+        source: 'decision' as const,
+        category: 'acted' as const,
         direction,
         stage: effectiveStage as any,
         rationale_text: item.rationale || null,
+        decision_note: null,
+        deferred_until: null,
         asset_id: item.asset_id,
         asset_symbol: item.assets?.symbol || null,
         asset_name: item.assets?.company_name || null,
@@ -746,9 +802,12 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           created_at: evt.created_at || evt.event_date,
           approved_at: null,
           source: 'discretionary',
+          category: 'acted' as const,
           direction,
           stage: 'approved' as any, // treat as "happened"
           rationale_text: null,
+          decision_note: null,
+          deferred_until: null,
           asset_id: evt.asset_id,
           asset_symbol: evt.assets?.symbol || null,
           asset_name: evt.assets?.company_name || null,
@@ -796,8 +855,62 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         }
       })
 
-    return [...decisionRows, ...discretionaryRows]
-  }, [decisionData, eventData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data])
+    // ── Passed decisions (rejected/deferred) ──
+    const passedRows: AccountabilityRow[] = passedData.map((d: any) => {
+      const ti = d.trade_idea
+      const assetId = ti?.asset_id || null
+      const currentPrice = assetId ? (priceMap.get(assetId) ?? null) : null
+      const direction = mapActionToDirection(d.requested_action || 'unknown')
+      const decidedAt = d.reviewed_at || d.created_at
+      const daysSince = decidedAt ? differenceInDays(now, parseISO(decidedAt)) : null
+
+      // For passed decisions, compute what would have happened (move since decision)
+      const snapshotForIdea = ti?.id ? (snapshotMap.get(ti.id) ?? null) : null
+      const decisionPrice = snapshotForIdea?.price ?? null
+      const moveSinceDecision = computeDirectionalMove(direction, decisionPrice, currentPrice)
+      const resultDir = computeResultDirection(moveSinceDecision, null)
+
+      return {
+        decision_id: d.id,
+        created_at: d.created_at,
+        approved_at: decidedAt,
+        source: 'decision' as const,
+        category: 'passed' as const,
+        direction,
+        stage: (d.status === 'deferred' ? 'rejected' : d.status) as any,
+        rationale_text: ti?.rationale || ti?.thesis_text || null,
+        decision_note: d.decision_note || null,
+        deferred_until: d.deferred_until || null,
+        asset_id: assetId,
+        asset_symbol: ti?.assets?.symbol || null,
+        asset_name: ti?.assets?.company_name || null,
+        portfolio_id: d.portfolio_id,
+        portfolio_name: d.portfolios?.name || null,
+        owner_name: formatUserName(ti?.created_by_user),
+        approver_name: formatUserName(d.reviewer),
+        execution_status: 'not_applicable' as const,
+        matched_executions: [],
+        execution_lag_days: null,
+        days_since_decision: daysSince,
+        decision_price: decisionPrice,
+        decision_price_at: snapshotForIdea?.at ?? null,
+        has_decision_price: decisionPrice != null,
+        current_price: currentPrice,
+        execution_price: null,
+        move_since_decision_pct: moveSinceDecision,
+        move_since_execution_pct: null,
+        result_direction: resultDir,
+        delay_cost_pct: null,
+        trade_notional: null,
+        size_basis: null,
+        weight_impact: null,
+        impact_proxy: null,
+        weighted_delay_cost: null,
+      }
+    })
+
+    return [...decisionRows, ...discretionaryRows, ...passedRows]
+  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data])
 
   // ── Step 7: Apply client-side filters ─────────────────────────
   const filteredRows = useMemo(() => {
@@ -1404,6 +1517,143 @@ export function useMarkDecisionSkipped() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
+    },
+  })
+}
+
+// ============================================================
+// Reflections — lightweight post-mortem comments on any decision
+// ============================================================
+
+export interface Reflection {
+  id: string
+  content: string
+  user_id: string
+  user_name: string
+  created_at: string
+}
+
+/**
+ * Load reflections for a decision (trade_queue_item_id).
+ * Checks both accepted_trade_comments and decision_request_comments
+ * via the trade_queue_item_id foreign key.
+ */
+export function useDecisionReflections(decisionId: string | null) {
+  return useQuery({
+    queryKey: ['decision-reflections', decisionId],
+    queryFn: async (): Promise<{ reflections: Reflection[]; acceptedTradeId: string | null; decisionRequestId: string | null }> => {
+      if (!decisionId) return { reflections: [], acceptedTradeId: null, decisionRequestId: null }
+
+      const reflections: Reflection[] = []
+      let acceptedTradeId: string | null = null
+      let decisionRequestId: string | null = null
+
+      // 1. Check accepted_trades for this trade_queue_item
+      const { data: at } = await supabase
+        .from('accepted_trades')
+        .select('id')
+        .eq('trade_queue_item_id', decisionId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (at) {
+        acceptedTradeId = at.id
+        const { data: comments } = await supabase
+          .from('accepted_trade_comments')
+          .select('id, content, user_id, created_at, commenter:user_id ( id, email, raw_user_meta_data )')
+          .eq('accepted_trade_id', at.id)
+          .order('created_at', { ascending: true })
+
+        for (const c of (comments || []) as any[]) {
+          reflections.push({
+            id: c.id,
+            content: c.content,
+            user_id: c.user_id,
+            user_name: c.commenter?.raw_user_meta_data?.full_name || c.commenter?.email?.split('@')[0] || 'Unknown',
+            created_at: c.created_at,
+          })
+        }
+      }
+
+      // 2. Check decision_requests for this trade_queue_item
+      const { data: dr } = await supabase
+        .from('decision_requests')
+        .select('id')
+        .eq('trade_queue_item_id', decisionId)
+        .limit(1)
+        .maybeSingle()
+
+      if (dr) {
+        decisionRequestId = dr.id
+        const { data: comments } = await supabase
+          .from('decision_request_comments')
+          .select('id, content, user_id, created_at, commenter:user_id ( id, email, raw_user_meta_data )')
+          .eq('decision_request_id', dr.id)
+          .order('created_at', { ascending: true })
+
+        for (const c of (comments || []) as any[]) {
+          // Avoid duplicates if both exist
+          if (!reflections.find(r => r.id === c.id)) {
+            reflections.push({
+              id: c.id,
+              content: c.content,
+              user_id: c.user_id,
+              user_name: c.commenter?.raw_user_meta_data?.full_name || c.commenter?.email?.split('@')[0] || 'Unknown',
+              created_at: c.created_at,
+            })
+          }
+        }
+      }
+
+      reflections.sort((a, b) => a.created_at.localeCompare(b.created_at))
+      return { reflections, acceptedTradeId, decisionRequestId }
+    },
+    enabled: !!decisionId,
+    staleTime: 15_000,
+  })
+}
+
+/**
+ * Add a reflection comment to a decision.
+ * Routes to accepted_trade_comments or decision_request_comments.
+ */
+export function useAddReflection() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ acceptedTradeId, decisionRequestId, userId, content }: {
+      acceptedTradeId: string | null
+      decisionRequestId: string | null
+      userId: string
+      content: string
+    }) => {
+      if (acceptedTradeId) {
+        const { error } = await supabase
+          .from('accepted_trade_comments')
+          .insert({
+            accepted_trade_id: acceptedTradeId,
+            user_id: userId,
+            content,
+            comment_type: 'reflection',
+          })
+        if (error) throw error
+      } else if (decisionRequestId) {
+        const { error } = await supabase
+          .from('decision_request_comments')
+          .insert({
+            decision_request_id: decisionRequestId,
+            user_id: userId,
+            content,
+            comment_type: 'reflection',
+          })
+        if (error) throw error
+      } else {
+        throw new Error('No linked accepted_trade or decision_request found')
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decision-reflections'] })
     },
   })
 }

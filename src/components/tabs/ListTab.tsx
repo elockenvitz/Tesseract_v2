@@ -9,22 +9,32 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Star, Share2, Plus, X, Search, Loader2, Trash2, Check, Users,
-  Bell, CheckCircle2, XCircle
+  Plus, X, Search, Loader2, Trash2, Check,
+  CheckCircle2, XCircle
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
-import { Badge } from '../ui/Badge'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
-import { AssetTableView } from '../table/AssetTableView'
+import { ListTableView } from '../lists/ListTableView'
 import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
+import { ListHeaderStrip } from '../lists/ListHeaderStrip'
+import { ListBrief } from '../lists/ListBrief'
+import { ListFilterChipBar, EMPTY_FILTERS, type ListRowFilters } from '../lists/ListFilterChipBar'
+import { ListProgressStrip } from '../lists/ListProgressStrip'
+import { ListEmptyState } from '../lists/ListEmptyState'
+import { ScreenCriteriaPanel } from '../lists/ScreenCriteriaPanel'
+import { useListStatuses } from '../../hooks/lists/useListStatuses'
+import { useListRealtime } from '../../hooks/lists/useListRealtime'
 import { useListPermissions } from '../../hooks/lists/useListPermissions'
 import { useListSuggestions } from '../../hooks/lists/useListSuggestions'
 import { useListGroups } from '../../hooks/lists/useListGroups'
 import { useListReorder } from '../../hooks/lists/useListReorder'
 import { useListKanbanBoards, useKanbanBoard } from '../../hooks/lists/useListKanban'
+import { useScreenResults } from '../../hooks/lists/useScreenResults'
+import { useUpdateScreenCriteria } from '../../hooks/lists/useUpdateScreenCriteria'
+import type { ScreenCriteria } from '../../lib/lists/screen-types'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -41,6 +51,10 @@ interface ListItem {
   notes: string | null
   sort_order: number | null
   group_id: string | null
+  assignee_id: string | null
+  status_id: string | null
+  due_date: string | null
+  is_flagged: boolean
   assets: {
     id: string
     symbol: string
@@ -61,6 +75,25 @@ interface ListItem {
     first_name?: string
     last_name?: string
   }
+  assignee?: {
+    id: string
+    email: string
+    first_name?: string | null
+    last_name?: string | null
+  } | null
+  status?: {
+    id: string
+    name: string
+    color: string
+    sort_order: number
+  } | null
+  tag_links?: Array<{
+    tag: {
+      id: string
+      name: string
+      color: string
+    } | null
+  }>
 }
 
 
@@ -82,11 +115,57 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const [showTradeIdeaModal, setShowTradeIdeaModal] = useState(false)
   const [tradeIdeaAssetId, setTradeIdeaAssetId] = useState<string | undefined>(undefined)
 
+  // Row-level filters (assignee / status / tag / flagged-only)
+  const [rowFilters, setRowFilters] = useState<ListRowFilters>(EMPTY_FILTERS)
+
+  // Statuses for the progress strip (same query as cells; React Query dedupes)
+  const { statuses: listStatuses } = useListStatuses(list.id)
+
+  // Realtime: keep table + activity + taxonomies in sync with other users' changes
+  useListRealtime(list.id)
+
+  const handleProgressFilter = useCallback((statusId: string | null) => {
+    if (statusId === null) return // "No status" row click — no-op for now
+    setRowFilters(prev => {
+      const has = prev.statusIds.includes(statusId)
+      return {
+        ...prev,
+        statusIds: has
+          ? prev.statusIds.filter(x => x !== statusId)
+          : [...prev.statusIds, statusId]
+      }
+    })
+  }, [])
+
   const isCollaborative = list.list_type === 'collaborative'
 
   // ── Data queries ─────────────────────────────────────────────────────
 
-  const { data: listItems = [], isLoading } = useQuery({
+  // Full list row (incl. lifecycle / deadline / brief) + owner profile,
+  // kept fresh via invalidations on governance mutations. The `list` prop
+  // may only carry summary fields from upstream ListSurface queries.
+  const { data: listDetail } = useQuery({
+    queryKey: ['asset-list', list.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('asset_lists')
+        .select(`
+          *,
+          owner:users!asset_lists_created_by_fkey(id, email, first_name, last_name)
+        `)
+        .eq('id', list.id)
+        .single()
+      if (error) throw error
+      return data as any
+    },
+    enabled: !!list.id
+  })
+
+  const contentMode: 'manual' | 'screen' = (listDetail?.content_mode ?? 'manual')
+  const isScreen = contentMode === 'screen'
+  const screenCriteria = (listDetail?.screen_criteria ?? null) as ScreenCriteria | null
+
+  const { data: listItems = [], isLoading: isLoadingItems } = useQuery({
     queryKey: ['asset-list-items', list.id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -94,15 +173,71 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         .select(`
           *,
           assets(*),
-          added_by_user:users!asset_list_items_added_by_fkey(id, email, first_name, last_name)
+          added_by_user:users!asset_list_items_added_by_fkey(id, email, first_name, last_name),
+          assignee:users!asset_list_items_assignee_id_fkey(id, email, first_name, last_name),
+          status:list_statuses!asset_list_items_status_id_fkey(id, name, color, sort_order),
+          tag_links:list_item_tags(tag:list_tags(id, name, color))
         `)
         .eq('list_id', list.id)
         .order('sort_order', { ascending: true, nullsFirst: false })
         .order('added_at', { ascending: false })
       if (error) throw error
       return data as ListItem[]
+    },
+    // Screens don't use asset_list_items — skip the fetch entirely.
+    enabled: !isScreen
+  })
+
+  const {
+    assets: screenAssets,
+    isLoading: isLoadingScreen,
+    matchCount: screenMatchCount,
+    rawCount: screenUniverseCount
+  } = useScreenResults({ enabled: isScreen, criteria: screenCriteria })
+
+  const updateScreenCriteria = useUpdateScreenCriteria(list.id)
+
+  // Snapshot the current screen matches into a brand-new manual list,
+  // preserving name (+ "(snapshot)"), description, color, and lifecycle.
+  const snapshotScreenMutation = useMutation({
+    mutationFn: async () => {
+      if (!isScreen || !user?.id) throw new Error('Only screens can be snapshotted')
+      const matchIds = screenAssets.map(a => a.id)
+      if (matchIds.length === 0) throw new Error('No matching assets to snapshot')
+
+      const { data: newList, error: createErr } = await supabase
+        .from('asset_lists')
+        .insert([{
+          name: `${listDetail?.name ?? list.name} (snapshot)`,
+          description: listDetail?.description ?? null,
+          color: listDetail?.color ?? null,
+          list_type: listDetail?.list_type ?? 'mutual',
+          content_mode: 'manual',
+          created_by: user.id
+        }])
+        .select('id')
+        .single()
+      if (createErr) throw createErr
+
+      const rows = matchIds.map(assetId => ({
+        list_id: newList.id,
+        asset_id: assetId,
+        added_by: user.id
+      }))
+      const { error: itemsErr } = await supabase
+        .from('asset_list_items')
+        .insert(rows)
+      if (itemsErr) throw itemsErr
+
+      return newList.id as string
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
+      queryClient.invalidateQueries({ queryKey: ['list-surfaces'] })
     }
   })
+
+  const isLoading = isScreen ? isLoadingScreen : isLoadingItems
 
   const { data: collaborators = [] } = useQuery({
     queryKey: ['asset-list-collaborators', list.id],
@@ -202,7 +337,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // ── Derived data ─────────────────────────────────────────────────────
 
-  const assets = useMemo(() => {
+  const manualUnfilteredAssets = useMemo(() => {
     return listItems
       .filter(item => item.assets)
       .map(item => ({
@@ -213,9 +348,56 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         _addedBy: item.added_by,
         _addedByUser: item.added_by_user,
         _listNotes: item.notes,
-        _listGroupId: item.group_id
+        _listGroupId: item.group_id,
+        // Phase 3A list-scoped primitives
+        _assigneeId: item.assignee_id,
+        _assignee: item.assignee ?? null,
+        _statusId: item.status_id,
+        _status: item.status ?? null,
+        _dueDate: item.due_date,
+        _isFlagged: !!item.is_flagged,
+        _tags: (item.tag_links ?? [])
+          .map(tl => tl.tag)
+          .filter((t): t is NonNullable<typeof t> => !!t)
       }))
   }, [listItems])
+
+  // Screens compute their asset set from criteria; manual lists use list_items.
+  const unfilteredAssets = isScreen ? screenAssets : manualUnfilteredAssets
+
+  // Apply row-level filters client-side before handing to the table
+  const assets = useMemo(() => {
+    const f = rowFilters
+    const hasAssignee = f.assigneeIds.length > 0
+    const hasStatus = f.statusIds.length > 0
+    const hasTag = f.tagIds.length > 0
+    const anyActive = hasAssignee || hasStatus || hasTag
+      || f.flaggedOnly || f.unassignedOnly || f.dueSoon
+    if (!anyActive) return unfilteredAssets
+
+    const assigneeSet = new Set(f.assigneeIds)
+    const statusSet = new Set(f.statusIds)
+    const tagSet = new Set(f.tagIds)
+
+    // "Due soon" = has due_date AND (overdue OR within next 7 days)
+    const nowMs = Date.now()
+    const weekMs = 7 * 24 * 60 * 60 * 1000
+
+    return unfilteredAssets.filter(a => {
+      if (hasAssignee && !(a._assigneeId && assigneeSet.has(a._assigneeId))) return false
+      if (hasStatus && !(a._statusId && statusSet.has(a._statusId))) return false
+      if (hasTag && !a._tags.some((t: any) => tagSet.has(t.id))) return false
+      if (f.flaggedOnly && !a._isFlagged) return false
+      if (f.unassignedOnly && a._assigneeId) return false
+      if (f.dueSoon) {
+        if (!a._dueDate) return false
+        const due = new Date(a._dueDate).getTime()
+        if (isNaN(due)) return false
+        if (due - nowMs > weekMs) return false
+      }
+      return true
+    })
+  }, [unfilteredAssets, rowFilters])
 
 
 
@@ -374,68 +556,91 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
 
   // ── Render ───────────────────────────────────────────────────────────
 
+  // Compose header data from prop + fresh detail fetch
+  const displayList = useMemo(() => ({
+    id: list.id,
+    name: listDetail?.name ?? list.name,
+    color: listDetail?.color ?? list.color ?? null,
+    list_type: (listDetail?.list_type ?? list.list_type) as 'mutual' | 'collaborative',
+    lifecycle: (listDetail?.lifecycle ?? 'active') as 'active' | 'converted' | 'archived'
+  }), [list, listDetail])
+
+  const ownerInitials = useMemo(() => {
+    const o = listDetail?.owner
+    if (!o) return null
+    if (o.first_name && o.last_name) return `${o.first_name[0]}${o.last_name[0]}`.toUpperCase()
+    if (o.first_name) return o.first_name[0].toUpperCase()
+    if (o.email) return o.email[0].toUpperCase()
+    return null
+  }, [listDetail])
+
+  const ownerName = useMemo(() => {
+    const o = listDetail?.owner
+    if (!o) return null
+    if (o.first_name && o.last_name) return `${o.first_name} ${o.last_name}`
+    if (o.first_name) return o.first_name
+    return o.email ?? null
+  }, [listDetail])
+
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between py-2 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className="w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: list.color || '#3b82f6' }}
+      <ListHeaderStrip
+        list={displayList}
+        assetCount={assets.length}
+        collaborators={collaborators as any}
+        ownerName={ownerName}
+        ownerInitials={ownerInitials}
+        isFavorited={!!isFavorited}
+        onToggleFavorite={() => toggleFavoriteMutation.mutate()}
+        suggestionsIncomingCount={suggestionsIncomingCount}
+        onToggleSuggestionsPanel={() => setShowSuggestionsPanel(!showSuggestionsPanel)}
+        showingSuggestionsPanel={showSuggestionsPanel}
+        onShare={() => setShowShareDialog(true)}
+        permissions={permissions}
+        addAssetSlot={(!isScreen && canAdd) ? <InlineAssetAdder listId={list.id} existingAssetIds={existingAssetIds} /> : null}
+      />
+
+      <ListBrief
+        listId={list.id}
+        brief={listDetail?.brief ?? null}
+        canEdit={permissions.canWrite}
+      />
+
+      {isScreen && (
+        <div className="py-1.5">
+          <ScreenCriteriaPanel
+            criteria={screenCriteria}
+            canEdit={permissions.canWrite}
+            matchCount={screenMatchCount}
+            universeCount={screenUniverseCount}
+            isLoading={isLoadingScreen}
+            onSave={(next) => updateScreenCriteria.mutate(next)}
+            isSaving={updateScreenCriteria.isPending}
+            onSnapshot={() => snapshotScreenMutation.mutate()}
+            isSnapshotting={snapshotScreenMutation.isPending}
           />
-          <h1 className="text-lg font-semibold text-gray-900 truncate">{list.name}</h1>
-          <button
-            onClick={() => toggleFavoriteMutation.mutate()}
-            className="transition-colors flex-shrink-0"
-            title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-          >
-            <Star className={clsx(
-              'h-4 w-4 transition-colors',
-              isFavorited ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300 hover:text-yellow-500'
-            )} />
-          </button>
-          <span className="text-sm text-gray-500 flex-shrink-0">{assets.length} assets</span>
-          {isCollaborative && (
-            <Badge variant="primary" size="sm" className="flex-shrink-0">
-              <Users className="h-3 w-3 mr-1" />
-              Collaborative
-            </Badge>
-          )}
-          {!isCollaborative && collaborators.length > 0 && (
-            <Badge variant="secondary" size="sm" className="flex-shrink-0">
-              <Share2 className="h-3 w-3 mr-1" />
-              {collaborators.length}
-            </Badge>
-          )}
         </div>
+      )}
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Suggestions badge */}
-          {suggestionsIncomingCount > 0 && (
-            <button
-              onClick={() => setShowSuggestionsPanel(!showSuggestionsPanel)}
-              className="relative flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors"
-              title={`${suggestionsIncomingCount} pending suggestion${suggestionsIncomingCount !== 1 ? 's' : ''}`}
-            >
-              <Bell className="h-3.5 w-3.5" />
-              {suggestionsIncomingCount}
-            </button>
-          )}
-
-          {/* Share */}
-          {permissions.canManageCollaborators && (
-            <Button variant="outline" size="sm" onClick={() => setShowShareDialog(true)}>
-              <Share2 className="h-3.5 w-3.5" />
-              {collaborators.length > 0 && <span className="ml-1">{collaborators.length}</span>}
-            </Button>
-          )}
-
-          {/* Add asset */}
-          {canAdd && (
-            <InlineAssetAdder listId={list.id} existingAssetIds={existingAssetIds} />
-          )}
+      {!isScreen && unfilteredAssets.length > 0 && (
+        <div className="flex items-center gap-3 py-1.5 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <ListProgressStrip
+              statuses={listStatuses}
+              assets={unfilteredAssets}
+              onFilterByStatus={handleProgressFilter}
+              activeStatusIds={rowFilters.statusIds}
+            />
+          </div>
+          <div className="flex-shrink-0 border-l border-gray-200 dark:border-gray-800 pl-3">
+            <ListFilterChipBar
+              listId={list.id}
+              filters={rowFilters}
+              onChange={setRowFilters}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Suggestions panel (inline below header) */}
       {showSuggestionsPanel && (incomingSuggestions.length > 0 || outgoingSuggestions.length > 0) && (
@@ -504,31 +709,45 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
       )}
 
-      {/* Table Content */}
+      {/* Table (full width) */}
       <div className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 min-h-0">
-          <AssetTableView
+          {!isLoading && unfilteredAssets.length === 0 ? (
+            isScreen ? (
+              <div className="h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+                {(!screenCriteria || screenCriteria.rules.length === 0)
+                  ? 'Add criteria above to start screening.'
+                  : 'No assets match the current criteria.'}
+              </div>
+            ) : (
+              <ListEmptyState canAdd={canAdd} listName={displayList.name} />
+            )
+          ) : (
+          <ListTableView
+            listId={list.id}
             assets={assets}
             isLoading={isLoading}
+            permissions={permissions}
             onAssetSelect={onAssetSelect}
+            listStatuses={listStatuses}
+            hideListColumns={isScreen}
             storageKey={`listTableColumns_${list.id}`}
-            onBulkAction={(permissions.canRemoveAnyItem || permissions.canRemoveFromOwnSection) ? handleBulkAction : undefined}
+            onBulkAction={(!isScreen && (permissions.canRemoveAnyItem || permissions.canRemoveFromOwnSection)) ? handleBulkAction : undefined}
             bulkActionLabel="Remove from List"
             bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
-            onRemoveFromList={handleRemoveFromList}
-            canRemoveRow={isCollaborative ? canRemoveRow : undefined}
-            onUpdateListNote={handleUpdateListNote}
-            listId={list.id}
+            onRemoveFromList={isScreen ? undefined : handleRemoveFromList}
+            canRemoveRow={(!isScreen && isCollaborative) ? canRemoveRow : undefined}
+            onUpdateListNote={isScreen ? undefined : handleUpdateListNote}
             existingAssetIds={existingAssetIds}
             fillHeight
-            listGroupData={listGroupData}
-            onReorderItem={permissions.canWrite ? handleReorderItem : undefined}
-            onMoveItemToGroup={handleMoveToGroup}
-            onRenameGroup={handleRenameGroup}
-            onDeleteGroup={handleDeleteGroup}
-            onCreateGroup={createGroup}
+            listGroupData={isScreen ? undefined : listGroupData}
+            onReorderItem={(!isScreen && permissions.canWrite) ? handleReorderItem : undefined}
+            onMoveItemToGroup={isScreen ? undefined : handleMoveToGroup}
+            onRenameGroup={isScreen ? undefined : handleRenameGroup}
+            onDeleteGroup={isScreen ? undefined : handleDeleteGroup}
+            onCreateGroup={isScreen ? undefined : createGroup}
             onCreateTradeIdea={handleCreateTradeIdea}
-            kanbanBoards={kanbanBoards}
+            kanbanBoards={isScreen ? undefined : kanbanBoards}
             activeKanbanBoardId={activeKanbanBoardId}
             onSelectKanbanBoard={setActiveKanbanBoardId}
             onCreateKanbanBoard={createKanbanBoard}
@@ -542,6 +761,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             onAssignToKanbanLane={handleAssignToKanbanLane}
             onRemoveFromKanbanLane={handleRemoveFromKanbanLane}
           />
+          )}
         </div>
       </div>
 

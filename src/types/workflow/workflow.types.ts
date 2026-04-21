@@ -61,7 +61,7 @@ export type CadenceTimeframe = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 's
 
 export type KickoffCadence = 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
 
-export type WorkflowScopeType = 'asset' | 'portfolio' | 'general'
+export type WorkflowScopeType = 'asset' | 'portfolio' | 'general' | 'theme'
 
 export type WorkflowPermission = 'read' | 'admin'
 

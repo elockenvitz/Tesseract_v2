@@ -8,7 +8,7 @@ import {
   List,
   Lightbulb,
   FolderKanban,
-  Orbit,
+  Repeat,
   ListTodo,
   Plus,
   StickyNote,
@@ -114,7 +114,7 @@ const CREATE_ACTIONS = [
     title: 'New Process',
     action: 'new-workflow',
     description: 'Start a recurring process',
-    icon: Orbit,
+    icon: Repeat,
     gradient: 'from-blue-100 to-cyan-100',
     iconColor: 'text-blue-600'
   },
@@ -189,7 +189,7 @@ const UTILITY_SURFACES = [
     title: 'Process',
     type: 'workflows',
     description: 'Recurring processes',
-    icon: Orbit,
+    icon: Repeat,
     gradient: 'from-blue-100 to-cyan-100',
     iconColor: 'text-blue-600'
   },

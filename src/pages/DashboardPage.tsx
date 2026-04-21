@@ -557,6 +557,17 @@ export function DashboardPage() {
     return () => window.removeEventListener('open-portfolio', handleOpenPortfolio as EventListener)
   }, [])
 
+  // Listen for a request to open the "all portfolios" list tab.
+  useEffect(() => {
+    const handleOpenPortfoliosList = () => {
+      handleTabChange('portfolios-list')
+    }
+    window.addEventListener('open-portfolios-list', handleOpenPortfoliosList as EventListener)
+    return () => window.removeEventListener('open-portfolios-list', handleOpenPortfoliosList as EventListener)
+    // handleTabChange is stable enough for this simple navigation bridge
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Listen for custom event to open a shared simulation
   useEffect(() => {
     const handleOpenSharedSimulation = (event: CustomEvent) => {
@@ -571,6 +582,16 @@ export function DashboardPage() {
     }
     window.addEventListener('open-shared-simulation', handleOpenSharedSimulation as EventListener)
     return () => window.removeEventListener('open-shared-simulation', handleOpenSharedSimulation as EventListener)
+  }, [])
+
+  // Listen for programmatic tab close requests (e.g., after deleting the object the tab represents)
+  useEffect(() => {
+    const handleCloseTab = (event: CustomEvent) => {
+      const { tabId } = event.detail || {}
+      if (tabId) handleTabClose(tabId)
+    }
+    window.addEventListener('close-tab', handleCloseTab as EventListener)
+    return () => window.removeEventListener('close-tab', handleCloseTab as EventListener)
   }, [])
 
   // Listen for custom event to open Ideas tab with filters (e.g., from "View all" in sidebar)
@@ -597,6 +618,27 @@ export function DashboardPage() {
     }
     window.addEventListener('navigate-to-asset', handleNavigateToAsset as EventListener)
     return () => window.removeEventListener('navigate-to-asset', handleNavigateToAsset as EventListener)
+  }, [])
+
+  // Listen for custom event to navigate to a project (e.g., from theme → related projects)
+  useEffect(() => {
+    const handleNavigateToProject = async (event: CustomEvent) => {
+      const { projectId } = event.detail || {}
+      if (!projectId) return
+      const { data: project } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('id', projectId)
+        .maybeSingle()
+      navigateRef.current({
+        id: projectId,
+        title: project?.name || 'Project',
+        type: 'project',
+        data: project ?? { id: projectId },
+      })
+    }
+    window.addEventListener('navigate-to-project', handleNavigateToProject as EventListener)
+    return () => window.removeEventListener('navigate-to-project', handleNavigateToProject as EventListener)
   }, [])
 
   // Listen for custom event to open Trade Queue (e.g., from toast action after creating trade idea)

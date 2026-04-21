@@ -1,20 +1,25 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, Target, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, UserPlus, UserMinus, X, Search, Trash2, FolderKanban, ChevronDown, Check, Tag } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, MessageSquare, Repeat } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
-import { EditableSection, type EditableSectionRef } from '../ui/EditableSection'
 import { ThemeNoteEditor } from '../notes/ThemeNoteEditorUnified'
-import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
+import { ThemeIndexChart } from '../themes/ThemeIndexChart'
+import { ThemeDiscussionPanel } from '../themes/ThemeDiscussionPanel'
+import { ThemeResearchTab } from '../themes/research/ThemeResearchTab'
+import { ThemeProcessesPanel } from '../themes/processes/ThemeProcessesPanel'
+import { useHeldAssetIds } from '../../hooks/useHeldAssetIds'
 import { AssetTableView } from '../table/AssetTableView'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { getContentPreview } from '../../utils/stripHtml'
+
+type ThemeLifecycleStatus = 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
 
 interface ThemeTabProps {
   theme: any
@@ -24,15 +29,15 @@ interface ThemeTabProps {
 
 export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) {
   const { user } = useAuth()
-  const [themeType, setThemeType] = useState(theme.theme_type || 'general')
 
   // Initialize state from saved tab state
-  const [activeTab, setActiveTab] = useState<'thesis' | 'outcomes' | 'chart' | 'related-assets' | 'notes' | 'projects'>(() => {
+  const [activeTab, setActiveTab] = useState<'thesis' | 'chart' | 'related-assets' | 'notes' | 'discussion' | 'processes'>(() => {
     const savedState = TabStateManager.loadTabState(theme.id)
-    return savedState?.activeTab || 'thesis'
+    const saved = savedState?.activeTab
+    // Migrate legacy 'outcomes' state to 'thesis'
+    if (saved === 'outcomes') return 'thesis'
+    return saved || 'thesis'
   })
-
-  const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
 
   const [showNoteEditor, setShowNoteEditor] = useState(() => {
     const savedState = TabStateManager.loadTabState(theme.id)
@@ -74,7 +79,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       })
     }
   }, [theme.id, activeTab, showNoteEditor, selectedNoteId, isTabStateInitialized])
-  const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showAddAssetModal, setShowAddAssetModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -89,29 +93,28 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     userEmail: ''
   })
   const [showBulkRemoveConfirm, setShowBulkRemoveConfirm] = useState<{ isOpen: boolean; assetIds: string[] }>({ isOpen: false, assetIds: [] })
-  const [showThemeTypeDropdown, setShowThemeTypeDropdown] = useState(false)
-  const themeTypeDropdownRef = useRef<HTMLDivElement>(null)
+  const [showLifecycleDropdown, setShowLifecycleDropdown] = useState(false)
+  const lifecycleDropdownRef = useRef<HTMLDivElement>(null)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const moreMenuRef = useRef<HTMLDivElement>(null)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const colorPickerRef = useRef<HTMLDivElement>(null)
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(theme.name || '')
+  const [isEditingDescription, setIsEditingDescription] = useState(false)
+  const [descriptionDraft, setDescriptionDraft] = useState(theme.description || '')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const queryClient = useQueryClient()
-
-  // Handle component citation in focus mode
-  const handleComponentClick = useCallback((content: string, fieldName: string) => {
-    if (isFocusMode && onCite) {
-      onCite(content, fieldName)
-    }
-  }, [isFocusMode, onCite])
-
-  // Refs for each editable section
-  const thesisRef = useRef<EditableSectionRef>(null)
-  const whereDifferentRef = useRef<EditableSectionRef>(null)
-  const risksRef = useRef<EditableSectionRef>(null)
 
   // Update local state when switching theme
   useEffect(() => {
     if (theme.id) {
-      setThemeType(theme.theme_type || 'general')
-      setHasLocalChanges(false)
+      setNameDraft(theme.name || '')
+      setDescriptionDraft(theme.description || '')
+      setIsEditingName(false)
+      setIsEditingDescription(false)
     }
-  }, [theme.id, theme.theme_type])
+  }, [theme.id, theme.name, theme.description])
 
 
   // ---------- Queries ----------
@@ -162,6 +165,19 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     return map
   }, [relatedAssets])
 
+  // Partition into Held vs Watchlist by checking portfolio_holdings_positions
+  const themeAssetIds = useMemo(() => themeAssets.map((a: any) => a.id).filter(Boolean), [themeAssets])
+  const { heldIds, isLoading: isHeldLoading } = useHeldAssetIds(themeAssetIds)
+  const { heldAssets, watchlistAssets } = useMemo(() => {
+    const held: any[] = []
+    const watch: any[] = []
+    for (const a of themeAssets) {
+      if (a?.id && heldIds.has(a.id)) held.push(a)
+      else watch.push(a)
+    }
+    return { heldAssets: held, watchlistAssets: watch }
+  }, [themeAssets, heldIds])
+
   // Bulk remove assets from theme mutation
   const bulkRemoveFromThemeMutation = useMutation({
     mutationFn: async (assetIds: string[]) => {
@@ -183,6 +199,18 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
 
   const handleBulkRemoveFromTheme = useCallback((assetIds: string[]) => {
     setShowBulkRemoveConfirm({ isOpen: true, assetIds })
+  }, [])
+
+  const handleOpenAsset = useCallback((asset: any) => {
+    if (!asset?.id) return
+    window.dispatchEvent(new CustomEvent('navigate-to-asset', {
+      detail: {
+        id: asset.id,
+        title: asset.symbol || asset.name || 'Asset',
+        type: 'asset',
+        data: asset,
+      }
+    }))
   }, [])
 
   // Fetch owner details
@@ -401,51 +429,57 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     }
   }
 
-  const handleThemeTypeChange = async (newType: string) => {
-    if (newType === themeType) return
-    const prev = themeType
-    setThemeType(newType)
-    setHasLocalChanges(true)
-
-    try {
-      await updateThemeMutation.mutateAsync({ theme_type: newType })
-    } catch {
-      // revert UI if DB rejected
-      setThemeType(prev)
-      setHasLocalChanges(false)
-    }
+  const handleLifecycleChange = (next: ThemeLifecycleStatus) => {
+    if (next === (theme.lifecycle_status || 'active')) return
+    updateThemeMutation.mutate({ lifecycle_status: next })
   }
 
-  const handleSectionSave = async (field: string, content: string) => {
-    try {
-      await updateThemeMutation.mutateAsync({ [field]: content })
-      // rely on cache updates; do not mutate props directly
-    } catch (error) {
-      console.error('Failed to save section:', error)
-      throw error
-    }
+  const handleColorChange = (next: string) => {
+    if (next === theme.color) return
+    updateThemeMutation.mutate({ color: next })
   }
 
-  const handleEditStart = (sectionName: string) => {
-    if (currentlyEditing && currentlyEditing !== sectionName) {
-      const currentRef = getCurrentEditingRef()
-      if (currentRef?.current) {
-        currentRef.current.saveIfEditing()
-      }
+  const commitName = () => {
+    const trimmed = nameDraft.trim()
+    if (!trimmed) {
+      setNameDraft(theme.name || '')
+      setIsEditingName(false)
+      return
     }
-    setCurrentlyEditing(sectionName)
+    if (trimmed !== theme.name) {
+      updateThemeMutation.mutate({ name: trimmed })
+    }
+    setIsEditingName(false)
   }
 
-  const handleEditEnd = () => setCurrentlyEditing(null)
-
-  const getCurrentEditingRef = () => {
-    switch (currentlyEditing) {
-      case 'description': return thesisRef
-      case 'where_different': return whereDifferentRef
-      case 'risks_to_thesis': return risksRef
-      default: return null
+  const commitDescription = () => {
+    const trimmed = descriptionDraft.trim()
+    if (trimmed !== (theme.description || '')) {
+      updateThemeMutation.mutate({ description: trimmed })
     }
+    setIsEditingDescription(false)
   }
+
+  const handleToggleArchive = () => {
+    updateThemeMutation.mutate({ is_archived: !theme.is_archived })
+    setShowMoreMenu(false)
+  }
+
+  const deleteThemeMutation = useMutation({
+    mutationFn: async () => {
+      if (!theme?.id) throw new Error('Missing theme.id')
+      const { error } = await supabase.from('themes').delete().eq('id', theme.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-themes'] })
+      setShowDeleteConfirm(false)
+      window.dispatchEvent(new CustomEvent('close-tab', { detail: { tabId: theme.id } }))
+    },
+    onError: (error) => {
+      console.error('Theme delete failed:', error)
+    }
+  })
 
   const handleNoteClick = useCallback((noteId: string) => {
     setSelectedNoteId(noteId)
@@ -472,99 +506,232 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   }
 
   const themeTypeOptions = [
-    { value: 'general', label: 'General', color: 'bg-gray-100 text-gray-700', dotColor: 'bg-gray-400' },
-    { value: 'sector', label: 'Sector', color: 'bg-blue-100 text-blue-700', dotColor: 'bg-blue-500' },
-    { value: 'geography', label: 'Geography', color: 'bg-green-100 text-green-700', dotColor: 'bg-green-500' },
-    { value: 'strategy', label: 'Strategy', color: 'bg-amber-100 text-amber-700', dotColor: 'bg-amber-500' },
-    { value: 'macro', label: 'Macro', color: 'bg-red-100 text-red-700', dotColor: 'bg-red-500' },
+    { value: 'general', label: 'General', dotColor: 'bg-gray-400' },
+    { value: 'sector', label: 'Sector', dotColor: 'bg-blue-500' },
+    { value: 'geography', label: 'Geography', dotColor: 'bg-green-500' },
+    { value: 'strategy', label: 'Strategy', dotColor: 'bg-amber-500' },
+    { value: 'macro', label: 'Macro', dotColor: 'bg-red-500' },
   ]
 
-  const currentThemeType = themeTypeOptions.find(opt => opt.value === themeType) || themeTypeOptions[0]
+  const currentThemeType = themeTypeOptions.find(opt => opt.value === (theme.theme_type || 'general')) || themeTypeOptions[0]
 
-  // Close theme type dropdown on click outside
+  const lifecycleOptions: { value: ThemeLifecycleStatus; label: string; pillClass: string; dotClass: string }[] = [
+    { value: 'emerging',    label: 'Emerging',     pillClass: 'bg-sky-50 text-sky-700 border-sky-200',       dotClass: 'bg-sky-500' },
+    { value: 'active',      label: 'Active',       pillClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', dotClass: 'bg-emerald-500' },
+    { value: 'playing_out', label: 'Playing Out',  pillClass: 'bg-amber-50 text-amber-700 border-amber-200', dotClass: 'bg-amber-500' },
+    { value: 'played_out',  label: 'Played Out',   pillClass: 'bg-gray-100 text-gray-700 border-gray-200',   dotClass: 'bg-gray-500' },
+    { value: 'invalidated', label: 'Invalidated',  pillClass: 'bg-rose-50 text-rose-700 border-rose-200',    dotClass: 'bg-rose-500' },
+  ]
+  const currentLifecycle = lifecycleOptions.find(o => o.value === (theme.lifecycle_status || 'active')) || lifecycleOptions[1]
+
+  const colorOptions = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#06b6d4', '#f97316', '#6b7280',
+  ]
+
+  // Close popovers on click outside
   useEffect(() => {
-    if (!showThemeTypeDropdown) return
+    if (!showLifecycleDropdown && !showMoreMenu && !showColorPicker) return
     const handleClick = (e: MouseEvent) => {
-      if (themeTypeDropdownRef.current && !themeTypeDropdownRef.current.contains(e.target as Node)) {
-        setShowThemeTypeDropdown(false)
+      const target = e.target as Node
+      if (showLifecycleDropdown && lifecycleDropdownRef.current && !lifecycleDropdownRef.current.contains(target)) {
+        setShowLifecycleDropdown(false)
+      }
+      if (showMoreMenu && moreMenuRef.current && !moreMenuRef.current.contains(target)) {
+        setShowMoreMenu(false)
+      }
+      if (showColorPicker && colorPickerRef.current && !colorPickerRef.current.contains(target)) {
+        setShowColorPicker(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showThemeTypeDropdown])
+  }, [showLifecycleDropdown, showMoreMenu, showColorPicker])
 
   return (
     <div className="space-y-6">
       {/* Theme Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-start space-x-8 flex-1">
-          {/* Left side: Theme name and description */}
-          <div>
-            <div className="flex items-center space-x-3 mb-2">
-              <div
-                className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
-                style={{ backgroundColor: theme.color || '#3b82f6' }}
-              />
-              <h1 className="text-2xl font-bold text-gray-900">{theme.name}</h1>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowShareModal(true)}
-              >
-                <Share2 className="h-4 w-4 mr-1" />
-                Share
-              </Button>
-            </div>
-            {theme.description && (
-              <p className="text-lg text-gray-600 mb-1">{theme.description}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Right side: Theme Category + Add Assets button */}
-        <div className="flex items-center gap-3">
-          {/* Professional Theme Type Selector */}
-          <div className="relative" ref={themeTypeDropdownRef}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          {/* Color swatch (click to change) */}
+          <div className="relative mt-1.5" ref={colorPickerRef}>
             <button
-              onClick={() => setShowThemeTypeDropdown(!showThemeTypeDropdown)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-all shadow-sm"
-            >
-              <div className={clsx('w-2 h-2 rounded-full', currentThemeType.dotColor)} />
-              <span className="text-sm font-medium text-gray-700">{currentThemeType.label}</span>
-              <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showThemeTypeDropdown && 'rotate-180')} />
-            </button>
-
-            {showThemeTypeDropdown && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                {themeTypeOptions.map((option) => (
+              onClick={() => setShowColorPicker(s => !s)}
+              className="w-5 h-5 rounded-full border-2 border-white shadow-sm ring-1 ring-gray-200 hover:ring-gray-400 transition-all"
+              style={{ backgroundColor: theme.color || '#3b82f6' }}
+              title="Change color"
+            />
+            {showColorPicker && (
+              <div className="absolute left-0 top-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 flex items-center gap-2">
+                {colorOptions.map(c => (
                   <button
-                    key={option.value}
-                    onClick={() => {
-                      handleThemeTypeChange(option.value)
-                      setShowThemeTypeDropdown(false)
-                    }}
+                    key={c}
+                    onClick={() => { handleColorChange(c); setShowColorPicker(false) }}
                     className={clsx(
-                      'w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
-                      option.value === themeType ? 'bg-gray-50' : 'hover:bg-gray-50'
+                      'w-6 h-6 rounded-full border-2 transition-transform',
+                      theme.color === c ? 'border-gray-900 scale-110' : 'border-gray-200 hover:scale-105'
                     )}
-                  >
-                    <div className={clsx('w-2.5 h-2.5 rounded-full', option.dotColor)} />
-                    <span className={clsx('flex-1', option.value === themeType ? 'font-medium text-gray-900' : 'text-gray-600')}>
-                      {option.label}
-                    </span>
-                    {option.value === themeType && <Check className="w-4 h-4 text-blue-600" />}
-                  </button>
+                    style={{ backgroundColor: c }}
+                  />
                 ))}
               </div>
             )}
           </div>
 
+          <div className="min-w-0 flex-1">
+            {/* Name row */}
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              {isEditingName ? (
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onBlur={commitName}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitName() }
+                    if (e.key === 'Escape') { setNameDraft(theme.name || ''); setIsEditingName(false) }
+                  }}
+                  className="text-2xl font-bold text-gray-900 bg-white border border-primary-400 rounded px-2 py-0.5 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                />
+              ) : (
+                <h1
+                  className="text-2xl font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 truncate"
+                  onClick={() => setIsEditingName(true)}
+                  title="Click to rename"
+                >
+                  {theme.name}
+                </h1>
+              )}
+
+              {/* Theme type: read-only badge (set at creation) */}
+              <span
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200"
+                title="Theme type (set at creation)"
+              >
+                <span className={clsx('w-1.5 h-1.5 rounded-full', currentThemeType.dotColor)} />
+                {currentThemeType.label}
+              </span>
+
+              {/* Lifecycle status pill */}
+              <div className="relative" ref={lifecycleDropdownRef}>
+                <button
+                  onClick={() => setShowLifecycleDropdown(s => !s)}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors',
+                    currentLifecycle.pillClass
+                  )}
+                >
+                  <span className={clsx('w-1.5 h-1.5 rounded-full', currentLifecycle.dotClass)} />
+                  {currentLifecycle.label}
+                </button>
+                {showLifecycleDropdown && (
+                  <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                    {lifecycleOptions.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => { handleLifecycleChange(opt.value); setShowLifecycleDropdown(false) }}
+                        className={clsx(
+                          'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
+                          opt.value === (theme.lifecycle_status || 'active') ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700 hover:bg-gray-50'
+                        )}
+                      >
+                        <span className={clsx('w-2 h-2 rounded-full', opt.dotClass)} />
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {theme.is_archived && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                  <Archive className="w-3 h-3" />
+                  Archived
+                </span>
+              )}
+            </div>
+
+            {/* Description row */}
+            {isEditingDescription ? (
+              <input
+                autoFocus
+                value={descriptionDraft}
+                onChange={(e) => setDescriptionDraft(e.target.value)}
+                onBlur={commitDescription}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitDescription() }
+                  if (e.key === 'Escape') { setDescriptionDraft(theme.description || ''); setIsEditingDescription(false) }
+                }}
+                placeholder="Add a short description..."
+                className="w-full text-base text-gray-700 bg-white border border-primary-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
+              />
+            ) : (
+              <p
+                className={clsx(
+                  'text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1',
+                  theme.description ? 'text-gray-600' : 'text-gray-400 italic'
+                )}
+                onClick={() => setIsEditingDescription(true)}
+                title="Click to edit description"
+              >
+                {theme.description || 'Add a short description...'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Right side: Actions */}
+        <div className="flex items-center gap-2 shrink-0">
           {activeTab === 'related-assets' && (
             <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
               <Plus className="h-4 w-4 mr-1" />
               Add Assets
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowShareModal(true)}
+          >
+            <Share2 className="h-4 w-4 mr-1" />
+            Share
+          </Button>
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              onClick={() => setShowMoreMenu(s => !s)}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+              title="More actions"
+            >
+              <MoreVertical className="h-4 w-4 text-gray-600" />
+            </button>
+            {showMoreMenu && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                <button
+                  onClick={handleToggleArchive}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  {theme.is_archived ? (
+                    <>
+                      <ArchiveRestore className="h-4 w-4" />
+                      Unarchive
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="h-4 w-4" />
+                      Archive
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setShowMoreMenu(false); setShowDeleteConfirm(true) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete theme
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -584,19 +751,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               <div className="flex items-center space-x-2">
                 <FileText className="h-4 w-4" />
                 <span>Thesis</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('outcomes')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'outcomes'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Target className="h-4 w-4" />
-                <span>Forecasts</span>
               </div>
             </button>
             <button
@@ -644,16 +798,29 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
             </button>
             <button
-              onClick={() => setActiveTab('projects')}
+              onClick={() => setActiveTab('discussion')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'projects'
+                activeTab === 'discussion'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
               <div className="flex items-center space-x-2">
-                <FolderKanban className="h-4 w-4" />
-                <span>Projects</span>
+                <MessageSquare className="h-4 w-4" />
+                <span>Discussion</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('processes')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'processes'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Repeat className="h-4 w-4" />
+                <span>Process</span>
               </div>
             </button>
           </nav>
@@ -662,111 +829,69 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         {/* Tab Content */}
         <div className="p-6">
           {activeTab === 'thesis' && (
-            <div className="space-y-6">
-              <div
-                className={clsx(
-                  "bg-white border border-gray-200 rounded-lg p-6",
-                  isFocusMode && "citable-component"
-                )}
-                onClick={() => handleComponentClick(theme.description || '', 'Theme Description')}
-              >
-                <EditableSection
-                  ref={thesisRef}
-                  title="Theme Description"
-                  content={theme.description || ''}
-                  onSave={(content) => handleSectionSave('description', content)}
-                  placeholder="Describe this investment theme..."
-                  onEditStart={() => handleEditStart('description')}
-                  onEditEnd={handleEditEnd}
-                  className="mb-0"
-                />
-              </div>
-
-              <div
-                className={clsx(
-                  "bg-blue-50 border border-blue-200 rounded-lg p-6",
-                  isFocusMode && "citable-component"
-                )}
-                onClick={() => handleComponentClick(theme.where_different || '', 'Where We are Different')}
-              >
-                <EditableSection
-                  ref={whereDifferentRef}
-                  title="Where We are Different"
-                  content={theme.where_different || ''}
-                  onSave={(content) => handleSectionSave('where_different', content)}
-                  placeholder="Explain how your view on this theme differs from consensus..."
-                  onEditStart={() => handleEditStart('where_different')}
-                  onEditEnd={handleEditEnd}
-                  className="mb-0"
-                />
-              </div>
-
-              <div
-                className={clsx(
-                  "bg-amber-50 border border-amber-200 rounded-lg p-6",
-                  isFocusMode && "citable-component"
-                )}
-                onClick={() => handleComponentClick(theme.risks_to_thesis || '', 'Risks to Theme')}
-              >
-                <EditableSection
-                  ref={risksRef}
-                  title="Risks to Theme"
-                  content={theme.risks_to_thesis || ''}
-                  onSave={(content) => handleSectionSave('risks_to_thesis', content)}
-                  placeholder="Identify key risks that could invalidate this theme..."
-                  onEditStart={() => handleEditStart('risks_to_thesis')}
-                  onEditEnd={handleEditEnd}
-                  className="mb-0"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'outcomes' && (
-            <div className="space-y-6">
-              <div className="bg-gray-50 rounded-lg p-12 text-center">
-                <Target className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Theme Outcomes Coming Soon</h3>
-                <p className="text-gray-500">Track theme performance and key metrics here.</p>
-              </div>
-            </div>
+            <ThemeResearchTab themeId={theme.id} themeIsPublic={!!theme.is_public} />
           )}
 
           {activeTab === 'chart' && (
-            <div className="space-y-6">
-              <div className="bg-gray-50 rounded-lg p-12 text-center">
-                <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Chart Coming Soon</h3>
-                <p className="text-gray-500">Interactive charts for theme analysis will be available here.</p>
-              </div>
-            </div>
+            <ThemeIndexChart
+              symbols={themeAssets.map((a: any) => a.symbol).filter(Boolean)}
+              themeName={theme.name}
+            />
           )}
 
           {activeTab === 'related-assets' && (
-            <div className="space-y-4">
-              {/* Asset Table View with all views */}
-              <AssetTableView
-                assets={themeAssets}
-                isLoading={!relatedAssets}
-                onAssetSelect={(asset) => {
-                  // Handle asset click - could navigate to asset detail
-                }}
-                storageKey={`themeAssets_${theme.id}`}
-                onBulkAction={handleBulkRemoveFromTheme}
-                bulkActionLabel="Remove from Theme"
-                bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
-                emptyState={
-                  <div className="text-center py-12">
-                    <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900">No related assets</h3>
-                    <p className="text-gray-500 mb-4">Assets related to this theme will appear here.</p>
-                    <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Related Asset
-                    </Button>
-                  </div>
-                }
-              />
+            <div className="space-y-8">
+              {(!relatedAssets || themeAssets.length === 0) ? (
+                <div className="text-center py-12">
+                  <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900">No related assets</h3>
+                  <p className="text-gray-500 mb-4">Assets related to this theme will appear here.</p>
+                  <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Related Asset
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {heldAssets.length > 0 && (
+                    <section>
+                      <div className="flex items-center gap-2 mb-3">
+                        <h3 className="text-sm font-semibold text-gray-900">Held</h3>
+                        <Badge variant="success" size="sm">{heldAssets.length}</Badge>
+                        <span className="text-xs text-gray-500">In at least one portfolio</span>
+                      </div>
+                      <AssetTableView
+                        assets={heldAssets}
+                        isLoading={isHeldLoading}
+                        onAssetSelect={handleOpenAsset}
+                        storageKey={`themeAssets_held_${theme.id}`}
+                        onBulkAction={handleBulkRemoveFromTheme}
+                        bulkActionLabel="Remove from Theme"
+                        bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
+                      />
+                    </section>
+                  )}
+
+                  {watchlistAssets.length > 0 && (
+                    <section>
+                      <div className="flex items-center gap-2 mb-3">
+                        <h3 className="text-sm font-semibold text-gray-900">Watchlist</h3>
+                        <Badge variant="default" size="sm">{watchlistAssets.length}</Badge>
+                        <span className="text-xs text-gray-500">Candidates to fish from</span>
+                      </div>
+                      <AssetTableView
+                        assets={watchlistAssets}
+                        isLoading={isHeldLoading}
+                        onAssetSelect={handleOpenAsset}
+                        storageKey={`themeAssets_watch_${theme.id}`}
+                        onBulkAction={handleBulkRemoveFromTheme}
+                        bulkActionLabel="Remove from Theme"
+                        bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
+                      />
+                    </section>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -862,18 +987,17 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             )
           )}
 
-          {activeTab === 'projects' && (
-            <div className="space-y-6">
-              <RelatedProjects
-                contextType="theme"
-                contextId={theme.id}
-                contextTitle={theme.name}
-                onProjectClick={(projectId) => {
-                  // Navigate to project - you may need to implement this via onNavigate if available
-                }}
-              />
-            </div>
+          {activeTab === 'discussion' && (
+            <ThemeDiscussionPanel
+              themeId={theme.id}
+              themeIsPublic={!!theme.is_public}
+            />
           )}
+
+          {activeTab === 'processes' && (
+            <ThemeProcessesPanel themeId={theme.id} />
+          )}
+
         </div>
       </Card>
 
@@ -1134,6 +1258,38 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   loading={removeCollaborationMutation.isPending}
                 >
                   Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Theme Confirmation */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Theme</h3>
+              <p className="text-gray-600 mb-4">
+                Delete "{theme.name}"? This removes the theme and its asset associations. Related notes and projects are kept.
+              </p>
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => deleteThemeMutation.mutate()}
+                  className="flex-1"
+                  loading={deleteThemeMutation.isPending}
+                >
+                  Delete
                 </Button>
               </div>
             </div>

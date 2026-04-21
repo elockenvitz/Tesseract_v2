@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAIColumns, AIColumnDefinition } from '../../hooks/useAIColumns'
+import { AI_COLUMN_TEMPLATES, type AIColumnTemplate } from '../../lib/ai-columns/starter-templates'
 
 // Map icon names to components
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -46,8 +47,12 @@ export function AIColumnLibraryDropdown({
     customColumns,
     addColumnToView,
     isColumnInView,
-    isLoading
+    createColumn,
+    isLoading,
+    isCreating
   } = useAIColumns(listId)
+
+  const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
 
   // Close on outside click (with delay to prevent immediate close)
   useEffect(() => {
@@ -74,6 +79,36 @@ export function AIColumnLibraryDropdown({
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
+
+  const handleAddTemplate = async (tpl: AIColumnTemplate) => {
+    try {
+      setCreatingTemplateId(tpl.id)
+      const newCol = await createColumn({
+        name: tpl.name,
+        description: tpl.description,
+        prompt: tpl.prompt,
+        icon: tpl.icon,
+        contextConfig: tpl.contextConfig
+      })
+      await addColumnToView(newCol.id, listId)
+    } catch (err) {
+      console.error('Failed to add template column:', err)
+    } finally {
+      setCreatingTemplateId(null)
+      onClose()
+    }
+  }
+
+  const filteredTemplates = AI_COLUMN_TEMPLATES.filter(t =>
+    t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.description.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  // Hide templates whose name is already in the library (as a column the user added before)
+  const existingLibraryNames = new Set(
+    [...systemColumns, ...customColumns].map(c => c.name.toLowerCase())
+  )
+  const visibleTemplates = filteredTemplates.filter(t => !existingLibraryNames.has(t.name.toLowerCase()))
 
   const handleAddColumn = (column: AIColumnDefinition) => {
     if (!isColumnInView(column.id)) {
@@ -164,6 +199,46 @@ export function AIColumnLibraryDropdown({
           </div>
         ) : (
           <>
+            {/* Starter Templates — one-click adds with curated prompts */}
+            {visibleTemplates.length > 0 && (
+              <div className="mb-3">
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1.5 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  Starter templates
+                </h4>
+                <div className="space-y-1">
+                  {visibleTemplates.map(tpl => {
+                    const Icon = getIcon(tpl.icon)
+                    const isAdding = creatingTemplateId === tpl.id
+                    return (
+                      <button
+                        key={tpl.id}
+                        onClick={() => handleAddTemplate(tpl)}
+                        disabled={isAdding || isCreating}
+                        className={clsx(
+                          'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors',
+                          isAdding ? 'bg-purple-50 cursor-wait' : 'hover:bg-gray-50'
+                        )}
+                      >
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center">
+                          <Icon className="h-3.5 w-3.5 text-purple-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900 truncate">{tpl.name}</p>
+                          <p className="text-xs text-gray-400 truncate">{tpl.description}</p>
+                        </div>
+                        {isAdding ? (
+                          <span className="text-[10px] text-purple-600 font-medium">Adding…</span>
+                        ) : (
+                          <Plus className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* System Columns */}
             {filteredSystemColumns.length > 0 && (
               <div className="mb-3">
@@ -265,7 +340,7 @@ export function AIColumnLibraryDropdown({
             )}
 
             {/* Empty state */}
-            {filteredSystemColumns.length === 0 && filteredCustomColumns.length === 0 && (
+            {filteredSystemColumns.length === 0 && filteredCustomColumns.length === 0 && visibleTemplates.length === 0 && (
               <div className="py-6 text-center">
                 <Sparkles className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">

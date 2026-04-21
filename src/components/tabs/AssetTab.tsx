@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useAssetModels } from '../../hooks/useAssetModels'
@@ -2527,7 +2527,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-colors"
               title="View active processes"
             >
-              <Activity className="w-3 h-3" />
+              <Repeat className="w-3 h-3" />
               <span>Processes</span>
               <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
                 {activeProcessCount}
@@ -2601,7 +2601,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             )}
           >
             <div className="flex items-center space-x-2">
-              <Activity className="h-4 w-4" />
+              <Repeat className="h-4 w-4" />
               <span>Process</span>
               {activeProcessCount > 0 && (
                 <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center">

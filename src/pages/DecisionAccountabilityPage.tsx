@@ -32,16 +32,16 @@ import { format, subDays, parseISO } from 'date-fns'
 import {
   useDecisionAccountability,
   useDecisionStory,
-  useSavePostMortem,
-  useMarkAsReviewed,
   usePortfoliosForFilter,
   useUsersForFilter,
   useCandidateTradeEvents,
   useManualMatch,
   useUnlinkMatch,
   useMarkDecisionSkipped,
+  useDecisionReflections,
+  useAddReflection,
 } from '../hooks/useDecisionAccountability'
-import type { CandidateTradeEvent } from '../hooks/useDecisionAccountability'
+import type { CandidateTradeEvent, Reflection } from '../hooks/useDecisionAccountability'
 import { PositionChart } from '../components/outcomes/PositionChart'
 import {
   inferDecisionIntelligence, buildProcessHealth, buildSmartChips,
@@ -152,8 +152,9 @@ const SIZE_BASIS_LABEL: Record<string, string> = {
 // ============================================================
 
 // Dynamic grid — with or without Portfolio column
-const GRID_WITH_PORTFOLIO = 'grid-cols-[112px_52px_64px_76px_132px_120px_192px_76px_172px_104px_68px]'
-const GRID_WITHOUT_PORTFOLIO = 'grid-cols-[112px_52px_64px_80px_160px_220px_76px_180px_112px_68px]'
+// Uses minmax + fr to fill the full screen width
+const GRID_WITH_PORTFOLIO = 'grid-cols-[110px_50px_60px_72px_minmax(100px,1fr)_minmax(80px,0.8fr)_minmax(120px,1.5fr)_72px_minmax(100px,1.2fr)_100px_64px]'
+const GRID_WITHOUT_PORTFOLIO = 'grid-cols-[110px_50px_60px_76px_minmax(120px,1.2fr)_minmax(140px,1.8fr)_72px_minmax(120px,1.5fr)_108px_64px]'
 
 /** Derive the review state for a row. Used consistently for borders, dots, and filters. */
 function getRowReviewState(row: AccountabilityRow): 'needs_review' | 'in_progress' | 'captured' | 'reviewed' | null {
@@ -735,250 +736,108 @@ function RationaleField({ label, value }: { label: string; value: string | null 
 }
 
 // =============================================================================
-// Post-Mortem Section — inline retrospective editor for Outcomes.
-// Canonical post-mortem authoring surface. Stores in trade_event_rationales.
-//
-// Field mapping (DB field → retrospective UI label):
-//   reason_for_action → Outcome assessment (what happened overall)
-//   thesis_context    → Thesis vs reality (was the thesis right/wrong)
-//   what_changed      → What changed (between decision and outcome)
-//   sizing_logic      → Sizing reflection (was the size right)
-//   execution_context → Execution reflection (timing, fills, process)
-//   why_now           → What was right (what to repeat)
-//   catalyst_trigger  → What was wrong (what to avoid)
-//   risk_context      → Lessons learned (key takeaway)
+// Lessons Section — unified outcome reflection for any decision.
+// Replaces the old structured 8-field post-mortem with a simple narrative +
+// reflection thread. Available on ALL decisions (acted and passed).
 // =============================================================================
 
-// Primary prompts — always visible, the core of the retrospective
-const PM_PRIMARY: Array<{ key: string; label: string; placeholder: string; rows?: number }> = [
-  { key: 'reason_for_action', label: 'Outcome Assessment', placeholder: 'What happened? How did this trade perform?', rows: 3 },
-  { key: 'thesis_context', label: 'Thesis vs Reality', placeholder: 'Was the thesis correct? What played out differently?', rows: 2 },
-  { key: 'what_changed', label: 'What Changed', placeholder: 'What shifted between the decision and the outcome?', rows: 2 },
-  { key: 'risk_context', label: 'Lessons Learned', placeholder: 'Key takeaway. What to repeat or avoid.', rows: 2 },
-]
+function LessonsSection({ row }: { row: AccountabilityRow }) {
+  const { user } = useAuth()
+  const { data, isLoading } = useDecisionReflections(row.decision_id)
+  const addReflection = useAddReflection()
+  const [draft, setDraft] = useState('')
 
-// Secondary prompts — available but collapsed by default for deeper reflection
-const PM_SECONDARY: Array<{ key: string; label: string; placeholder: string; rows?: number }> = [
-  { key: 'sizing_logic', label: 'Sizing Reflection', placeholder: 'Was the size appropriate?', rows: 2 },
-  { key: 'execution_context', label: 'Execution Reflection', placeholder: 'Timing, fills, process issues?', rows: 2 },
-  { key: 'why_now', label: 'What Was Right', placeholder: 'What to repeat?', rows: 2 },
-  { key: 'catalyst_trigger', label: 'What Was Wrong', placeholder: 'What to avoid?', rows: 2 },
-]
+  const reflections = data?.reflections || []
+  const acceptedTradeId = data?.acceptedTradeId || null
+  const decisionRequestId = data?.decisionRequestId || null
+  const canAdd = !!(acceptedTradeId || decisionRequestId)
+  const isPassed = row.category === 'passed'
 
-const PM_ALL_FIELDS = [...PM_PRIMARY, ...PM_SECONDARY]
-
-function PostMortemSection({ story, row, executionEventId }: {
-  story: import('../hooks/useDecisionAccountability').DecisionStory | null | undefined
-  row: AccountabilityRow
-  executionEventId: string | null
-}) {
-  const [editing, setEditing] = useState(false)
-  const [showMore, setShowMore] = useState(false)
-  const [draft, setDraft] = useState<Record<string, string>>({})
-  const [diverged, setDiverged] = useState(false)
-  const [divergeExplanation, setDivergeExplanation] = useState('')
-
-  const saveM = useSavePostMortem(row.decision_id, executionEventId)
-  const markReviewedM = useMarkAsReviewed(row.decision_id, executionEventId)
-  const existing = story?.executionRationale
-
-  const startEdit = () => {
-    const init: Record<string, string> = {}
-    if (existing) {
-      PM_ALL_FIELDS.forEach(f => { init[f.key] = (existing as any)[f.key] || '' })
-    }
-    setDraft(init)
-    setDiverged(existing?.divergence_from_plan ?? false)
-    setDivergeExplanation(existing?.divergence_explanation || '')
-    // Auto-expand "more" if secondary fields have content
-    setShowMore(PM_SECONDARY.some(f => (existing as any)?.[f.key]))
-    setEditing(true)
+  const handleSubmit = () => {
+    if (!draft.trim() || !user?.id || !canAdd) return
+    addReflection.mutate({
+      acceptedTradeId,
+      decisionRequestId,
+      userId: user.id,
+      content: draft.trim(),
+    })
+    setDraft('')
   }
 
-  const handleSave = (status: 'draft' | 'complete') => {
-    const params: any = {
-      status,
-      divergence_from_plan: diverged,
-      divergence_explanation: diverged ? divergeExplanation : null,
-    }
-    PM_ALL_FIELDS.forEach(f => { params[f.key] = draft[f.key]?.trim() || null })
-    saveM.mutate(params, { onSuccess: () => setEditing(false) })
-  }
-
-  // Determine review status
-  const reviewStatus: 'missing' | 'draft' | 'complete' | 'reviewed' | 'not_applicable' =
-    row.execution_status !== 'executed' ? 'not_applicable' :
-    !existing ? 'missing' :
-    existing.status === 'reviewed' ? 'reviewed' :
-    existing.status === 'complete' ? 'complete' :
-    'draft'
-
-  const statusBadge = {
-    missing: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Missing</span>,
-    draft: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">In Progress</span>,
-    complete: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Captured</span>,
-    reviewed: <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Reviewed</span>,
-    not_applicable: undefined,
-  }[reviewStatus]
+  const placeholder = isPassed
+    ? 'In hindsight, was passing the right call? What happened after?'
+    : 'What went right? What could be better? What did you learn?'
 
   return (
     <StorySection
-      icon={Pencil}
-      title="Post-Mortem"
-      defaultOpen={reviewStatus === 'missing' || reviewStatus === 'draft' || editing}
-      badge={statusBadge}
-      accentBorder={reviewStatus === 'missing' ? 'border-l-red-300' : reviewStatus === 'draft' ? 'border-l-amber-300' : undefined}
+      icon={MessageSquare}
+      title="What We Learned"
+      defaultOpen={true}
+      badge={reflections.length > 0 ? (
+        <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">{reflections.length}</span>
+      ) : undefined}
     >
-      {row.execution_status !== 'executed' ? (
-        <EmptyField text="Available after execution" />
-      ) : !executionEventId ? (
-        <EmptyField text="No matched execution — review requires an execution record" />
-      ) : editing ? (
-        /* ── Edit Mode ── */
-        <div className="space-y-2.5">
-          {/* Primary prompts — always visible */}
-          {PM_PRIMARY.map(f => (
-            <div key={f.key}>
-              <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">{f.label}</label>
-              <textarea
-                value={draft[f.key] || ''}
-                onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
-                placeholder={f.placeholder}
-                rows={f.rows || 2}
-                className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 leading-relaxed resize-none"
-              />
-            </div>
-          ))}
-
-          {/* Secondary prompts — expandable */}
-          <button
-            onClick={() => setShowMore(!showMore)}
-            className="flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            {showMore ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            {showMore ? 'Less detail' : 'More detail'}
-          </button>
-          {showMore && (
-            <div className="space-y-2.5 pl-1 border-l-2 border-gray-100 dark:border-gray-700 ml-1">
-              {PM_SECONDARY.map(f => (
-                <div key={f.key}>
-                  <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">{f.label}</label>
-                  <textarea
-                    value={draft[f.key] || ''}
-                    onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                    rows={f.rows || 2}
-                    className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 leading-relaxed resize-none"
-                  />
+      {isLoading ? (
+        <p className="text-[10px] text-gray-300">Loading...</p>
+      ) : (
+        <div className="space-y-2">
+          {/* Existing reflections */}
+          {reflections.length > 0 && (
+            <div className="space-y-3">
+              {reflections.map(r => (
+                <div key={r.id} className="flex gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <User className="w-3 h-3 text-indigo-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{r.content}</p>
+                    <p className="text-[9px] text-gray-400 mt-0.5">
+                      {r.user_name} &middot; {format(new Date(r.created_at), 'MMM d')}
+                    </p>
+                  </div>
                 </div>
               ))}
-              {/* Divergence */}
-              <div className="flex items-start gap-2">
-                <input type="checkbox" checked={diverged} onChange={e => setDiverged(e.target.checked)}
-                  className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                <div className="flex-1">
-                  <span className="text-[10px] font-medium text-gray-600">Diverged from plan</span>
-                  {diverged && (
-                    <textarea value={divergeExplanation} onChange={e => setDivergeExplanation(e.target.value)}
-                      placeholder="How and why..." rows={2}
-                      className="w-full mt-1 text-[11px] px-2.5 py-1.5 rounded-md border border-amber-200 bg-amber-50/50 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 leading-relaxed resize-none" />
-                  )}
-                </div>
-              </div>
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex items-center gap-2 pt-1">
-            <button onClick={() => handleSave('complete')} disabled={saveM.isPending}
-              className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50">
-              {saveM.isPending ? 'Saving...' : 'Save Review'}
-            </button>
-            <button onClick={() => handleSave('draft')} disabled={saveM.isPending}
-              className="px-3 py-1.5 text-[11px] font-medium rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
-              Save Draft
-            </button>
-            <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-[11px] text-gray-500 hover:text-gray-700">Cancel</button>
-          </div>
-        </div>
-      ) : existing ? (
-        /* ── View Mode (content exists) ── */
-        <div>
-          {/* Primary fields */}
-          {PM_PRIMARY.map(f => {
-            const val = (existing as any)[f.key]
-            if (!val) return null
-            return (
-              <div key={f.key} className="mb-2.5">
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{f.label}</div>
-                <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{val}</p>
-              </div>
-            )
-          })}
-          {/* Secondary fields — only show if any have content */}
-          {PM_SECONDARY.some(f => (existing as any)[f.key]) && (
-            <>
-              <div className="my-2 border-t border-gray-100" />
-              {PM_SECONDARY.map(f => {
-                const val = (existing as any)[f.key]
-                if (!val) return null
-                return (
-                  <div key={f.key} className="mb-2">
-                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{f.label}</div>
-                    <p className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">{val}</p>
-                  </div>
-                )
-              })}
-            </>
-          )}
-          {existing.divergence_from_plan && (
-            <div className="mt-2 px-2.5 py-2 rounded bg-amber-50 border border-amber-200">
-              <div className="text-[9px] font-semibold text-amber-700 mb-1">Diverged from plan</div>
-              <p className="text-[11px] text-gray-700">{existing.divergence_explanation || 'No explanation provided'}</p>
+          {/* Decision note from rejection/deferral (for passed decisions) */}
+          {isPassed && row.decision_note && reflections.length === 0 && (
+            <div className="rounded-md bg-gray-50 border border-gray-100 px-3 py-2.5">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Decision note</div>
+              <p className="text-[11px] text-gray-600 leading-relaxed">{row.decision_note}</p>
             </div>
           )}
-          <div className="mt-3 flex items-center justify-between">
-            <div className="flex items-center gap-3 text-[10px] text-gray-400">
-              {existing.authored_by_name && <span>by {existing.authored_by_name}</span>}
-              {reviewStatus === 'reviewed' && existing.reviewed_by_name && (
-                <span>reviewed by {existing.reviewed_by_name}</span>
+
+          {/* Input */}
+          {canAdd ? (
+            <div className="pt-1">
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } }}
+                placeholder={placeholder}
+                rows={2}
+                className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none"
+              />
+              {draft.trim() && (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={addReflection.isPending}
+                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {addReflection.isPending ? 'Saving...' : 'Save'}
+                  </button>
+                  <button onClick={() => setDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700">Cancel</button>
+                  <span className="text-[9px] text-gray-300 ml-auto">Enter to save, Shift+Enter for new line</span>
+                </div>
               )}
-              <span className="capitalize">{existing.status}</span>
             </div>
-            <div className="flex items-center gap-2">
-              {reviewStatus === 'complete' && (
-                <button
-                  onClick={() => markReviewedM.mutate()}
-                  disabled={markReviewedM.isPending}
-                  className="flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <CheckCircle2 className="w-3 h-3" />
-                  {markReviewedM.isPending ? 'Saving...' : 'Mark as Reviewed'}
-                </button>
-              )}
-              <button
-                onClick={startEdit}
-                className="flex items-center gap-1 text-[10px] font-medium text-primary-600 hover:text-primary-700 transition-colors"
-              >
-                <Pencil className="w-3 h-3" />
-                Edit
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* ── Empty State (no review yet) ── */
-        <div className="rounded-md bg-red-50/40 border border-red-100 px-3 py-3">
-          <p className="text-[11px] font-medium text-gray-700 mb-0.5">Post-mortem needed</p>
-          <p className="text-[10px] text-gray-400 mb-2.5 leading-relaxed">
-            Decision executed. Capture what happened and lessons learned.
-          </p>
-          <button
-            onClick={startEdit}
-            className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-primary-600 text-white hover:bg-primary-700 shadow-sm transition-colors"
-          >
-            Start Review
-          </button>
+          ) : reflections.length === 0 ? (
+            <p className="text-[10px] text-gray-300 italic">
+              {isPassed ? 'No linked decision record found.' : 'Reflections available once the trade is committed.'}
+            </p>
+          ) : null}
         </div>
       )}
     </StorySection>
@@ -1239,12 +1098,8 @@ function DetailPanel({
         {/* ── 5. Did It Work? — unified outcome + position ── */}
         <OutcomeSection row={row} />
 
-        {/* ── 6. Post-Mortem / Lessons ── */}
-        <PostMortemSection
-          story={story}
-          row={row}
-          executionEventId={firstExecId}
-        />
+        {/* ── 6. What We Learned ── */}
+        <LessonsSection row={row} />
 
         {/* ── Navigation & Metadata ── */}
         <div className="px-4 py-3">

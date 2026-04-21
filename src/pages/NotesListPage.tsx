@@ -166,7 +166,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           .order('updated_at', { ascending: false }),
         supabase
           .from('theme_notes')
-          .select(`*, themes (id, name, description, theme_type, color, thesis, where_different, risks_to_thesis, created_at, updated_at)`)
+          .select(`*, themes (id, name, description, theme_type, color, created_at, updated_at)`)
           .neq('is_deleted', true)
           .order('updated_at', { ascending: false }),
         supabase

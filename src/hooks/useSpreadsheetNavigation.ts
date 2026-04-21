@@ -194,11 +194,16 @@ export function useSpreadsheetNavigation({
           lastNavigationTime.current = now
 
           if (state.focusedCell) {
+            const nextIdx = Math.max(0, state.focusedCell.rowIndex - 1)
             navigateCell('up', columns, totalRows)
-            // Don't auto-scroll on single row navigation - let the UI handle visibility naturally
+            // Scroll the focused cell into view. `align: 'auto'` is a no-op
+            // when the row is already in view, so holding the arrow across
+            // visible rows won't constantly re-scroll — it only kicks in
+            // when the focus crosses the viewport edge.
+            scrollToRow?.(nextIdx)
           } else if (totalRows > 0) {
-            // Start at first cell
             focusCell({ rowIndex: 0, columnId: visibleColumns[0]?.id || '' })
+            scrollToRow?.(0)
           }
         }
         break
@@ -209,10 +214,12 @@ export function useSpreadsheetNavigation({
           lastNavigationTime.current = now
 
           if (state.focusedCell) {
+            const nextIdx = Math.min(totalRows - 1, state.focusedCell.rowIndex + 1)
             navigateCell('down', columns, totalRows)
-            // Don't auto-scroll on single row navigation - let the UI handle visibility naturally
+            scrollToRow?.(nextIdx)
           } else if (totalRows > 0) {
             focusCell({ rowIndex: 0, columnId: visibleColumns[0]?.id || '' })
+            scrollToRow?.(0)
           }
         }
         break

@@ -8,7 +8,8 @@ import { ChartDataAdapter } from '../../charts/utils/dataAdapter'
 
 interface MiniChartProps {
   symbol: string
-  height?: number
+  /** px number or CSS length (e.g. '100%') to stretch inside a flex parent */
+  height?: number | string
   days?: number
   showPrice?: boolean
   showChange?: boolean
@@ -68,10 +69,13 @@ export function MiniChart({
   }
 
   return (
-    <div className={clsx('space-y-1', className)}>
+    <div
+      className={clsx('flex flex-col', className)}
+      style={{ height }}
+    >
       {/* Price and change */}
       {(showPrice || showChange) && (
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center justify-between text-sm flex-shrink-0 mb-1">
           {showPrice && (
             <span className="font-semibold text-gray-900">
               ${quote.price.toFixed(2)}
@@ -93,8 +97,8 @@ export function MiniChart({
         </div>
       )}
 
-      {/* Sparkline chart */}
-      <div style={{ height }}>
+      {/* Sparkline chart — fills remaining space */}
+      <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData}>
             <YAxis domain={['dataMin', 'dataMax']} hide />

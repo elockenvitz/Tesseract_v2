@@ -1,489 +1,326 @@
 /**
  * Outcomes Hooks
  *
- * Data fetching hooks for the Outcomes tab.
+ * Unified view of all deliberate decisions:
+ * - Acted: Trades committed via accepted_trades
+ * - Passed: Ideas explicitly rejected or deferred via decision_requests
  *
- * MVP (Implemented):
- * - useOutcomeDecisions: Fetches approved decisions from trade_queue_items
- *
- * Framework (Placeholder):
- * - useExecutionObservations: Returns empty + "not implemented"
- * - useDecisionOutcomeLinks: Returns empty + "not implemented"
- * - useAnalystScorecard: Returns empty + "not implemented"
- * - useProcessSlippage: Returns empty + "not implemented"
+ * Each decision can have reflection comments (post-mortems) added at any time.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
-import type {
-  OutcomeDecision,
-  ExecutionObservation,
-  DecisionOutcomeLink,
-  AnalystScorecard,
-  ProcessSlippageEvent,
-  OutcomeFilters,
-  OutcomeHookResult,
-  OutcomeSummaryStats,
-  DecisionDirection,
-} from '../types/outcomes'
 
 // ============================================================
-// useOutcomeDecisions (MVP: Implemented)
+// Types
 // ============================================================
 
-interface UseOutcomeDecisionsOptions {
-  filters?: Partial<OutcomeFilters>
-  enabled?: boolean
+export type DecisionCategory = 'acted' | 'passed'
+export type DecisionDirection = 'buy' | 'sell' | 'add' | 'trim' | 'unknown'
+export type ExecutionStatus = 'executed' | 'pending' | 'partial' | 'missed' | 'unknown'
+export type PassedReason = 'rejected' | 'deferred' | null
+
+export interface Reflection {
+  id: string
+  content: string
+  user_id: string
+  user_name?: string
+  created_at: string
 }
 
-export function useOutcomeDecisions(options: UseOutcomeDecisionsOptions = {}): OutcomeHookResult<OutcomeDecision[]> {
-  const { filters, enabled = true } = options
+export interface OutcomeDecision {
+  id: string
+  category: DecisionCategory
+  // What
+  asset_symbol: string | null
+  asset_name: string | null
+  asset_id: string | null
+  direction: DecisionDirection
+  sizing_input: string | null
+  // Who & When
+  decided_by_name: string | null
+  decided_by_id: string | null
+  decided_at: string
+  // Where
+  portfolio_id: string | null
+  portfolio_name: string | null
+  // Why
+  rationale: string | null
+  decision_note: string | null
+  // Outcome context
+  execution_status: ExecutionStatus
+  passed_reason: PassedReason
+  deferred_until: string | null
+  source: string | null
+  // Reflections
+  reflections: Reflection[]
+  // Source record IDs for writing reflections
+  _accepted_trade_id: string | null
+  _decision_request_id: string | null
+}
+
+export interface OutcomeFilters {
+  dateRange: { start: string | null; end: string | null }
+  portfolioIds: string[]
+  ownerUserIds: string[]
+  assetSearch: string
+  category: 'all' | 'acted' | 'passed'
+}
+
+export interface OutcomeSummary {
+  total: number
+  acted: number
+  passed: number
+  executed: number
+  pending: number
+  rejected: number
+  deferred: number
+}
+
+// ============================================================
+// useOutcomeDecisions — unified query
+// ============================================================
+
+export function useOutcomeDecisions(filters: Partial<OutcomeFilters> = {}) {
+  const queryKey = [
+    'outcome-decisions',
+    filters.dateRange?.start ?? null,
+    filters.dateRange?.end ?? null,
+    filters.portfolioIds ?? [],
+    filters.ownerUserIds ?? [],
+    filters.assetSearch ?? '',
+    filters.category ?? 'all',
+  ]
 
   const query = useQuery({
-    queryKey: ['outcome-decisions', filters],
+    queryKey,
     queryFn: async () => {
-      // Build query for approved trade ideas
-      let query = supabase
-        .from('trade_queue_items')
-        .select(`
-          id,
-          created_at,
-          approved_at,
-          approved_by,
-          portfolio_id,
-          asset_id,
-          action,
-          urgency,
-          status,
-          rationale,
-          proposed_shares,
-          proposed_weight,
-          target_price,
-          assets:asset_id (
-            id,
-            symbol,
-            company_name
-          ),
-          portfolios:portfolio_id (
-            id,
-            name
-          ),
-          approved_by_user:approved_by (
-            id,
-            email,
-            first_name,
-            last_name
-          ),
-          created_by_user:created_by (
-            id,
-            email,
-            first_name,
-            last_name
-          )
-        `)
+      const dateStart = filters.dateRange?.start || subDays(new Date(), 90).toISOString()
+      const dateEnd = filters.dateRange?.end || null
+      const category = filters.category || 'all'
 
-      // Apply status filters
-      const statuses: string[] = []
-      if (filters?.showApproved !== false) statuses.push('approved')
-      if (filters?.showRejected) statuses.push('rejected')
-      if (filters?.showArchived) statuses.push('cancelled')
+      const results: OutcomeDecision[] = []
 
-      if (statuses.length > 0) {
-        query = query.in('status', statuses)
-      } else {
-        // Default to approved only
-        query = query.eq('status', 'approved')
-      }
+      // ── 1. Acted: accepted_trades ─────────────────────────────
+      if (category === 'all' || category === 'acted') {
+        let atQuery = supabase
+          .from('accepted_trades')
+          .select(`
+            id, created_at, portfolio_id, asset_id, action,
+            sizing_input, source, acceptance_note, accepted_by,
+            execution_status,
+            asset:assets!inner ( id, symbol, company_name ),
+            portfolio:portfolios!inner ( id, name ),
+            acceptor:accepted_by ( id, email, raw_user_meta_data ),
+            trade_idea:trade_queue_items ( rationale, thesis_text ),
+            reflections:accepted_trade_comments (
+              id, content, user_id, created_at,
+              commenter:user_id ( id, email, raw_user_meta_data )
+            )
+          `)
+          .eq('is_active', true)
+          .gte('created_at', dateStart)
+          .order('created_at', { ascending: false })
+          .limit(200)
 
-      // Apply date range filter
-      if (filters?.dateRange?.start) {
-        query = query.gte('approved_at', filters.dateRange.start)
-      } else {
-        // Default to last 90 days
-        const ninetyDaysAgo = subDays(new Date(), 90).toISOString()
-        query = query.gte('created_at', ninetyDaysAgo)
-      }
+        if (dateEnd) atQuery = atQuery.lte('created_at', dateEnd)
+        if (filters.portfolioIds?.length) atQuery = atQuery.in('portfolio_id', filters.portfolioIds)
+        if (filters.ownerUserIds?.length) atQuery = atQuery.in('accepted_by', filters.ownerUserIds)
 
-      if (filters?.dateRange?.end) {
-        query = query.lte('approved_at', filters.dateRange.end)
-      }
+        const { data: trades, error: atErr } = await atQuery
+        if (atErr) throw atErr
 
-      // Apply portfolio filter
-      if (filters?.portfolioIds && filters.portfolioIds.length > 0) {
-        query = query.in('portfolio_id', filters.portfolioIds)
-      }
-
-      // Apply asset search
-      if (filters?.assetSearch) {
-        // This will be handled client-side for now
-      }
-
-      // Apply urgency filter
-      if (filters?.urgencies && filters.urgencies.length > 0) {
-        query = query.in('urgency', filters.urgencies)
-      }
-
-      // Order by approved_at desc, then created_at desc
-      query = query.order('approved_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-
-      const { data, error } = await query
-
-      if (error) throw error
-
-      // Transform to OutcomeDecision format
-      const decisions: OutcomeDecision[] = (data || []).map((item: any) => {
-        const direction = mapActionToDirection(item.action)
-        const hasRationale = !!item.rationale
-        const approvedAt = item.approved_at ? parseISO(item.approved_at) : null
-        const daysSinceApproved = approvedAt
-          ? differenceInDays(new Date(), approvedAt)
-          : undefined
-
-        return {
-          decision_id: item.id,
-          created_at: item.created_at,
-          approved_at: item.approved_at,
-          approved_by_user_id: item.approved_by,
-          approved_by_user: item.approved_by_user,
-          portfolio_id: item.portfolio_id,
-          portfolio_name: item.portfolios?.name,
-          asset_id: item.asset_id,
-          asset_symbol: item.assets?.symbol,
-          asset_name: item.assets?.company_name,
-          direction,
-          urgency: item.urgency,
-          stage: item.status,
-          rationale_snapshot: hasRationale ? {
-            thesis: item.rationale,
-          } : null,
-          linked_forecast_snapshot: null, // TODO: Snapshot price targets at approval
-          owner_user_ids: item.created_by ? [item.created_by] : [],
-          owner_users: item.created_by_user ? [item.created_by_user] : [],
-          source_url: `/trade-queue?id=${item.id}`,
-          has_rationale: hasRationale,
-          days_since_approved: daysSinceApproved,
-          execution_status: 'pending', // TODO: Derive from execution observations
+        for (const t of (trades || []) as any[]) {
+          const acceptorMeta = t.acceptor?.raw_user_meta_data
+          results.push({
+            id: `at-${t.id}`,
+            category: 'acted',
+            asset_symbol: t.asset?.symbol,
+            asset_name: t.asset?.company_name,
+            asset_id: t.asset_id,
+            direction: mapAction(t.action),
+            sizing_input: t.sizing_input,
+            decided_by_name: acceptorMeta?.full_name || t.acceptor?.email?.split('@')[0] || null,
+            decided_by_id: t.accepted_by,
+            decided_at: t.created_at,
+            portfolio_id: t.portfolio_id,
+            portfolio_name: t.portfolio?.name,
+            rationale: t.trade_idea?.rationale || t.trade_idea?.thesis_text || null,
+            decision_note: t.acceptance_note,
+            execution_status: mapExecStatus(t.execution_status),
+            passed_reason: null,
+            deferred_until: null,
+            source: t.source,
+            reflections: (t.reflections || [])
+              .filter((r: any) => r.content)
+              .map((r: any) => ({
+                id: r.id,
+                content: r.content,
+                user_id: r.user_id,
+                user_name: r.commenter?.raw_user_meta_data?.full_name || r.commenter?.email?.split('@')[0] || 'Unknown',
+                created_at: r.created_at,
+              })),
+            _accepted_trade_id: t.id,
+            _decision_request_id: null,
+          })
         }
-      })
+      }
 
-      // Apply client-side asset search filter
-      if (filters?.assetSearch) {
-        const search = filters.assetSearch.toLowerCase()
-        return decisions.filter(d =>
-          d.asset_symbol?.toLowerCase().includes(search) ||
-          d.asset_name?.toLowerCase().includes(search)
+      // ── 2. Passed: rejected/deferred decision_requests ────────
+      if (category === 'all' || category === 'passed') {
+        let drQuery = supabase
+          .from('decision_requests')
+          .select(`
+            id, status, decision_note, urgency, requested_action,
+            reviewed_by, reviewed_at, created_at, deferred_until,
+            portfolio_id,
+            portfolio:portfolios!inner ( id, name ),
+            trade_idea:trade_queue_items!inner (
+              id, rationale, thesis_text, asset_id,
+              asset:assets ( id, symbol, company_name )
+            ),
+            reviewer:reviewed_by ( id, email, raw_user_meta_data ),
+            reflections:decision_request_comments (
+              id, content, user_id, created_at,
+              commenter:user_id ( id, email, raw_user_meta_data )
+            )
+          `)
+          .in('status', ['rejected', 'deferred'])
+          .gte('created_at', dateStart)
+          .order('created_at', { ascending: false })
+          .limit(200)
+
+        if (dateEnd) drQuery = drQuery.lte('created_at', dateEnd)
+        if (filters.portfolioIds?.length) drQuery = drQuery.in('portfolio_id', filters.portfolioIds)
+        if (filters.ownerUserIds?.length) drQuery = drQuery.in('reviewed_by', filters.ownerUserIds)
+
+        const { data: passed, error: drErr } = await drQuery
+        if (drErr) throw drErr
+
+        for (const d of (passed || []) as any[]) {
+          const reviewerMeta = d.reviewer?.raw_user_meta_data
+          const ti = d.trade_idea
+          results.push({
+            id: `dr-${d.id}`,
+            category: 'passed',
+            asset_symbol: ti?.asset?.symbol || null,
+            asset_name: ti?.asset?.company_name || null,
+            asset_id: ti?.asset_id || null,
+            direction: mapAction(d.requested_action || ti?.action),
+            sizing_input: null,
+            decided_by_name: reviewerMeta?.full_name || d.reviewer?.email?.split('@')[0] || null,
+            decided_by_id: d.reviewed_by,
+            decided_at: d.reviewed_at || d.created_at,
+            portfolio_id: d.portfolio_id,
+            portfolio_name: d.portfolio?.name,
+            rationale: ti?.rationale || ti?.thesis_text || null,
+            decision_note: d.decision_note,
+            execution_status: 'unknown',
+            passed_reason: d.status as PassedReason,
+            deferred_until: d.deferred_until,
+            source: null,
+            reflections: (d.reflections || [])
+              .filter((r: any) => r.content)
+              .map((r: any) => ({
+                id: r.id,
+                content: r.content,
+                user_id: r.user_id,
+                user_name: r.commenter?.raw_user_meta_data?.full_name || r.commenter?.email?.split('@')[0] || 'Unknown',
+                created_at: r.created_at,
+              })),
+            _accepted_trade_id: null,
+            _decision_request_id: d.id,
+          })
+        }
+      }
+
+      // Sort unified list by decided_at desc
+      results.sort((a, b) => new Date(b.decided_at).getTime() - new Date(a.decided_at).getTime())
+
+      // Client-side asset search
+      if (filters.assetSearch) {
+        const s = filters.assetSearch.toLowerCase()
+        return results.filter(r =>
+          r.asset_symbol?.toLowerCase().includes(s) ||
+          r.asset_name?.toLowerCase().includes(s)
         )
       }
 
-      return decisions
+      return results
     },
-    enabled,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   })
 
   return {
-    data: query.data || [],
+    decisions: query.data || [],
     isLoading: query.isLoading,
     isError: query.isError,
-    error: query.error as Error | null,
     refetch: query.refetch,
-    isImplemented: true,
-  }
-}
-
-function mapActionToDirection(action: string): DecisionDirection {
-  switch (action) {
-    case 'buy':
-      return 'buy'
-    case 'sell':
-      return 'sell'
-    case 'add':
-      return 'add'
-    case 'trim':
-      return 'trim'
-    default:
-      return 'unknown'
   }
 }
 
 // ============================================================
-// useOutcomeSummary (MVP: Computed from decisions)
+// useOutcomeSummary
 // ============================================================
 
-export function useOutcomeSummary(decisions: OutcomeDecision[]): OutcomeSummaryStats {
-  return useMemo(() => {
-    const approvedCount = decisions.filter(d => d.stage === 'approved').length
-    const rejectedCount = decisions.filter(d => d.stage === 'rejected').length
-    const archivedCount = decisions.filter(d => d.stage === 'cancelled').length
-
-    // Execution status counts (all pending until we have execution data)
-    const pendingExecutionCount = decisions.filter(d => d.execution_status === 'pending').length
-    const executedCount = decisions.filter(d => d.execution_status === 'executed').length
-    const missedCount = decisions.filter(d => d.execution_status === 'missed').length
-
-    return {
-      totalDecisions: decisions.length,
-      approvedCount,
-      rejectedCount,
-      archivedCount,
-      pendingExecutionCount,
-      executedCount,
-      missedCount,
-      discretionaryCount: 0, // TODO: From execution observations
-      avgLagDays: null, // TODO: From execution observations
-      directionalHitRate: null, // TODO: From scoring engine
-    }
-  }, [decisions])
+export function useOutcomeSummary(decisions: OutcomeDecision[]): OutcomeSummary {
+  return useMemo(() => ({
+    total: decisions.length,
+    acted: decisions.filter(d => d.category === 'acted').length,
+    passed: decisions.filter(d => d.category === 'passed').length,
+    executed: decisions.filter(d => d.execution_status === 'executed').length,
+    pending: decisions.filter(d => d.execution_status === 'pending').length,
+    rejected: decisions.filter(d => d.passed_reason === 'rejected').length,
+    deferred: decisions.filter(d => d.passed_reason === 'deferred').length,
+  }), [decisions])
 }
 
 // ============================================================
-// useExecutionObservations (Framework: Placeholder)
+// useAddReflection — add a post-mortem comment
 // ============================================================
 
-interface UseExecutionObservationsOptions {
-  portfolioId?: string
-  dateRange?: { start: string; end: string }
-  enabled?: boolean
-}
+export function useAddReflection() {
+  const queryClient = useQueryClient()
 
-export function useExecutionObservations(
-  _options: UseExecutionObservationsOptions = {}
-): OutcomeHookResult<ExecutionObservation[]> {
-  /**
-   * TODO: Implement execution observations from holdings diffs
-   *
-   * Future implementation will:
-   * 1. Query holdings_snapshots table for the date range
-   * 2. Compute diffs between consecutive snapshots
-   * 3. Transform changes into ExecutionObservation objects
-   * 4. Attempt to match with approved decisions
-   *
-   * For now, return empty placeholder.
-   */
-
-  return {
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: () => {},
-    isImplemented: false,
-  }
-}
-
-// ============================================================
-// useDecisionOutcomeLinks (Framework: Placeholder)
-// ============================================================
-
-interface UseDecisionOutcomeLinksOptions {
-  decisionId?: string
-  execId?: string
-  enabled?: boolean
-}
-
-export function useDecisionOutcomeLinks(
-  _options: UseDecisionOutcomeLinksOptions = {}
-): OutcomeHookResult<DecisionOutcomeLink[]> {
-  /**
-   * TODO: Implement decision-to-execution matching
-   *
-   * Future implementation will:
-   * 1. Query decision_outcome_links table
-   * 2. Include match confidence and explanation
-   * 3. Support filtering by decision or execution
-   *
-   * Matching algorithm will consider:
-   * - Asset match
-   * - Direction match
-   * - Timing proximity (decision date vs execution date)
-   * - Portfolio match
-   * - Magnitude similarity
-   *
-   * For now, return empty placeholder.
-   */
-
-  return {
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: () => {},
-    isImplemented: false,
-  }
+  return useMutation({
+    mutationFn: async ({ decision, content, userId }: {
+      decision: OutcomeDecision
+      content: string
+      userId: string
+    }) => {
+      if (decision._accepted_trade_id) {
+        const { error } = await supabase
+          .from('accepted_trade_comments')
+          .insert({
+            accepted_trade_id: decision._accepted_trade_id,
+            user_id: userId,
+            content,
+            comment_type: 'reflection',
+          })
+        if (error) throw error
+      } else if (decision._decision_request_id) {
+        const { error } = await supabase
+          .from('decision_request_comments')
+          .insert({
+            decision_request_id: decision._decision_request_id,
+            user_id: userId,
+            content,
+            comment_type: 'reflection',
+          })
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outcome-decisions'] })
+    },
+  })
 }
 
 // ============================================================
-// useAnalystScorecards (Framework: Placeholder)
-// ============================================================
-
-interface UseAnalystScorecardsOptions {
-  userIds?: string[]
-  periodStart?: string
-  periodEnd?: string
-  enabled?: boolean
-}
-
-export function useAnalystScorecards(
-  _options: UseAnalystScorecardsOptions = {}
-): OutcomeHookResult<AnalystScorecard[]> {
-  /**
-   * TODO: Implement analyst scorecards from scoring engine
-   *
-   * Future implementation will:
-   * 1. Aggregate decisions by analyst for the period
-   * 2. Compute directional hit rate from matched executions
-   * 3. Compute calibration score from probability estimates vs outcomes
-   * 4. Compute price target accuracy
-   * 5. Compute average decision-to-execution lag
-   * 6. Compute discretionary rate (unmatched executions / total)
-   *
-   * For now, return empty placeholder.
-   */
-
-  return {
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: () => {},
-    isImplemented: false,
-  }
-}
-
-// ============================================================
-// useProcessSlippage (Framework: Placeholder)
-// ============================================================
-
-interface UseProcessSlippageOptions {
-  portfolioId?: string
-  dateRange?: { start: string; end: string }
-  enabled?: boolean
-}
-
-export function useProcessSlippage(
-  _options: UseProcessSlippageOptions = {}
-): OutcomeHookResult<ProcessSlippageEvent[]> {
-  /**
-   * TODO: Implement process slippage detection
-   *
-   * Future implementation will:
-   * 1. Identify decisions that took too long (idea → decision lag)
-   * 2. Identify executions that were delayed (decision → execution lag)
-   * 3. Identify missed executions (approved but never executed)
-   * 4. Identify sizing errors (executed different amount than proposed)
-   * 5. Compute estimated impact using price at each stage
-   *
-   * Slippage types:
-   * - 'idea': Price moved before idea was formalized
-   * - 'decision': Price moved during discussion/simulation
-   * - 'execution': Price moved between approval and execution
-   * - 'timing': Executed too late after approval
-   * - 'sizing': Executed different size than proposed
-   *
-   * For now, return empty placeholder.
-   */
-
-  return {
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: () => {},
-    isImplemented: false,
-  }
-}
-
-// ============================================================
-// useDiscretionaryActions (Framework: Placeholder)
-// ============================================================
-
-interface UseDiscretionaryActionsOptions {
-  portfolioId?: string
-  dateRange?: { start: string; end: string }
-  enabled?: boolean
-}
-
-export function useDiscretionaryActions(
-  _options: UseDiscretionaryActionsOptions = {}
-): OutcomeHookResult<ExecutionObservation[]> {
-  /**
-   * TODO: Identify discretionary/unplanned actions
-   *
-   * Future implementation will:
-   * 1. Query execution observations
-   * 2. Filter to those with no matched decision
-   * 3. These represent trades made outside the formal process
-   *
-   * For now, return empty placeholder.
-   */
-
-  return {
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: () => {},
-    isImplemented: false,
-  }
-}
-
-// ============================================================
-// useForecastQuality (Framework: Placeholder)
-// ============================================================
-
-interface ForecastQualityMetrics {
-  directionalCorrect: number
-  directionalTotal: number
-  directionalHitRate: number | null
-  calibrationScore: number | null
-  avgTargetErrorPct: number | null
-  medianTargetErrorPct: number | null
-}
-
-interface UseForecastQualityOptions {
-  userIds?: string[]
-  portfolioIds?: string[]
-  dateRange?: { start: string; end: string }
-  enabled?: boolean
-}
-
-export function useForecastQuality(
-  _options: UseForecastQualityOptions = {}
-): OutcomeHookResult<ForecastQualityMetrics> {
-  /**
-   * TODO: Implement forecast quality metrics
-   *
-   * Future implementation will:
-   * 1. Compare directional calls (bullish/bearish) to actual price movement
-   * 2. Compare probability estimates to actual outcome frequencies
-   * 3. Compare price targets to actual prices achieved
-   *
-   * For now, return empty placeholder.
-   */
-
-  const emptyMetrics: ForecastQualityMetrics = {
-    directionalCorrect: 0,
-    directionalTotal: 0,
-    directionalHitRate: null,
-    calibrationScore: null,
-    avgTargetErrorPct: null,
-    medianTargetErrorPct: null,
-  }
-
-  return {
-    data: emptyMetrics,
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: () => {},
-    isImplemented: false,
-  }
-}
-
-// ============================================================
-// usePortfoliosForFilter (Helper: For filter dropdowns)
+// Filter helpers
 // ============================================================
 
 export function usePortfoliosForFilter() {
@@ -493,17 +330,13 @@ export function usePortfoliosForFilter() {
       const { data, error } = await supabase
         .from('portfolios')
         .select('id, name')
+        .eq('is_active', true)
         .order('name')
-
       if (error) throw error
       return data || []
     },
   })
 }
-
-// ============================================================
-// useUsersForFilter (Helper: For filter dropdowns)
-// ============================================================
 
 export function useUsersForFilter() {
   return useQuery({
@@ -511,11 +344,38 @@ export function useUsersForFilter() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-
+        .select('id, email, raw_user_meta_data')
+        .order('email')
       if (error) throw error
-      return data || []
+      return (data || []).map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        name: u.raw_user_meta_data?.full_name || u.email.split('@')[0],
+      }))
     },
   })
+}
+
+// ============================================================
+// Internal helpers
+// ============================================================
+
+function mapAction(action: string | null): DecisionDirection {
+  switch (action) {
+    case 'buy': return 'buy'
+    case 'sell': return 'sell'
+    case 'add': return 'add'
+    case 'trim': return 'trim'
+    default: return 'unknown'
+  }
+}
+
+function mapExecStatus(status: string): ExecutionStatus {
+  switch (status) {
+    case 'complete': return 'executed'
+    case 'partial': return 'partial'
+    case 'failed': return 'missed'
+    case 'not_started': return 'pending'
+    default: return 'pending'
+  }
 }

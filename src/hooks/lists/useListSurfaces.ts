@@ -37,6 +37,7 @@ export interface ListSurface {
     id: string
     user_id: string
     permission: string
+    user?: { id: string; first_name: string | null; last_name: string | null; email: string | null } | null
   }>
   portfolio: { id: string; name: string } | null
 }
@@ -98,7 +99,12 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
         .select(`
           *,
           asset_list_items(asset_id),
-          asset_list_collaborations(id, user_id, permission),
+          asset_list_collaborations(
+            id,
+            user_id,
+            permission,
+            user:users!asset_list_collaborations_user_id_fkey(id, first_name, last_name, email)
+          ),
           portfolio:portfolios!asset_lists_portfolio_id_fkey(id, name),
           updated_by_user:users!asset_lists_updated_by_fkey(id, first_name, last_name, email),
           created_by_user:users!asset_lists_created_by_fkey(id, first_name, last_name, email)
@@ -235,6 +241,35 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
     return map
   }, [latestActivities])
 
+  // Unique asset IDs across all lists → fetch symbols once → build a lookup
+  // used to render ticker preview chips on each list card.
+  const uniqueAssetIds = useMemo(() => {
+    if (!rawLists) return []
+    const s = new Set<string>()
+    for (const l of rawLists) for (const id of l.assetIds) s.add(id)
+    return Array.from(s)
+  }, [rawLists])
+
+  const { data: assetSymbolRows } = useQuery({
+    queryKey: ['list-surfaces-asset-symbols', uniqueAssetIds.length, uniqueAssetIds.slice(0, 1).join()],
+    queryFn: async () => {
+      if (uniqueAssetIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol')
+        .in('id', uniqueAssetIds)
+      if (error) throw error
+      return data || []
+    },
+    enabled: uniqueAssetIds.length > 0
+  })
+
+  const symbolMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const r of assetSymbolRows || []) map.set(r.id, r.symbol)
+    return map
+  }, [assetSymbolRows])
+
   // ── Compute metrics per list ──────────────────────────────────────────
   const metrics = useMemo(() => {
     const map = new Map<string, ListSurfaceMetrics>()
@@ -310,6 +345,7 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
     updateCountMap,
     selfUpdateCountMap,
     lastActivityMap,
+    symbolMap,
     sortLists: (lists: ListSurface[]) => sortLists(lists, sortBy, metrics)
   }
 }

@@ -9,6 +9,9 @@ interface PriceTargetsSummaryProps {
   assetId: string
   currentPrice?: number
   className?: string
+  /** Hide the "Price Targets" title row — for surfaces where the containing
+   *  panel already identifies the content (e.g. the expansion carousel). */
+  hideHeader?: boolean
 }
 
 /**
@@ -16,7 +19,7 @@ interface PriceTargetsSummaryProps {
  * Returns null if no price target data exists.
  * Designed for the aggregated "Our View" in AssetTab.
  */
-export function PriceTargetsSummary({ assetId, currentPrice, className }: PriceTargetsSummaryProps) {
+export function PriceTargetsSummary({ assetId, currentPrice, className, hideHeader }: PriceTargetsSummaryProps) {
   // Fetch scenarios
   const { scenarios, isLoading: scenariosLoading } = useScenarios({ assetId })
 
@@ -59,12 +62,14 @@ export function PriceTargetsSummary({ assetId, currentPrice, className }: PriceT
 
   return (
     <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-gray-500" />
-          Price Targets
-        </h4>
-      </div>
+      {!hideHeader && (
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-gray-500" />
+            Price Targets
+          </h4>
+        </div>
+      )}
 
       <div className="p-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

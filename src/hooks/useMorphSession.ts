@@ -21,6 +21,7 @@ export interface MorphSession {
  * Stored in sessionStorage to survive React re-renders but not tab close.
  */
 const MORPH_ORIGINAL_ORG_KEY = 'morph_original_org_id'
+const MORPH_RETURN_PATH_KEY = 'morph_return_path'
 
 function saveOriginalOrg(orgId: string) {
   sessionStorage.setItem(MORPH_ORIGINAL_ORG_KEY, orgId)
@@ -32,6 +33,18 @@ function getOriginalOrg(): string | null {
 
 function clearOriginalOrg() {
   sessionStorage.removeItem(MORPH_ORIGINAL_ORG_KEY)
+}
+
+function saveReturnPath(path: string) {
+  sessionStorage.setItem(MORPH_RETURN_PATH_KEY, path)
+}
+
+function getReturnPath(): string | null {
+  return sessionStorage.getItem(MORPH_RETURN_PATH_KEY)
+}
+
+function clearReturnPath() {
+  sessionStorage.removeItem(MORPH_RETURN_PATH_KEY)
 }
 
 export function useMorphSession() {
@@ -71,6 +84,9 @@ export function useMorphSession() {
     }) => {
       // Save current org so we can restore later
       if (currentOrgId) saveOriginalOrg(currentOrgId)
+
+      // Save current path so endMorph can return us there (e.g. /ops/...)
+      saveReturnPath(window.location.pathname + window.location.search)
 
       const { data, error } = await supabase.rpc('start_morph_session', {
         p_target_user_id: targetUserId,
@@ -113,8 +129,10 @@ export function useMorphSession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['morph-session'] })
-      // Force full reload to restore admin's view
-      window.location.href = '/dashboard'
+      // Force full reload so all queries refetch; return to where morph was started
+      const returnPath = getReturnPath() || '/ops'
+      clearReturnPath()
+      window.location.href = returnPath
     },
   })
 

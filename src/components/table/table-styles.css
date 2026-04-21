@@ -30,9 +30,34 @@
   --priority-medium: #d97706;
   --priority-low: #059669;
 
+  /* ── Typography scale — THE source of truth for table content ──
+     Keep this short. Only three sizes. Every cell class resolves to
+     one of these. Adding a 4th size is a red flag. */
+  --cell-primary:   13px;   /* symbols, prices, main values, analyst names */
+  --cell-secondary: 11px;   /* company names, timestamps, badges, counts */
+  --cell-micro:     10px;   /* rare — "+N" overflow counts, micro-affordances */
+  --cell-line-height: 1.35;
+
+  /* Font-weight contract */
+  --weight-primary:   600;  /* symbol, headline values */
+  --weight-secondary: 500;  /* default label weight */
+  --weight-muted:     400;  /* secondary prose */
+
   /* Clean base */
   font-feature-settings: 'tnum' 1, 'kern' 1;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Baseline cell typography ────────────────────────────────────────
+   Every row inherits the primary size + line-height. The pro-* classes
+   below define explicit sizes for the common cell kinds. Individual
+   inline Tailwind overrides (text-xs, text-[10px], etc.) still win at
+   higher specificity — we rely on the pro-* classes covering the
+   high-traffic cells rather than re-targeting Tailwind utilities,
+   which would produce a circular JIT dependency. */
+.pro-table:not(.density-micro) .pro-table-row {
+  font-size: var(--cell-primary);
+  line-height: var(--cell-line-height);
 }
 
 /* ============================================================================
@@ -48,7 +73,9 @@
 
 .pro-table-header-cell {
   @apply relative flex items-center gap-1.5 select-none;
-  @apply text-[11px] font-semibold uppercase tracking-wider;
+  @apply uppercase tracking-wider;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-primary);
   color: #64748b;
   @apply transition-colors duration-100;
 }
@@ -215,11 +242,15 @@
    ============================================================================ */
 
 .pro-symbol {
-  @apply font-bold text-gray-900 tracking-tight;
+  @apply text-gray-900 tracking-tight;
+  font-size: var(--cell-primary);
+  font-weight: var(--weight-primary);
 }
 
 .pro-company-name {
   @apply text-gray-500 truncate;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-muted);
 }
 
 /* ============================================================================
@@ -227,12 +258,16 @@
    ============================================================================ */
 
 .pro-price {
-  @apply font-mono font-semibold text-gray-900 tabular-nums tracking-tight;
+  @apply text-gray-900 tabular-nums tracking-tight;
+  font-size: var(--cell-primary);
+  font-weight: var(--weight-primary);
 }
 
 .pro-price-change {
-  @apply font-mono font-medium tabular-nums;
+  @apply tabular-nums;
   @apply inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-secondary);
 }
 
 .pro-price-change.up {
@@ -275,8 +310,10 @@
    ============================================================================ */
 
 .pro-priority {
-  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium;
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded;
   @apply transition-all duration-150;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-secondary);
 }
 
 .pro-priority.high {
@@ -301,14 +338,19 @@
 
 .pro-analyst {
   @apply text-gray-900;
+  font-size: var(--cell-primary);
+  font-weight: var(--weight-secondary);
 }
 
 .pro-analyst-team {
   @apply text-gray-500;
+  font-size: var(--cell-secondary);
 }
 
 .pro-analyst-count {
-  @apply text-xs font-medium text-blue-600 bg-blue-50 px-1.5 rounded-full;
+  @apply text-blue-600 bg-blue-50 px-1.5 rounded-full;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-secondary);
 }
 
 /* ============================================================================
@@ -316,9 +358,11 @@
    ============================================================================ */
 
 .pro-workflow-badge {
-  @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium;
+  @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md;
   @apply bg-indigo-50 text-indigo-700 border border-indigo-100;
   @apply transition-all duration-150 cursor-pointer;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-secondary);
 }
 
 .pro-workflow-badge:hover {
@@ -334,7 +378,9 @@
    ============================================================================ */
 
 .pro-timestamp {
-  @apply text-gray-500 font-medium tabular-nums;
+  @apply text-gray-500 tabular-nums;
+  font-size: var(--cell-secondary);
+  font-weight: var(--weight-secondary);
 }
 
 .pro-timestamp.recent {
@@ -381,7 +427,9 @@
 }
 
 .pro-expanded-section-title {
-  @apply text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2;
+  @apply uppercase tracking-wider text-gray-400 mb-2;
+  font-size: var(--cell-micro);
+  font-weight: var(--weight-primary);
 }
 
 /* ============================================================================

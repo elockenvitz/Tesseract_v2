@@ -37,6 +37,7 @@ import {
   Briefcase,
   ClipboardList,
   BarChart3,
+  Sparkles,
   XCircle,
   Lock,
   Info,
@@ -141,6 +142,7 @@ function getSteps(scopeType: WorkflowScopeType) {
 const SCOPE_OPTIONS: { value: WorkflowScopeType; label: string; description: string; icon: typeof BarChart3 }[] = [
   { value: 'asset', label: 'Assets', description: 'Track each asset independently through defined stages', icon: BarChart3 },
   { value: 'portfolio', label: 'Portfolios', description: 'Track each portfolio independently through defined stages', icon: Briefcase },
+  { value: 'theme', label: 'Themes', description: 'Track each theme independently through defined stages', icon: Sparkles },
   { value: 'general', label: 'Standalone', description: 'Runs progress independently through defined stages', icon: ClipboardList },
 ]
 

@@ -96,6 +96,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     updateCountMap,
     selfUpdateCountMap,
     lastActivityMap,
+    symbolMap,
     sortLists: sortFn
   } = useListSurfaces(sortBy)
 
@@ -482,6 +483,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 onToggleExpand={() => toggleExpand('my')}
                 onListClick={handleListClick}
                 onEditList={handleEditList}
+                symbolMap={symbolMap}
+                lastActivityMap={lastActivityMap}
                 emptyMessage="You haven't created any lists yet."
                 emptyAction={user ? { label: 'Create First List', onClick: () => setShowListManager(true) } : undefined}
               />
@@ -500,6 +503,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 onToggleExpand={() => toggleExpand('collab')}
                 onListClick={handleListClick}
                 onEditList={handleEditList}
+                symbolMap={symbolMap}
+                lastActivityMap={lastActivityMap}
                 emptyMessage="No collaborative lists available."
               />
               <SurfaceSection
@@ -517,6 +522,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 onToggleExpand={() => toggleExpand('shared')}
                 onListClick={handleListClick}
                 onEditList={handleEditList}
+                symbolMap={symbolMap}
+                lastActivityMap={lastActivityMap}
                 emptyMessage="No one has shared lists with you yet."
               />
               {filteredMy.length === 0 && filteredCollab.length === 0 && filteredShared.length === 0 && (
@@ -548,7 +555,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                     metrics={metrics.get(list.id)}
                     isFavorite={favoriteSet.has(list.id)}
                     isOwner={list.created_by === user?.id}
-
+                    symbolMap={symbolMap}
+                    lastActivity={lastActivityMap.get(list.id)}
                     onClick={() => handleListClick(list)}
                     onEdit={(e) => handleEditList(list, e)}
                   />
@@ -877,6 +885,8 @@ interface SurfaceSectionProps {
   onToggleExpand: () => void
   onListClick: (list: ListSurface) => void
   onEditList: (list: any, e: React.MouseEvent) => void
+  symbolMap?: Map<string, string>
+  lastActivityMap?: Map<string, import('../hooks/lists/useListSurfaces').LastListActivity>
   emptyMessage: string
   emptyAction?: { label: string; onClick: () => void }
 }
@@ -895,6 +905,8 @@ function SurfaceSection({
   onToggleExpand,
   onListClick,
   onEditList,
+  symbolMap,
+  lastActivityMap,
   emptyMessage,
   emptyAction
 }: SurfaceSectionProps) {
@@ -935,6 +947,8 @@ function SurfaceSection({
                   metrics={metrics.get(list.id)}
                   isFavorite={favoriteSet.has(list.id)}
                   isOwner={list.created_by === userId}
+                  symbolMap={symbolMap}
+                  lastActivity={lastActivityMap?.get(list.id)}
                   onClick={() => onListClick(list)}
                   onEdit={(e) => onEditList(list, e)}
                 />

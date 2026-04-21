@@ -465,6 +465,92 @@ export function useAIColumnCache(columnId: string, assetIds: string[]) {
 }
 
 /**
+ * Bulk variant of useAIColumnCache — fetches cache for MANY columns × MANY
+ * assets in a single query. Use this from the table when rendering grid
+ * cells so we don't fan out one query per column.
+ */
+export function useAIColumnCacheBulk(columnIds: string[], assetIds: string[]) {
+  const queryClient = useQueryClient()
+
+  // Sorted keys so the query-key is stable across insertion order.
+  const columnsKey = useMemo(() => [...columnIds].sort().join(','), [columnIds])
+  const assetsKey  = useMemo(() => [...assetIds].sort().join(','),  [assetIds])
+
+  const { data: cache = [], isLoading } = useQuery({
+    queryKey: ['ai-column-cache-bulk', columnsKey, assetsKey],
+    queryFn: async () => {
+      if (columnIds.length === 0 || assetIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('ai_column_cache')
+        .select('*')
+        .in('column_id', columnIds)
+        .in('asset_id', assetIds)
+      if (error) throw error
+      return data as AIColumnCache[]
+    },
+    enabled: columnIds.length > 0 && assetIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const lookup = useMemo(() => {
+    const map = new Map<string, AIColumnCache>()
+    cache.forEach(c => map.set(`${c.column_id}:${c.asset_id}`, c))
+    return map
+  }, [cache])
+
+  const getCachedContent = useCallback((columnId: string, assetId: string): string | null =>
+    lookup.get(`${columnId}:${assetId}`)?.content ?? null,
+    [lookup]
+  )
+
+  const saveCacheMutation = useMutation({
+    mutationFn: async ({ columnId, assetId, content, inputHash }: { columnId: string; assetId: string; content: string; inputHash?: string }) => {
+      const { error } = await supabase
+        .from('ai_column_cache')
+        .upsert({
+          column_id: columnId,
+          asset_id: assetId,
+          content,
+          generated_at: new Date().toISOString(),
+          input_hash: inputHash || null,
+        }, { onConflict: 'column_id,asset_id' })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-column-cache-bulk'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-column-cache'] })
+    }
+  })
+
+  const saveCache = useCallback((columnId: string, assetId: string, content: string, inputHash?: string) =>
+    saveCacheMutation.mutate({ columnId, assetId, content, inputHash }),
+    [saveCacheMutation]
+  )
+
+  const clearCacheMutation = useMutation({
+    mutationFn: async ({ columnId, assetId }: { columnId: string; assetId: string }) => {
+      const { error } = await supabase
+        .from('ai_column_cache')
+        .delete()
+        .eq('column_id', columnId)
+        .eq('asset_id', assetId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-column-cache-bulk'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-column-cache'] })
+    }
+  })
+
+  const clearCache = useCallback((columnId: string, assetId: string) =>
+    clearCacheMutation.mutate({ columnId, assetId }),
+    [clearCacheMutation]
+  )
+
+  return { lookup, isLoading, getCachedContent, saveCache, clearCache }
+}
+
+/**
  * Hook for quick prompt history
  */
 export function useQuickPromptHistory() {

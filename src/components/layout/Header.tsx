@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Orbit, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { useMorphSession } from '../../hooks/useMorphSession'
 import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { ProfilePage } from '../../pages/ProfilePage'
@@ -49,6 +50,25 @@ export function Header({
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
   const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
+  const { activeSession } = useMorphSession()
+
+  // During an active morph session, display the target user's identity in the
+  // header/user menu so the admin sees "what the user sees". auth.uid() stays
+  // the admin, so mutations and audit trails remain correct.
+  const { data: morphTargetUser } = useQuery({
+    queryKey: ['morph-target-user', activeSession?.target_user_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('email, first_name, last_name, full_name, user_type')
+        .eq('id', activeSession!.target_user_id)
+        .maybeSingle()
+      if (error) return null
+      return data
+    },
+    enabled: !!activeSession?.target_user_id,
+    staleTime: 5 * 60 * 1000,
+  })
 
   // Platform admin check — gates "Create Organization" for multi-org users
   const { data: isPlatformAdmin = false } = useQuery({
@@ -62,8 +82,12 @@ export function Header({
     staleTime: 10 * 60 * 1000,
   })
 
-  // User details are already loaded in the user object from useAuth
-  const userDetails = user as any
+  // User details are already loaded in the user object from useAuth.
+  // When morphing, overlay target user's display fields (name, email, avatar,
+  // role) so the header reflects who the admin is viewing-as.
+  const userDetails = (morphTargetUser
+    ? { ...(user as any), ...morphTargetUser }
+    : (user as any))
 
   // Check for unread direct messages (conversation_messages table only)
   const { data: hasUnreadDirectMessages, refetch: refetchDirectMessagesUnstable } = useQuery({
@@ -231,7 +255,10 @@ export function Header({
   }
 
   return (
-    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
+    <header
+      className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky z-40"
+      style={{ top: activeSession ? 32 : 0 }}
+    >
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo, Org Switcher, and Search */}
@@ -304,7 +331,7 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'lists', title: 'Lists', type: 'lists', icon: List, color: 'text-violet-500', bg: 'bg-violet-50' },
-                      { id: 'workflows', title: 'Process', type: 'workflows', icon: Orbit, color: 'text-cyan-500', bg: 'bg-cyan-50' },
+                      { id: 'workflows', title: 'Process', type: 'workflows', icon: Repeat, color: 'text-cyan-500', bg: 'bg-cyan-50' },
                       { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'coverage', title: 'Coverage', type: 'coverage', icon: Users, color: 'text-sky-500', bg: 'bg-sky-50' },
                     ].map(item => (

@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { getRunStartedAt } from '../../utils/workflow/runHelpers'
 
-export type WorkflowScopeType = 'asset' | 'portfolio' | 'general'
+export type WorkflowScopeType = 'asset' | 'portfolio' | 'general' | 'theme'
 
 export interface ActiveRun {
   id: string
