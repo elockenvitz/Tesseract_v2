@@ -273,7 +273,19 @@ export function DashboardPage() {
           isActive: tab.id === existingTab.id,
           ...(tab.id === existingTab.id ? {
             title: result.title || tab.title,
-            ...(result.data ? { data: { ...tab.data, ...result.data } } : {})
+            ...(result.data ? {
+              data: {
+                ...tab.data,
+                ...result.data,
+                // For trade-lab tabs, explicitly reset shareId when the new
+                // navigation target doesn't carry one. Without this, opening
+                // your own trade lab after viewing a shared one would inherit
+                // the old shareId and put the page into read-only mode.
+                ...(result.type === 'trade-lab'
+                  ? { shareId: result.data?.shareId ?? null }
+                  : {})
+              }
+            } : {})
           } : {})
         }))
       }

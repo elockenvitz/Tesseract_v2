@@ -1,14 +1,23 @@
 /**
- * MorphBanner — Top-of-page banner shown during active morph sessions.
- * Displays target user/org info, remaining time, and end session button.
+ * MorphBanner — Compact inline morph-session indicator, designed to live in
+ * the top header next to the search bar. No fixed positioning, no body padding
+ * adjustments — just a pill that fits into normal flex flow so it doesn't
+ * shift the rest of the layout.
  */
 
 import { useState, useEffect } from 'react'
 import { Eye, X, Clock } from 'lucide-react'
+import { clsx } from 'clsx'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { useToast } from '../common/Toast'
 
-export function MorphBanner() {
+interface MorphBannerProps {
+  /** When true, renders a tight pill (for placement inside the header). */
+  compact?: boolean
+  className?: string
+}
+
+export function MorphBanner({ compact = true, className }: MorphBannerProps) {
   const { activeSession, isMorphing, endMorph } = useMorphSession()
   const { success } = useToast()
   const [remainingMs, setRemainingMs] = useState(0)
@@ -16,25 +25,14 @@ export function MorphBanner() {
   // Countdown timer
   useEffect(() => {
     if (!activeSession?.expires_at) return
-
     const update = () => {
       const remaining = new Date(activeSession.expires_at).getTime() - Date.now()
       setRemainingMs(Math.max(0, remaining))
     }
-
     update()
     const interval = setInterval(update, 1000)
     return () => clearInterval(interval)
   }, [activeSession?.expires_at])
-
-  // Push the rest of the app down by the banner height so the fixed bar
-  // doesn't overlap the sticky header / page content.
-  useEffect(() => {
-    if (!isMorphing) return
-    const prev = document.body.style.paddingTop
-    document.body.style.paddingTop = '32px'
-    return () => { document.body.style.paddingTop = prev }
-  }, [isMorphing])
 
   if (!isMorphing || !activeSession) return null
 
@@ -47,28 +45,37 @@ export function MorphBanner() {
       await endMorph.mutateAsync(activeSession.id)
       success('Morph session ended')
     } catch {
-      // Error handled by mutation
+      // handled by mutation
     }
   }
 
+  const targetLabel = activeSession.target_name || activeSession.target_email
+
   return (
-    <div className="fixed top-0 left-0 right-0 z-[9999] bg-orange-600 text-white px-4 py-1.5 flex items-center justify-center gap-3 text-sm font-medium shadow-lg">
-      <Eye className="w-4 h-4 flex-shrink-0" />
-      <span>
-        Viewing as <strong>{activeSession.target_name || activeSession.target_email}</strong>
-        {' '}&middot;{' '}Read-only mode
+    <div
+      className={clsx(
+        'inline-flex items-center gap-2 rounded-full bg-orange-600 text-white shadow-sm ring-1 ring-orange-700',
+        compact ? 'px-2.5 py-1 text-xs' : 'px-4 py-1.5 text-sm',
+        className
+      )}
+      title={`Viewing as ${targetLabel} · Read-only`}
+    >
+      <Eye className={clsx('flex-shrink-0', compact ? 'w-3.5 h-3.5' : 'w-4 h-4')} />
+      <span className="font-medium whitespace-nowrap max-w-[16ch] truncate">
+        Viewing as <strong className="font-semibold">{targetLabel}</strong>
       </span>
-      <span className="flex items-center gap-1 text-orange-200">
-        <Clock className="w-3.5 h-3.5" />
+      <span className="flex items-center gap-1 text-orange-100/90 tabular-nums">
+        <Clock className={clsx(compact ? 'w-3 h-3' : 'w-3.5 h-3.5')} />
         {timeStr}
       </span>
       <button
         onClick={handleEnd}
         disabled={endMorph.isPending}
-        className="ml-2 px-2.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+        className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px] font-medium transition-colors flex items-center gap-0.5 disabled:opacity-50"
+        title="End session"
       >
-        <X className="w-3 h-3" />
-        End Session
+        <X className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+        End
       </button>
     </div>
   )

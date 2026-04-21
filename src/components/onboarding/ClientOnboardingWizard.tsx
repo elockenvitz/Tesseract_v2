@@ -210,6 +210,18 @@ export function ClientOnboardingWizard() {
       }
 
       success('Welcome to Tesseract!')
+
+      // Force ProtectedRoute to re-evaluate immediately. Without this, the
+      // onboardingStatus query is cached (staleTime 60s) and the wizard keeps
+      // rendering even though is_completed=true in the DB.
+      await queryClient.invalidateQueries({ queryKey: ['org-onboarding-status', currentOrgId] })
+      await queryClient.refetchQueries({ queryKey: ['org-onboarding-status', currentOrgId] })
+
+      // Belt + suspenders: hard-refresh the page if the gate still somehow
+      // hasn't advanced after a moment (e.g., stale user profile).
+      setTimeout(() => {
+        window.location.assign('/dashboard')
+      }, 400)
     } catch (err: any) {
       showError(err.message || 'Failed to complete setup')
     } finally {

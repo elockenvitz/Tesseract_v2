@@ -64,7 +64,8 @@ export function useClientOnboarding(orgId: string | null) {
   // Accepts { key, fromStep } so the caller can pass the visible step number
   const completeStep = useMutation({
     mutationFn: async ({ key, fromStep }: { key: OnboardingStepKey; fromStep?: number }) => {
-      if (!orgId || !status) return
+      if (!orgId) throw new Error('No organization selected. Try signing out and back in.')
+      if (!status) throw new Error('Onboarding status not loaded yet. Please refresh.')
 
       const completed = [...new Set([...(status.steps_completed || []), key])]
       const base = fromStep ?? status.current_step ?? 1
@@ -89,7 +90,8 @@ export function useClientOnboarding(orgId: string | null) {
   // Skip a step and advance
   const skipStep = useMutation({
     mutationFn: async ({ key, fromStep }: { key: OnboardingStepKey; fromStep?: number }) => {
-      if (!orgId || !status) return
+      if (!orgId) throw new Error('No organization selected. Try signing out and back in.')
+      if (!status) throw new Error('Onboarding status not loaded yet. Please refresh.')
 
       const skipped = [...new Set([...(status.steps_skipped || []), key])]
       const base = fromStep ?? status.current_step ?? 1
@@ -114,7 +116,7 @@ export function useClientOnboarding(orgId: string | null) {
   // Go back to a previous step
   const goToStep = useMutation({
     mutationFn: async (stepNumber: number) => {
-      if (!orgId) return
+      if (!orgId) throw new Error('No organization selected.')
       const { error } = await supabase
         .from('org_onboarding_status')
         .update({
@@ -132,7 +134,8 @@ export function useClientOnboarding(orgId: string | null) {
   // Finish the wizard
   const finishOnboarding = useMutation({
     mutationFn: async () => {
-      if (!orgId || !user?.id) return
+      if (!orgId) throw new Error('No organization selected. Try signing out and back in.')
+      if (!user?.id) throw new Error('Your session expired. Please sign in again.')
 
       const completed = [...new Set([...(status?.steps_completed || []), 'review'])]
 

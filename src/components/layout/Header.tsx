@@ -8,6 +8,7 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
+import { MorphBanner } from '../support/MorphBanner'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { TesseractLogo } from '../ui/TesseractLogo'
@@ -255,10 +256,7 @@ export function Header({
   }
 
   return (
-    <header
-      className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky z-40"
-      style={{ top: activeSession ? 32 : 0 }}
-    >
+    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo, Org Switcher, and Search */}
@@ -470,6 +468,11 @@ export function Header({
             {/* Search */}
             <div className="flex-1 max-w-lg ml-5">
               <GlobalSearch onSelectResult={onSearchResult} onFocusSearch={onFocusSearch} />
+            </div>
+
+            {/* Morph-session indicator — only renders when actively morphing */}
+            <div className="ml-3 flex-shrink-0">
+              <MorphBanner />
             </div>
           </div>
 

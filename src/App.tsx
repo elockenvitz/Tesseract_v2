@@ -17,7 +17,6 @@ import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
 import { TesseractLoader } from './components/ui/TesseractLoader'
 import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
-import { MorphBanner } from './components/support/MorphBanner'
 import { OpsGuard } from './components/ops/OpsGuard'
 import { OpsLayout } from './components/ops/OpsLayout'
 
@@ -108,7 +107,6 @@ function App() {
               <Router>
                 <OrganizationProvider>
                   <AppRoutes />
-                  <MorphBanner />
                 </OrganizationProvider>
                 {/* Global capture mode components */}
                 <CaptureOverlay />

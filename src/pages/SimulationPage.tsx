@@ -41,6 +41,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useMorphSession } from '../hooks/useMorphSession'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { TabStateManager } from '../lib/tabStateManager'
 import { Button } from '../components/ui/Button'
@@ -345,6 +346,7 @@ function resolveSizing(
 
 export function SimulationPage({ simulationId: propSimulationId, tabId, onClose, initialPortfolioId, shareId: propShareId }: SimulationPageProps) {
   const { user } = useAuth()
+  const { isMorphing } = useMorphSession()
   const queryClient = useQueryClient()
   const toast = useToast()
 
@@ -593,6 +595,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // Share recipients should never auto-create a trade lab
       if (isSharedView) return null
 
+      // Support admins morphing into a user should see only what the user has —
+      // they should not create new artifacts in the target's workspace.
+      if (isMorphing) return null
+
       // If not found, create one
       if (fetchError?.code === 'PGRST116') {
         const portfolio = portfolios?.find(p => p.id === selectedPortfolioId)
@@ -647,6 +653,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   useEffect(() => {
     if (!selectedPortfolioId || !tradeLab || simulationsLoading) return
     if (isSharedView) return // Share recipients use the shared simulation, never auto-create
+    if (isMorphing) {
+      // Morphing admins shouldn't create new simulations in the target's
+      // workspace. If the target has existing ones we still select one below;
+      // otherwise we simply show the empty state.
+      if (portfolioSimulations.length > 0) {
+        setSelectedSimulationId(portfolioSimulations[0].id)
+      }
+      return
+    }
 
     // If we already have a simulation selected for this portfolio, keep it
     if (selectedSimulationId) {
@@ -730,7 +745,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
       createWorkbench()
     }
-  }, [selectedPortfolioId, tradeLab, portfolioSimulations, selectedSimulationId, simulations, simulationsLoading, user?.id, queryClient])
+  }, [selectedPortfolioId, tradeLab, portfolioSimulations, selectedSimulationId, simulations, simulationsLoading, user?.id, queryClient, isMorphing, isSharedView])
 
   // Fetch selected simulation details
   const { data: simulation, isLoading: simulationLoading } = useQuery({
@@ -878,18 +893,33 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     staleTime: 30000,
   })
 
-  // Check if current user is PM for this portfolio
+  // Check if current user is PM for this portfolio. Accept both the full
+  // 'Portfolio Manager' role label and the short 'pm' alias (historically
+  // mixed in portfolio_team seed data), plus portfolio_memberships.is_portfolio_manager.
   const { data: isCurrentUserPM } = useQuery({
     queryKey: ['user-is-pm', user?.id, selectedPortfolioId],
     queryFn: async () => {
       if (!user?.id || !selectedPortfolioId) return false
-      const { data } = await supabase
-        .from('portfolio_team')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('portfolio_id', selectedPortfolioId)
-        .maybeSingle()
-      return data?.role === 'Portfolio Manager'
+
+      const [teamRes, membershipRes] = await Promise.all([
+        supabase
+          .from('portfolio_team')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('portfolio_id', selectedPortfolioId)
+          .maybeSingle(),
+        supabase
+          .from('portfolio_memberships')
+          .select('is_portfolio_manager')
+          .eq('user_id', user.id)
+          .eq('portfolio_id', selectedPortfolioId)
+          .maybeSingle(),
+      ])
+
+      const role = (teamRes.data?.role || '').trim().toLowerCase()
+      const isPMByRole = role === 'portfolio manager' || role === 'pm'
+      const isPMByMembership = !!membershipRes.data?.is_portfolio_manager
+      return isPMByRole || isPMByMembership
     },
     enabled: !!user?.id && !!selectedPortfolioId,
     staleTime: 60000,
