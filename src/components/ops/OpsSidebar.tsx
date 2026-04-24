@@ -3,7 +3,7 @@
  */
 
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Building2, Database, LifeBuoy, Settings, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, Building2, Database, LifeBuoy, Settings, BarChart3, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const NAV_ITEMS = [
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/ops/clients', label: 'Clients', icon: Building2 },
   { to: '/ops/holdings', label: 'Holdings', icon: Database },
   { to: '/ops/metrics', label: 'Metrics', icon: BarChart3 },
+  { to: '/ops/ai-usage', label: 'AI Usage', icon: Sparkles },
   { to: '/ops/support', label: 'Support', icon: LifeBuoy },
   { to: '/ops/settings', label: 'Settings', icon: Settings },
 ]

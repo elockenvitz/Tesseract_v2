@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { AIConfigurationSection } from '../components/settings/AIConfigurationSection'
+import { MyAIUsageCard } from '../components/settings/MyAIUsageCard'
 
 interface SettingsPageProps {
   onClose?: () => void
@@ -81,6 +82,9 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
 
       {/* AI Configuration */}
       <AIConfigurationSection />
+
+      {/* AI Usage — shows the current user their own consumption + cost. */}
+      <MyAIUsageCard />
 
       {/* Account Settings — Timezone */}
       <TimezoneSection />

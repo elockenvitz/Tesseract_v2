@@ -5674,7 +5674,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                               e.stopPropagation()
                                               const tradeQueueItemId = proposal.trade_queue_item_id
                                               if (tradeQueueItemId) {
-                                                setTradeModalInitialTab('proposals')
+                                                // The modal uses key 'decisions' for the Recommend tab
+                                                setTradeModalInitialTab('decisions')
                                                 setSelectedTradeId(tradeQueueItemId)
                                               }
                                             }}

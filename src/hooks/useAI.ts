@@ -100,6 +100,7 @@ export function useAI(initialContext?: AIContext) {
           },
           body: JSON.stringify({
             message,
+            purpose: 'chat',
             conversationHistory: messages.map(m => ({
               role: m.role,
               content: m.content,

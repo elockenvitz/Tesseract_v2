@@ -733,6 +733,7 @@ Provide a 2-3 paragraph summary that captures the essence of the team's collecti
           },
           body: JSON.stringify({
             message: prompt,
+            purpose: 'analysis',
             conversationHistory: [],
           }),
         }
@@ -974,6 +975,7 @@ IMPORTANT:
           },
           body: JSON.stringify({
             message: prompt,
+            purpose: 'analysis',
             conversationHistory: [],
           }),
         }
@@ -1270,6 +1272,7 @@ IMPORTANT:
           },
           body: JSON.stringify({
             message: prompt,
+            purpose: 'analysis',
             conversationHistory: [],
           }),
         }
@@ -1569,6 +1572,7 @@ IMPORTANT:
           },
           body: JSON.stringify({
             message: prompt,
+            purpose: 'analysis',
             conversationHistory: [],
           }),
         }

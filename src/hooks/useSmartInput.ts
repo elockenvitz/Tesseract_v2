@@ -905,6 +905,7 @@ export function useSmartInput({
           },
           body: JSON.stringify({
             message: `Please provide a brief, concise summary (2-3 sentences max) for this request: ${aiPromptText}`,
+            purpose: 'snippet',
             conversationHistory: [],
             context: assetContext ? {
               type: 'asset',

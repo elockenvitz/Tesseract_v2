@@ -681,8 +681,11 @@ export function Header({
             onClick={() => setShowSettings(false)}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto transform transition-all p-8">
-              <SettingsPage onClose={() => setShowSettings(false)} />
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] mx-auto transform transition-all flex flex-col overflow-hidden">
+              {/* Inner scroll container so the scrollbar respects the rounded corners */}
+              <div className="overflow-y-auto p-8">
+                <SettingsPage onClose={() => setShowSettings(false)} />
+              </div>
             </div>
           </div>
         </div>

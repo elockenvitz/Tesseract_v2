@@ -44,6 +44,7 @@ export function useGenerateAIColumn() {
           },
           body: JSON.stringify({
             message: prompt,
+            purpose: 'column',
             conversationHistory: [],
             context: {
               type: 'asset',
