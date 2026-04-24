@@ -59,6 +59,7 @@ import { RecommendationEditorModal } from '../components/trading/RecommendationE
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
 import { DecisionConfirmationModal, type DecisionRecord } from '../components/trading/DecisionConfirmationModal'
 import { buildDecisionRecord } from '../lib/trade-lab/decision-record'
+import { usePilotProgress } from '../hooks/usePilotProgress'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -354,6 +355,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { isMorphing } = useMorphSession()
   const pilotMode = usePilotMode()
   const { scenario: pilotScenario, isLoading: pilotScenarioLoading } = usePilotScenario()
+  const { mark: markPilotStage } = usePilotProgress()
   const queryClient = useQueryClient()
   const toast = useToast()
 
@@ -6581,6 +6583,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         onViewTradeBook={(tradeIds) => {
           const portfolioId = decisionRecord?.portfolioId ?? selectedPortfolioId
           setDecisionRecord(null)
+          // Pilot unlock: the first decision the user views in Trade Book
+          // promotes Trade Book access from 'preview' to 'full'. Idempotent
+          // (the mutation guards against double-marks).
+          if (pilotMode.isPilot) markPilotStage('trade_book_unlocked')
           window.dispatchEvent(new CustomEvent('navigate-to-asset', {
             detail: {
               id: 'trade-book',

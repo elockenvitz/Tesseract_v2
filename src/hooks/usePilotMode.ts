@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { usePilotProgress } from './usePilotProgress'
 import {
   mergePilotAccess,
   PILOT_ACCESS_DEFAULTS,
@@ -41,6 +42,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, isLoading: progressLoading } = usePilotProgress()
 
   // Per-user pilot flag (small, fast query). Cached aggressively since it
   // changes rarely.
@@ -80,10 +82,19 @@ export function usePilotMode(): PilotModeState {
   })
 
   const isPilot = !!userFlag || !!orgFlags?.pilotMode
-  const access = useMemo(
-    () => (isPilot ? mergePilotAccess(orgFlags?.accessOverride) : PILOT_ACCESS_DEFAULTS),
-    [isPilot, orgFlags?.accessOverride]
-  )
+  const access = useMemo(() => {
+    if (!isPilot) return PILOT_ACCESS_DEFAULTS
+    const base = mergePilotAccess(orgFlags?.accessOverride)
+    // Progressive unlocks layered on top of the org's static access map:
+    //   - After the user's first "View in Trade Book" from the Decision
+    //     Recorded modal, raise tradeBook preview→full.
+    //   - After the user has opened Trade Book at least once with committed
+    //     trades visible, raise outcomes preview→full.
+    // Never downgrade here — if the org override says 'full', leave it.
+    if (hasUnlockedTradeBook && base.tradeBook === 'preview') base.tradeBook = 'full'
+    if (hasUnlockedOutcomes && base.outcomes === 'preview') base.outcomes = 'full'
+    return base
+  }, [isPilot, orgFlags?.accessOverride, hasUnlockedTradeBook, hasUnlockedOutcomes])
 
   const accessFor = (feature: keyof PilotAccessConfig) => access[feature]
   const canSee = (feature: keyof PilotAccessConfig) => access[feature] !== 'hidden'
@@ -91,7 +102,7 @@ export function usePilotMode(): PilotModeState {
 
   return {
     isPilot,
-    isLoading: userLoading || orgLoading,
+    isLoading: userLoading || orgLoading || progressLoading,
     access,
     accessFor,
     canSee,

@@ -12,7 +12,7 @@
  * and deliberately not a toast. Keep it clean but weighty.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import {
   CheckCircle2, ArrowRight, BookOpen, X, TrendingUp, TrendingDown,
   FileText, Target, Briefcase, Clock, Sparkles,
@@ -20,6 +20,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { Button } from '../ui/Button'
+import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -118,9 +119,44 @@ export function DecisionConfirmationModal({
     return () => document.removeEventListener('keydown', handler)
   }, [record, onClose])
 
+  // Telemetry: fire exactly once per distinct record. A record's identity
+  // is the sorted trade id list so re-renders with the same prop don't
+  // double-count.
+  const loggedRecordKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (!record || record.decisions.length === 0) return
+    const key = record.decisions.map(d => d.tradeId).sort().join(',')
+    if (loggedRecordKey.current === key) return
+    loggedRecordKey.current = key
+    logPilotEvent({
+      eventType: 'decision_recorded_modal_opened',
+      metadata: {
+        tradeCount: record.decisions.length,
+        portfolioId: record.portfolioId,
+        tradeIds: record.decisions.map(d => d.tradeId),
+      },
+    })
+  }, [record])
+
   const ids = useMemo(() => (record?.decisions ?? []).map(d => d.tradeId), [record])
 
   if (!record || record.decisions.length === 0) return null
+
+  const handleStay = () => {
+    logPilotEvent({
+      eventType: 'decision_recorded_stay_in_trade_lab_clicked',
+      metadata: { tradeIds: ids, tradeCount: ids.length },
+    })
+    onClose()
+  }
+
+  const handleViewTradeBook = () => {
+    logPilotEvent({
+      eventType: 'decision_recorded_view_trade_book_clicked',
+      metadata: { tradeIds: ids, tradeCount: ids.length },
+    })
+    onViewTradeBook(ids)
+  }
 
   const isMulti = record.decisions.length > 1
   const primary = record.decisions[0]
@@ -136,7 +172,7 @@ export function DecisionConfirmationModal({
           {/* ─── Hero header ────────────────────────────────────── */}
           <div className="relative bg-gradient-to-br from-emerald-50 via-white to-primary-50 dark:from-emerald-900/20 dark:via-gray-900 dark:to-primary-900/20 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
             <button
-              onClick={onClose}
+              onClick={handleStay}
               className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-white/60 rounded-lg"
               aria-label="Close"
             >
@@ -217,12 +253,12 @@ export function DecisionConfirmationModal({
               Secondary is a subdued text link so the eye goes to the primary. */}
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between gap-3 shrink-0">
             <button
-              onClick={onClose}
+              onClick={handleStay}
               className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
             >
               Stay in Trade Lab
             </button>
-            <Button onClick={() => onViewTradeBook(ids)} size="lg" className="shadow-md hover:shadow-lg">
+            <Button onClick={handleViewTradeBook} size="lg" className="shadow-md hover:shadow-lg">
               <BookOpen className="w-5 h-5 mr-2" />
               View in Trade Book
               <ArrowRight className="w-5 h-5 ml-2" />

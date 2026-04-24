@@ -23,6 +23,8 @@ import { markStaleAcceptedTrades } from '../lib/services/trade-reconciliation-se
 import { BatchListView } from '../components/trading/BatchListView'
 import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
+import { usePilotMode } from '../hooks/usePilotMode'
+import { usePilotProgress } from '../hooks/usePilotProgress'
 
 // Stable key for TabStateManager — there's only ever one Trade Book
 // tab open, so a literal id is fine. Used to persist view toggle,
@@ -193,6 +195,18 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
   } = useAcceptedTrades(portfolioId)
 
   const { batches } = useTradeBatches(portfolioId)
+
+  // Pilot unlock for Outcomes: once the pilot user has opened Trade Book at
+  // least once with a real committed trade visible, promote outcomes
+  // 'preview' → 'full'. Idempotent — markPilotStage no-ops if already set.
+  const pilotMode = usePilotMode()
+  const { mark: markPilotStage, hasUnlockedOutcomes } = usePilotProgress()
+  useEffect(() => {
+    if (!pilotMode.isPilot || pilotMode.isLoading) return
+    if (hasUnlockedOutcomes) return
+    if (!trades || trades.length === 0) return
+    markPilotStage('outcomes_unlocked')
+  }, [pilotMode.isPilot, pilotMode.isLoading, hasUnlockedOutcomes, trades, markPilotStage])
 
   // Highlight newly-committed rows: when the PM clicks "View in Trade Book"
   // from the Decision Recorded modal, we receive their accepted_trade ids
