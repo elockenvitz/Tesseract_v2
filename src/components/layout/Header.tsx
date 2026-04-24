@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -9,6 +9,7 @@ import { useMorphSession } from '../../hooks/useMorphSession'
 import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { MorphBanner } from '../support/MorphBanner'
+import { usePilotMode } from '../../hooks/usePilotMode'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { TesseractLogo } from '../ui/TesseractLogo'
@@ -52,6 +53,7 @@ export function Header({
   const { hasUnreadNotifications, unreadCount } = useNotifications()
   const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
   const { activeSession } = useMorphSession()
+  const pilotMode = usePilotMode()
 
   // During an active morph session, display the target user's identity in the
   // header/user menu so the admin sees "what the user sees". auth.uid() stays
@@ -273,7 +275,95 @@ export function Header({
               </button>
 
               {/* App Launcher Panel */}
-              {showAppMenu && (
+              {showAppMenu && pilotMode.isPilot && !pilotMode.isLoading && (
+                <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
+                  {/* Pilot badge */}
+                  <div className="px-4 pb-2 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-primary-500" />
+                    <span className="text-xs font-semibold text-primary-700 uppercase tracking-wider">Pilot</span>
+                  </div>
+
+                  {/* Primary: Trade Lab */}
+                  <div className="px-2 pb-3">
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        window.dispatchEvent(new CustomEvent('openTradeLab', { detail: {} }))
+                      }}
+                      className="w-full flex items-center gap-3 p-3 rounded-lg ring-1 ring-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors group/tile"
+                    >
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary-100 shrink-0">
+                        <Beaker className="h-5 w-5 text-primary-600" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white">Trade Lab</div>
+                        <div className="text-[11px] text-gray-500">Your pilot workspace</div>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Teaser: downstream surfaces (preview-only) */}
+                  <div className="border-t border-gray-100 dark:border-gray-700 pt-3 px-4 pb-2 flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Connected surfaces</span>
+                    <Lock className="w-3 h-3 text-gray-300" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 px-2 pb-2">
+                    {[
+                      { key: 'tradeBook' as const, type: 'trade-book', title: 'Trade Book',  icon: BookOpen, bg: 'bg-indigo-50', color: 'text-indigo-500' },
+                      { key: 'outcomes'  as const, type: 'outcomes',   title: 'Outcomes',    icon: Target,   bg: 'bg-teal-50',    color: 'text-teal-500' },
+                    ].map(item => {
+                      const level = pilotMode.accessFor(item.key)
+                      if (level === 'hidden') return null
+                      return (
+                        <button
+                          key={item.type}
+                          onClick={() => {
+                            setShowAppMenu(false)
+                            if (level === 'full') {
+                              onSearchResult({ id: item.type, title: item.title, type: item.type, data: null })
+                            } else {
+                              window.dispatchEvent(new CustomEvent('pilot-teaser', {
+                                detail: { featureLabel: item.title, reason: 'preview' }
+                              }))
+                            }
+                          }}
+                          className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors opacity-75"
+                          title={level === 'preview' ? 'Pilot preview — unlocks after your first accepted decision' : undefined}
+                        >
+                          <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center mb-1 relative', item.bg)}>
+                            <item.icon className={clsx('h-5 w-5', item.color)} />
+                            {level === 'preview' && (
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-white flex items-center justify-center shadow-sm">
+                                <Lock className="w-2 h-2 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[11px] font-medium text-gray-600 dark:text-gray-300">{item.title}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Organization (always allowed so pilots can manage members) */}
+                  {pilotMode.canSee('organization') && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 px-2 pb-1">
+                      <button
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: 'organization', title: 'Organization', type: 'organization', data: null })
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Building2 className="h-4 w-4 text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Organization</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Full (non-pilot) app menu */}
+              {showAppMenu && !pilotMode.isPilot && (
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
                   {/* Future: System status row can be added here */}
 

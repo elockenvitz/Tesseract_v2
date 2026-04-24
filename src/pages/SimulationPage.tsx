@@ -42,6 +42,9 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useMorphSession } from '../hooks/useMorphSession'
+import { usePilotMode } from '../hooks/usePilotMode'
+import { usePilotScenario } from '../hooks/usePilotScenario'
+import { PilotTradeLabBanner } from '../components/pilot/PilotTradeLabBanner'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { TabStateManager } from '../lib/tabStateManager'
 import { Button } from '../components/ui/Button'
@@ -54,6 +57,8 @@ import { PortfolioImpactView } from '../components/trading/PortfolioImpactView'
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 import { RecommendationEditorModal } from '../components/trading/RecommendationEditorModal'
 import { TradeIdeaDetailModal } from '../components/trading/TradeIdeaDetailModal'
+import { DecisionConfirmationModal, type DecisionRecord } from '../components/trading/DecisionConfirmationModal'
+import { buildDecisionRecord } from '../lib/trade-lab/decision-record'
 import type {
   SimulationWithDetails,
   SimulationTradeWithDetails,
@@ -347,6 +352,8 @@ function resolveSizing(
 export function SimulationPage({ simulationId: propSimulationId, tabId, onClose, initialPortfolioId, shareId: propShareId }: SimulationPageProps) {
   const { user } = useAuth()
   const { isMorphing } = useMorphSession()
+  const pilotMode = usePilotMode()
+  const { scenario: pilotScenario, isLoading: pilotScenarioLoading } = usePilotScenario()
   const queryClient = useQueryClient()
   const toast = useToast()
 
@@ -385,6 +392,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   const [selectedSimulationId, setSelectedSimulationId] = useState<string | null>(initialState.current.selectedSimulationId)
   const [showCreatePanel, setShowCreatePanel] = useState(false)
+  // The "Decision Recorded" moment. Set after a successful commit; cleared when
+  // the user dismisses or navigates to Trade Book. Ephemeral — never persisted.
+  const [decisionRecord, setDecisionRecord] = useState<DecisionRecord | null>(null)
   const [showIdeasPanel, setShowIdeasPanel] = useState(initialState.current.showIdeasPanel)
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null)
   const [editingSizingMode, setEditingSizingMode] = useState<SimpleSizingMode>('weight')
@@ -532,6 +542,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return data
     },
   })
+
+  // Pilot: auto-select the portfolio from the staged scenario if user hasn't
+  // already picked one. Runs before the first-portfolio fallback so the
+  // scenario wins.
+  useEffect(() => {
+    if (!pilotMode.isPilot) return
+    if (!pilotScenario?.portfolio_id) return
+    if (selectedPortfolioId) return
+    if (initialPortfolioId) return
+    // Only select if the scenario's portfolio is visible to the user.
+    if (portfolios && portfolios.some(p => p.id === pilotScenario.portfolio_id)) {
+      setSelectedPortfolioId(pilotScenario.portfolio_id)
+    }
+  }, [pilotMode.isPilot, pilotScenario?.portfolio_id, selectedPortfolioId, initialPortfolioId, portfolios])
 
   // Auto-select first portfolio if none selected (and no initialPortfolioId provided)
   useEffect(() => {
@@ -1201,11 +1225,18 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       }
       return result
     },
-    onSuccess: (_data, idea) => {
-      toast.success(`${idea.assets?.symbol || 'Trade'} committed to Trade Book`)
-      // Refresh simulation data so the promoted trade disappears from the sim.
-      // Invalidate accepted_trades + the pending pro-forma baseline so the
-      // sim immediately shows the new trade folded into the baseline.
+    onSuccess: (data, idea) => {
+      // Replace the previous toast with the Decision Recorded modal — this is
+      // the most important moment in the product and should feel like an event.
+      const variant = intentVariants.find(v => v.asset_id === idea.asset_id) as any
+      const portfolioName = portfolios?.find(p => p.id === selectedPortfolioId)?.name || 'this portfolio'
+      setDecisionRecord(buildDecisionRecord({
+        trades: data.trades,
+        sourceVariants: variant ? [variant] : [],
+        portfolioName,
+        portfolioId: selectedPortfolioId!,
+        batchName: null,
+      }))
       queryClient.invalidateQueries({ queryKey: ['simulation'] })
       queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
       queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
@@ -1411,30 +1442,29 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
       }
 
-      // Toast with a clickable Trade Book link.
-      const openTradeBook = () => {
-        window.dispatchEvent(new CustomEvent('navigate-to-asset', {
-          detail: {
-            id: 'trade-book',
-            title: 'Trade Book',
-            type: 'trade-book',
-            data: { portfolioId: selectedPortfolioId },
-          },
+      // Replace the previous toast with the Decision Recorded modal. This is
+      // a single, weighty event — not a transient notification. For partial
+      // successes we still show the modal (the committed part IS the decision),
+      // and surface the failure/still-saving partial-state via a small toast.
+      if (committed > 0) {
+        const portfolioName = portfolios?.find(p => p.id === selectedPortfolioId)?.name || 'this portfolio'
+        // Source variants we need for thesis / before-weight context.
+        const committedAssetIds = new Set(result.trades.map(t => t.asset_id))
+        const sourceVariants = (intentVariants || []).filter((v: any) => committedAssetIds.has(v.asset_id)) as any[]
+        setDecisionRecord(buildDecisionRecord({
+          trades: result.trades,
+          sourceVariants,
+          portfolioName,
+          portfolioId: selectedPortfolioId!,
+          batchName: result.batch?.name ?? null,
         }))
-      }
-      if (committed > 0 && failed === 0 && stillSaving.length === 0) {
-        toast.success(`Committed ${committed} trade${committed !== 1 ? 's' : ''}`, {
-          description: 'Added to the Trade Book and folded into the baseline.',
-          action: { label: 'Open Trade Book', onClick: openTradeBook },
-        })
-      } else if (committed > 0) {
-        const descParts: string[] = []
-        if (failed > 0) descParts.push(`${failed} failed: ${result.failures.map(f => `${f.symbol}: ${f.reason}`).join('; ')}`)
-        if (stillSaving.length > 0) descParts.push(`${stillSaving.length} still saving: ${stillSaving.slice(0, 4).join(', ')}${stillSaving.length > 4 ? '…' : ''}`)
-        toast.success(`Committed ${committed}${failed > 0 ? `, ${failed} failed` : ''}`, {
-          description: descParts.join(' · '),
-          action: { label: 'Open Trade Book', onClick: openTradeBook },
-        })
+        // Surface partial-state warnings as a small toast since the modal is the hero.
+        if (failed > 0 || stillSaving.length > 0) {
+          const descParts: string[] = []
+          if (failed > 0) descParts.push(`${failed} failed: ${result.failures.map(f => `${f.symbol}: ${f.reason}`).join('; ')}`)
+          if (stillSaving.length > 0) descParts.push(`${stillSaving.length} still saving: ${stillSaving.slice(0, 4).join(', ')}${stillSaving.length > 4 ? '…' : ''}`)
+          toast.error('Partial execute', descParts.join(' · '))
+        }
       } else {
         toast.error('Execute failed', result.failures.map(f => `${f.symbol}: ${f.reason}`).join('; ') || 'No trades committed')
       }
@@ -4709,6 +4739,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   return (
     <div className="h-full flex flex-col">
+      {/* Pilot mode: staged-scenario banner at the top of Trade Lab */}
+      {pilotMode.isPilot && !pilotMode.isLoading && (
+        <PilotTradeLabBanner scenario={pilotScenario} isLoading={pilotScenarioLoading} />
+      )}
       {/* Create Trade Lab Modal */}
       {showCreatePanel && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -6538,6 +6572,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           </div>
         )
       })()}
+
+      {/* Decision Recorded Modal — the hero "your decision was captured" moment.
+          Fired from executeTradeM/bulk-execute onSuccess. */}
+      <DecisionConfirmationModal
+        record={decisionRecord}
+        onClose={() => setDecisionRecord(null)}
+        onViewTradeBook={(tradeIds) => {
+          const portfolioId = decisionRecord?.portfolioId ?? selectedPortfolioId
+          setDecisionRecord(null)
+          window.dispatchEvent(new CustomEvent('navigate-to-asset', {
+            detail: {
+              id: 'trade-book',
+              title: 'Trade Book',
+              type: 'trade-book',
+              data: { portfolioId, highlightTradeIds: tradeIds },
+            },
+          }))
+        }}
+      />
 
       {/* Trade Idea Detail Modal */}
       {selectedTradeId && (

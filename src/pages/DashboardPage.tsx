@@ -55,6 +55,11 @@ import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
+import { usePilotMode } from '../hooks/usePilotMode'
+import { TAB_TYPE_TO_PILOT_FEATURE } from '../lib/pilot/pilot-access'
+import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
+import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
+import { PilotOutcomesPreview } from '../components/pilot/PilotOutcomesPreview'
 import { FeedbackWidget } from '../components/feedback/FeedbackWidget'
 import { useOnboarding } from '../hooks/useOnboarding'
 import { SetupWizard } from '../components/onboarding/SetupWizard'
@@ -127,6 +132,65 @@ export function DashboardPage() {
 
   // Session tracking (heartbeat-based)
   useSessionTracking()
+
+  // ─── Pilot Mode gating ───────────────────────────────────────────────
+  const pilotMode = usePilotMode()
+  const [pilotTeaser, setPilotTeaser] = useState<{ featureLabel: string; reason: 'preview' | 'hidden' } | null>(null)
+
+  const openPilotTradeLab = useCallback(() => {
+    // Fire via the existing openTradeLab event — the listener below handles it.
+    window.dispatchEvent(new CustomEvent('openTradeLab', { detail: {} }))
+    setPilotTeaser(null)
+  }, [])
+
+  // Listen for "show me a pilot teaser" events from nav clicks in the Header.
+  useEffect(() => {
+    const handler = (event: CustomEvent) => {
+      const { featureLabel, reason } = event.detail || {}
+      if (!featureLabel) return
+      setPilotTeaser({ featureLabel, reason: reason === 'hidden' ? 'hidden' : 'preview' })
+    }
+    window.addEventListener('pilot-teaser', handler as EventListener)
+    return () => window.removeEventListener('pilot-teaser', handler as EventListener)
+  }, [])
+
+  // Pilot route guard: when a pilot user lands on (or is already looking at) a
+  // tab whose type is gated as 'hidden' for pilots, snap them to Trade Lab.
+  // Also ensures a Trade Lab tab exists on first load. 'preview' tabs stay —
+  // we substitute the rendered content with a preview component further below.
+  useEffect(() => {
+    if (pilotMode.isLoading || !pilotMode.isPilot) return
+
+    const active = tabs.find(t => t.id === activeTabId)
+    const activeFeature = active ? TAB_TYPE_TO_PILOT_FEATURE[active.type] : null
+    const activeAccess = activeFeature ? pilotMode.accessFor(activeFeature) : 'full'
+
+    // Ensure a Trade Lab tab exists — pilots always have it as their home.
+    const hasTradeLab = tabs.some(t => t.type === 'trade-lab')
+    if (!hasTradeLab) {
+      setTabs(prev => {
+        const newTab: Tab = {
+          id: 'trade-lab',
+          title: 'Trade Lab',
+          type: 'trade-lab',
+          isActive: true,
+          data: {},
+        }
+        return [...prev.map(t => ({ ...t, isActive: false })), newTab]
+      })
+      setActiveTabId('trade-lab')
+      return
+    }
+
+    // If current tab is hidden for pilots, swap to Trade Lab.
+    if (activeAccess === 'hidden') {
+      const tradeLab = tabs.find(t => t.type === 'trade-lab')
+      if (tradeLab && tradeLab.id !== activeTabId) {
+        setActiveTabId(tradeLab.id)
+        setTabs(prev => prev.map(t => ({ ...t, isActive: t.id === tradeLab.id })))
+      }
+    }
+  }, [pilotMode.isPilot, pilotMode.isLoading, pilotMode.access, tabs, activeTabId])
 
   // Reset tabs when org changes (switch org → load that org's saved tabs or default)
   const prevOrgRef = useRef(currentOrgId)
@@ -685,6 +749,16 @@ export function DashboardPage() {
       return <BlankTab onSearchResult={handleSearchResult} />
     }
 
+    // Pilot mode substitution: render read-only preview components for
+    // 'preview' surfaces, instead of the full operational page.
+    if (pilotMode.isPilot && !pilotMode.isLoading) {
+      const feature = TAB_TYPE_TO_PILOT_FEATURE[activeTab.type]
+      if (feature && pilotMode.accessFor(feature) === 'preview') {
+        if (activeTab.type === 'trade-book') return <PilotTradeBookPreview onGoToTradeLab={openPilotTradeLab} />
+        if (activeTab.type === 'outcomes')   return <PilotOutcomesPreview onGoToTradeLab={openPilotTradeLab} />
+      }
+    }
+
     if (activeTab.type === 'dashboard') {
       return renderDashboardContent()
     }
@@ -717,7 +791,7 @@ export function DashboardPage() {
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':
-        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} />
+        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} highlightTradeIds={activeTab.data?.highlightTradeIds} />
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':
@@ -1026,6 +1100,15 @@ export function DashboardPage() {
       </>
     </Layout>
     <FeedbackWidget />
+    {pilotTeaser && (
+      <PilotTeaserModal
+        isOpen={!!pilotTeaser}
+        featureLabel={pilotTeaser.featureLabel}
+        reason={pilotTeaser.reason}
+        onClose={() => setPilotTeaser(null)}
+        onGoToTradeLab={openPilotTradeLab}
+      />
+    )}
     </>
   )
 }

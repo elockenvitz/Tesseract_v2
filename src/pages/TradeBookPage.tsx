@@ -50,9 +50,13 @@ type BookView = 'trades' | 'batches'
 
 interface TradeBookPageProps {
   initialPortfolioId?: string
+  /** Optional list of accepted_trade ids to scroll into view + briefly
+   *  highlight on mount. Set by SimulationPage's "View in Trade Book" CTA in
+   *  the Decision Recorded modal so the PM immediately sees what just landed. */
+  highlightTradeIds?: string[]
 }
 
-export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
+export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBookPageProps = {}) {
   const { user } = useAuth()
 
   // Hydrate from session-persisted state once, at mount. TabStateManager
@@ -73,7 +77,12 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   // (rebalances, cash raises, individual ideas) and the batch rationale
   // + name carry the context a PM needs to recall the intent behind a
   // commit. The flat trades list is a drill-down, not the overview.
-  const [view, setView] = useState<BookView>(persisted.view || 'batches')
+  // BUT: if the caller handed us highlightTradeIds (e.g. PM just clicked
+  // "View in Trade Book" from the Decision Recorded modal), force the
+  // Trades view so we can scroll to and flash the new rows.
+  const [view, setView] = useState<BookView>(
+    highlightTradeIds && highlightTradeIds.length > 0 ? 'trades' : (persisted.view || 'batches')
+  )
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
     persisted.selectedBatchId ?? null,
   )
@@ -184,6 +193,39 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   } = useAcceptedTrades(portfolioId)
 
   const { batches } = useTradeBatches(portfolioId)
+
+  // Highlight newly-committed rows: when the PM clicks "View in Trade Book"
+  // from the Decision Recorded modal, we receive their accepted_trade ids
+  // via highlightTradeIds. Wait until the trades list actually includes the
+  // target rows, then scroll the first one into view and apply a brief
+  // ring animation. Fires once.
+  const highlightedAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!highlightTradeIds || highlightTradeIds.length === 0) return
+    if (!trades || trades.length === 0) return
+    const firstId = highlightTradeIds[0]
+    if (highlightedAppliedRef.current === firstId) return
+    // Wait until at least the first target is present in the list
+    if (!trades.some(t => t.id === firstId)) return
+
+    highlightedAppliedRef.current = firstId
+
+    // Give the table a tick to mount
+    const timeout = setTimeout(() => {
+      for (const id of highlightTradeIds) {
+        const el = document.querySelector<HTMLElement>(`tr[data-trade-id="${id}"]`)
+        if (!el) continue
+        if (id === firstId) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+        // Flash class — a soft amber ring that fades out.
+        el.classList.add('decision-recorded-flash')
+        setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
+      }
+    }, 80)
+
+    return () => clearTimeout(timeout)
+  }, [highlightTradeIds, trades])
 
   // Staleness sweep: flag pending accepted_trades whose activity clock has
   // crossed the portfolio's inactivity window. Fire once per portfolio mount

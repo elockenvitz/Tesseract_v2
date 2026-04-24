@@ -602,6 +602,7 @@ export function AcceptedTradesTable({
             return (
               <React.Fragment key={trade.id}>
                 <tr
+                  data-trade-id={trade.id}
                   onClick={() => setSelectedTradeId(isSelected ? null : trade.id)}
                   className={clsx(
                     'border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors',
