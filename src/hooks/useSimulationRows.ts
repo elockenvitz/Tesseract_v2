@@ -286,8 +286,16 @@ export function useSimulationRows({
         ? quickEstimate(variant.sizing_input, holding.weight, holding.shares, price, totalValue, benchWeight)
         : null
 
+      // Weight delta is exact from sizing input ("+0.5" → +0.5%), so the
+      // client-side `est` weight matches what the server returns and is safe
+      // to render optimistically. Shares is NOT — the server applies asset
+      // lot-size rounding (e.g. 24 share lots) while `est` rounds to the
+      // nearest whole share, so the two disagree and the column visibly
+      // flashes from est-shares → server-shares. To keep the load clean,
+      // shares stays on baseline values until `computed` returns; only
+      // weight gets the optimistic preview.
       const rawIntendedWeight = est ? est.weight : getIntendedWeight(variant, computed, holding.weight, benchWeight)
-      const rawSimShares = est ? est.shares : (computed?.target_shares ?? holding.shares)
+      const rawSimShares = computed?.target_shares ?? holding.shares
       // Treat as "full exit" whenever the target weight is ≤ ~0 OR the
       // target shares are below one lot. Using strict `=== 0` on shares
       // misfires when the baseline has fractional shares (e.g. 1,075.12):
@@ -312,9 +320,14 @@ export function useSimulationRows({
       const dw = (computed || est) ? intendedWeight - holding.weight : 0
       // Delta shares: when closing, the delta is -currentShares exactly
       // (the user is selling everything the row holds), rounded to int.
+      // For non-close cases, only use the server's `computed.delta_shares`
+      // — the est-based fallback would round differently than the server's
+      // lot-size logic and flash the wrong number for ~one render before
+      // the server reply lands. Defaulting to 0 in the meantime keeps the
+      // column quiet until the real value is known.
       const ds = isRemoved
         ? -Math.round(holding.shares)
-        : (est ? simShares - holding.shares : (computed?.delta_shares ?? 0))
+        : (computed?.delta_shares ?? 0)
       // Signed notional: positive for buys/adds, negative for sells/trims.
       // For closes this is -currentValue so Δ$ reflects the full exit.
       //
@@ -412,11 +425,15 @@ export function useSimulationRows({
         ? quickEstimate(variant.sizing_input, 0, 0, price, totalValue, benchWeight)
         : null
 
+      // Same rationale as the baseline branch: weight est is exact and
+      // safe to render optimistically; shares est rounds differently than
+      // the server's lot-size logic and would flash on first paint, so
+      // shares stays at 0 until `computed` returns.
       const intendedWeight = est ? est.weight : getIntendedWeight(variant, computed, 0, benchWeight)
-      const simShares = est ? est.shares : (computed?.target_shares ?? 0)
+      const simShares = computed?.target_shares ?? 0
 
       const dw = (computed || est) ? intendedWeight : 0
-      const ds = est ? simShares : (computed?.target_shares ?? 0)
+      const ds = computed?.target_shares ?? 0
       // Signed notional derived from intended weight × NAV (see the baseline
       // branch for the stale-price rationale). Using weight here keeps the
       // cash flow consistent with intent even if `computed.delta_shares`

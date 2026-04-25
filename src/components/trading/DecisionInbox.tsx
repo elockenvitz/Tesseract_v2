@@ -1484,7 +1484,12 @@ function PortfolioRow({
   const sizingCtx = snapshot?.sizing_context as any
   const rawLegs = sizingCtx?.legs as Array<{ symbol?: string; action?: string; weight?: number | null; baselineWeight?: number | null; enteredValue?: string; sizingMode?: string }> | null
   const conviction = request.trade_queue_item?.conviction || null
-  const analyst = formatFullName(request.requester)
+  // Pilot recommendations are seeded against the pilot user (the
+  // "requester" in DB terms), but the UI should attribute them to
+  // "Pilot" so the demo doesn't expose the seed user's display
+  // name. Honored when submission_snapshot.pilot_seed is true.
+  const isPilotSeed = (snapshot as any)?.pilot_seed === true
+  const analyst = isPilotSeed ? 'Pilot' : formatFullName(request.requester)
   const timeAgo = fmtTime(request.created_at)
 
   // Under the per-leg pair decision model, each DR represents ONE leg of

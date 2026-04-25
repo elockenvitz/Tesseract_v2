@@ -1,78 +1,172 @@
 /**
- * PilotTradeLabIntroBanner — slim top-of-page onboarding hint for pilots.
+ * PilotTradeLabIntroBanner — top-of-page onboarding strip for pilots
+ * landing in Trade Lab. Walks them through the three concrete moves
+ * to commit a trade:
+ *   1. Click / expand the recommendation card to review the details
+ *   2. Add the recommendation and size the trade
+ *   3. Execute
  *
- * Sits above the Trade Lab header bar as a single narrow row that points the
- * user at the three moves they need to take on their first visit:
- *   1. Review the recommendation in the Trade Ideas panel
- *   2. Adjust the Sim Wt / Sim Shares columns
- *   3. Execute — save a snapshot and commit the trade
+ * Steps tick off as the user does them — same progress pattern as the
+ * Idea Pipeline banner. Each step listens for a window event:
+ *   - 'pilot-tradelab:rec-reviewed'  (Step 1)
+ *   - 'pilot-tradelab:rec-sized'     (Step 2)
+ *   - 'pilot-tradelab:executed'      (Step 3)
  *
- * Compact by design — the full table and portfolio controls shouldn't be
- * pushed off the fold. Dismissible per-user via localStorage so an
- * experienced pilot coming back later isn't re-nagged.
+ * The banner auto-retires once all three are done. Users can also
+ * manually dismiss via the X. State is keyed per user+org so each
+ * new pilot client gets a fresh banner with all three steps unchecked.
  */
 
-import { useEffect, useState } from 'react'
-import { Sparkles, X, ArrowRight } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
+import { clsx } from 'clsx'
 
-const storageKey = (userId: string) => `pilot_tradelab_intro_dismissed_${userId}`
+interface PilotTradeLabIntroBannerProps {
+  userId: string
+  /** Active org id, used to scope the banner state per pilot client. */
+  orgId?: string | null
+}
 
-export function PilotTradeLabIntroBanner({ userId }: { userId: string }) {
-  const [dismissed, setDismissed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(storageKey(userId)) === '1'
-    } catch {
-      return false
-    }
-  })
+const STEP1 = 'rec_reviewed'
+const STEP2 = 'rec_sized'
+const STEP3 = 'executed'
+const DISMISS = 'dismissed'
 
+function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
+  return `pilot_tradelab_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
+}
+function readFlag(userId: string, orgId: string | null | undefined, suffix: string) {
+  try { return localStorage.getItem(flagKey(userId, orgId, suffix)) === '1' } catch { return false }
+}
+function writeFlag(userId: string, orgId: string | null | undefined, suffix: string) {
+  try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
+}
+
+export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBannerProps) {
+  const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
+  const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
+  const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
+  const [step3, setStep3] = useState<boolean>(() => readFlag(userId, orgId, STEP3))
+
+  // Reload from localStorage when user/org changes — picks up the
+  // right state when the analyst switches between pilot clients.
   useEffect(() => {
-    try {
-      setDismissed(localStorage.getItem(storageKey(userId)) === '1')
-    } catch {
-      /* ignore */
+    setDismissed(readFlag(userId, orgId, DISMISS))
+    setStep1(readFlag(userId, orgId, STEP1))
+    setStep2(readFlag(userId, orgId, STEP2))
+    setStep3(readFlag(userId, orgId, STEP3))
+  }, [userId, orgId])
+
+  const markStep = useCallback((suffix: string, setter: (v: boolean) => void) => {
+    writeFlag(userId, orgId, suffix)
+    setter(true)
+  }, [userId, orgId])
+
+  // Listen for the three step events. Each only fires when this
+  // banner instance is alive — events dispatched while the user
+  // isn't on the lab page just no-op (the matching localStorage
+  // flag stays false), which is fine because the banner's whole
+  // job is on-page coaching.
+  useEffect(() => {
+    const onStep1 = () => markStep(STEP1, setStep1)
+    const onStep2 = () => markStep(STEP2, setStep2)
+    const onStep3 = () => markStep(STEP3, setStep3)
+    window.addEventListener('pilot-tradelab:rec-reviewed', onStep1)
+    window.addEventListener('pilot-tradelab:rec-sized', onStep2)
+    window.addEventListener('pilot-tradelab:executed', onStep3)
+    return () => {
+      window.removeEventListener('pilot-tradelab:rec-reviewed', onStep1)
+      window.removeEventListener('pilot-tradelab:rec-sized', onStep2)
+      window.removeEventListener('pilot-tradelab:executed', onStep3)
     }
-  }, [userId])
+  }, [markStep])
+
+  // Auto-dismiss when all three actions are done.
+  useEffect(() => {
+    if (!dismissed && step1 && step2 && step3) {
+      writeFlag(userId, orgId, DISMISS)
+      setDismissed(true)
+    }
+  }, [dismissed, step1, step2, step3, userId, orgId])
 
   if (dismissed) return null
 
   const dismiss = () => {
-    try { localStorage.setItem(storageKey(userId), '1') } catch { /* ignore */ }
+    writeFlag(userId, orgId, DISMISS)
     setDismissed(true)
   }
 
   return (
-    <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/80 to-white dark:from-amber-900/20 dark:via-amber-900/10 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-      <div className="px-6 py-1.5 flex items-center gap-3 text-[11px]">
-        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0">
-          <Sparkles className="h-3 w-3" />
-          <span>Get started</span>
+    <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
+      <div className="px-6 py-3 flex items-start gap-4">
+        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
+          <Sparkles className="h-4 w-4" />
+          <span className="text-[12px] uppercase tracking-wider">Get started</span>
         </div>
-        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 min-w-0 overflow-hidden">
-          <Step n={1} label="Adjust Sim Wt / Sim Shrs of the recommendation" />
-          <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
-          <Step n={2} label="Execute trade" />
+        <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
+          <Step
+            n={1}
+            title="Review the recommendation"
+            hint="Click or expand the recommendation card on the left to see all the details."
+            done={step1}
+          />
+          <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+          <Step
+            n={2}
+            title="Select the recommendation"
+            hint="Check the box on the recommendation row to add it to your trade list."
+            done={step2}
+          />
+          <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+          <Step
+            n={3}
+            title="Select the trade and execute"
+            hint="Pick the trade you want to commit and click Execute."
+            done={step3}
+          />
         </div>
         <button
           onClick={dismiss}
-          className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+          className="ml-auto -my-1 p-1.5 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
           title="Dismiss"
           aria-label="Dismiss Trade Lab intro"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
     </div>
   )
 }
 
-function Step({ n, label }: { n: number; label: string }) {
+function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
   return (
-    <span className="flex items-center gap-1.5 truncate">
-      <span className="shrink-0 w-4 h-4 rounded-full bg-amber-500/10 text-amber-700 dark:bg-amber-300/20 dark:text-amber-200 flex items-center justify-center text-[10px] font-bold tabular-nums">
-        {n}
+    <div className="flex items-start gap-2 min-w-0">
+      <span
+        className={clsx(
+          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
+          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
+        )}
+      >
+        {done ? <Check className="h-3 w-3" /> : n}
       </span>
-      <span className="truncate">{label}</span>
-    </span>
+      <div className="min-w-0">
+        <div
+          className={clsx(
+            "text-[12px] font-semibold leading-tight whitespace-nowrap",
+            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white"
+          )}
+        >
+          {title}
+        </div>
+        <div
+          className={clsx(
+            "text-[11px] leading-snug whitespace-nowrap",
+            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400"
+          )}
+        >
+          {hint}
+        </div>
+      </div>
+    </div>
   )
 }

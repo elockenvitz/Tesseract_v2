@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2 } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2, Sparkles } from 'lucide-react'
+import { usePilotMode } from '../../hooks/usePilotMode'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -18,6 +19,7 @@ import { useUpdateDecisionRequest, useAcceptFromInbox } from '../../hooks/useDec
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { useSidebarStore } from '../../stores/sidebarStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
@@ -53,7 +55,81 @@ export function ThoughtsSection({
   onOpenInspector,
 }: ThoughtsSectionProps) {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const pilotMode = usePilotMode()
+  const { currentOrgId } = useOrganization()
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
+  // Pilot Get Started banner — visible until the pilot has captured
+  // their first trade idea OR explicitly dismisses it. Keyed per
+  // user+org so an analyst running multiple pilot clients sees a
+  // fresh banner for each new client (otherwise dismissing once in
+  // pilot org A would silently hide it in pilot org B too).
+  const pilotCaptureBannerKey = `pilot_capture_banner_dismissed_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
+  const [pilotBannerDismissed, setPilotBannerDismissed] = useState<boolean>(() => {
+    try {
+      return user?.id && currentOrgId ? localStorage.getItem(pilotCaptureBannerKey) === '1' : false
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    try {
+      setPilotBannerDismissed(
+        user?.id && currentOrgId
+          ? localStorage.getItem(pilotCaptureBannerKey) === '1'
+          : false
+      )
+    } catch { /* ignore */ }
+  }, [user?.id, currentOrgId, pilotCaptureBannerKey])
+  const dismissPilotCaptureBanner = useCallback(() => {
+    try { localStorage.setItem(pilotCaptureBannerKey, '1') } catch { /* ignore */ }
+    setPilotBannerDismissed(true)
+  }, [pilotCaptureBannerKey])
+  // Per-step completion for the Quick Capture Get Started banner.
+  // Same pattern as the Idea Pipeline + Trade Lab banners — each
+  // step ticks off as the user does the corresponding action and
+  // the banner auto-retires once all three are done. Keyed per
+  // user+org so each pilot client tracks independently.
+  const captureStepKey = (n: 1 | 2 | 3) =>
+    `pilot_capture_step${n}_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
+  const readCaptureStep = (n: 1 | 2 | 3) => {
+    try { return localStorage.getItem(captureStepKey(n)) === '1' } catch { return false }
+  }
+  const writeCaptureStep = (n: 1 | 2 | 3) => {
+    try { localStorage.setItem(captureStepKey(n), '1') } catch { /* ignore */ }
+  }
+  const [captureStep1Done, setCaptureStep1Done] = useState(() => readCaptureStep(1))
+  const [captureStep2Done, setCaptureStep2Done] = useState(() => readCaptureStep(2))
+  const [captureStep3Done, setCaptureStep3Done] = useState(() => readCaptureStep(3))
+  // Reload from localStorage when user/org changes.
+  useEffect(() => {
+    setCaptureStep1Done(readCaptureStep(1))
+    setCaptureStep2Done(readCaptureStep(2))
+    setCaptureStep3Done(readCaptureStep(3))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, currentOrgId])
+  // Listen for the three step events. Dispatched from
+  // QuickTradeIdeaCapture as the user fills the form, plus from
+  // handleTradeIdeaSuccess for the submit step.
+  useEffect(() => {
+    const onStep1 = () => { writeCaptureStep(1); setCaptureStep1Done(true) }
+    const onStep2 = () => { writeCaptureStep(2); setCaptureStep2Done(true) }
+    const onStep3 = () => { writeCaptureStep(3); setCaptureStep3Done(true) }
+    window.addEventListener('pilot-capture:ticker-picked', onStep1)
+    window.addEventListener('pilot-capture:thesis-portfolio-set', onStep2)
+    window.addEventListener('pilot-capture:submitted', onStep3)
+    return () => {
+      window.removeEventListener('pilot-capture:ticker-picked', onStep1)
+      window.removeEventListener('pilot-capture:thesis-portfolio-set', onStep2)
+      window.removeEventListener('pilot-capture:submitted', onStep3)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, currentOrgId])
+  // Banner only fires inside the Add Trade Idea form — the pilot UX
+  // hint is "here's how to fill this thing out", not a generic intro
+  // for the whole Quick Ideas surface. Hidden on the main capture
+  // mode picker so the right rail doesn't open with a wall of copy.
+  const showPilotCaptureBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && captureMode === 'trade_idea'
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const [showPromptList, setShowPromptList] = useState(false)
   const [showPendingReview, setShowPendingReview] = useState(false)
@@ -150,11 +226,33 @@ export function ThoughtsSection({
       } : undefined
     })
 
+    // Pilot users see a Get Started banner above the capture
+    // surface; first successful trade-idea submission retires it
+    // permanently so it doesn't keep nagging. Also tick step 3
+    // (the submit step) so the visible checkmarks complete on the
+    // way out.
+    if (pilotMode.effectiveIsPilot) {
+      try { window.dispatchEvent(new CustomEvent('pilot-capture:submitted')) } catch { /* ignore */ }
+      dismissPilotCaptureBanner()
+    }
+
     setCaptureMode('collapsed')
     setCapturedContext(null)
 
     // Refresh recent ideas list
     invalidateRecentIdeas()
+
+    // Pilot dashboard's System Loop reads from the trade-queue-items
+    // queries to decide which stage is "done". The dashboard's queries
+    // share the `trade-queue-items` prefix so QuickTradeIdeaCapture's
+    // own invalidation already covers the dashboard. We still fire a
+    // window event as a belt-and-suspenders refresh signal so the
+    // listener can refetch defensively.
+    queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+    queryClient.refetchQueries({ queryKey: ['pilot-dashboard-recorded'] })
+    try {
+      window.dispatchEvent(new CustomEvent('pilot-loop:refresh', { detail: { reason: 'trade-idea-submitted' } }))
+    } catch { /* ignore */ }
 
     // Close the pane after a brief delay
     setTimeout(() => {
@@ -499,10 +597,55 @@ export function ThoughtsSection({
         {/* Capture form for trade ideas */}
         {captureMode === 'trade_idea' && (
           <div className="pt-3">
-            {/* Mode-specific guidance */}
-            <p className="mb-3 text-xs text-gray-400">
-              Capture a potential trade to review or decide on later.
-            </p>
+            {/* Pilot Get Started banner — lives inside the Add Trade
+                Idea form so the steps describe THIS form, not the
+                generic Quick Ideas picker. Auto-retires once the
+                pilot submits their first trade idea, or via manual
+                dismiss. Same visual family as the Trade Lab + Idea
+                Pipeline banners for cross-surface consistency. */}
+            {showPilotCaptureBanner && (
+              <div className="mb-3 rounded-md bg-gradient-to-b from-amber-50 to-amber-100/30 dark:from-amber-900/25 dark:to-amber-900/5 border border-amber-200 dark:border-amber-800/60">
+                <div className="px-3 pt-2.5 pb-2 flex items-start gap-2">
+                  <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span className="text-[11px] uppercase tracking-wider">Get started</span>
+                  </div>
+                  <button
+                    onClick={dismissPilotCaptureBanner}
+                    className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+                    title="Dismiss"
+                    aria-label="Dismiss capture intro"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="px-3 pb-3 space-y-2">
+                  <p className="text-[12px] font-semibold text-gray-900 dark:text-white leading-snug">
+                    Capture a potential trade — it lands in the Aware stage of your pipeline.
+                  </p>
+                  <ol className="space-y-1.5">
+                    <PilotCaptureStep
+                      n={1}
+                      title="Pick a ticker"
+                      hint="Search for the symbol you want to trade — that's the asset this idea is about."
+                      done={captureStep1Done}
+                    />
+                    <PilotCaptureStep
+                      n={2}
+                      title="Add a quick thesis and pick a portfolio"
+                      hint="A one-liner thesis is enough, and the portfolio tells Tesseract where this idea lives."
+                      done={captureStep2Done}
+                    />
+                    <PilotCaptureStep
+                      n={3}
+                      title="Submit"
+                      hint="The idea jumps into the Aware stage so the loop can pick it up."
+                      done={captureStep3Done}
+                    />
+                  </ol>
+                </div>
+              </div>
+            )}
 
             <QuickTradeIdeaCapture
               compact={true}
@@ -1068,5 +1211,41 @@ function PendingReviewList() {
         )
       })}
     </div>
+  )
+}
+
+// Numbered step pill used in the pilot Get Started banner inside
+// the capture sidebar. Mirrors the pattern from the Trade Lab and
+// Idea Pipeline banners for visual consistency across surfaces.
+function PilotCaptureStep({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span
+        className={clsx(
+          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm mt-px",
+          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white",
+        )}
+      >
+        {done ? <Check className="h-3 w-3" /> : n}
+      </span>
+      <div className="min-w-0">
+        <div
+          className={clsx(
+            "text-[11px] font-semibold leading-tight",
+            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white",
+          )}
+        >
+          {title}
+        </div>
+        <div
+          className={clsx(
+            "text-[10px] leading-snug",
+            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400",
+          )}
+        >
+          {hint}
+        </div>
+      </div>
+    </li>
   )
 }

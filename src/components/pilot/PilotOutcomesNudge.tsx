@@ -1,8 +1,12 @@
 /**
  * PilotOutcomesNudge — banner shown at the top of Trade Book for pilot users
  * once they've unlocked Outcomes (i.e. they have at least one committed trade
- * visible). Makes the next step obvious: "review how this decision plays out
- * in Outcomes". Dismissible per-user via localStorage.
+ * visible). Single focus: nudge them to Outcomes to watch the decision play
+ * out. (Capturing rationale lives on the trade row itself in Trade Book and
+ * doesn't need a banner-level affordance — surfacing both was overkill.)
+ * Clicking the CTA or the X both retire the banner via localStorage. The
+ * dismiss flag is keyed per user+org so an analyst running multiple pilot
+ * clients gets a fresh prompt in each new client.
  */
 
 import { Target, X, ArrowRight, Sparkles } from 'lucide-react'
@@ -10,29 +14,32 @@ import { useEffect, useState } from 'react'
 
 interface PilotOutcomesNudgeProps {
   userId: string | undefined
+  /** Active org id, used to scope the banner state per pilot client. */
+  orgId?: string | null
 }
 
-const DISMISS_KEY = (userId: string) => `pilot_outcomes_nudge_dismissed_${userId}`
+const DISMISS_KEY = (userId: string, orgId: string | null | undefined) =>
+  `pilot_outcomes_nudge_dismissed_${userId}_${orgId || 'no-org'}`
 
-export function PilotOutcomesNudge({ userId }: PilotOutcomesNudgeProps) {
+export function PilotOutcomesNudge({ userId, orgId }: PilotOutcomesNudgeProps) {
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (!userId) return false
     try {
-      return localStorage.getItem(DISMISS_KEY(userId)) === '1'
+      return localStorage.getItem(DISMISS_KEY(userId, orgId)) === '1'
     } catch {
       return false
     }
   })
 
-  // Re-check when userId changes (morph, logout, etc.)
+  // Re-check when user or org changes (morph, switch client, etc.).
   useEffect(() => {
     if (!userId) return
     try {
-      setDismissed(localStorage.getItem(DISMISS_KEY(userId)) === '1')
+      setDismissed(localStorage.getItem(DISMISS_KEY(userId, orgId)) === '1')
     } catch {
       /* ignore */
     }
-  }, [userId])
+  }, [userId, orgId])
 
   if (dismissed) return null
 
@@ -40,14 +47,21 @@ export function PilotOutcomesNudge({ userId }: PilotOutcomesNudgeProps) {
     setDismissed(true)
     if (userId) {
       try {
-        localStorage.setItem(DISMISS_KEY(userId), '1')
+        localStorage.setItem(DISMISS_KEY(userId, orgId), '1')
       } catch {
         /* ignore */
       }
     }
   }
 
+  // CTA + X both retire the banner — they signal "user has
+  // acknowledged the next-step prompt." Sharing the dismissed flag
+  // keeps the banner from re-appearing on later Trade Book visits.
   const handleGoToOutcomes = () => {
+    if (userId) {
+      try { localStorage.setItem(DISMISS_KEY(userId, orgId), '1') } catch { /* ignore */ }
+    }
+    setDismissed(true)
     window.dispatchEvent(
       new CustomEvent('decision-engine-action', {
         detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
@@ -70,11 +84,10 @@ export function PilotOutcomesNudge({ userId }: PilotOutcomesNudgeProps) {
             </span>
           </div>
           <p className="text-sm font-semibold text-gray-900 dark:text-white">
-            Your first decision is now being tracked
+            Watch how this decision plays out in Outcomes
           </p>
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 leading-relaxed">
-            This is where your decisions, reasoning, and outcomes are preserved
-            and evaluated over time.
+            Outcomes scores the thesis as the result unfolds and prompts a reflection later.
           </p>
         </div>
 
@@ -83,7 +96,7 @@ export function PilotOutcomesNudge({ userId }: PilotOutcomesNudgeProps) {
             onClick={handleGoToOutcomes}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors whitespace-nowrap"
           >
-            See how this decision plays out
+            Open Outcomes
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
           <button

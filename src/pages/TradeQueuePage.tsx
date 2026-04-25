@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -150,14 +151,76 @@ export function TradeQueuePage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
-  const [pilotBannerDismissed, setPilotBannerDismissed] = useState(() => {
-    try { return localStorage.getItem('pilot_pipeline_banner_dismissed') === '1' } catch { return false }
-  })
+  const { currentOrgId } = useOrganization()
+  // Pilot onboarding flags are scoped per user+org so an analyst
+  // running multiple pilot clients gets a fresh banner + fresh
+  // per-step progress in every new client. Without org scoping
+  // the previous client's "all 3 steps done → banner dismissed"
+  // state was sticking on the next client and the get-started
+  // banner never reappeared.
+  const pilotKey = (suffix: string) =>
+    `pilot_pipeline_${suffix}_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
+  const BANNER_KEY = pilotKey('banner_dismissed')
+  const STEP1_KEY = pilotKey('step_moved')
+  const STEP2_KEY = pilotKey('step_inbox')
+  const STEP3_KEY = pilotKey('step_tradelab')
+  const readFlag = (key: string) => {
+    try { return localStorage.getItem(key) === '1' } catch { return false }
+  }
+  const writeFlag = (key: string) => {
+    try { localStorage.setItem(key, '1') } catch { /* ignore */ }
+  }
+  const [pilotBannerDismissed, setPilotBannerDismissed] = useState(() => readFlag(BANNER_KEY))
+  // Per-step completion. Each step ticks off when the pilot performs
+  // the corresponding action; once all three are done, the banner
+  // auto-retires. Persisted to localStorage so a tab refresh doesn't
+  // reset progress mid-onboarding.
+  const [pilotStep1Done, setPilotStep1Done] = useState(() => readFlag(STEP1_KEY))
+  const [pilotStep2Done, setPilotStep2Done] = useState(() => readFlag(STEP2_KEY))
+  const [pilotStep3Done, setPilotStep3Done] = useState(() => readFlag(STEP3_KEY))
+
+  // When the active user/org changes, reset the local state from
+  // the new keys (otherwise we'd carry the previous client's
+  // flags into the new client's render).
+  useEffect(() => {
+    setPilotBannerDismissed(readFlag(BANNER_KEY))
+    setPilotStep1Done(readFlag(STEP1_KEY))
+    setPilotStep2Done(readFlag(STEP2_KEY))
+    setPilotStep3Done(readFlag(STEP3_KEY))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, currentOrgId])
+
+  const markPilotStep1 = useCallback(() => {
+    setPilotStep1Done(true)
+    writeFlag(STEP1_KEY)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [STEP1_KEY])
+  const markPilotStep2 = useCallback(() => {
+    setPilotStep2Done(true)
+    writeFlag(STEP2_KEY)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [STEP2_KEY])
+  const markPilotStep3 = useCallback(() => {
+    setPilotStep3Done(true)
+    writeFlag(STEP3_KEY)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [STEP3_KEY])
   const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed
   const dismissPilotBanner = () => {
     setPilotBannerDismissed(true)
-    try { localStorage.setItem('pilot_pipeline_banner_dismissed', '1') } catch { /* ignore */ }
+    writeFlag(BANNER_KEY)
   }
+  // Auto-dismiss once all three onboarding actions are complete.
+  useEffect(() => {
+    if (
+      pilotMode.effectiveIsPilot &&
+      !pilotBannerDismissed &&
+      pilotStep1Done && pilotStep2Done && pilotStep3Done
+    ) {
+      dismissPilotBanner()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pilotMode.effectiveIsPilot, pilotBannerDismissed, pilotStep1Done, pilotStep2Done, pilotStep3Done])
 
   // Trade service for audited mutations
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
@@ -1265,7 +1328,8 @@ export function TradeQueuePage() {
     // recommendation" indicator that opens the recommendation flow on click.
     moveTrade({ tradeId: itemId, targetStatus: targetStatus as TradeQueueStatus, uiSource: 'drag_drop' })
     setDraggedItem(null)
-  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id])
+    if (pilotMode.effectiveIsPilot) markPilotStep1()
+  }, [tradeItems, pairTradeGroups, moveTrade, movePairTrade, user?.id, pilotMode.effectiveIsPilot, markPilotStep1])
 
   const handleSort = useCallback((field: typeof sortBy) => {
     if (sortBy === field) {
@@ -1276,12 +1340,24 @@ export function TradeQueuePage() {
     }
   }, [sortBy])
 
-  // Handle lab click - navigate to trade lab
+  // Handle lab click - navigate to trade lab.
   const handleLabClick = useCallback((labId: string, labName: string, portfolioId: string) => {
     window.dispatchEvent(new CustomEvent('openTradeLab', {
       detail: { labId, labName, portfolioId }
     }))
   }, [])
+
+  // Mark step 3 the first time the user hands off to Trade Lab from
+  // this page. Listening to the global `openTradeLab` event covers
+  // every path — portfolio chip click, inline pair-trade buttons,
+  // the "Open Trade Lab" CTA — without us having to wire mark into
+  // each call site.
+  useEffect(() => {
+    if (!pilotMode.effectiveIsPilot || pilotStep3Done) return
+    const handler = () => markPilotStep3()
+    window.addEventListener('openTradeLab', handler)
+    return () => window.removeEventListener('openTradeLab', handler)
+  }, [pilotMode.effectiveIsPilot, pilotStep3Done, markPilotStep3])
 
   // ESC key handler for fullscreen mode
   useEffect(() => {
@@ -1492,31 +1568,48 @@ export function TradeQueuePage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Pilot Get Started banner — slim top-of-page strip matching
-          the Trade Lab intro banner pattern: gradient amber wash,
-          numbered step pills, single-row layout. Dismissible per
-          localStorage so it doesn't reappear on refresh. */}
+      {/* Pilot Get Started banner — taller, prominent strip
+          matching the Trade Lab intro banner so the two onboarding
+          surfaces feel like a pair. Each step pill carries a clear
+          one-liner hint so a pilot reads exactly what to do.
+          Dismissible per localStorage so a returning user isn't
+          re-nagged. */}
       {showPilotBanner && (
-        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/80 to-white dark:from-amber-900/20 dark:via-amber-900/10 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-          <div className="px-6 py-1.5 flex items-center gap-3 text-[11px]">
-            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0">
-              <Sparkles className="h-3 w-3" />
-              <span>Get started</span>
+        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
+          <div className="px-6 py-3 flex items-start gap-4">
+            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-[12px] uppercase tracking-wider">Get started</span>
             </div>
-            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 min-w-0 overflow-hidden">
-              <PilotPipelineStep n={1} label="Move ideas through stages as they mature" />
-              <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
-              <PilotPipelineStep n={2} label="Make a recommendation when ready for decision" />
-              <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
-              <PilotPipelineStep n={3} label="Open in Trade Lab to simulate and commit" />
+            <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
+              <PilotPipelineStep
+                n={1}
+                title="Drag ideas through the pipeline"
+                hint="Click and drag ideas left to right through stages as they mature."
+                done={pilotStep1Done}
+              />
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+              <PilotPipelineStep
+                n={2}
+                title="Open the Decision Inbox"
+                hint="The bottom drawer is where recommendations wait for your decision — click it."
+                done={pilotStep2Done}
+              />
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+              <PilotPipelineStep
+                n={3}
+                title="Open Trade Lab"
+                hint="Click the portfolio name on the recommendation card to jump into Trade Lab."
+                done={pilotStep3Done}
+              />
             </div>
             <button
               onClick={dismissPilotBanner}
-              className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+              className="ml-auto -my-1 p-1.5 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
               title="Dismiss"
               aria-label="Dismiss Idea Pipeline intro"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -1888,7 +1981,14 @@ export function TradeQueuePage() {
           portfolioId={decisionPortfolioId}
           onIdeaClick={(tradeId) => { setSelectedTradeId(tradeId); setSelectedTradeInitialTab('details') }}
           collapsed={decisionPanelCollapsed}
-          onToggleCollapsed={() => setDecisionPanelCollapsed(prev => !prev)}
+          onToggleCollapsed={() => setDecisionPanelCollapsed(prev => {
+            const next = !prev
+            // Mark pilot step 2 the first time the inbox is opened.
+            // We only fire on collapsed → open transitions so closing
+            // the panel doesn't trigger the mark.
+            if (prev && pilotMode.effectiveIsPilot) markPilotStep2()
+            return next
+          })}
           pendingCount={needsDecisionCount}
           searchQuery={filters.search || ''}
           actionFilter={filters.action || 'all'}
@@ -4507,15 +4607,37 @@ function TradeQueueCard({
 }
 
 // Numbered step pill used in the pilot Get Started banner. Mirrors
-// the Step component in PilotTradeLabIntroBanner so both pages
-// render with identical visuals.
-function PilotPipelineStep({ n, label }: { n: number; label: string }) {
+// the Step component in PilotTradeLabIntroBanner — title + helper
+// hint so the user knows exactly what to do, not just "step 1."
+function PilotPipelineStep({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
   return (
-    <span className="flex items-center gap-1.5 truncate">
-      <span className="shrink-0 w-4 h-4 rounded-full bg-amber-500/10 text-amber-700 dark:bg-amber-300/20 dark:text-amber-200 flex items-center justify-center text-[10px] font-bold tabular-nums">
-        {n}
+    <div className="flex items-start gap-2 min-w-0">
+      <span
+        className={clsx(
+          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
+          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
+        )}
+      >
+        {done ? <Check className="h-3 w-3" /> : n}
       </span>
-      <span className="truncate">{label}</span>
-    </span>
+      <div className="min-w-0">
+        <div
+          className={clsx(
+            "text-[12px] font-semibold leading-tight whitespace-nowrap",
+            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white"
+          )}
+        >
+          {title}
+        </div>
+        <div
+          className={clsx(
+            "text-[11px] leading-snug whitespace-nowrap",
+            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400"
+          )}
+        >
+          {hint}
+        </div>
+      </div>
+    </div>
   )
 }

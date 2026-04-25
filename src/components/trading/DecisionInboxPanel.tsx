@@ -4,7 +4,7 @@
  * Three states: collapsed (slim strip), half (55%), fullscreen (100%).
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Gavel,
   ChevronUp,
@@ -13,7 +13,34 @@ import {
   Minimize2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { DecisionInbox } from './DecisionInbox'
+
+// Persist the "last acknowledged pending count" across tab navigation
+// and page refresh so amber ("new decision!") doesn't re-pin every time
+// the panel re-mounts. Keyed per user+org+portfolio — using portfolioId
+// alone bled across pilot clients (when portfolio_id is "all" / unset
+// the key fell back to a single shared "global" bucket, so the prior
+// client's watermark suppressed amber in the next client).
+const ACK_KEY_PREFIX = 'decision_inbox_acknowledged_count_'
+function ackKey(userId: string | undefined, orgId: string | null, portfolioId?: string) {
+  const u = userId || 'anon'
+  const o = orgId || 'no-org'
+  const p = portfolioId || 'all'
+  return `${ACK_KEY_PREFIX}${u}_${o}_${p}`
+}
+function readAck(userId: string | undefined, orgId: string | null, portfolioId?: string): number {
+  try {
+    const raw = localStorage.getItem(ackKey(userId, orgId, portfolioId))
+    if (!raw) return 0
+    const n = parseInt(raw, 10)
+    return Number.isFinite(n) ? n : 0
+  } catch { return 0 }
+}
+function writeAck(userId: string | undefined, orgId: string | null, portfolioId: string | undefined, n: number) {
+  try { localStorage.setItem(ackKey(userId, orgId, portfolioId), String(n)) } catch { /* ignore */ }
+}
 
 type DrawerSize = 'collapsed' | 'half' | 'full'
 
@@ -40,9 +67,20 @@ export function DecisionInboxPanel({
   urgencyFilter,
   createdByFilter,
 }: DecisionInboxPanelProps) {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const [internalSize, setInternalSize] = useState<DrawerSize>('collapsed')
   const [resolvedPendingCount, setResolvedPendingCount] = useState<number | null>(null)
   const handlePendingCountChange = useCallback((count: number) => setResolvedPendingCount(count), [])
+
+  // Whenever the active portfolio changes (e.g. analyst switches to a
+  // new pilot client), reset the resolved count back to null so we
+  // don't carry the previous portfolio's value across the boundary.
+  // The inner inbox refetches and fires `onPendingCountChange` with
+  // the new portfolio's number a moment later.
+  useEffect(() => {
+    setResolvedPendingCount(null)
+  }, [portfolioId])
 
   // The parent passes an UNFILTERED count (`pendingCount`) derived straight
   // from decision_requests by status. DecisionInbox re-filters by permission
@@ -53,6 +91,28 @@ export function DecisionInboxPanel({
   // reported yet AND the prop looks plausible (non-zero); otherwise show
   // nothing to avoid the wrong-number flash.
   const displayCount = resolvedPendingCount ?? null
+
+  // Track the count the user has already SEEN — the moment they open the
+  // drawer, every pending row currently in the inbox is marked as
+  // acknowledged. The amber "new decision" tint then only returns when
+  // the count grows above that watermark (i.e. a genuinely new request
+  // arrived afterwards). Persisted to localStorage so the watermark
+  // survives tab navigation and page refresh — without this the amber
+  // state re-pins every time the panel re-mounts, defeating the
+  // acknowledgement flow.
+  const [acknowledgedCount, setAcknowledgedCountState] = useState<number>(
+    () => readAck(user?.id, currentOrgId, portfolioId),
+  )
+  // Reload the watermark when user / org / portfolio changes — each
+  // (user, org, portfolio) triplet tracks independently.
+  useEffect(() => {
+    setAcknowledgedCountState(readAck(user?.id, currentOrgId, portfolioId))
+  }, [user?.id, currentOrgId, portfolioId])
+  const setAcknowledgedCount = useCallback((n: number) => {
+    setAcknowledgedCountState(n)
+    writeAck(user?.id, currentOrgId, portfolioId, n)
+  }, [user?.id, currentOrgId, portfolioId])
+  const hasUnseen = (displayCount ?? 0) > acknowledgedCount
 
   // Derive size from controlled collapsed prop or internal state
   const size: DrawerSize = controlledCollapsed === true ? 'collapsed'
@@ -66,6 +126,9 @@ export function DecisionInboxPanel({
   const toggle = () => {
     if (onToggleCollapsed) {
       if (isCollapsed) {
+        // Opening — mark the current pending count as seen so the
+        // amber "new decision" tint resets to neutral.
+        setAcknowledgedCount(displayCount ?? 0)
         onToggleCollapsed() // open → half
         setInternalSize('half')
       } else {
@@ -73,7 +136,13 @@ export function DecisionInboxPanel({
         setInternalSize('collapsed')
       }
     } else {
-      setInternalSize(prev => prev === 'collapsed' ? 'half' : 'collapsed')
+      setInternalSize(prev => {
+        if (prev === 'collapsed') {
+          setAcknowledgedCount(displayCount ?? 0)
+          return 'half'
+        }
+        return 'collapsed'
+      })
     }
   }
 
@@ -93,17 +162,43 @@ export function DecisionInboxPanel({
         size === 'full' && "h-full",
       )}
     >
-      {/* Header strip — always visible */}
+      {/* Header strip — always visible. Amber tint signals an
+          UNSEEN pending decision (collapsed AND the count is above
+          the watermark from the last time the user opened the
+          drawer). Once opened, the watermark catches up so the
+          strip stays neutral when the user closes it again. */}
       <button
         onClick={toggle}
-        className="flex-shrink-0 flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
+        className={clsx(
+          "flex-shrink-0 flex items-center justify-between px-4 h-11 cursor-pointer transition-colors group",
+          isCollapsed && hasUnseen
+            ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 border-t-2 border-t-amber-400 dark:border-t-amber-600"
+            : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+        )}
       >
         <div className="flex items-center gap-2">
-          <Gavel className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Decision Inbox</span>
+          <Gavel className={clsx(
+            "h-4 w-4",
+            isCollapsed && hasUnseen
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-gray-400 dark:text-gray-500"
+          )} />
+          <span className={clsx(
+            "text-[13px] font-semibold",
+            isCollapsed && hasUnseen
+              ? "text-amber-900 dark:text-amber-200"
+              : "text-gray-700 dark:text-gray-300"
+          )}>
+            Decision Inbox
+          </span>
           {displayCount !== null && displayCount > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-full">
-              {displayCount}
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500 text-white dark:bg-amber-500 dark:text-white rounded-full shadow-sm">
+              {displayCount} pending
+            </span>
+          )}
+          {isCollapsed && hasUnseen && (
+            <span className="hidden sm:inline text-[11px] text-amber-700 dark:text-amber-300 font-medium animate-pulse">
+              · Click to review
             </span>
           )}
         </div>

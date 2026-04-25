@@ -299,6 +299,14 @@ export interface HoldingsSimulationTableProps {
     },
   ) => void
   isBulkPromoting?: boolean
+  /** Set by the parent the moment its DecisionConfirmationModal becomes
+   *  ready to display (i.e., the success record was built and assigned).
+   *  Used to coordinate the hand-off out of the in-modal loading state
+   *  so the loading modal stays up until the confirmation actually
+   *  appears — without this flag the loading modal closes the instant
+   *  `isBulkPromoting` flips false, leaving a brief blank frame before
+   *  the success modal mounts. */
+  decisionConfirmationOpen?: boolean
   /** Map of asset_id → pair info. Rows whose asset is part of a pair render
    *  a "↔ pair" badge alongside the symbol. Derived from trade_queue_items
    *  pair_id/pair_leg_type in SimulationPage. */
@@ -931,7 +939,7 @@ export function HoldingsSimulationTable({
   onCreateTradeSheet, canCreateTradeSheet, isCreatingTradeSheet,
   groupBy: externalGroupBy, onGroupByChange, readOnly = false, className = '',
   suggestMode, onSubmitSuggestion, pendingSuggestionsByAsset, pendingSuggestionCount, onOpenSuggestionReview,
-  onBulkPromote, isBulkPromoting,
+  onBulkPromote, isBulkPromoting, decisionConfirmationOpen,
   pairInfoByAsset,
 }: HoldingsSimulationTableProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<GroupBy>('none')
@@ -944,6 +952,52 @@ export function HoldingsSimulationTable({
 
   // Execute confirmation modal
   const [showExecuteConfirm, setShowExecuteConfirm] = useState(false)
+  // Track whether the user has actually clicked Execute inside the
+  // modal — separates "modal is open with the form" from "modal is
+  // mid-mutation." When true the modal swaps its body for a loading
+  // state, locks dismiss handlers, and waits for `isBulkPromoting`
+  // to flip false before closing. This keeps the transition into
+  // the Decision Recorded modal smooth: form → loading → success,
+  // never form → blank screen → success.
+  const [executeSubmitted, setExecuteSubmitted] = useState(false)
+  // Wall-clock at submit time, used to enforce a minimum display
+  // period for the loading state. Without it, fast mutations close
+  // the loading screen so quickly it reads as a flicker rather than
+  // a deliberate "we're committing your decision" beat.
+  const executeSubmittedAtRef = useRef<number | null>(null)
+  // The loading modal stays up until BOTH:
+  //   (a) the mutation finished (`!isBulkPromoting`), AND
+  //   (b) either the parent has the success modal ready
+  //       (`decisionConfirmationOpen`) or a small grace window
+  //       elapsed (covers the error path so the loader doesn't
+  //       hang forever, plus a min-display floor for the success
+  //       path so the loading state is visibly long enough to feel
+  //       like a real action.)
+  useEffect(() => {
+    if (!executeSubmitted) return
+    if (isBulkPromoting) return
+    const elapsed = Date.now() - (executeSubmittedAtRef.current ?? Date.now())
+    const MIN_DISPLAY_MS = 700
+    const SAFETY_FALLBACK_MS = 4000
+    const closeNow = () => {
+      setShowExecuteConfirm(false)
+      setExecuteSubmitted(false)
+      executeSubmittedAtRef.current = null
+    }
+    // Success path — confirmation modal is already mounted; honor
+    // the minimum display floor and hand off cleanly.
+    if (decisionConfirmationOpen) {
+      const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed)
+      if (remaining === 0) { closeNow(); return }
+      const t = setTimeout(closeNow, remaining)
+      return () => clearTimeout(t)
+    }
+    // No confirmation yet — likely an error path. Hold a moment in
+    // case `decisionRecord` is still propagating, then close anyway.
+    const fallbackRemaining = Math.max(MIN_DISPLAY_MS, SAFETY_FALLBACK_MS - elapsed)
+    const t = setTimeout(closeNow, fallbackRemaining)
+    return () => clearTimeout(t)
+  }, [executeSubmitted, isBulkPromoting, decisionConfirmationOpen])
   // Optional batch name the PM can type in the Execute Trades modal.
   // Passed through to executeSimVariants so the resulting trade_batch
   // row is labelled in the Trade Book. Cleared on every modal open.
@@ -1010,8 +1064,15 @@ export function HoldingsSimulationTable({
   const [selectedForPromote, setSelectedForPromote] = useState<Set<string>>(new Set())
   const togglePromoteSelection = useCallback((variantId: string) => {
     setSelectedForPromote(prev => {
+      const wasSelected = prev.has(variantId)
       const next = new Set(prev)
-      next.has(variantId) ? next.delete(variantId) : next.add(variantId)
+      wasSelected ? next.delete(variantId) : next.add(variantId)
+      // Tick step 2 of the pilot Trade Lab Get Started banner the
+      // first time a row is checked for execution. Only fires on
+      // the add direction — unchecking shouldn't undo progress.
+      if (!wasSelected) {
+        try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
+      }
       return next
     })
   }, [])
@@ -2217,9 +2278,14 @@ export function HoldingsSimulationTable({
         }
         const fmtSignedN = (v: number) => v > 0 ? `+${fmtN(v)}` : fmtN(v)
         // Shared submit helper so the batch-name Enter path and the
-        // primary Execute button don't drift out of sync.
+        // primary Execute button don't drift out of sync. Modal stays
+        // OPEN during the mutation — the body swaps to a loading
+        // state via `executeSubmitted`. The useEffect higher up
+        // closes the modal once `isBulkPromoting` flips false, at
+        // which point the parent's Decision Recorded modal pops in
+        // for a clean hand-off.
         const submitExecute = () => {
-          setShowExecuteConfirm(false)
+          if (isBulkPromoting || executeSubmitted) return
           const trimmedName = executeBatchName.trim()
           const trimmedDesc = executeBatchDescription.trim()
           const trimmedReasons: Record<string, string> = {}
@@ -2227,6 +2293,8 @@ export function HoldingsSimulationTable({
             const t = text.trim()
             if (t) trimmedReasons[vid] = t
           }
+          setExecuteSubmitted(true)
+          executeSubmittedAtRef.current = Date.now()
           onBulkPromote(Array.from(selectedForPromote), {
             batchName: trimmedName || null,
             batchDescription: trimmedDesc || null,
@@ -2237,8 +2305,53 @@ export function HoldingsSimulationTable({
           setExecuteReasons({})
         }
         const reasonCount = Object.values(executeReasons).filter(r => r.trim()).length
+        // While the mutation is in flight, the modal swaps to a
+        // compact loading card. Backdrop dismiss + X close are
+        // suppressed so the user can't accidentally interrupt the
+        // commit. The success modal renders right after this one
+        // unmounts (handled by the useEffect higher up that watches
+        // `isBulkPromoting`).
+        const isLoading = executeSubmitted || isBulkPromoting
+        if (isLoading) {
+          return (
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+              <div className="flex min-h-full items-center justify-center p-4">
+                <div
+                  className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full mx-auto border border-gray-200 dark:border-gray-700 px-8 py-10 flex flex-col items-center text-center"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-busy="true"
+                  aria-label="Recording decision"
+                >
+                  <div className="relative w-14 h-14 mb-5">
+                    {/* Soft pulsing halo + spinning ring → calm but
+                        clearly active. The halo eases at a different
+                        cadence than the ring so the motion stays
+                        organic rather than mechanical. */}
+                    <div className="absolute inset-0 rounded-full bg-emerald-100 dark:bg-emerald-900/30 animate-ping opacity-75" />
+                    <div className="absolute inset-0 rounded-full bg-emerald-50 dark:bg-emerald-900/40" />
+                    <div className="absolute inset-1 rounded-full border-[3px] border-emerald-200 dark:border-emerald-800/60 border-t-emerald-600 dark:border-t-emerald-400 animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                    Recording your {selectedRows.length === 1 ? 'decision' : 'decisions'}
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 leading-relaxed max-w-[28ch]">
+                    Committing {selectedRows.length} {selectedRows.length === 1 ? 'trade' : 'trades'} to the Trade Book — this is the system of record.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        }
         return (
-          <div className="fixed inset-0 z-50 overflow-y-auto" onClick={() => setShowExecuteConfirm(false)}>
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto"
+            onClick={() => { if (!isLoading) setShowExecuteConfirm(false) }}
+          >
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             <div className="flex min-h-full items-center justify-center p-4">
               <div

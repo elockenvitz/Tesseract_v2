@@ -74,6 +74,20 @@ export function QuickTradeIdeaCapture({
   const [visibility, setVisibility] = useState<'private' | 'portfolio'>('private')
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false)
 
+  // Tick step 2 of the pilot Quick Capture banner the first time
+  // BOTH a thesis and a portfolio are present. We fire from a
+  // useEffect rather than per-keystroke so the event lands once
+  // the user has both fields filled, not as they type each char.
+  // Guarded by a ref so we only fire once per form lifecycle.
+  const step2FiredRef = useRef(false)
+  useEffect(() => {
+    if (step2FiredRef.current) return
+    if (rationale.trim().length > 0 && selectedPortfolioIds.length > 0) {
+      step2FiredRef.current = true
+      try { window.dispatchEvent(new CustomEvent('pilot-capture:thesis-portfolio-set')) } catch { /* ignore */ }
+    }
+  }, [rationale, selectedPortfolioIds])
+
   // Error state for inline feedback
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -558,6 +572,9 @@ export function QuickTradeIdeaCapture({
     setSelectedAsset(asset)
     setAssetSearch('')
     setShowAssetDropdown(false)
+    // Tick step 1 of the pilot Quick Capture banner — picking a
+    // ticker is the first concrete move on the form.
+    try { window.dispatchEvent(new CustomEvent('pilot-capture:ticker-picked')) } catch { /* ignore */ }
   }
 
   const addLongAsset = (asset: { id: string; symbol: string; company_name: string }) => {

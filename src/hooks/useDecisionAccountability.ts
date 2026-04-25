@@ -265,6 +265,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           rationale,
           visibility_tier,
           deleted_at,
+          origin_metadata,
           assets:asset_id (id, symbol, company_name),
           portfolios:portfolio_id (id, name),
           approved_by_user:approved_by (id, email, first_name, last_name),
@@ -569,7 +570,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           portfolio_id,
           portfolios:portfolio_id ( id, name ),
           trade_idea:trade_queue_items!inner (
-            id, rationale, thesis_text, asset_id,
+            id, rationale, thesis_text, asset_id, origin_metadata,
             assets:asset_id ( id, symbol, company_name ),
             created_by_user:created_by ( id, email, first_name, last_name )
           ),

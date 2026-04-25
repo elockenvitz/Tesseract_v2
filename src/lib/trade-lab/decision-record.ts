@@ -17,6 +17,10 @@ export interface BuildDecisionRecordArgs {
   sourceVariants?: IntentVariantWithDetails[]
   portfolioName: string
   portfolioId: string
+  /** trade_batches.id from the executeSimVariants result. Carried through
+   *  so the modal's "View in Trade Book" CTA can pre-select the same
+   *  batch in the destination page's left rail. */
+  batchId?: string | null
   batchName?: string | null
   /** Batch-level rationale / thesis ("why this whole basket of trades"). Shown
    *  above per-trade context on multi-trade records. Trims to null if blank. */
@@ -69,7 +73,7 @@ function splitRationale(raw: string | null): { thesis: string | null; whyNow: st
 }
 
 export function buildDecisionRecord(args: BuildDecisionRecordArgs): DecisionRecord {
-  const { trades, sourceVariants, portfolioName, portfolioId, batchName, batchDescription } = args
+  const { trades, sourceVariants, portfolioName, portfolioId, batchId, batchName, batchDescription } = args
 
   const decisions: RecordedDecision[] = trades.map(t => {
     const variant = matchVariant(t, sourceVariants)
@@ -115,6 +119,7 @@ export function buildDecisionRecord(args: BuildDecisionRecordArgs): DecisionReco
     portfolioName,
     portfolioId,
     recordedAt: new Date().toISOString(),
+    batchId: batchId ?? null,
     batchName: batchName ?? null,
     batchDescription: trimmedDescription,
   }

@@ -945,7 +945,7 @@ export function DashboardPage() {
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':
-        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} highlightTradeIds={activeTab.data?.highlightTradeIds} />
+        return <TradeBookPage initialPortfolioId={activeTab.data?.portfolioId} highlightTradeIds={activeTab.data?.highlightTradeIds} highlightBatchId={activeTab.data?.highlightBatchId} />
       case 'asset-allocation':
         return <AssetAllocationPage />
       case 'tdf-list':

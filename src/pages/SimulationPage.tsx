@@ -409,6 +409,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const [commitNudge, setCommitNudge] = useState<{
     portfolioId: string | null
     tradeIds: string[]
+    /** trade_batches.id from the commit. Carried alongside tradeIds so
+     *  the persistent "View in Trade Book" nudge can pre-select the
+     *  same batch in the destination page's left rail, matching what
+     *  the Decision Recorded modal does when used directly. */
+    batchId: string | null
     count: number
     symbols: string[]
   } | null>(null)
@@ -1299,8 +1304,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         sourceVariants: variant ? [variant] : [],
         portfolioName,
         portfolioId: selectedPortfolioId!,
+        batchId: data.batch?.id ?? null,
         batchName: null,
       }))
+      // Tick step 3 of the pilot Trade Lab Get Started banner.
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:executed')) } catch { /* ignore */ }
       queryClient.invalidateQueries({ queryKey: ['simulation'] })
       queryClient.invalidateQueries({ queryKey: ['intent-variants'] })
       queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
@@ -1547,9 +1555,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           sourceVariants,
           portfolioName,
           portfolioId: selectedPortfolioId!,
+          batchId: result.batch?.id ?? null,
           batchName: result.batch?.name ?? null,
           batchDescription: (result.batch as any)?.description ?? null,
         }))
+        // Tick step 3 of the pilot Trade Lab Get Started banner.
+        try { window.dispatchEvent(new CustomEvent('pilot-tradelab:executed')) } catch { /* ignore */ }
         // Surface partial-state warnings as a small toast since the modal is the hero.
         if (failed > 0 || stillSaving.length > 0) {
           const descParts: string[] = []
@@ -4176,6 +4187,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
         return next
       })
+      // Tick step 1 of the pilot Trade Lab Get Started banner —
+      // expanding the chevron counts as reviewing the recommendation.
+      // (The outer-card onClick already dispatches this for body
+      // clicks, but stopPropagation here means the chevron path
+      // needs its own dispatch.)
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
     }
 
     const timePressure = getTimePressure(idea)
@@ -4216,7 +4233,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     return (
       <div
         key={idea.id}
-        onClick={() => setSelectedTradeId(idea.id)}
+        onClick={() => {
+          setSelectedTradeId(idea.id)
+          // Tick step 1 of the pilot Trade Lab Get Started banner.
+          // Clicking the recommendation card to open its detail
+          // modal counts as "reviewing the recommendation."
+          try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+        }}
         className={clsx(
           "rounded-lg border border-l-[3px] transition-colors cursor-pointer relative p-2.5",
           stageBorderClass,
@@ -4615,6 +4638,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const isExpanded = expandedTradeIds.has(pairTrade.id)
     const toggleExpand = (e: React.MouseEvent) => {
       e.stopPropagation()
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
       setExpandedTradeIds(prev => {
         const next = new Set(prev)
         if (next.has(pairTrade.id)) {
@@ -5099,7 +5123,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         && user?.id
         && !pilotMode.hasCommittedTradeInOrg
         && (
-          <PilotTradeLabIntroBanner userId={user.id} />
+          <PilotTradeLabIntroBanner userId={user.id} orgId={currentOrgId} />
         )}
 
       {/* Header Bar - Portfolio Selector + View Tabs */}
@@ -5387,6 +5411,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     data: {
                       portfolioId: commitNudge.portfolioId ?? selectedPortfolioId,
                       highlightTradeIds: commitNudge.tradeIds,
+                      highlightBatchId: commitNudge.batchId ?? undefined,
                     },
                   },
                 }))
@@ -5819,6 +5844,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                   const isProposalExpanded = expandedTradeIds.has(`proposal-${proposal.id}`)
                                   const toggleProposalExpand = (e: React.MouseEvent) => {
                                     e.stopPropagation()
+                                    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
                                     setExpandedTradeIds(prev => {
                                       const next = new Set(prev)
                                       const key = `proposal-${proposal.id}`
@@ -6361,6 +6387,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             })
                           } : undefined}
                           isBulkPromoting={bulkExecuteM.isPending}
+                          decisionConfirmationOpen={!!decisionRecord}
                         />
                       </div>
                       {/* Suggestion Review Panel (owner-side) */}
@@ -6938,13 +6965,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             setCommitNudge({
               portfolioId: decisionRecord.portfolioId,
               tradeIds: decisionRecord.decisions.map(d => d.tradeId),
+              batchId: decisionRecord.batchId ?? null,
               count: decisionRecord.decisions.length,
               symbols: decisionRecord.decisions.map(d => d.symbol),
             })
           }
           setDecisionRecord(null)
         }}
-        onViewTradeBook={(tradeIds) => {
+        onViewTradeBook={({ tradeIds, batchId }) => {
           const portfolioId = decisionRecord?.portfolioId ?? selectedPortfolioId
           setDecisionRecord(null)
           // They're going straight to Trade Book — no need for the persistent
@@ -6959,7 +6987,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               id: 'trade-book',
               title: 'Trade Book',
               type: 'trade-book',
-              data: { portfolioId, highlightTradeIds: tradeIds },
+              // `highlightBatchId` lights up the matching row in the
+              // Batches view's left rail; `highlightTradeIds` flashes
+              // the individual rows when the user drills into Trades.
+              data: { portfolioId, highlightTradeIds: tradeIds, highlightBatchId: batchId ?? undefined },
             },
           }))
         }}

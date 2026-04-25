@@ -57,6 +57,10 @@ export interface DecisionRecord {
   portfolioId: string
   /** ISO timestamp when the commit returned. */
   recordedAt: string
+  /** trade_batches.id of the batch these trades landed in. Used by
+   *  the "View in Trade Book" CTA so the destination page can pre-
+   *  select the same batch in the left rail. */
+  batchId?: string | null
   /** Optional batch name for multi-trade commits. */
   batchName?: string | null
   /** Optional batch-level rationale / thesis for multi-trade commits.
@@ -67,7 +71,11 @@ export interface DecisionRecord {
 interface DecisionConfirmationModalProps {
   record: DecisionRecord | null
   onClose: () => void
-  onViewTradeBook: (tradeIds: string[]) => void
+  /** Hands off to the Trade Book with both `tradeIds` (for the row
+   *  highlight in the Trades view) and the parent batch id (for the
+   *  Batches view selection). The parent dispatches a navigation
+   *  event with both pieces. */
+  onViewTradeBook: (args: { tradeIds: string[]; batchId: string | null }) => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -286,7 +294,7 @@ export function DecisionConfirmationModal({
       eventType: 'decision_recorded_view_trade_book_clicked',
       metadata: { tradeIds: ids, tradeCount: ids.length },
     })
-    onViewTradeBook(ids)
+    onViewTradeBook({ tradeIds: ids, batchId: record?.batchId ?? null })
   }
 
   const isMulti = record.decisions.length > 1
