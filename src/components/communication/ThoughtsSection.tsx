@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
-import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2 } from 'lucide-react'
+import { TrendingUp, Lightbulb, ArrowLeft, HelpCircle, FileText, MessageCircleQuestion, CheckCircle2, Clock, ChevronRight, Scale, Briefcase, ArrowUpRight, Check, X as XIcon, MessageCircle, Loader2, Sparkles } from 'lucide-react'
+import { usePilotMode } from '../../hooks/usePilotMode'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -53,7 +54,30 @@ export function ThoughtsSection({
   onOpenInspector,
 }: ThoughtsSectionProps) {
   const { user } = useAuth()
+  const pilotMode = usePilotMode()
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
+  // Pilot Get Started banner — visible until the pilot has captured
+  // their first trade idea OR explicitly dismisses it. Stored in
+  // localStorage so a returning user isn't re-nagged. Mirrors the
+  // dismiss pattern used by the Trade Lab and Idea Pipeline banners.
+  const pilotCaptureBannerKey = `pilot_capture_banner_dismissed_${user?.id || 'anon'}`
+  const [pilotBannerDismissed, setPilotBannerDismissed] = useState<boolean>(() => {
+    try {
+      return user?.id ? localStorage.getItem(pilotCaptureBannerKey) === '1' : false
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    try {
+      setPilotBannerDismissed(user?.id ? localStorage.getItem(pilotCaptureBannerKey) === '1' : false)
+    } catch { /* ignore */ }
+  }, [user?.id, pilotCaptureBannerKey])
+  const dismissPilotCaptureBanner = useCallback(() => {
+    try { localStorage.setItem(pilotCaptureBannerKey, '1') } catch { /* ignore */ }
+    setPilotBannerDismissed(true)
+  }, [pilotCaptureBannerKey])
+  const showPilotCaptureBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && captureMode === 'collapsed'
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const [showPromptList, setShowPromptList] = useState(false)
   const [showPendingReview, setShowPendingReview] = useState(false)
@@ -149,6 +173,11 @@ export function ThoughtsSection({
         }
       } : undefined
     })
+
+    // Pilot users see a Get Started banner above the capture
+    // surface; first successful trade-idea submission retires it
+    // permanently so it doesn't keep nagging.
+    if (pilotMode.effectiveIsPilot) dismissPilotCaptureBanner()
 
     setCaptureMode('collapsed')
     setCapturedContext(null)
@@ -344,6 +373,52 @@ export function ThoughtsSection({
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back</span>
           </button>
+        </div>
+      )}
+
+      {/* Pilot Get Started banner — same visual family as the
+          Trade Lab + Idea Pipeline intros. Walks the pilot through
+          what a "Trade Idea" entry actually is and why they should
+          capture it here. Auto-retires once they submit their first
+          trade idea (handleTradeIdeaSuccess) or after manual dismiss. */}
+      {showPilotCaptureBanner && (
+        <div className="bg-gradient-to-b from-amber-50 to-amber-100/30 dark:from-amber-900/25 dark:to-amber-900/5 border-b border-amber-200 dark:border-amber-800/60">
+          <div className="px-3 pt-3 pb-3 flex items-start gap-2">
+            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="text-[11px] uppercase tracking-wider">Get started</span>
+            </div>
+            <button
+              onClick={dismissPilotCaptureBanner}
+              className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+              title="Dismiss"
+              aria-label="Dismiss capture intro"
+            >
+              <XIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="px-3 pb-3 space-y-2">
+            <p className="text-[12px] font-semibold text-gray-900 dark:text-white leading-snug">
+              This is your Quick Capture sidebar — log new ideas the moment they hit you.
+            </p>
+            <ol className="space-y-1.5">
+              <PilotCaptureStep
+                n={1}
+                title="Click Trade Idea below"
+                hint="Each entry creates a card in the Idea Pipeline, ready to mature into a recommendation."
+              />
+              <PilotCaptureStep
+                n={2}
+                title="Add a quick thesis"
+                hint="A one-liner is enough — you can flesh it out later in the pipeline."
+              />
+              <PilotCaptureStep
+                n={3}
+                title="Submit"
+                hint="The new idea jumps into the Aware stage of your pipeline so the loop can pick it up."
+              />
+            </ol>
+          </div>
         </div>
       )}
 
@@ -1068,5 +1143,26 @@ function PendingReviewList() {
         )
       })}
     </div>
+  )
+}
+
+// Numbered step pill used in the pilot Get Started banner inside
+// the capture sidebar. Mirrors the pattern from the Trade Lab and
+// Idea Pipeline banners for visual consistency across surfaces.
+function PilotCaptureStep({ n, title, hint }: { n: number; title: string; hint: string }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm mt-px">
+        {n}
+      </span>
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold text-gray-900 dark:text-white leading-tight">
+          {title}
+        </div>
+        <div className="text-[10px] text-gray-600 dark:text-gray-400 leading-snug">
+          {hint}
+        </div>
+      </div>
+    </li>
   )
 }

@@ -93,17 +93,44 @@ export function DecisionInboxPanel({
         size === 'full' && "h-full",
       )}
     >
-      {/* Header strip — always visible */}
+      {/* Header strip — always visible. Pulsing amber tint when
+          collapsed AND there's a pending decision so the pilot's
+          eye lands on it; once opened or empty, the strip goes
+          neutral. The "click to open" hint reinforces that the
+          drawer is interactive (pilots told us they didn't realize
+          this was a click target). */}
       <button
         onClick={toggle}
-        className="flex-shrink-0 flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
+        className={clsx(
+          "flex-shrink-0 flex items-center justify-between px-4 h-11 cursor-pointer transition-colors group",
+          isCollapsed && (displayCount ?? 0) > 0
+            ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 border-t-2 border-t-amber-400 dark:border-t-amber-600"
+            : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+        )}
       >
         <div className="flex items-center gap-2">
-          <Gavel className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Decision Inbox</span>
+          <Gavel className={clsx(
+            "h-4 w-4",
+            isCollapsed && (displayCount ?? 0) > 0
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-gray-400 dark:text-gray-500"
+          )} />
+          <span className={clsx(
+            "text-[13px] font-semibold",
+            isCollapsed && (displayCount ?? 0) > 0
+              ? "text-amber-900 dark:text-amber-200"
+              : "text-gray-700 dark:text-gray-300"
+          )}>
+            Decision Inbox
+          </span>
           {displayCount !== null && displayCount > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-full">
-              {displayCount}
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500 text-white dark:bg-amber-500 dark:text-white rounded-full shadow-sm">
+              {displayCount} pending
+            </span>
+          )}
+          {isCollapsed && (displayCount ?? 0) > 0 && (
+            <span className="hidden sm:inline text-[11px] text-amber-700 dark:text-amber-300 font-medium animate-pulse">
+              · Click to review
             </span>
           )}
         </div>

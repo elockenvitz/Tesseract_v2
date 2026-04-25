@@ -1492,31 +1492,45 @@ export function TradeQueuePage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Pilot Get Started banner — slim top-of-page strip matching
-          the Trade Lab intro banner pattern: gradient amber wash,
-          numbered step pills, single-row layout. Dismissible per
-          localStorage so it doesn't reappear on refresh. */}
+      {/* Pilot Get Started banner — taller, prominent strip
+          matching the Trade Lab intro banner so the two onboarding
+          surfaces feel like a pair. Each step pill carries a clear
+          one-liner hint so a pilot reads exactly what to do.
+          Dismissible per localStorage so a returning user isn't
+          re-nagged. */}
       {showPilotBanner && (
-        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/80 to-white dark:from-amber-900/20 dark:via-amber-900/10 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
-          <div className="px-6 py-1.5 flex items-center gap-3 text-[11px]">
-            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0">
-              <Sparkles className="h-3 w-3" />
-              <span>Get started</span>
+        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-100/30 dark:from-amber-900/25 dark:via-amber-900/15 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
+          <div className="px-6 py-3 flex items-start gap-4">
+            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-[12px] uppercase tracking-wider">Get started</span>
             </div>
-            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 min-w-0 overflow-hidden">
-              <PilotPipelineStep n={1} label="Move ideas through stages as they mature" />
-              <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
-              <PilotPipelineStep n={2} label="Make a recommendation when ready for decision" />
-              <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
-              <PilotPipelineStep n={3} label="Open in Trade Lab to simulate and commit" />
+            <div className="flex items-stretch gap-2 text-gray-700 dark:text-gray-300 min-w-0 flex-1 overflow-hidden">
+              <PilotPipelineStep
+                n={1}
+                title="Drag ideas through the pipeline"
+                hint="Click and drag ideas left to right through stages as they mature."
+              />
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-3" />
+              <PilotPipelineStep
+                n={2}
+                title="Open the Decision Inbox"
+                hint="The bottom drawer is where recommendations wait for your decision — click it."
+              />
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-3" />
+              <PilotPipelineStep
+                n={3}
+                title="Open in Trade Lab"
+                hint="Click through to size, simulate, and commit the trade."
+              />
             </div>
             <button
               onClick={dismissPilotBanner}
-              className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+              className="ml-auto -my-1 p-1.5 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
               title="Dismiss"
               aria-label="Dismiss Idea Pipeline intro"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -4507,15 +4521,22 @@ function TradeQueueCard({
 }
 
 // Numbered step pill used in the pilot Get Started banner. Mirrors
-// the Step component in PilotTradeLabIntroBanner so both pages
-// render with identical visuals.
-function PilotPipelineStep({ n, label }: { n: number; label: string }) {
+// the Step component in PilotTradeLabIntroBanner — title + helper
+// hint so the user knows exactly what to do, not just "step 1."
+function PilotPipelineStep({ n, title, hint }: { n: number; title: string; hint: string }) {
   return (
-    <span className="flex items-center gap-1.5 truncate">
-      <span className="shrink-0 w-4 h-4 rounded-full bg-amber-500/10 text-amber-700 dark:bg-amber-300/20 dark:text-amber-200 flex items-center justify-center text-[10px] font-bold tabular-nums">
+    <div className="flex items-start gap-2 min-w-0 flex-1">
+      <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm">
         {n}
       </span>
-      <span className="truncate">{label}</span>
-    </span>
+      <div className="min-w-0">
+        <div className="text-[12px] font-semibold text-gray-900 dark:text-white leading-tight truncate">
+          {title}
+        </div>
+        <div className="text-[11px] text-gray-600 dark:text-gray-400 leading-snug truncate">
+          {hint}
+        </div>
+      </div>
+    </div>
   )
 }
