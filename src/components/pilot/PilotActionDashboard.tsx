@@ -22,12 +22,12 @@
  * user is currently looking.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   ArrowRight, Workflow, CheckCircle2, Lightbulb, FileText,
-  ListChecks, Beaker, BookOpen, Sparkles, Plus,
+  ListChecks, Beaker, BookOpen, Sparkles, Plus, Lock,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -150,7 +150,7 @@ export function PilotActionDashboard({
   onOpenOutcomes,
 }: PilotActionDashboardProps) {
   const { user } = useAuth()
-  const { currentOrganization } = useOrganization()
+  const { currentOrg } = useOrganization()
   const queryClient = useQueryClient()
   const { scenario, state, acceptedTrade, committedAt, hasReview } = usePilotScenarioStatus()
   const { hasUnlockedTradeBook, hasUnlockedOutcomes } = usePilotProgress()
@@ -212,8 +212,8 @@ export function PilotActionDashboard({
     // pipeline page, etc.) automatically refreshes the dashboard's
     // System Loop. Without this, the dashboard had its own private
     // key and only refetched when explicitly nudged.
-    queryKey: ['trade-queue-items', 'pilot-dashboard-pipeline', currentOrganization?.id, pilotPortfolioId],
-    enabled: !!currentOrganization?.id,
+    queryKey: ['trade-queue-items', 'pilot-dashboard-pipeline', currentOrg?.id, pilotPortfolioId],
+    enabled: !!currentOrg?.id,
     // Aggressive refresh strategy — the System Loop relies on this
     // data being current, and the cost of an extra fetch is trivial.
     refetchOnMount: 'always',
@@ -246,13 +246,13 @@ export function PilotActionDashboard({
 
   // ── Recorded decisions (Record + Review + Improve stages) ──
   const { data: recordedDecisions } = useQuery({
-    queryKey: ['pilot-dashboard-recorded', currentOrganization?.id],
-    enabled: !!currentOrganization?.id,
+    queryKey: ['pilot-dashboard-recorded', currentOrg?.id],
+    enabled: !!currentOrg?.id,
     queryFn: async () => {
       const { data: trades } = await supabase
         .from('accepted_trades')
         .select('id, action, asset_id, created_at, target_weight, asset:assets(symbol, company_name), portfolio:portfolios!inner(organization_id)')
-        .eq('portfolio.organization_id', currentOrganization!.id)
+        .eq('portfolio.organization_id', currentOrg!.id)
         .order('created_at', { ascending: false })
         .limit(20)
       const trade_rows = (trades || []) as Array<{
@@ -284,10 +284,14 @@ export function PilotActionDashboard({
   // `trade_queue_items` so a freshly-typed thought from the right
   // sidebar shows up here even before it reaches the kanban. ──
   const { data: userCaptured } = useQuery({
-    // Same reasoning as pipelineItems — share the `trade-queue-items`
-    // prefix so any in-app invalidation also refreshes this list.
-    queryKey: ['trade-queue-items', 'pilot-dashboard-user-captured', currentOrganization?.id, user?.id],
-    enabled: !!currentOrganization?.id && !!user?.id,
+    // Stays on its OWN key prefix (not `trade-queue-items`) because
+    // this query returns `{ ideas, thoughts }` instead of a flat
+    // array — other places in the app run optimistic updates with
+    // `setQueriesData({ queryKey: ['trade-queue-items'] }, old =>
+    // old.map(...))` which crash if matched against this shape. The
+    // dedicated window event + Realtime subscription cover refresh.
+    queryKey: ['pilot-dashboard-user-captured', currentOrg?.id, user?.id],
+    enabled: !!currentOrg?.id && !!user?.id,
     // Same aggressive refresh strategy as pipelineItems — see comment
     // there. The System Loop is the dashboard's most prominent state
     // and pilots must see step 1 turn green the instant they submit.
@@ -368,7 +372,7 @@ export function PilotActionDashboard({
     })
   }, [pipelineItems])
   const completed = state === 'completed'
-  const stepDone: Record<StageKey, boolean> = {
+  const liveStepDone: Record<StageKey, boolean> = {
     capture: hasUserIdea,
     develop: hasMovedIdea,
     decide:  completed,
@@ -380,6 +384,48 @@ export function PilotActionDashboard({
     // future ideas. Until then it's the open work.
     analyze: completed && hasReview,
   }
+
+  // Cache the per-step completion in localStorage so a hard refresh
+  // hydrates the loop with the LAST KNOWN state immediately, before
+  // the queries re-resolve. Without this, the loop briefly renders
+  // every step as "not done" while pipelineItems is still loading,
+  // then hitches into the correct state when data arrives. The cache
+  // is keyed per user+org so each pilot client tracks independently.
+  const stepCacheKey = `pilot_loop_steps_${user?.id || 'anon'}_${currentOrg?.id || 'no-org'}`
+  const [cachedStepDone, setCachedStepDone] = useState<Record<StageKey, boolean> | null>(() => {
+    try {
+      const raw = localStorage.getItem(stepCacheKey)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      // Defensive — if the cached shape ever drifts (new stage added,
+      // old removed) just ignore it instead of crashing.
+      if (typeof parsed === 'object' && parsed !== null
+        && 'capture' in parsed && 'develop' in parsed
+        && 'decide' in parsed && 'review' in parsed && 'analyze' in parsed) {
+        return parsed as Record<StageKey, boolean>
+      }
+      return null
+    } catch {
+      return null
+    }
+  })
+
+  // While the pipeline query is still loading after a hard refresh,
+  // prefer the cached state so the visuals don't flicker. Once the
+  // real data arrives, swap in liveStepDone and persist it for the
+  // next refresh.
+  const stepDone: Record<StageKey, boolean> = pipelineLoading && cachedStepDone
+    ? cachedStepDone
+    : liveStepDone
+
+  useEffect(() => {
+    if (pipelineLoading) return
+    try {
+      localStorage.setItem(stepCacheKey, JSON.stringify(liveStepDone))
+    } catch { /* ignore */ }
+    setCachedStepDone(liveStepDone)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipelineLoading, liveStepDone.capture, liveStepDone.develop, liveStepDone.decide, liveStepDone.review, liveStepDone.analyze, stepCacheKey])
 
   // First incomplete step is the active one. The pilot lands on
   // Capture by default — if NOTHING is done yet, that's where the
@@ -399,19 +445,24 @@ export function PilotActionDashboard({
   const [openKey, setOpenKey] = useState<StageKey>(activeKey)
   const openStage = STAGES.find(s => s.key === openKey) ?? STAGES[0]
 
-  // Auto-advance: the moment the currently-open stage transitions
-  // from "active" to "done" (e.g., the pilot just submitted their
-  // first idea, completing Capture), shift the open panel to the
-  // next active stage so the user is naturally walked forward
-  // through the loop instead of staring at a now-checked-off step.
-  // Guarded by `openKey !== activeKey` so we don't loop on
-  // already-aligned state.
-  const openIsDone = stepDone[openKey]
+  // Auto-advance: only fire on the *actual* transition from undone
+  // → done for whichever stage is currently open. Track the previous
+  // done state per-stage in a ref. If the user submits their first
+  // idea while viewing Capture, the open stage flips false → true
+  // and we advance to the next active step. Once advanced, clicking
+  // back into Capture (or any other completed stage) is honored and
+  // sticky — no transition is detected because the stage was
+  // already done.
+  const prevStepDoneRef = useRef(stepDone)
   useEffect(() => {
-    if (openIsDone && openKey !== activeKey) {
+    const prev = prevStepDoneRef.current
+    if (!prev[openKey] && stepDone[openKey]) {
+      // The stage we're looking at just got completed — walk forward.
       setOpenKey(activeKey)
     }
-  }, [openIsDone, openKey, activeKey])
+    prevStepDoneRef.current = stepDone
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepDone.capture, stepDone.develop, stepDone.decide, stepDone.review, stepDone.analyze, openKey, activeKey])
 
   // Capture handler — opens the right-hand sidebar pre-focused on
   // the trade-idea capture form (same as the lightbulb icon).
@@ -426,14 +477,30 @@ export function PilotActionDashboard({
   }
 
   // Per-stage CTA — the loud, colored primary-action button
-  // beneath the description.
+  // beneath the description. Review and Analyze stay greyed out
+  // until the user has actually committed a trade — until then
+  // there's nothing for those surfaces to show, but we keep the
+  // button visible (with a "locked" tooltip) so the user can see
+  // what's coming next.
   const ctaForStage = (key: StageKey) => {
     switch (key) {
-      case 'capture': return { label: 'Start a new trade idea', icon: Plus, run: openCapture }
-      case 'develop': return { label: 'Open Idea Pipeline', icon: ArrowRight, run: onOpenIdeaPipeline }
-      case 'decide':  return { label: 'Open Trade Lab', icon: ArrowRight, run: () => onOpenTradeLab(scenarioContext) }
-      case 'review':  return { label: 'Open Trade Book', icon: ArrowRight, run: hasUnlockedTradeBook ? onOpenTradeBook : () => onOpenTradeLab(scenarioContext) }
-      case 'analyze': return { label: 'Open Outcomes', icon: ArrowRight, run: hasUnlockedOutcomes ? onOpenOutcomes : onOpenTradeBook }
+      case 'capture': return { label: 'Start a new trade idea', icon: Plus, run: openCapture, locked: false }
+      case 'develop': return { label: 'Open Idea Pipeline', icon: ArrowRight, run: onOpenIdeaPipeline, locked: false }
+      case 'decide':  return { label: 'Open Trade Lab', icon: ArrowRight, run: () => onOpenTradeLab(scenarioContext), locked: false }
+      case 'review':  return {
+        label: 'Open Trade Book',
+        icon: ArrowRight,
+        run: onOpenTradeBook,
+        locked: !hasUnlockedTradeBook,
+        lockHint: 'Unlocks after you commit your first trade.',
+      }
+      case 'analyze': return {
+        label: 'Open Outcomes',
+        icon: ArrowRight,
+        run: onOpenOutcomes,
+        locked: !hasUnlockedOutcomes,
+        lockHint: 'Unlocks after you commit your first trade.',
+      }
     }
   }
 
@@ -446,22 +513,9 @@ export function PilotActionDashboard({
             already shown inline with the System Loop card title
             below — repeating it here was redundant. */}
         <div className="space-y-0.5">
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-[20px] font-semibold text-gray-900 dark:text-white leading-tight">
-              What needs your attention
-            </h1>
-            <button
-              type="button"
-              onClick={() => {
-                queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
-                queryClient.refetchQueries({ queryKey: ['pilot-dashboard-recorded'] })
-              }}
-              className="text-[10px] text-gray-400 hover:text-gray-600 underline"
-              title={`pipeline=${(pipelineItems ?? []).length} captured=${userIdeasFromPipeline.length} hasUserIdea=${String(hasUserIdea)} active=${activeKey}`}
-            >
-              Refresh
-            </button>
-          </div>
+          <h1 className="text-[20px] font-semibold text-gray-900 dark:text-white leading-tight">
+            What needs your attention
+          </h1>
           <p className="text-[13px] text-gray-600 dark:text-gray-400 leading-snug">
             Tesseract prioritizes ideas, decisions, and reviews so you know what to work on next.
           </p>
@@ -669,7 +723,19 @@ interface StagePanelProps {
   hasUnlockedOutcomes: boolean
 }
 
-type PilotActionDashboardCtaBuilder = (key: StageKey) => { label: string; icon: React.ElementType; run: () => void }
+type PilotActionDashboardCtaBuilder = (key: StageKey) => {
+  label: string
+  icon: React.ElementType
+  run: () => void
+  /** When true, the CTA renders as a disabled lock chip — visible
+   *  so the user can preview "what's next" but not pressable until
+   *  the unlock condition is met (committing a trade for review/
+   *  analyze, etc.). */
+  locked?: boolean
+  /** Optional explanation surfaced as the button's title attribute
+   *  while locked. */
+  lockHint?: string
+}
 
 function StagePanel({
   stage, cta, state, scenario, acceptedTrade, committedAt, hasReview,
@@ -701,9 +767,17 @@ function StagePanel({
           <button
             type="button"
             onClick={cta.run}
-            className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[12px] font-semibold transition-colors ${ACCENT_CTA[stage.accent]}`}
+            disabled={cta.locked}
+            title={cta.locked ? (cta.lockHint || 'Unlocks later in the loop.') : undefined}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[12px] font-semibold transition-colors ${
+              cta.locked
+                ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500 cursor-not-allowed'
+                : ACCENT_CTA[stage.accent]
+            }`}
           >
-            {cta.label} <CtaIcon className="w-3.5 h-3.5" />
+            {cta.locked && <Lock className="w-3 h-3" />}
+            {cta.label}
+            {!cta.locked && <CtaIcon className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
@@ -868,7 +942,16 @@ function DevelopAttention({
     const by: Record<string, typeof items> = {}
     for (const k of PIPELINE_STAGE_ORDER) by[k] = []
     for (const it of items) {
-      if (by[it.stage]) by[it.stage].push(it)
+      // Newly-captured ideas land with `stage='idea'` (legacy enum
+      // value used by QuickTradeIdeaCapture) rather than `'aware'`.
+      // Surface them in the Aware column so the pilot sees their
+      // capture in the kanban breakdown without having to drag it.
+      // Anything else with an unrecognized stage also falls back
+      // to Aware rather than getting silently dropped.
+      const normalized = (it.stage === 'idea' || !PIPELINE_STAGE_ORDER.includes(it.stage as any))
+        ? 'aware'
+        : it.stage
+      if (by[normalized]) by[normalized].push(it)
     }
     return by
   }, [items])
@@ -887,6 +970,26 @@ function DevelopAttention({
       />
     )
   }
+  // Maturity-coded styling per stage. Light/cool on the left
+  // (just-aware) → warm/saturated on the right (ready) to give
+  // the row a visual sense of conviction building as ideas move
+  // through the pipeline. The leading dot, top border, and count
+  // all share the same accent so each column reads as one cohesive
+  // chip rather than a generic grid cell.
+  const STAGE_STYLE: Record<typeof PIPELINE_STAGE_ORDER[number], {
+    accent: string
+    accentDot: string
+    accentBorder: string
+    accentText: string
+    pill: string
+  }> = {
+    aware:              { accent: 'from-sky-50',     accentDot: 'bg-sky-400',     accentBorder: 'border-t-sky-300',     accentText: 'text-sky-700',     pill: 'bg-sky-50 text-sky-800 border-sky-200' },
+    investigate:        { accent: 'from-indigo-50',  accentDot: 'bg-indigo-400',  accentBorder: 'border-t-indigo-300',  accentText: 'text-indigo-700',  pill: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+    deep_research:      { accent: 'from-violet-50',  accentDot: 'bg-violet-400',  accentBorder: 'border-t-violet-300',  accentText: 'text-violet-700',  pill: 'bg-violet-50 text-violet-800 border-violet-200' },
+    thesis_forming:     { accent: 'from-amber-50',   accentDot: 'bg-amber-400',   accentBorder: 'border-t-amber-300',   accentText: 'text-amber-700',   pill: 'bg-amber-50 text-amber-800 border-amber-200' },
+    ready_for_decision: { accent: 'from-emerald-50', accentDot: 'bg-emerald-500', accentBorder: 'border-t-emerald-400', accentText: 'text-emerald-700', pill: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  }
+
   return (
     <>
       <AttentionHeader
@@ -894,36 +997,61 @@ function DevelopAttention({
         count={total}
         helper="Drag ideas left to right in the pipeline as conviction builds."
       />
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-        {PIPELINE_STAGE_ORDER.map(stageKey => {
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5">
+        {PIPELINE_STAGE_ORDER.map((stageKey, idx) => {
           const list = grouped[stageKey] || []
+          const style = STAGE_STYLE[stageKey]
+          const stageLabel = PIPELINE_STAGE_LABEL[stageKey]
           return (
-            <div key={stageKey} className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/30 p-2 min-h-[104px]">
-              <div className="flex items-baseline justify-between mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  {PIPELINE_STAGE_LABEL[stageKey]}
+            <div
+              key={stageKey}
+              className={`group relative rounded-lg border-t-2 ${style.accentBorder} border border-gray-200 dark:border-gray-700 bg-gradient-to-b ${style.accent} via-white to-white dark:from-gray-900 dark:via-gray-900 dark:to-gray-900 p-2.5 min-h-[120px] transition-shadow hover:shadow-sm`}
+            >
+              {/* Header row: colored dot, stage name, count badge */}
+              <div className="flex items-center justify-between gap-1.5 mb-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className={`w-1.5 h-1.5 rounded-full ${style.accentDot} flex-shrink-0`} />
+                  <span className={`text-[9px] font-bold uppercase tracking-wider ${style.accentText} truncate`}>
+                    {stageLabel}
+                  </span>
+                </div>
+                <span className={`text-[14px] font-bold tabular-nums leading-none ${list.length > 0 ? style.accentText : 'text-gray-300 dark:text-gray-600'}`}>
+                  {list.length}
                 </span>
-                <span className="text-[10px] text-gray-400 tabular-nums">{list.length}</span>
               </div>
+
+              {/* Ticker pills */}
               {list.length === 0 ? (
-                <p className="text-[10px] text-gray-300 italic">—</p>
+                <p className="text-[10px] text-gray-300 dark:text-gray-600 italic mt-3 text-center">empty</p>
               ) : (
-                <ul className="space-y-1">
-                  {list.slice(0, 3).map(i => (
-                    <li key={i.id} className="text-[11px]">
-                      <span className="font-semibold text-gray-900 dark:text-white">
-                        {i.asset?.symbol || '—'}
+                <div className="flex flex-wrap gap-1">
+                  {list.slice(0, 4).map(i => {
+                    const sym = i.asset?.symbol || '—'
+                    const name = i.asset?.company_name || sym
+                    return (
+                      <span
+                        key={i.id}
+                        title={name}
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold tabular-nums ${style.pill}`}
+                      >
+                        {sym}
                       </span>
-                      {i.asset?.company_name && (
-                        <span className="text-gray-400 ml-1 truncate">· {i.asset.company_name}</span>
-                      )}
-                    </li>
-                  ))}
-                  {list.length > 3 && (
-                    <li className="text-[10px] text-gray-400 italic">+{list.length - 3} more</li>
+                    )
+                  })}
+                  {list.length > 4 && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-dashed border-gray-200 dark:border-gray-700 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                      +{list.length - 4}
+                    </span>
                   )}
-                </ul>
+                </div>
               )}
+
+              {/* Step number — ghost watermark in the bottom-right
+                  corner so the funnel ordering is glanceable even
+                  when stage labels truncate at very narrow widths. */}
+              <span className="absolute right-1.5 bottom-1 text-[9px] font-bold tabular-nums text-gray-300/70 dark:text-gray-600/70 pointer-events-none">
+                {idx + 1}/{PIPELINE_STAGE_ORDER.length}
+              </span>
             </div>
           )
         })}
@@ -1194,13 +1322,18 @@ function AttentionHeader({ title, count, helper }: { title: string; count: numbe
   )
 }
 
+// Empty-state blurb. The trailing CTA was duplicative of the stage
+// panel's main button (same label, same destination), so it's been
+// dropped — the empty state now only narrates the "nothing here yet"
+// context. Callers still pass the CTA fields for backward compat;
+// they're intentionally ignored at render time.
 function EmptyAttention({
-  title, body, ctaLabel, onCta,
+  title, body,
 }: {
   title: string
   body: string
-  ctaLabel: string
-  onCta: () => void
+  ctaLabel?: string
+  onCta?: () => void
 }) {
   return (
     <div className="rounded-md border border-dashed border-gray-200 dark:border-gray-700 px-4 py-4 text-center">
@@ -1208,13 +1341,6 @@ function EmptyAttention({
         {title}
       </div>
       <p className="text-[11px] text-gray-500 leading-snug max-w-md mx-auto">{body}</p>
-      <button
-        type="button"
-        onClick={onCta}
-        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 text-[11px] font-semibold hover:border-gray-400 transition-colors"
-      >
-        {ctaLabel} <ArrowRight className="w-3 h-3" />
-      </button>
     </div>
   )
 }

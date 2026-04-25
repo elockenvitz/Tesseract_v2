@@ -85,6 +85,46 @@ export function ThoughtsSection({
     try { localStorage.setItem(pilotCaptureBannerKey, '1') } catch { /* ignore */ }
     setPilotBannerDismissed(true)
   }, [pilotCaptureBannerKey])
+  // Per-step completion for the Quick Capture Get Started banner.
+  // Same pattern as the Idea Pipeline + Trade Lab banners — each
+  // step ticks off as the user does the corresponding action and
+  // the banner auto-retires once all three are done. Keyed per
+  // user+org so each pilot client tracks independently.
+  const captureStepKey = (n: 1 | 2 | 3) =>
+    `pilot_capture_step${n}_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
+  const readCaptureStep = (n: 1 | 2 | 3) => {
+    try { return localStorage.getItem(captureStepKey(n)) === '1' } catch { return false }
+  }
+  const writeCaptureStep = (n: 1 | 2 | 3) => {
+    try { localStorage.setItem(captureStepKey(n), '1') } catch { /* ignore */ }
+  }
+  const [captureStep1Done, setCaptureStep1Done] = useState(() => readCaptureStep(1))
+  const [captureStep2Done, setCaptureStep2Done] = useState(() => readCaptureStep(2))
+  const [captureStep3Done, setCaptureStep3Done] = useState(() => readCaptureStep(3))
+  // Reload from localStorage when user/org changes.
+  useEffect(() => {
+    setCaptureStep1Done(readCaptureStep(1))
+    setCaptureStep2Done(readCaptureStep(2))
+    setCaptureStep3Done(readCaptureStep(3))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, currentOrgId])
+  // Listen for the three step events. Dispatched from
+  // QuickTradeIdeaCapture as the user fills the form, plus from
+  // handleTradeIdeaSuccess for the submit step.
+  useEffect(() => {
+    const onStep1 = () => { writeCaptureStep(1); setCaptureStep1Done(true) }
+    const onStep2 = () => { writeCaptureStep(2); setCaptureStep2Done(true) }
+    const onStep3 = () => { writeCaptureStep(3); setCaptureStep3Done(true) }
+    window.addEventListener('pilot-capture:ticker-picked', onStep1)
+    window.addEventListener('pilot-capture:thesis-portfolio-set', onStep2)
+    window.addEventListener('pilot-capture:submitted', onStep3)
+    return () => {
+      window.removeEventListener('pilot-capture:ticker-picked', onStep1)
+      window.removeEventListener('pilot-capture:thesis-portfolio-set', onStep2)
+      window.removeEventListener('pilot-capture:submitted', onStep3)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, currentOrgId])
   // Banner only fires inside the Add Trade Idea form — the pilot UX
   // hint is "here's how to fill this thing out", not a generic intro
   // for the whole Quick Ideas surface. Hidden on the main capture
@@ -188,8 +228,13 @@ export function ThoughtsSection({
 
     // Pilot users see a Get Started banner above the capture
     // surface; first successful trade-idea submission retires it
-    // permanently so it doesn't keep nagging.
-    if (pilotMode.effectiveIsPilot) dismissPilotCaptureBanner()
+    // permanently so it doesn't keep nagging. Also tick step 3
+    // (the submit step) so the visible checkmarks complete on the
+    // way out.
+    if (pilotMode.effectiveIsPilot) {
+      try { window.dispatchEvent(new CustomEvent('pilot-capture:submitted')) } catch { /* ignore */ }
+      dismissPilotCaptureBanner()
+    }
 
     setCaptureMode('collapsed')
     setCapturedContext(null)
@@ -583,16 +628,19 @@ export function ThoughtsSection({
                       n={1}
                       title="Pick a ticker"
                       hint="Search for the symbol you want to trade — that's the asset this idea is about."
+                      done={captureStep1Done}
                     />
                     <PilotCaptureStep
                       n={2}
                       title="Add a quick thesis and pick a portfolio"
                       hint="A one-liner thesis is enough, and the portfolio tells Tesseract where this idea lives."
+                      done={captureStep2Done}
                     />
                     <PilotCaptureStep
                       n={3}
                       title="Submit"
                       hint="The idea jumps into the Aware stage so the loop can pick it up."
+                      done={captureStep3Done}
                     />
                   </ol>
                 </div>
@@ -1169,17 +1217,32 @@ function PendingReviewList() {
 // Numbered step pill used in the pilot Get Started banner inside
 // the capture sidebar. Mirrors the pattern from the Trade Lab and
 // Idea Pipeline banners for visual consistency across surfaces.
-function PilotCaptureStep({ n, title, hint }: { n: number; title: string; hint: string }) {
+function PilotCaptureStep({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
   return (
     <li className="flex items-start gap-2">
-      <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm mt-px">
-        {n}
+      <span
+        className={clsx(
+          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm mt-px",
+          done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white",
+        )}
+      >
+        {done ? <Check className="h-3 w-3" /> : n}
       </span>
       <div className="min-w-0">
-        <div className="text-[11px] font-semibold text-gray-900 dark:text-white leading-tight">
+        <div
+          className={clsx(
+            "text-[11px] font-semibold leading-tight",
+            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white",
+          )}
+        >
           {title}
         </div>
-        <div className="text-[10px] text-gray-600 dark:text-gray-400 leading-snug">
+        <div
+          className={clsx(
+            "text-[10px] leading-snug",
+            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400",
+          )}
+        >
           {hint}
         </div>
       </div>

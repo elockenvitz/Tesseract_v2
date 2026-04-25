@@ -152,9 +152,14 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       const newStatus = params.targetStatus || params.stage
       const now = new Date().toISOString()
 
-      // Optimistically update the list cache
+      // Optimistically update the list cache. Guard with `Array.isArray`
+      // because `setQueriesData` matches every cache entry under the
+      // `trade-queue-items` prefix — including queries that return a
+      // shaped object instead of a flat array (e.g. the pilot dashboard's
+      // `{ideas, thoughts}` snapshot). Without the guard, those entries
+      // crash with "old.map is not a function".
       queryClient.setQueriesData({ queryKey: ['trade-queue-items'] }, (old: any) => {
-        if (!old) return old
+        if (!Array.isArray(old)) return old
         return old.map((item: any) =>
           item.id === params.tradeId
             ? { ...item, status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus, updated_at: now }
@@ -339,7 +344,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       const tradeIdSet = new Set(params.tradeIds)
 
       queryClient.setQueriesData({ queryKey: ['trade-queue-items'] }, (old: any) => {
-        if (!old) return old
+        if (!Array.isArray(old)) return old
         return old.map((item: any) =>
           tradeIdSet.has(item.id)
             ? { ...item, status: newStatus, stage: params.stage || newStatus, workflow_stage: params.stage || newStatus }

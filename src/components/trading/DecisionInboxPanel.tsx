@@ -13,24 +13,33 @@ import {
   Minimize2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { DecisionInbox } from './DecisionInbox'
 
 // Persist the "last acknowledged pending count" across tab navigation
 // and page refresh so amber ("new decision!") doesn't re-pin every time
-// the panel re-mounts. Keyed per-portfolio so different portfolios
-// track independently.
+// the panel re-mounts. Keyed per user+org+portfolio — using portfolioId
+// alone bled across pilot clients (when portfolio_id is "all" / unset
+// the key fell back to a single shared "global" bucket, so the prior
+// client's watermark suppressed amber in the next client).
 const ACK_KEY_PREFIX = 'decision_inbox_acknowledged_count_'
-const ackKey = (portfolioId?: string) => `${ACK_KEY_PREFIX}${portfolioId || 'global'}`
-function readAck(portfolioId?: string): number {
+function ackKey(userId: string | undefined, orgId: string | null, portfolioId?: string) {
+  const u = userId || 'anon'
+  const o = orgId || 'no-org'
+  const p = portfolioId || 'all'
+  return `${ACK_KEY_PREFIX}${u}_${o}_${p}`
+}
+function readAck(userId: string | undefined, orgId: string | null, portfolioId?: string): number {
   try {
-    const raw = localStorage.getItem(ackKey(portfolioId))
+    const raw = localStorage.getItem(ackKey(userId, orgId, portfolioId))
     if (!raw) return 0
     const n = parseInt(raw, 10)
     return Number.isFinite(n) ? n : 0
   } catch { return 0 }
 }
-function writeAck(portfolioId: string | undefined, n: number) {
-  try { localStorage.setItem(ackKey(portfolioId), String(n)) } catch { /* ignore */ }
+function writeAck(userId: string | undefined, orgId: string | null, portfolioId: string | undefined, n: number) {
+  try { localStorage.setItem(ackKey(userId, orgId, portfolioId), String(n)) } catch { /* ignore */ }
 }
 
 type DrawerSize = 'collapsed' | 'half' | 'full'
@@ -58,9 +67,20 @@ export function DecisionInboxPanel({
   urgencyFilter,
   createdByFilter,
 }: DecisionInboxPanelProps) {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const [internalSize, setInternalSize] = useState<DrawerSize>('collapsed')
   const [resolvedPendingCount, setResolvedPendingCount] = useState<number | null>(null)
   const handlePendingCountChange = useCallback((count: number) => setResolvedPendingCount(count), [])
+
+  // Whenever the active portfolio changes (e.g. analyst switches to a
+  // new pilot client), reset the resolved count back to null so we
+  // don't carry the previous portfolio's value across the boundary.
+  // The inner inbox refetches and fires `onPendingCountChange` with
+  // the new portfolio's number a moment later.
+  useEffect(() => {
+    setResolvedPendingCount(null)
+  }, [portfolioId])
 
   // The parent passes an UNFILTERED count (`pendingCount`) derived straight
   // from decision_requests by status. DecisionInbox re-filters by permission
@@ -80,16 +100,18 @@ export function DecisionInboxPanel({
   // survives tab navigation and page refresh — without this the amber
   // state re-pins every time the panel re-mounts, defeating the
   // acknowledgement flow.
-  const [acknowledgedCount, setAcknowledgedCountState] = useState<number>(() => readAck(portfolioId))
-  // Reload the watermark when the active portfolio changes — different
-  // portfolios track independently.
+  const [acknowledgedCount, setAcknowledgedCountState] = useState<number>(
+    () => readAck(user?.id, currentOrgId, portfolioId),
+  )
+  // Reload the watermark when user / org / portfolio changes — each
+  // (user, org, portfolio) triplet tracks independently.
   useEffect(() => {
-    setAcknowledgedCountState(readAck(portfolioId))
-  }, [portfolioId])
+    setAcknowledgedCountState(readAck(user?.id, currentOrgId, portfolioId))
+  }, [user?.id, currentOrgId, portfolioId])
   const setAcknowledgedCount = useCallback((n: number) => {
     setAcknowledgedCountState(n)
-    writeAck(portfolioId, n)
-  }, [portfolioId])
+    writeAck(user?.id, currentOrgId, portfolioId, n)
+  }, [user?.id, currentOrgId, portfolioId])
   const hasUnseen = (displayCount ?? 0) > acknowledgedCount
 
   // Derive size from controlled collapsed prop or internal state

@@ -16,6 +16,7 @@ import { clsx } from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { useAcceptedTrades, useTradeBatches } from '../hooks/useAcceptedTrades'
 import { AcceptedTradesTable } from '../components/trading/AcceptedTradesTable'
 import { buildPairInfoByAsset } from '../lib/trade-lab/pair-info'
@@ -57,10 +58,15 @@ interface TradeBookPageProps {
    *  highlight on mount. Set by SimulationPage's "View in Trade Book" CTA in
    *  the Decision Recorded modal so the PM immediately sees what just landed. */
   highlightTradeIds?: string[]
+  /** Optional trade_batch id to pre-select in the left rail. When the user
+   *  arrives via the Decision Recorded modal we know exactly which batch
+   *  they just committed; pre-selecting it skips a hunt-and-click. */
+  highlightBatchId?: string
 }
 
-export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBookPageProps = {}) {
+export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlightBatchId }: TradeBookPageProps = {}) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   // Hydrate from session-persisted state once, at mount. TabStateManager
   // stores state keyed by tab id in sessionStorage so tab-switch round
@@ -88,8 +94,28 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
   // highlight effect below still scrolls to and flashes the new rows.
   const [view, setView] = useState<BookView>('batches')
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
-    persisted.selectedBatchId ?? null,
+    // Caller-supplied highlightBatchId beats persisted state — it
+    // means "the user just committed this batch, land on it." Without
+    // this initial-state override there's a frame where the persisted
+    // (stale) batch is selected before the override-on-mount effect
+    // below runs, which reads as a brief flash of the wrong batch.
+    highlightBatchId ?? persisted.selectedBatchId ?? null,
   )
+
+  // One-shot: if the page mount carried a highlightBatchId AND the
+  // user is on the Batches view (default), make sure the prop wins
+  // even if a render after mount tries to fall back to persisted
+  // state. Intentionally fires only when `highlightBatchId` flips —
+  // a manual click on a different batch later in the session is not
+  // overridden.
+  const lastHandledBatchHighlightRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!highlightBatchId) return
+    if (lastHandledBatchHighlightRef.current === highlightBatchId) return
+    lastHandledBatchHighlightRef.current = highlightBatchId
+    setSelectedBatchId(highlightBatchId)
+    setView('batches')
+  }, [highlightBatchId])
   // Transient "pre-fill the Trades view search with this string"
   // signal. Set ONLY by handleViewBatchTrades (explicit "Open in
   // Trades" from the Batches detail panel). Intentionally NOT
@@ -526,7 +552,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
           move on to Outcomes. Gated on pilot mode so non-pilots never see
           it. Dismissible per-user. */}
       {pilotMode.effectiveIsPilot && hasUnlockedOutcomes && trades && trades.length > 0 && (
-        <PilotOutcomesNudge userId={user?.id} />
+        <PilotOutcomesNudge userId={user?.id} orgId={currentOrgId} />
       )}
 
       {/* Content */}
