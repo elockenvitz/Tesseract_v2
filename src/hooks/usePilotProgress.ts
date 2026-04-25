@@ -9,25 +9,40 @@
  *                                Decision Recorded modal
  *   - outcomes_unlocked        — first real visit to Trade Book after
  *                                unlocking (proxies "reviewed")
+ *   - graduated                — first time the user reaches Outcomes
+ *                                in a given org. Tracked per-org via
+ *                                `graduated_at_<orgId>` keys so an
+ *                                analyst running multiple pilot clients
+ *                                stays "not yet graduated" in each new
+ *                                client until they walk the loop there.
  */
 
 import { useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
 
 export type PilotStage =
   | 'trade_book_unlocked'
   | 'outcomes_unlocked'
+  | 'graduated'
 
 export interface PilotProgress {
   trade_book_unlocked_at?: string | null
   outcomes_unlocked_at?: string | null
+  /** @deprecated retained for compatibility — new code reads
+   *  `graduated_at_<orgId>` instead, since graduation is per-org. */
+  graduated_at?: string | null
+  /** Per-org graduation timestamps live as `graduated_at_<orgId>`
+   *  inside this same JSONB. Index signature below covers them. */
   [key: string]: string | null | undefined
 }
 
-const STAGE_TO_KEY: Record<PilotStage, keyof PilotProgress> = {
+const graduatedKey = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
+
+const STAGE_TO_KEY: Record<Exclude<PilotStage, 'graduated'>, keyof PilotProgress> = {
   trade_book_unlocked: 'trade_book_unlocked_at',
   outcomes_unlocked: 'outcomes_unlocked_at',
 }
@@ -35,10 +50,12 @@ const STAGE_TO_KEY: Record<PilotStage, keyof PilotProgress> = {
 const STAGE_TO_EVENT: Record<PilotStage, string> = {
   trade_book_unlocked: 'pilot_trade_book_unlocked',
   outcomes_unlocked: 'pilot_outcomes_unlocked',
+  graduated: 'pilot_graduated',
 }
 
 export function usePilotProgress() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   const query = useQuery({
@@ -61,7 +78,10 @@ export function usePilotProgress() {
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return
-      const key = STAGE_TO_KEY[stage]
+      // Graduation is per-org; everything else is user-level.
+      const key: keyof PilotProgress = stage === 'graduated'
+        ? graduatedKey(currentOrgId)
+        : STAGE_TO_KEY[stage]
       // Already marked? Don't re-write.
       if (progress[key]) return
 
@@ -93,6 +113,10 @@ export function usePilotProgress() {
     isLoading: query.isLoading,
     hasUnlockedTradeBook: !!progress.trade_book_unlocked_at,
     hasUnlockedOutcomes: !!progress.outcomes_unlocked_at,
+    /** Per-org: true only if the user has reached Outcomes in the
+     *  CURRENT org. Each new pilot client starts as not-yet-graduated
+     *  even for an analyst who's graduated in prior clients. */
+    hasGraduated: !!progress[graduatedKey(currentOrgId)],
     mark,
   }
 }

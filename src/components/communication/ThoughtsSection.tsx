@@ -110,11 +110,15 @@ export function ThoughtsSection({
   }, [user?.id, currentOrgId])
   // Listen for the three step events. Dispatched from
   // QuickTradeIdeaCapture as the user fills the form, plus from
-  // handleTradeIdeaSuccess for the submit step.
+  // handleTradeIdeaSuccess for the submit step. Listener bodies are
+  // queueMicrotask-deferred so a render-time event dispatcher can't
+  // trigger setState in this component during another component's
+  // render.
   useEffect(() => {
-    const onStep1 = () => { writeCaptureStep(1); setCaptureStep1Done(true) }
-    const onStep2 = () => { writeCaptureStep(2); setCaptureStep2Done(true) }
-    const onStep3 = () => { writeCaptureStep(3); setCaptureStep3Done(true) }
+    const defer = (fn: () => void) => () => queueMicrotask(fn)
+    const onStep1 = defer(() => { writeCaptureStep(1); setCaptureStep1Done(true) })
+    const onStep2 = defer(() => { writeCaptureStep(2); setCaptureStep2Done(true) })
+    const onStep3 = defer(() => { writeCaptureStep(3); setCaptureStep3Done(true) })
     window.addEventListener('pilot-capture:ticker-picked', onStep1)
     window.addEventListener('pilot-capture:thesis-portfolio-set', onStep2)
     window.addEventListener('pilot-capture:submitted', onStep3)

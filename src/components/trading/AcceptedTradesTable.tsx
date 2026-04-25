@@ -253,6 +253,9 @@ export function TradeRationaleLog({
   const handleSubmit = () => {
     if (!draft.trim() || !onAddComment) return
     onAddComment(tradeId, draft.trim())
+    // Tick step 2 of the pilot Trade Book Get Started banner the
+    // first time a rationale comment is added to any trade row.
+    try { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) } catch { /* ignore */ }
     setDraft('')
   }
 

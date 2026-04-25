@@ -39,6 +39,9 @@ export interface PilotModeState {
    *  selected pilot org. Drives per-org unlocks for Trade Book / Outcomes
    *  and auto-dismiss of the Get Started banner after the first execute. */
   hasCommittedTradeInOrg: boolean
+  /** True once the user has reached Outcomes — they've completed the
+   *  pilot loop and now get the full app experience. */
+  hasGraduated: boolean
   /** Resolved per-feature access config. Defaults when not in pilot. */
   access: PilotAccessConfig
   /** Shortcut: is a given feature 'full' | 'preview' | 'hidden'? */
@@ -52,7 +55,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, isLoading: progressLoading } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, isLoading: progressLoading } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -115,7 +118,11 @@ export function usePilotMode(): PilotModeState {
 
   const isPilot = !!orgFlags?.pilotMode
   const access = useMemo(() => {
-    if (!isPilot) return PILOT_ACCESS_DEFAULTS
+    // Once the user has graduated, all pilot gating drops away —
+    // they get the same access as a non-pilot user even though the
+    // org may still be flagged as pilot. The graduation flag is set
+    // when they reach Outcomes (see DecisionAccountabilityPage).
+    if (!isPilot || hasGraduated) return PILOT_ACCESS_DEFAULTS
     const base = mergePilotAccess(orgFlags?.accessOverride)
     // Progressive unlocks layered on top of the org's static access map.
     // Unlock requires BOTH:
@@ -129,14 +136,19 @@ export function usePilotMode(): PilotModeState {
     if (perOrgUnlocked && hasUnlockedTradeBook && base.tradeBook === 'preview') base.tradeBook = 'full'
     if (perOrgUnlocked && hasUnlockedOutcomes && base.outcomes === 'preview') base.outcomes = 'full'
     return base
-  }, [isPilot, orgFlags?.accessOverride, hasUnlockedTradeBook, hasUnlockedOutcomes, hasCommittedTradeInOrg])
+  }, [isPilot, hasGraduated, orgFlags?.accessOverride, hasUnlockedTradeBook, hasUnlockedOutcomes, hasCommittedTradeInOrg])
 
   const accessFor = (feature: keyof PilotAccessConfig) => access[feature]
   const canSee = (feature: keyof PilotAccessConfig) => access[feature] !== 'hidden'
   const canUse = (feature: keyof PilotAccessConfig) => access[feature] === 'full'
 
   const isLoading = orgLoading || progressLoading
-  const effectiveIsPilot = isLoading ? cachedIsPilot : isPilot
+  // Graduation overrides everything: the user has completed the loop
+  // and earned the full app — render them as a non-pilot regardless
+  // of org flag state.
+  const effectiveIsPilot = isLoading
+    ? (hasGraduated ? false : cachedIsPilot)
+    : (hasGraduated ? false : isPilot)
 
   // Keep the cache fresh so the next cold refresh has the correct hint.
   useEffect(() => {
@@ -153,6 +165,10 @@ export function usePilotMode(): PilotModeState {
     isLoading,
     effectiveIsPilot,
     hasCommittedTradeInOrg: !!hasCommittedTradeInOrg,
+    /** Once true, the user has finished the pilot loop and the app
+     *  switches to the full experience (full dashboard, all tabs,
+     *  no banners). The org may still be pilot-flagged for audit. */
+    hasGraduated,
     access,
     accessFor,
     canSee,

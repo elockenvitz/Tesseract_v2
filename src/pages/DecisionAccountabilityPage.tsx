@@ -17,7 +17,7 @@
  * - Rationale content from trade_event_rationales
  */
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Target, Search, ChevronDown, ChevronRight, Clock,
   CheckCircle2, TrendingUp, TrendingDown, Briefcase,
@@ -63,7 +63,10 @@ import {
 import { usePositionLifecycle, usePositionPriceHistory, useHoldingsTimeSeries } from '../hooks/usePositionLifecycle'
 import { AnalystScorecardsView, PMScorecardsView } from '../components/outcomes/ScorecardViews'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
+import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetStarted'
 import { usePilotMode } from '../hooks/usePilotMode'
+import { usePilotProgress } from '../hooks/usePilotProgress'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
@@ -2328,9 +2331,103 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
           {row.move_since_decision_pct === null && row.move_since_execution_pct === null && !lifecycle && (
             <EmptyField text="Outcome not yet measurable — no price data available" />
           )}
+
+          {/* ── Next steps — what to do with this analysis ─────────
+              Closes the loop: every committed decision should
+              produce one of these three follow-ons. Surfaces
+              regardless of P&L state because reflection is the
+              point — a flat trade still teaches you something.
+              Each click fires `pilot-outcomes:next-action-viewed`
+              so the pilot Get Started banner can tick step 2. */}
+          <NextStepsFooter row={row} />
         </div>
       )}
     </StorySection>
+  )
+}
+
+// ─── Next-step CTAs surfaced under "How it's performing" ──────────
+// Each option is a one-click jump to the right next surface — open
+// a new trade idea on the same asset, refresh the asset's research
+// thread, or capture a reflection in this same Outcomes view. The
+// goal is to make "what do I do with this" obvious instead of
+// leaving the user staring at numbers.
+
+function NextStepsFooter({ row }: { row: AccountabilityRow }) {
+  const fireNextActionView = () => {
+    try { window.dispatchEvent(new CustomEvent('pilot-outcomes:next-action-viewed')) } catch { /* ignore */ }
+  }
+  const handleNewIdea = () => {
+    fireNextActionView()
+    window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+      detail: { captureType: 'trade_idea', assetId: row.asset_id, assetSymbol: row.asset_symbol },
+    }))
+  }
+  const handleUpdateResearch = () => {
+    fireNextActionView()
+    if (!row.asset_id) return
+    window.dispatchEvent(new CustomEvent('navigate-to-asset', {
+      detail: {
+        id: row.asset_id,
+        title: row.asset_symbol || 'Asset',
+        type: 'asset',
+        data: { id: row.asset_id },
+      },
+    }))
+  }
+  const handleAddReflection = () => {
+    fireNextActionView()
+    window.dispatchEvent(new CustomEvent('outcomes:open-section', {
+      detail: { sectionId: 'reflection' },
+    }))
+  }
+
+  return (
+    <div className="border-t border-gray-100 pt-2.5 mt-1 space-y-2">
+      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+        Where to next
+      </div>
+      <p className="text-[10px] text-gray-500 leading-snug">
+        The loop runs continuously — pick the next move on this thesis.
+      </p>
+      <div className="grid grid-cols-1 gap-1.5 mt-1">
+        <button
+          type="button"
+          onClick={handleNewIdea}
+          className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-amber-200 bg-amber-50 hover:bg-amber-100 dark:border-amber-800/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-800 dark:text-amber-200 text-[11px] font-semibold transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <Lightbulb className="w-3 h-3" />
+            Capture a new trade idea
+          </span>
+          <span className="text-[10px] font-normal text-amber-600/80 dark:text-amber-300/70">
+            {row.asset_symbol ?? 'this asset'}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={handleUpdateResearch}
+          className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-sky-200 bg-sky-50 hover:bg-sky-100 dark:border-sky-800/60 dark:bg-sky-950/30 dark:hover:bg-sky-950/50 text-sky-800 dark:text-sky-200 text-[11px] font-semibold transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <FileText className="w-3 h-3" />
+            Update research on this asset
+          </span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          onClick={handleAddReflection}
+          className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 text-[11px] font-semibold transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <MessageSquare className="w-3 h-3" />
+            Add a reflection on this decision
+          </span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -2687,6 +2784,26 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   const [sortBy, setSortBy] = useState<string>('date')
   const [sortDesc, setSortDesc] = useState(true)
 
+  // Reaching Outcomes is the graduation moment — the user has walked
+  // the full pilot loop (capture → develop → decide → review → analyze)
+  // and now gets the full app: full dashboard, all tabs, no banners.
+  // Mark once, then `usePilotMode.effectiveIsPilot` flips to false on
+  // the next render and the rest of the app reconfigures itself.
+  const pilotMode = usePilotMode()
+  const { mark: markPilotStage, hasGraduated } = usePilotProgress()
+  const { user: pilotBannerUser } = useAuth()
+  const { currentOrgId: pilotBannerOrgId } = useOrganization()
+  // True only on the very first time the user lands here (before
+  // graduation has been marked). After graduation, the org-pilot
+  // gate flips off and `pilotMode.isPilot` may still be true (org
+  // flag) but we no longer want to show this banner.
+  const showPilotOutcomesBanner = pilotMode.isPilot && !pilotMode.isLoading
+  useEffect(() => {
+    if (hasGraduated) return
+    if (!pilotMode.isPilot || pilotMode.isLoading) return
+    markPilotStage('graduated')
+  }, [pilotMode.isPilot, pilotMode.isLoading, hasGraduated, markPilotStage])
+
   // Merge portfolio selection into filters
   const effectiveFilters = useMemo(() => ({
     ...filters,
@@ -2943,6 +3060,35 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
         })()}
       </div>
 
+      {/* Pilot Outcomes Get Started — graduation banner. Shown only
+          on first arrival; auto-retires after all 3 step events fire
+          or the user dismisses. The "Start research" CTA jumps to
+          the asset page for the most-recent committed decision. */}
+      {showPilotOutcomesBanner && (
+        <PilotOutcomesGetStarted
+          userId={pilotBannerUser?.id}
+          orgId={pilotBannerOrgId}
+          onStartResearch={() => {
+            const top = displayRows[0]?.row
+            if (top?.asset_id) {
+              window.dispatchEvent(new CustomEvent('navigate-to-asset', {
+                detail: {
+                  id: top.asset_id,
+                  title: top.asset_symbol || 'Asset',
+                  type: 'asset',
+                  data: { id: top.asset_id },
+                },
+              }))
+            } else {
+              // No decisions to anchor to yet — open the assets list.
+              window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                detail: { id: 'assets', title: 'Assets', type: 'assets', data: null },
+              }))
+            }
+          }}
+        />
+      )}
+
       {activeTab === 'scorecards' ? (
         <ScorecardsView portfolioId={selectedPortfolioId} />
       ) : (
@@ -3003,7 +3149,12 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                       row={row}
                       intel={intel}
                       isSelected={row.decision_id === selectedId}
-                      onSelect={() => setSelectedId(row.decision_id === selectedId ? null : row.decision_id)}
+                      onSelect={() => {
+                        setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
+                        // Tick step 1 of the pilot Outcomes Get Started banner —
+                        // selecting a decision row counts as inspecting the result.
+                        try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+                      }}
                       gridClass={MAIN_GRID}
                       showPortfolio={!selectedPortfolioId}
                     />
