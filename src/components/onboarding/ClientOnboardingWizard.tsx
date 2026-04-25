@@ -67,8 +67,25 @@ export function ClientOnboardingWizard() {
   const [parseWarnings, setParseWarnings] = useState<string[]>([])
   const [parseErrors, setParseErrors] = useState<string[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<TemplatePortfolio | null>(null)
+  const [stagedTemplateIds, setStagedTemplateIds] = useState<Set<string>>(new Set())
   const [selectedPortfolioForHoldings, setSelectedPortfolioForHoldings] = useState<string>('')
   const [holdingsUploaded, setHoldingsUploaded] = useState<Record<string, number>>({}) // portfolioId -> position count
+  const [isRemovingPortfolio, setIsRemovingPortfolio] = useState<string | null>(null)
+
+  // ─── Launch overlay ────────────────────────────────────────
+  // Multi-stage launch state — rather than spin a button through
+  // three separate async operations and then `window.location.assign`
+  // (which looked stuttery to the user), we render a full-screen
+  // branded overlay that advances through named phases and ends in a
+  // short celebratory pause before the reload. Phases double as the
+  // label set the overlay shows.
+  type LaunchPhase =
+    | 'idle'
+    | 'finalizing'
+    | 'seeding'
+    | 'preparing'
+    | 'ready'
+  const [launchPhase, setLaunchPhase] = useState<LaunchPhase>('idle')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const orgName = currentOrg?.name || 'Your Organization'
@@ -136,26 +153,190 @@ export function ClientOnboardingWizard() {
     }
   }
 
+  // Commit a single template portfolio: create the portfolio, load its
+  // holdings snapshot + current positions, and seed sample trade ideas.
+  // Extracted so the template tiles can stage selections (no DB writes)
+  // and handleCreatePortfolios can flush every staged template on Continue.
+  const applyTemplatePortfolio = async (tpl: TemplatePortfolio) => {
+    const { data: newPortfolio, error: pErr } = await supabase.from('portfolios').insert({
+      organization_id: currentOrgId,
+      name: tpl.name,
+      benchmark: tpl.benchmark,
+      is_active: true,
+    }).select('id').single()
+    if (pErr) throw pErr
+
+    if (user?.id) {
+      await supabase.from('portfolio_memberships').insert({ portfolio_id: newPortfolio.id, user_id: user.id }).then(() => {})
+      await supabase.from('portfolio_team').insert({ portfolio_id: newPortfolio.id, user_id: user.id, role: 'pm' }).then(() => {})
+    }
+
+    const symbols = tpl.positions.map(p => p.symbol)
+    const { data: assets } = await supabase.from('assets').select('id, symbol').in('symbol', symbols)
+    const assetMap = new Map((assets || []).map(a => [a.symbol, a.id]))
+
+    const snapshotDate = new Date().toISOString().split('T')[0]
+    const totalMV = tpl.positions.reduce((s, p) => s + p.shares * p.price, 0)
+
+    const { data: snapshot, error: snapErr } = await supabase.from('portfolio_holdings_snapshots').insert({
+      portfolio_id: newPortfolio.id,
+      organization_id: currentOrgId,
+      snapshot_date: snapshotDate,
+      source: 'manual_upload',
+      total_market_value: totalMV,
+      total_positions: tpl.positions.length,
+      uploaded_by: user!.id,
+      notes: `Seeded from template: ${tpl.name}`,
+    }).select('id').single()
+    if (snapErr) throw snapErr
+
+    await supabase.from('portfolio_holdings_positions').insert(
+      tpl.positions.map(p => ({
+        snapshot_id: snapshot.id,
+        portfolio_id: newPortfolio.id,
+        organization_id: currentOrgId,
+        asset_id: assetMap.get(p.symbol) || null,
+        symbol: p.symbol,
+        shares: p.shares,
+        price: p.price,
+        market_value: p.shares * p.price,
+        weight_pct: p.weight_pct,
+        sector: p.sector,
+      }))
+    )
+
+    const holdingsRows = tpl.positions
+      .filter(p => assetMap.has(p.symbol))
+      .map(p => ({
+        portfolio_id: newPortfolio.id,
+        asset_id: assetMap.get(p.symbol)!,
+        shares: p.shares,
+        price: p.price,
+        cost: p.price,
+        date: snapshotDate,
+      }))
+    if (holdingsRows.length > 0) {
+      await supabase.from('portfolio_holdings').upsert(
+        holdingsRows,
+        { onConflict: 'portfolio_id,asset_id,date' }
+      )
+    }
+
+    // Seed sample trade ideas at different pipeline stages
+    const sampleIdeas = [
+      { symbol: tpl.positions[0]?.symbol, action: 'add', stage: 'idea', thesis: 'Strong momentum and earnings growth trajectory. Consider adding to position.' },
+      { symbol: tpl.positions[3]?.symbol, action: 'trim', stage: 'discussing', thesis: 'Valuation stretched relative to peers. Evaluate trimming to reduce concentration risk.' },
+      { symbol: tpl.positions[6]?.symbol, action: 'buy', stage: 'deep_research', thesis: 'Compelling entry point after recent pullback. Needs further analysis on competitive positioning.' },
+    ]
+    for (const idea of sampleIdeas) {
+      const ideaAssetId = assetMap.get(idea.symbol || '')
+      if (!ideaAssetId) continue
+      try {
+        await supabase.from('trade_queue_items').insert({
+          asset_id: ideaAssetId,
+          portfolio_id: newPortfolio.id,
+          action: idea.action,
+          stage: idea.stage,
+          status: 'idea',
+          thesis: idea.thesis,
+          created_by: user!.id,
+          origin_type: 'manual',
+          origin_metadata: { source: 'pilot_onboarding' },
+          context_tags: [],
+        })
+      } catch {}
+    }
+
+    return { portfolioId: newPortfolio.id, positionCount: tpl.positions.length }
+  }
+
+  // Undo an already-created portfolio (e.g. an accidental click on a
+  // template tile from a prior version of this step). The `portfolios`
+  // table no longer allows hard DELETE — the lifecycle migration replaced
+  // that with a soft-discard RPC. Before calling it we have to clear the
+  // blocker tables (`portfolio_holdings`, `trade_sheets`, `lab_variants`,
+  // `portfolio_notes`) that can_discard_portfolio checks, otherwise the
+  // discard returns `{ discarded: false, blockers: [...] }` and the row
+  // remains visible to the wizard.
+  const handleRemoveCreatedPortfolio = async (portfolioId: string) => {
+    setIsRemovingPortfolio(portfolioId)
+    try {
+      // 1. Clear seeded sample content so there's no orphaned history.
+      await supabase.from('trade_queue_items').delete().eq('portfolio_id', portfolioId)
+
+      // 2. Clear every blocker can_discard_portfolio checks.
+      await supabase.from('portfolio_holdings').delete().eq('portfolio_id', portfolioId)
+      await supabase.from('lab_variants').delete().eq('portfolio_id', portfolioId)
+      await supabase.from('trade_sheets').delete().eq('portfolio_id', portfolioId)
+      // portfolio_notes uses soft-delete (is_deleted flag) to count as cleared.
+      await supabase.from('portfolio_notes').update({ is_deleted: true }).eq('portfolio_id', portfolioId)
+
+      // 3. Clear the holdings snapshot trail so the positions aren't left dangling.
+      await supabase.from('portfolio_holdings_positions').delete().eq('portfolio_id', portfolioId)
+      await supabase.from('portfolio_holdings_snapshots').delete().eq('portfolio_id', portfolioId)
+
+      // 4. Soft-discard via the supported RPC. This sets is_active=false +
+      //    status='discarded', which hides the portfolio from the onboarding
+      //    query (eq('is_active', true)).
+      const { data, error } = await supabase.rpc('discard_portfolio', {
+        p_portfolio_id: portfolioId,
+        p_reason: 'Removed from onboarding wizard',
+      })
+      if (error) throw error
+      if (data && data.discarded === false) {
+        const labels = Array.isArray(data.blockers)
+          ? data.blockers.map((b: any) => b.label).filter(Boolean).join(', ')
+          : ''
+        throw new Error(labels ? `Portfolio still has linked records: ${labels}` : 'Portfolio could not be discarded')
+      }
+
+      setHoldingsUploaded(prev => {
+        const next = { ...prev }
+        delete next[portfolioId]
+        return next
+      })
+      queryClient.invalidateQueries({ queryKey: ['onboarding-existing-portfolios'] })
+      success('Removed')
+    } catch (err: any) {
+      showError(err.message || 'Failed to remove portfolio')
+    } finally {
+      setIsRemovingPortfolio(null)
+    }
+  }
+
   const handleCreatePortfolios = async () => {
     setIsSubmitting(true)
     try {
-      const validPortfolios = portfolios.filter(p => p.name.trim())
-      if (validPortfolios.length > 0) {
-        for (const p of validPortfolios) {
-          const { data: newP } = await supabase.from('portfolios').insert({
-            organization_id: currentOrgId,
-            name: p.name.trim(),
-            benchmark: p.benchmark.trim() || null,
-            is_active: true,
-          }).select('id').single()
-          if (newP && user?.id) {
-            await supabase.from('portfolio_memberships').insert({ portfolio_id: newP.id, user_id: user.id }).then(() => {})
-            await supabase.from('portfolio_team').insert({ portfolio_id: newP.id, user_id: user.id, role: 'pm' }).then(() => {})
-          }
-        }
-        queryClient.invalidateQueries({ queryKey: ['onboarding-existing-portfolios'] })
-        success(`Created ${validPortfolios.length} portfolio${validPortfolios.length !== 1 ? 's' : ''}`)
+      let createdCount = 0
+
+      // 1. Apply every staged template (selected by the user but not yet written)
+      const stagedTemplates = TEMPLATE_PORTFOLIOS.filter(t => stagedTemplateIds.has(t.id))
+      for (const tpl of stagedTemplates) {
+        await applyTemplatePortfolio(tpl)
+        createdCount += 1
       }
+
+      // 2. Apply manual portfolios typed into the form
+      const validPortfolios = portfolios.filter(p => p.name.trim())
+      for (const p of validPortfolios) {
+        const { data: newP } = await supabase.from('portfolios').insert({
+          organization_id: currentOrgId,
+          name: p.name.trim(),
+          benchmark: p.benchmark.trim() || null,
+          is_active: true,
+        }).select('id').single()
+        if (newP && user?.id) {
+          await supabase.from('portfolio_memberships').insert({ portfolio_id: newP.id, user_id: user.id }).then(() => {})
+          await supabase.from('portfolio_team').insert({ portfolio_id: newP.id, user_id: user.id, role: 'pm' }).then(() => {})
+        }
+        createdCount += 1
+      }
+
+      if (createdCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ['onboarding-existing-portfolios'] })
+        success(`Created ${createdCount} portfolio${createdCount !== 1 ? 's' : ''}`)
+      }
+      setStagedTemplateIds(new Set())
       handleCompleteStep('portfolios')
     } catch (err: any) {
       showError(err.message || 'Failed to create portfolios')
@@ -196,10 +377,17 @@ export function ClientOnboardingWizard() {
 
   const handleLaunch = async () => {
     setIsSubmitting(true)
+    setLaunchPhase('finalizing')
     try {
+      // Phase 1 — mark onboarding complete
       await finishOnboarding.mutateAsync()
+      // Small visual dwell so the phase check actually reads as progress,
+      // not a flicker. Each phase gets enough time for the user to notice
+      // the check mark animate in before the next row lights up.
+      await new Promise(r => setTimeout(r, 450))
 
-      // Seed demo users + sample content into the first portfolio
+      // Phase 2 — seed demo users + sample content
+      setLaunchPhase('seeding')
       if (currentOrgId && existingPortfolios.length > 0) {
         try {
           await seedPilotDemoData(currentOrgId, existingPortfolios[0].id)
@@ -208,24 +396,25 @@ export function ClientOnboardingWizard() {
           console.warn('Demo data seeding skipped:', seedErr)
         }
       }
+      await new Promise(r => setTimeout(r, 450))
 
-      success('Welcome to Tesseract!')
-
-      // Force ProtectedRoute to re-evaluate immediately. Without this, the
-      // onboardingStatus query is cached (staleTime 60s) and the wizard keeps
-      // rendering even though is_completed=true in the DB.
+      // Phase 3 — invalidate caches so ProtectedRoute sees is_completed=true
+      setLaunchPhase('preparing')
       await queryClient.invalidateQueries({ queryKey: ['org-onboarding-status', currentOrgId] })
       await queryClient.refetchQueries({ queryKey: ['org-onboarding-status', currentOrgId] })
+      await new Promise(r => setTimeout(r, 450))
 
-      // Belt + suspenders: hard-refresh the page if the gate still somehow
-      // hasn't advanced after a moment (e.g., stale user profile).
-      setTimeout(() => {
-        window.location.assign('/dashboard')
-      }, 400)
+      // Phase 4 — celebratory dwell, then hard nav to dashboard. The hard
+      // nav is deliberate: it guarantees a clean React/query-cache state
+      // for the new workspace, instead of relying on route-level effects
+      // to swap out the wizard mid-render.
+      setLaunchPhase('ready')
+      await new Promise(r => setTimeout(r, 900))
+      window.location.assign('/dashboard')
     } catch (err: any) {
-      showError(err.message || 'Failed to complete setup')
-    } finally {
+      setLaunchPhase('idle')
       setIsSubmitting(false)
+      showError(err.message || 'Failed to complete setup')
     }
   }
 
@@ -389,6 +578,7 @@ export function ClientOnboardingWizard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 flex flex-col">
+      {launchPhase !== 'idle' && <LaunchOverlay phase={launchPhase} orgName={orgName} />}
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur border-b border-gray-200">
         <div className="flex items-center gap-2.5">
@@ -412,23 +602,23 @@ export function ClientOnboardingWizard() {
             const isPast = step.number < currentStep
             const isLast = i === ONBOARDING_STEPS.length - 1
             return (
-              <div key={step.key} className={clsx('flex flex-col items-center', isLast ? '' : 'flex-1')}>
-                <div className="flex items-center w-full">
+              <div key={step.key} className={clsx('flex items-start', isLast ? '' : 'flex-1')}>
+                <div className="flex flex-col items-center flex-shrink-0">
                   <div className={clsx(
-                    'w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-all',
+                    'w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all',
                     isDone ? 'bg-indigo-600 text-white' :
                     isActive ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-600' :
                     'bg-gray-200 text-gray-500'
                   )}>
                     {isDone ? <CheckCircle2 className="w-4 h-4" /> : step.number}
                   </div>
-                  {!isLast && (
-                    <div className={clsx('flex-1 h-0.5 rounded mx-1', isDone || isPast ? 'bg-indigo-600' : 'bg-gray-200')} />
-                  )}
+                  <span className={clsx('text-[10px] font-medium mt-1.5 whitespace-nowrap', isActive ? 'text-indigo-700' : 'text-gray-400')}>
+                    {step.label}
+                  </span>
                 </div>
-                <span className={clsx('text-[10px] font-medium mt-1.5 whitespace-nowrap', isActive ? 'text-indigo-700' : 'text-gray-400')}>
-                  {step.label}
-                </span>
+                {!isLast && (
+                  <div className={clsx('flex-1 h-0.5 rounded mx-1 mt-3', isDone || isPast ? 'bg-indigo-600' : 'bg-gray-200')} />
+                )}
               </div>
             )
           })}
@@ -474,153 +664,101 @@ export function ClientOnboardingWizard() {
               subtitle="Create your own portfolio or start with a pre-built template that includes sample holdings."
             >
               {existingPortfolios.length > 0 && (
-                <div className="bg-green-50 rounded-lg p-3 mb-4">
+                <div className="bg-green-50 rounded-lg p-3 mb-4 space-y-1.5">
                   <p className="text-xs font-medium text-green-700">
-                    Already created: {existingPortfolios.map(p => p.name).join(', ')}
+                    Already created:
                     {Object.keys(holdingsUploaded).length > 0 && (
-                      <> ({Object.values(holdingsUploaded).reduce((a, b) => a + b, 0)} positions loaded)</>
+                      <span className="ml-1 text-green-600">
+                        {Object.values(holdingsUploaded).reduce((a, b) => a + b, 0)} positions loaded
+                      </span>
                     )}
                   </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {existingPortfolios.map(p => (
+                      <span
+                        key={p.id}
+                        className="inline-flex items-center gap-1 bg-white border border-green-200 text-green-800 text-[11px] font-medium rounded-full pl-2 pr-1 py-0.5"
+                      >
+                        {p.name}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCreatedPortfolio(p.id)}
+                          disabled={isRemovingPortfolio === p.id}
+                          title={`Remove "${p.name}"`}
+                          className="ml-0.5 p-0.5 rounded-full text-green-500 hover:text-red-500 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {isRemovingPortfolio === p.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Trash2 className="w-3 h-3" />}
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* Template portfolios */}
+              {/* Template portfolios — click to select (stage), Continue to create them */}
               <div className="space-y-2 mb-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick start with a template</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick start with a template</p>
+                  {stagedTemplateIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setStagedTemplateIds(new Set())}
+                      className="text-[11px] text-gray-400 hover:text-gray-600"
+                    >
+                      Clear selection
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400">Select as many as you'd like — nothing is created until you click Continue.</p>
                 <div className="grid grid-cols-2 gap-2">
                   {TEMPLATE_PORTFOLIOS.map(tpl => {
                     const alreadyCreated = existingPortfolios.some(p => p.name === tpl.name)
+                    const isStaged = stagedTemplateIds.has(tpl.id)
                     return (
                     <button
                       key={tpl.id}
+                      type="button"
                       disabled={isSubmitting || alreadyCreated}
-                      onClick={async () => {
+                      onClick={() => {
                         if (alreadyCreated) return
-                        setIsSubmitting(true)
-                        try {
-                          // Create portfolio
-                          const { data: newPortfolio, error: pErr } = await supabase.from('portfolios').insert({
-                            organization_id: currentOrgId,
-                            name: tpl.name,
-                            benchmark: tpl.benchmark,
-                            is_active: true,
-                          }).select('id').single()
-                          if (pErr) throw pErr
-
-                          // Add creator as portfolio member
-                          if (user?.id) {
-                            await supabase.from('portfolio_memberships').insert({ portfolio_id: newPortfolio.id, user_id: user.id }).then(() => {})
-                            await supabase.from('portfolio_team').insert({ portfolio_id: newPortfolio.id, user_id: user.id, role: 'pm' }).then(() => {})
-                          }
-
-                          // Load template holdings into it
-                          setSelectedPortfolioForHoldings(newPortfolio.id)
-                          setSelectedTemplate(tpl)
-                          setHoldingsMode('template')
-                          // Resolve symbols
-                          const symbols = tpl.positions.map(p => p.symbol)
-                          const { data: assets } = await supabase.from('assets').select('id, symbol').in('symbol', symbols)
-                          const assetMap = new Map((assets || []).map(a => [a.symbol, a.id]))
-
-                          const snapshotDate = new Date().toISOString().split('T')[0]
-                          const totalMV = tpl.positions.reduce((s, p) => s + p.shares * p.price, 0)
-
-                          const { data: snapshot, error: snapErr } = await supabase.from('portfolio_holdings_snapshots').insert({
-                            portfolio_id: newPortfolio.id,
-                            organization_id: currentOrgId,
-                            snapshot_date: snapshotDate,
-                            source: 'manual_upload',
-                            total_market_value: totalMV,
-                            total_positions: tpl.positions.length,
-                            uploaded_by: user!.id,
-                            notes: `Seeded from template: ${tpl.name}`,
-                          }).select('id').single()
-                          if (snapErr) throw snapErr
-
-                          await supabase.from('portfolio_holdings_positions').insert(
-                            tpl.positions.map(p => ({
-                              snapshot_id: snapshot.id,
-                              portfolio_id: newPortfolio.id,
-                              organization_id: currentOrgId,
-                              asset_id: assetMap.get(p.symbol) || null,
-                              symbol: p.symbol,
-                              shares: p.shares,
-                              price: p.price,
-                              market_value: p.shares * p.price,
-                              weight_pct: p.weight_pct,
-                              sector: p.sector,
-                            }))
-                          )
-
-                          // Upsert into portfolio_holdings for simulation baseline
-                          const today = new Date().toISOString().split('T')[0]
-                          const holdingsRows = tpl.positions
-                            .filter(p => assetMap.has(p.symbol))
-                            .map(p => ({
-                              portfolio_id: newPortfolio.id,
-                              asset_id: assetMap.get(p.symbol)!,
-                              shares: p.shares,
-                              price: p.price,
-                              cost: p.price,
-                              date: today,
-                            }))
-                          if (holdingsRows.length > 0) {
-                            await supabase.from('portfolio_holdings').upsert(
-                              holdingsRows,
-                              { onConflict: 'portfolio_id,asset_id,date' }
-                            )
-                          }
-
-                          // Seed sample trade ideas at different pipeline stages
-                          const sampleIdeas = [
-                            { symbol: tpl.positions[0]?.symbol, action: 'add', stage: 'idea', thesis: 'Strong momentum and earnings growth trajectory. Consider adding to position.' },
-                            { symbol: tpl.positions[3]?.symbol, action: 'trim', stage: 'discussing', thesis: 'Valuation stretched relative to peers. Evaluate trimming to reduce concentration risk.' },
-                            { symbol: tpl.positions[6]?.symbol, action: 'buy', stage: 'deep_research', thesis: 'Compelling entry point after recent pullback. Needs further analysis on competitive positioning.' },
-                          ]
-                          for (const idea of sampleIdeas) {
-                            const ideaAssetId = assetMap.get(idea.symbol || '')
-                            if (!ideaAssetId) continue
-                            try {
-                              await supabase.from('trade_queue_items').insert({
-                                asset_id: ideaAssetId,
-                                portfolio_id: newPortfolio.id,
-                                action: idea.action,
-                                stage: idea.stage,
-                                status: 'idea',
-                                thesis: idea.thesis,
-                                created_by: user!.id,
-                                origin_type: 'manual',
-                                origin_metadata: { source: 'pilot_onboarding' },
-                                context_tags: [],
-                              })
-                            } catch {}
-                          }
-
-                          setHoldingsUploaded(prev => ({ ...prev, [newPortfolio.id]: tpl.positions.length }))
-                          queryClient.invalidateQueries({ queryKey: ['onboarding-existing-portfolios'] })
-                          success(`Created "${tpl.name}" with ${tpl.positions.length} positions`)
-                        } catch (err: any) {
-                          showError(err.message || 'Failed to create template portfolio')
-                        } finally {
-                          setIsSubmitting(false)
-                        }
+                        setStagedTemplateIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(tpl.id)) next.delete(tpl.id)
+                          else next.add(tpl.id)
+                          return next
+                        })
                       }}
                       className={clsx(
                         'text-left p-3 rounded-lg border transition-all disabled:opacity-50',
                         alreadyCreated
                           ? 'border-green-200 bg-green-50/50'
-                          : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50'
+                          : isStaged
+                            ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300'
+                            : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50'
                       )}
                     >
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-gray-800">{tpl.name}</p>
-                        {alreadyCreated && <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />}
+                        <p className={clsx('text-sm font-medium', isStaged ? 'text-indigo-800' : 'text-gray-800')}>{tpl.name}</p>
+                        {alreadyCreated
+                          ? <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          : isStaged
+                            ? <Check className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                            : null}
                       </div>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{tpl.positions.length} positions &middot; {tpl.benchmark}</p>
+                      <p className={clsx('text-[11px] mt-0.5', isStaged ? 'text-indigo-600' : 'text-gray-400')}>
+                        {tpl.positions.length} positions &middot; {tpl.benchmark}
+                      </p>
                     </button>
                     )
                   })}
                 </div>
+                {stagedTemplateIds.size > 0 && (
+                  <p className="text-[11px] font-medium text-indigo-700">
+                    {stagedTemplateIds.size} template{stagedTemplateIds.size !== 1 ? 's' : ''} selected — will be created when you click Continue.
+                  </p>
+                )}
               </div>
 
               {/* Divider */}
@@ -757,7 +895,11 @@ export function ClientOnboardingWizard() {
                 onBack={handleGoBack}
                 onSkip={() => handleSkipStep('portfolios')}
                 isSubmitting={isSubmitting}
-                nextLabel={portfolios.some(p => p.name.trim()) ? 'Create Portfolios' : (existingPortfolios.length > 0 ? 'Continue' : undefined)}
+                nextLabel={
+                  stagedTemplateIds.size > 0 || portfolios.some(p => p.name.trim())
+                    ? `Create ${stagedTemplateIds.size + portfolios.filter(p => p.name.trim()).length} portfolio${(stagedTemplateIds.size + portfolios.filter(p => p.name.trim()).length) !== 1 ? 's' : ''}`
+                    : (existingPortfolios.length > 0 ? 'Continue' : undefined)
+                }
                 skippable={existingPortfolios.length > 0}
               />
             </StepCard>
@@ -879,6 +1021,112 @@ export function ClientOnboardingWizard() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────
+
+// Full-screen overlay shown once the user clicks "Launch Tesseract".
+// Walks through each real async phase of the launch (finalize, seed,
+// prepare) with a check mark animation, then holds on a celebratory
+// "Welcome" frame before the page hard-navs to /dashboard. The overlay
+// is intentionally deliberate rather than snappy — three 450ms dwells
+// plus a 900ms hold — so the user reads it as "something real is
+// happening" instead of a freeze or a flash.
+type LaunchPhase = 'idle' | 'finalizing' | 'seeding' | 'preparing' | 'ready'
+
+function LaunchOverlay({ phase, orgName }: { phase: LaunchPhase; orgName: string }) {
+  const steps: { key: Exclude<LaunchPhase, 'idle'>; label: string; hint: string }[] = [
+    { key: 'finalizing', label: 'Finalizing setup',   hint: 'Marking onboarding complete' },
+    { key: 'seeding',    label: 'Loading sample data', hint: 'Seeding team + demo content' },
+    { key: 'preparing',  label: 'Preparing workspace', hint: 'Refreshing your workspace cache' },
+  ]
+
+  const order: Record<Exclude<LaunchPhase, 'idle'>, number> = {
+    finalizing: 0, seeding: 1, preparing: 2, ready: 3,
+  }
+  const activeIdx = phase === 'idle' ? -1 : order[phase]
+  const progressPct = phase === 'ready' ? 100 : Math.max(8, Math.round(((activeIdx + 0.5) / steps.length) * 100))
+
+  return (
+    <div className="fixed inset-0 z-[1000] bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 flex items-center justify-center p-6 animate-in fade-in duration-300">
+      <div className="w-full max-w-md">
+        {/* Brand mark */}
+        <div className="flex justify-center mb-6">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center ring-1 ring-white/20">
+              <Hexagon className="w-9 h-9 text-white" />
+            </div>
+            {phase === 'ready' && (
+              <span className="absolute -right-1 -bottom-1 w-7 h-7 rounded-full bg-emerald-400 ring-2 ring-indigo-700 flex items-center justify-center animate-in zoom-in duration-500">
+                <Check className="w-4 h-4 text-white" strokeWidth={3} />
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Title */}
+        <div className="text-center mb-8">
+          {phase === 'ready' ? (
+            <>
+              <h2 className="text-2xl font-bold text-white tracking-tight">Welcome to Tesseract</h2>
+              <p className="text-sm text-indigo-200 mt-1">{orgName} is ready. Taking you in…</p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold text-white tracking-tight">Launching your workspace</h2>
+              <p className="text-sm text-indigo-200 mt-1">Setting up {orgName}. This only takes a moment.</p>
+            </>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-1.5 rounded-full bg-white/15 overflow-hidden mb-6">
+          <div
+            className="h-full bg-gradient-to-r from-emerald-300 to-teal-300 transition-all duration-700 ease-out"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+
+        {/* Phase list */}
+        <ul className="space-y-2.5">
+          {steps.map((s, i) => {
+            const done = phase === 'ready' || i < activeIdx
+            const active = i === activeIdx && phase !== 'ready'
+            return (
+              <li
+                key={s.key}
+                className={clsx(
+                  'flex items-center gap-3 rounded-xl px-3.5 py-2.5 transition-all duration-300',
+                  done ? 'bg-white/10' : active ? 'bg-white/15 ring-1 ring-white/20' : 'bg-white/5'
+                )}
+              >
+                <span
+                  className={clsx(
+                    'w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300',
+                    done ? 'bg-emerald-400 text-indigo-900'
+                         : active ? 'bg-white/20 text-white'
+                         : 'bg-white/5 text-indigo-300'
+                  )}
+                >
+                  {done
+                    ? <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                    : active
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className={clsx('text-sm font-medium leading-tight', done ? 'text-white' : active ? 'text-white' : 'text-indigo-200/80')}>
+                    {s.label}
+                  </p>
+                  <p className={clsx('text-[11px] leading-tight mt-0.5', done ? 'text-emerald-200' : active ? 'text-indigo-100/80' : 'text-indigo-200/50')}>
+                    {done ? 'Done' : active ? s.hint : 'Waiting'}
+                  </p>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
+  )
+}
 
 function StepCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (

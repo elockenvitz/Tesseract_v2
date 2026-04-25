@@ -37,14 +37,15 @@ import {
   AlertTriangle,
   User,
   Share2,
-  RotateCcw
+  RotateCcw,
+  BookOpen,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { useMorphSession } from '../hooks/useMorphSession'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotScenario } from '../hooks/usePilotScenario'
-import { PilotTradeLabBanner } from '../components/pilot/PilotTradeLabBanner'
 import { financialDataService } from '../lib/financial-data/browser-client'
 import { TabStateManager } from '../lib/tabStateManager'
 import { Button } from '../components/ui/Button'
@@ -92,6 +93,7 @@ import { TradeSheetReadinessPanel } from '../components/trading/TradeSheetReadin
 import { UnifiedSizingInput, type CurrentPosition as UnifiedCurrentPosition } from '../components/trading/UnifiedSizingInput'
 import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../components/trading/TradeCardConflictBadge'
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
+import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
 import { SharedWithMeList } from '../components/trading/SharedWithMeList'
 import { useIntentVariants } from '../hooks/useIntentVariants'
@@ -113,10 +115,11 @@ interface SimulationPageProps {
   shareId?: string
 }
 
-// Load persisted state or use defaults
-function getInitialState(propSimulationId?: string, tabId?: string) {
+// Load persisted state or use defaults. userId/orgId scope the storage key
+// so state from one org doesn't leak into another after an org switch.
+function getInitialState(propSimulationId?: string, tabId?: string, userId?: string, orgId?: string) {
   if (tabId) {
-    const savedState = TabStateManager.loadTabState(tabId)
+    const savedState = TabStateManager.loadTabState(tabId, userId, orgId)
     if (savedState) {
       // Remap legacy tab names to new ones
       let impactView = savedState.impactView || 'simulation'
@@ -352,9 +355,10 @@ function resolveSizing(
 
 export function SimulationPage({ simulationId: propSimulationId, tabId, onClose, initialPortfolioId, shareId: propShareId }: SimulationPageProps) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const { isMorphing } = useMorphSession()
   const pilotMode = usePilotMode()
-  const { scenario: pilotScenario, isLoading: pilotScenarioLoading } = usePilotScenario()
+  const { scenario: pilotScenario } = usePilotScenario()
   const { mark: markPilotStage } = usePilotProgress()
   const queryClient = useQueryClient()
   const toast = useToast()
@@ -389,14 +393,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     return () => window.removeEventListener('open-shared-simulation', handler as EventListener)
   }, [])
 
-  // Get initial state from persisted storage or props
-  const initialState = useRef(getInitialState(propSimulationId, tabId))
+  // Get initial state from persisted storage or props. State is scoped by
+  // user+org so switching orgs doesn't carry over the previous org's selected
+  // portfolio / simulation.
+  const initialState = useRef(getInitialState(propSimulationId, tabId, user?.id, currentOrgId ?? undefined))
 
   const [selectedSimulationId, setSelectedSimulationId] = useState<string | null>(initialState.current.selectedSimulationId)
   const [showCreatePanel, setShowCreatePanel] = useState(false)
   // The "Decision Recorded" moment. Set after a successful commit; cleared when
   // the user dismisses or navigates to Trade Book. Ephemeral — never persisted.
   const [decisionRecord, setDecisionRecord] = useState<DecisionRecord | null>(null)
+  // Post-commit nudge: survives the Decision Recorded modal being dismissed so
+  // the user still has an obvious affordance to jump to Trade Book from the
+  // Trade Lab header. Cleared when they navigate or explicitly dismiss.
+  const [commitNudge, setCommitNudge] = useState<{
+    portfolioId: string | null
+    tradeIds: string[]
+    count: number
+    symbols: string[]
+  } | null>(null)
   const [showIdeasPanel, setShowIdeasPanel] = useState(initialState.current.showIdeasPanel)
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null)
   const [editingSizingMode, setEditingSizingMode] = useState<SimpleSizingMode>('weight')
@@ -480,17 +495,42 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // (in importTradeMutation.onSuccess), the pending sizing overrides the trade idea's default.
   const pendingSizingRef = useRef<Map<string, string>>(new Map())
 
-  // Persist state when it changes
+  // When the user switches orgs while this page stays mounted (singleton tab
+  // id reused across orgs), React state still points at the PRIOR org's
+  // portfolio/simulation. Reload from the new org's saved state so the Lab
+  // lands on a valid portfolio and doesn't try to auto-create a workbench
+  // against a foreign portfolio ID. Also guards the save effect below from
+  // writing stale state into the new org's storage key.
+  // We explicitly skip the initial null→orgId transition — that's the first
+  // resolution of useAuth/useOrganization on cold load, not a real switch,
+  // and resetting there would wipe the valid initial state loaded from
+  // sessionStorage.
+  const stateOrgRef = useRef<string | null>(currentOrgId ?? null)
   useEffect(() => {
-    if (tabId) {
-      TabStateManager.saveTabState(tabId, {
-        selectedSimulationId,
-        showIdeasPanel,
-        impactView,
-        selectedPortfolioId,
-      })
-    }
-  }, [tabId, selectedSimulationId, showIdeasPanel, impactView, selectedPortfolioId])
+    const next = currentOrgId ?? null
+    const prev = stateOrgRef.current
+    stateOrgRef.current = next
+    if (prev === null || prev === next) return
+    const saved = tabId ? TabStateManager.loadTabState(tabId, user?.id, next ?? undefined) : null
+    setSelectedPortfolioId(saved?.selectedPortfolioId ?? null)
+    setSelectedSimulationId(saved?.selectedSimulationId ?? null)
+    lastAutoCreatePortfolioRef.current = null
+    autoCreatingRef.current = false
+  }, [currentOrgId, tabId, user?.id])
+
+  // Persist state when it changes. Scoped by user+org so state doesn't bleed
+  // across orgs when the user switches. Skipped on the render immediately
+  // after an org switch — the reset effect above still needs to converge.
+  useEffect(() => {
+    if (!tabId) return
+    if (stateOrgRef.current !== (currentOrgId ?? null)) return
+    TabStateManager.saveTabState(tabId, {
+      selectedSimulationId,
+      showIdeasPanel,
+      impactView,
+      selectedPortfolioId,
+    }, user?.id, currentOrgId ?? undefined)
+  }, [tabId, selectedSimulationId, showIdeasPanel, impactView, selectedPortfolioId, user?.id, currentOrgId])
 
   // Listen for navigation events
   useEffect(() => {
@@ -559,12 +599,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
   }, [pilotMode.isPilot, pilotScenario?.portfolio_id, selectedPortfolioId, initialPortfolioId, portfolios])
 
-  // Auto-select first portfolio if none selected (and no initialPortfolioId provided)
+  // Auto-select first portfolio if none selected (and no initialPortfolioId provided).
+  // Pilots are skipped: the scenario-driven selection above is the source of
+  // truth for them, and letting this effect race-pick portfolios[0] first
+  // would mean the pilot lands on a random portfolio instead of their
+  // assigned one. We also wait for pilot detection to finish so we don't
+  // accidentally grab a portfolio before knowing the user is a pilot.
   useEffect(() => {
+    if (pilotMode.isLoading) return
+    if (pilotMode.isPilot) return
     if (portfolios && portfolios.length > 0 && !selectedPortfolioId && !initialPortfolioId) {
       setSelectedPortfolioId(portfolios[0].id)
     }
-  }, [portfolios, selectedPortfolioId, initialPortfolioId])
+  }, [pilotMode.isLoading, pilotMode.isPilot, portfolios, selectedPortfolioId, initialPortfolioId])
 
   // Update selectedPortfolioId when initialPortfolioId changes (e.g., when navigating from Trade Labs section)
   useEffect(() => {
@@ -572,6 +619,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       setSelectedPortfolioId(initialPortfolioId)
     }
   }, [initialPortfolioId])
+
+  // Stale-selection guard: if the selected portfolio isn't in the current
+  // org's visible list (e.g. a restored-from-sessionStorage ID that belonged
+  // to a different org, or a deleted portfolio), clear it so the auto-select
+  // effects can pick a valid one. Without this, the Lab can sit on an
+  // inaccessible portfolio ID and get stuck on the empty workbench fallback.
+  useEffect(() => {
+    if (!selectedPortfolioId) return
+    if (!portfolios) return
+    if (portfolios.some(p => p.id === selectedPortfolioId)) return
+    setSelectedPortfolioId(null)
+    setSelectedSimulationId(null)
+    lastAutoCreatePortfolioRef.current = null
+  }, [selectedPortfolioId, portfolios])
 
   // Filter portfolios by search query
   const filteredPortfolios = useMemo(() => {
@@ -903,6 +964,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             stage,
             pair_id,
             pair_leg_type,
+            origin_metadata,
             assets:asset_id (id, symbol, company_name, sector)
           )
         `)
@@ -1383,10 +1445,37 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         )
       }
 
+      // Auto-name the batch if the PM didn't provide one, so every batch
+      // lands in the Trade Book with a scannable title instead of being
+      // "Untitled batch". Format: "N buys M sells · MM/DD/YYYY"; side
+      // counts are derived from `computed.delta_shares` so a 'buy' action
+      // that resolves to a negative delta (possible via sizing edits)
+      // falls on the sell side where it belongs.
+      const resolvedBatchName: string | null = (() => {
+        const trimmed = (params.batchName ?? '').trim()
+        if (trimmed) return trimmed
+        let buys = 0
+        let sells = 0
+        for (const v of variantsToExecute) {
+          const ds = (v.computed?.delta_shares ?? 0) as number
+          if (ds > 0) buys++
+          else if (ds < 0) sells++
+        }
+        if (buys === 0 && sells === 0) return null
+        const now = new Date()
+        const mm = String(now.getMonth() + 1).padStart(2, '0')
+        const dd = String(now.getDate()).padStart(2, '0')
+        const yyyy = now.getFullYear()
+        const parts: string[] = []
+        if (buys > 0) parts.push(`${buys} ${buys === 1 ? 'buy' : 'buys'}`)
+        if (sells > 0) parts.push(`${sells} ${sells === 1 ? 'sell' : 'sells'}`)
+        return `${parts.join(' · ')} · ${mm}/${dd}/${yyyy}`
+      })()
+
       const result = await executeSimVariants({
         variants: variantsToExecute as any,
         portfolioId: selectedPortfolioId,
-        batchName: params.batchName ?? null,
+        batchName: resolvedBatchName,
         batchDescription: params.batchDescription ?? null,
         reasonsByVariantId: params.reasons,
         context: {
@@ -1459,6 +1548,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           portfolioName,
           portfolioId: selectedPortfolioId!,
           batchName: result.batch?.name ?? null,
+          batchDescription: (result.batch as any)?.description ?? null,
         }))
         // Surface partial-state warnings as a small toast since the modal is the hero.
         if (failed > 0 || stillSaving.length > 0) {
@@ -1482,6 +1572,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      // Per-org "has committed ≥1 trade" flag — drives the pilot Get
+      // Started banner auto-dismiss and the Trade Book / Outcomes
+      // unlocks. Invalidating here makes them flip the instant the
+      // first trade lands, without waiting for the 60s staleTime.
+      queryClient.invalidateQueries({ queryKey: ['org-has-accepted-trade'] })
     },
     onError: (err: any) => {
       // Nothing to roll back — we never removed variants optimistically.
@@ -2393,7 +2488,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     mutationFn: async (tradeIdea: TradeQueueItemWithDetails) => {
       if (!simulation) throw new Error('No simulation selected')
 
-      const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
+      // Prefer (in order): live priceMap > baseline holding price > idea target > $100.
+      // The baseline holding lookup is what stops an AAPL auto-apply from
+      // normalizing against $100 when priceMap hasn't been populated yet —
+      // that produced a variant with delta_shares computed at $100 but
+      // applied against the real $228.50 price, inflating the cash draw
+      // ~2.3×. Using the baseline price keeps normalization consistent.
+      const baselineHoldingsForPrice = simulation.baseline_holdings as BaselineHolding[]
+      const baselineForPrice = baselineHoldingsForPrice?.find(h => h.asset_id === tradeIdea.asset_id)
+      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || tradeIdea.target_price || 100
 
       // Upsert: if the trade already exists (from a rapid toggle race), just return it
       const { data, error } = await supabase
@@ -2435,7 +2538,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         // User still wants this trade — sync lab_variant
         if (tradeLab?.id && simulation) {
           try {
-            const price = priceMap?.[tradeIdea.asset_id] || tradeIdea.target_price || 100
+            const baselineHoldingsForSync = simulation.baseline_holdings as BaselineHolding[]
+            const baselineForSync = baselineHoldingsForSync?.find(h => h.asset_id === tradeIdea.asset_id)
+            const price = priceMap?.[tradeIdea.asset_id] || baselineForSync?.price || tradeIdea.target_price || 100
             const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
             const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
             const currentPosition = currentHolding ? {
@@ -2955,11 +3060,18 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // useSimulationRows can compute a non-zero notional immediately. Without
     // this the new-position row has price=0 → shares=0 → notional=0, which
     // keeps netTradeNotional=0 and hides the synthetic CASH_USD row until
-    // the simulation query refetches (hundreds of ms later). Use the idea's
-    // target_price when available, fall back to $100 as a placeholder —
-    // real price arrives on the next simulation-prices refetch.
+    // the simulation query refetches (hundreds of ms later).
+    //
+    // Price fallback order: baseline holding price (always accurate for an
+    // existing position) > idea target_price > $100. Earlier this fell
+    // through to $100 whenever priceMap hadn't populated yet, which made
+    // normalize-sizing compute delta_shares against $100 and then the
+    // simulation applied those inflated shares against the real price on
+    // commit — over-consuming cash by whatever factor real_price/$100 was.
     if (selectedSimulationId && (priceMap?.[assetId] == null)) {
-      const priceHint = (idea as any).target_price || 100
+      const baselineHoldingsForHint = simulation?.baseline_holdings as BaselineHolding[] | undefined
+      const baselineForHint = baselineHoldingsForHint?.find(h => h.asset_id === assetId)
+      const priceHint = baselineForHint?.price || (idea as any).target_price || 100
       queryClient.setQueryData<Record<string, number>>(
         ['simulation-prices', selectedSimulationId],
         (old) => ({ ...(old || {}), [assetId]: priceHint }),
@@ -3195,6 +3307,105 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Show all trade ideas for the portfolio (not just included ones)
   // This lets users see all available ideas and add them to the workbench
   const includedIdeasWithStatus = tradeIdeasWithStatus
+
+  // First-login auto-select of the pilot recommendation. When a pilot user
+  // first lands in Trade Lab, we want the seeded recommendation to already
+  // be applied — they immediately see the simulation react (position added,
+  // deltas, cash impact) without having to discover the checkbox. Fires
+  // at most once per user+browser, gated by a localStorage flag.
+  //
+  // The pilot scenario's trade_queue_item_id points at an idea that has
+  // an active trade_proposal attached — so we need to use the *proposal*
+  // add path (which stamps appliedProposalIds / proposalAddedAssetIds so
+  // the proposal checkbox also visually flips to checked), not the plain
+  // idea path.
+  const pilotAutoSelectFiredRef = useRef(false)
+  useEffect(() => {
+    if (pilotAutoSelectFiredRef.current) return
+    if (!pilotMode.effectiveIsPilot) return
+    if (!user?.id) return
+    if (!pilotScenario?.trade_queue_item_id) return
+    if (!selectedPortfolioId) return
+    if (!tradeIdeasWithStatus.length) return
+    // Simulation must exist before we import a trade into it. Without
+    // this gate the effect can fire before the trade-lab workbench is
+    // set up, handleAddAsset queues an import against `null`, and the
+    // import silently drops.
+    if (!tradeLab?.id || !selectedSimulationId || !simulation) return
+    // Proposals query must have resolved so we know whether the
+    // scenario idea has a live proposal attached.
+    if (!activeProposals) return
+
+    // Versioned key — bumping the suffix resets the one-shot flag for
+    // every pilot so they re-run the updated auto-select logic once.
+    const storageKey = `pilot_rec_autoselect_v2_${user.id}`
+    try {
+      if (localStorage.getItem(storageKey) === '1') {
+        pilotAutoSelectFiredRef.current = true
+        return
+      }
+    } catch {
+      // Ignore storage errors — we still fire once, and the ref prevents
+      // double-firing within a session.
+    }
+
+    const scenarioIdea = tradeIdeasWithStatus.find(i => i.id === pilotScenario.trade_queue_item_id)
+    if (!scenarioIdea) return
+    if (scenarioIdea.isAdded) {
+      try { localStorage.setItem(storageKey, '1') } catch { /* ignore */ }
+      pilotAutoSelectFiredRef.current = true
+      return
+    }
+
+    // Find the matching active proposal for this idea (if any).
+    const matchingProposal = activeProposals.find(
+      p => p.trade_queue_item_id === pilotScenario.trade_queue_item_id,
+    )
+
+    pilotAutoSelectFiredRef.current = true
+    try { localStorage.setItem(storageKey, '1') } catch { /* ignore */ }
+
+    // Delay a tick so any in-flight simulation/portfolio initialization
+    // completes before the add fires.
+    setTimeout(() => {
+      if (matchingProposal) {
+        // Proposal path: stamp proposal state so the UI checkbox visually
+        // flips, then fire handleAddAsset — which reuses the import
+        // pipeline and picks up `proposed_weight` from the idea (or the
+        // proposal's weight, whichever the idea row carries).
+        setAppliedProposalIds(prev => {
+          const next = new Set(prev)
+          next.add(matchingProposal.id)
+          return next
+        })
+        setProposalAddedAssetIds(prev => {
+          const next = new Set(prev)
+          if (scenarioIdea.asset_id) next.add(scenarioIdea.asset_id)
+          return next
+        })
+        // Ensure proposed_weight on the idea carries the proposal's weight
+        // so the temp-variant sizing_input matches what the PM proposed.
+        const enriched = {
+          ...scenarioIdea,
+          proposed_weight: scenarioIdea.proposed_weight ?? matchingProposal.weight ?? null,
+        } as typeof scenarioIdea
+        handleAddAsset(enriched)
+      } else {
+        handleAddAsset(scenarioIdea)
+      }
+    }, 0)
+  }, [
+    pilotMode.effectiveIsPilot,
+    user?.id,
+    pilotScenario?.trade_queue_item_id,
+    selectedPortfolioId,
+    tradeIdeasWithStatus,
+    activeProposals,
+    tradeLab?.id,
+    selectedSimulationId,
+    simulation,
+    handleAddAsset,
+  ])
 
   // Group pair trades and check their added status (for included ideas only)
   // Supports both legacy pair_trade_id (FK to pair_trades) and newer pair_id (shared UUID)
@@ -3958,12 +4169,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       return ((a === 'buy' || a === 'add') && ds < 0) || ((a === 'sell' || a === 'trim') && ds > 0)
     })() : false
 
+    // The card itself no longer shows the old pilot-scenario banner (that
+    // moved to PilotTradeLabIntroBanner above the table), but we still
+    // tag the author chip on the scenario idea as "Pilot" so the reader
+    // understands the seeded author isn't a real analyst.
+    const isPilotScenarioIdea =
+      pilotMode.effectiveIsPilot && !!pilotScenario?.trade_queue_item_id && pilotScenario.trade_queue_item_id === idea.id
+
     return (
       <div
         key={idea.id}
         onClick={() => setSelectedTradeId(idea.id)}
         className={clsx(
-          "rounded-lg p-2.5 border border-l-[3px] transition-colors cursor-pointer relative",
+          "rounded-lg border border-l-[3px] transition-colors cursor-pointer relative p-2.5",
           stageBorderClass,
           singleIdeaConflict
             ? "border-red-300 dark:border-red-700 border-l-red-500 dark:border-l-red-400 bg-red-50/30 dark:bg-red-900/10"
@@ -4044,15 +4262,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             )}
 
           </div>
-          {/* Author name + Expand button */}
+          {/* Author name + Expand button. Pilot-seeded items display a
+              generic "Pilot" author rather than the real platform-admin
+              whose user id was stamped on the row. */}
           <div className="flex items-center gap-1 flex-shrink-0">
             <span
-              className="text-[9px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded-full px-1.5 py-0.5 flex-shrink-0"
-              title={idea.users?.first_name && idea.users?.last_name
-                ? `${idea.users.first_name} ${idea.users.last_name}`
-                : idea.users?.email || 'Unknown'}
+              className={clsx(
+                "text-[9px] font-medium rounded-full px-1.5 py-0.5 flex-shrink-0",
+                isPilotScenarioIdea || (idea as any).origin_metadata?.pilot_seed
+                  ? "text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30"
+                  : "text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700"
+              )}
+              title={(isPilotScenarioIdea || (idea as any).origin_metadata?.pilot_seed)
+                ? 'Staged pilot scenario'
+                : idea.users?.first_name && idea.users?.last_name
+                  ? `${idea.users.first_name} ${idea.users.last_name}`
+                  : idea.users?.email || 'Unknown'}
             >
-              {idea.users?.first_name && idea.users?.last_name
+              {(isPilotScenarioIdea || (idea as any).origin_metadata?.pilot_seed)
+                ? 'Pilot'
+                : idea.users?.first_name && idea.users?.last_name
                 ? `${idea.users.first_name} ${idea.users.last_name.charAt(0)}.`
                 : idea.users?.first_name || idea.users?.email?.split('@')[0] || '?'}
             </span>
@@ -4741,10 +4970,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
   return (
     <div className="h-full flex flex-col">
-      {/* Pilot mode: staged-scenario banner at the top of Trade Lab */}
-      {pilotMode.isPilot && !pilotMode.isLoading && (
-        <PilotTradeLabBanner scenario={pilotScenario} isLoading={pilotScenarioLoading} />
-      )}
       {/* Create Trade Lab Modal */}
       {showCreatePanel && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -4826,6 +5051,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           </div>
         </div>
       )}
+
+      {/* Pilot onboarding banner — slim single-row hint above the header.
+          Occupies existing top whitespace rather than stealing vertical
+          space from the simulation pane. Hides automatically once the
+          user has committed any trade in this org (first-execute moment
+          graduates them past the intro); also dismissible via the X. */}
+      {pilotMode.effectiveIsPilot
+        && !!pilotScenario
+        && user?.id
+        && !pilotMode.hasCommittedTradeInOrg
+        && (
+          <PilotTradeLabIntroBanner userId={user.id} />
+        )}
 
       {/* Header Bar - Portfolio Selector + View Tabs */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -4929,11 +5167,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             {!isSharedView && tradeLabLoading && (
               <RefreshCw className="h-4 w-4 text-gray-400 animate-spin" />
             )}
-            {!isSharedView && tradeLab && (
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {simulationRows.summary.tradedCount} trades
-              </span>
-            )}
           </div>
 
           {/* Right side controls */}
@@ -4961,13 +5194,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 )}
               </>
             )}
-            {/* Save Snapshot — hidden in shared view and snapshots tab */}
-            {simulation && !isSharedView && selectedViewType !== 'lists' && simulationRows.summary.tradedCount > 0 && (
+            {/* Save Snapshot — hidden in shared view and snapshots tab. Always
+                visible on the workspace (even with zero trades) so the
+                action is discoverable; disabled with a tooltip until there's
+                something worth snapshotting. */}
+            {simulation && !isSharedView && selectedViewType !== 'lists' && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowCreateSheetConfirm(true)}
-                title="Save a snapshot of this simulation"
+                disabled={simulationRows.summary.tradedCount === 0}
+                title={
+                  simulationRows.summary.tradedCount === 0
+                    ? 'Add at least one trade to save a snapshot'
+                    : 'Save a snapshot of this simulation'
+                }
               >
                 <FileText className="h-4 w-4 mr-1.5" />
                 Save Snapshot
@@ -5078,6 +5319,59 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         )}
       </div>
 
+      {/* Post-commit nudge — lingers after the Decision Recorded modal is
+          dismissed so the user still has an obvious way to jump into Trade
+          Book. Auto-dismissed when they navigate or click X. */}
+      {commitNudge && !isSharedView && (
+        <div className="mx-4 mt-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 dark:from-emerald-950/40 dark:via-teal-950/20 dark:to-emerald-950/30 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center flex-shrink-0">
+              <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div className="flex-1 min-w-0 text-sm">
+              <span className="font-medium text-gray-900 dark:text-white">
+                {commitNudge.count} trade{commitNudge.count !== 1 ? 's' : ''} committed
+              </span>
+              {commitNudge.symbols.length > 0 && (
+                <span className="text-gray-500 dark:text-gray-400 ml-2">
+                  · {commitNudge.symbols.slice(0, 3).join(', ')}
+                  {commitNudge.symbols.length > 3 && ` +${commitNudge.symbols.length - 3}`}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                if (pilotMode.isPilot) markPilotStage('trade_book_unlocked')
+                window.dispatchEvent(new CustomEvent('navigate-to-asset', {
+                  detail: {
+                    id: 'trade-book',
+                    title: 'Trade Book',
+                    type: 'trade-book',
+                    data: {
+                      portfolioId: commitNudge.portfolioId ?? selectedPortfolioId,
+                      highlightTradeIds: commitNudge.tradeIds,
+                    },
+                  },
+                }))
+                setCommitNudge(null)
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors flex-shrink-0"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              View in Trade Book
+            </button>
+            <button
+              onClick={() => setCommitNudge(null)}
+              className="p-1 rounded-md hover:bg-white/60 dark:hover:bg-gray-800/60 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0"
+              title="Dismiss"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Loading state - unified loading for all initial data */}
@@ -5089,17 +5383,31 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             </div>
           </div>
         ) : !selectedPortfolioId && !isSharedView ? (
-          /* No portfolio selected state */
+          /* No portfolio selected state — pilot users see a bespoke copy
+             because they shouldn't be nudged toward the standard portfolio
+             picker (it implies the full app is available). */
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
-            <div className="text-center max-w-md">
-              <Briefcase className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                Select a Portfolio
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                Choose a portfolio from the dropdown above to start working in the Trade Lab.
-              </p>
-            </div>
+            {pilotMode.effectiveIsPilot && (!portfolios || portfolios.length === 0) ? (
+              <div className="text-center max-w-md">
+                <Sparkles className="h-10 w-10 text-amber-300 dark:text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  No pilot portfolio is available yet.
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Your pilot scenario will appear here as soon as your portfolio is set up.
+                </p>
+              </div>
+            ) : (
+              <div className="text-center max-w-md">
+                <Briefcase className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Select a Portfolio
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400">
+                  Choose a portfolio from the dropdown above to start working in the Trade Lab.
+                </p>
+              </div>
+            )}
           </div>
         ) : selectedViewType === 'lists' ? (
           /* Trade Sheets Section */
@@ -5293,11 +5601,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                   const tradeItem = proposal.trade_queue_items as any
                                   const asset = tradeItem?.assets
                                   const proposerUser = proposal.users as any
+                                  const isPilotSeedProposal = (tradeItem?.origin_metadata as any)?.pilot_seed === true
 
-                                  // Get proposer display name
-                                  const proposerName = proposerUser?.first_name && proposerUser?.last_name
-                                    ? `${proposerUser.first_name} ${proposerUser.last_name.charAt(0)}.`
-                                    : proposerUser?.email?.split('@')[0] || 'Unknown'
+                                  // Pilot-seeded proposals show a generic "Pilot" author rather than
+                                  // the platform admin whose user id happens to be on the row.
+                                  const proposerName = isPilotSeedProposal
+                                    ? 'Pilot'
+                                    : proposerUser?.first_name && proposerUser?.last_name
+                                      ? `${proposerUser.first_name} ${proposerUser.last_name.charAt(0)}.`
+                                      : proposerUser?.email?.split('@')[0] || 'Unknown'
 
                                   // Generate display parts for pair trades
                                   const buyLegs = isPairTrade && legs?.length
@@ -6036,6 +6348,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             metrics={metrics}
                             baseline={simulation.baseline_holdings as BaselineHolding[]}
                             simulationRows={simulationRows.rows}
+                            benchmarkWeightMap={benchmarkWeightMap || {}}
+                            hasBenchmark={hasBenchmark}
                           />
                         ) : (
                           /* Trades View - Grouped by Action with Cash Impact */
@@ -6318,34 +6632,34 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                         )}
                       </div>
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-center">
-                        <div className="w-20 h-20 bg-gradient-to-br from-primary-100 to-primary-50 dark:from-primary-900/30 dark:to-primary-900/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                          <Layers className="h-10 w-10 text-primary-600 dark:text-primary-400" />
+                      /* metrics is null only while priceMap is still loading
+                         after a cold mount / hard refresh. Showing an empty
+                         "add trades" call-to-action here was misleading —
+                         the impact view renders fine with zero trades once
+                         data lands. Render a quiet loading state instead. */
+                      <div className="h-full flex items-center justify-center">
+                        <div className="text-center">
+                          <RefreshCw className="h-6 w-6 text-gray-400 animate-spin mx-auto mb-2" />
+                          <p className="text-sm text-gray-400">Loading portfolio data…</p>
                         </div>
-                        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                          Add Trades to See Impact
-                        </h3>
-                        <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto mb-6">
-                          Switch to the Intent Board to add and size your trades.
-                          Portfolio impact will appear here once trades are active.
-                        </p>
-                        <button
-                          onClick={() => setImpactView('intent')}
-                          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30 rounded-lg transition-colors"
-                        >
-                          <Beaker className="h-4 w-4" />
-                          Go to Intent Board
-                        </button>
                       </div>
                     )}
                   </div>
                   </>
                   ) : (
-                    /* Fallback - should not normally be reached */
+                    /* Fallback: a portfolio is selected but no simulation
+                       could be loaded or auto-created. Rather than spin on
+                       "Preparing workbench", prompt the user to pick a
+                       different portfolio. */
                     <div className="h-full flex items-center justify-center">
-                      <div className="text-center">
-                        <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mx-auto mb-4" />
-                        <p className="text-gray-500">Preparing workbench...</p>
+                      <div className="text-center max-w-md">
+                        <Briefcase className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                          Select a portfolio to work on
+                        </h3>
+                        <p className="text-gray-500 dark:text-gray-400">
+                          Choose a portfolio from the dropdown above to start working in the Trade Lab.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -6579,10 +6893,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           Fired from executeTradeM/bulk-execute onSuccess. */}
       <DecisionConfirmationModal
         record={decisionRecord}
-        onClose={() => setDecisionRecord(null)}
+        onClose={() => {
+          // User dismissed the "Decision Recorded" modal without navigating.
+          // Seed the persistent commit nudge so they still have a one-click
+          // path to Trade Book from the Trade Lab header.
+          if (decisionRecord?.decisions?.length) {
+            setCommitNudge({
+              portfolioId: decisionRecord.portfolioId,
+              tradeIds: decisionRecord.decisions.map(d => d.tradeId),
+              count: decisionRecord.decisions.length,
+              symbols: decisionRecord.decisions.map(d => d.symbol),
+            })
+          }
+          setDecisionRecord(null)
+        }}
         onViewTradeBook={(tradeIds) => {
           const portfolioId = decisionRecord?.portfolioId ?? selectedPortfolioId
           setDecisionRecord(null)
+          // They're going straight to Trade Book — no need for the persistent
+          // in-lab nudge.
+          setCommitNudge(null)
           // Pilot unlock: the first decision the user views in Trade Book
           // promotes Trade Book access from 'preview' to 'full'. Idempotent
           // (the mutation guards against double-marks).
@@ -7069,6 +7399,17 @@ function calculateSimulationMetrics(
     h.weight = totalValueBefore > 0 ? (h.value / totalValueBefore) * 100 : 0
   })
 
+  // Snapshot the pre-trade state using LIVE-price-reconciled weights. All
+  // "before" aggregations (sector exposure, concentration, HHI, per-holding
+  // change_from_baseline) must be computed from this snapshot — not from the
+  // stored baseline_holdings array whose weights reflect prices at the time
+  // the simulation was created. Mixing the two made the UI attribute pure
+  // price drift to the proposed trades.
+  const preTradeByAsset = new Map<string, { sector: string | null; weight: number }>()
+  holdingsMap.forEach(h => {
+    preTradeByAsset.set(h.asset_id, { sector: h.sector, weight: h.weight })
+  })
+
   let positionsAdded = 0
   let positionsRemoved = 0
   let positionsAdjusted = 0
@@ -7168,45 +7509,71 @@ function calculateSimulationMetrics(
     }
   })
 
-  // Calculate total portfolio value (use absolute values for proper weighting)
-  // Long positions add value, short positions are liabilities (negative value)
+  // Hold the portfolio total value constant at totalValueBefore for the
+  // "after" weight denominator. A sell of $X doesn't shrink the portfolio —
+  // it converts $X of the holding into $X of cash. Using a shrunken
+  // post-trade total (as we did before) made every untouched position's
+  // weight mechanically inflate, and attributed phantom exposure shifts to
+  // sectors that weren't traded at all. The cash movement is surfaced as a
+  // separate "Cash" entry in the sector exposure map below.
+  //
+  // Short positions still count toward the denominator via |value| because
+  // a short requires the same capital footprint as the long it replaces.
   let totalLongValue = 0
   let totalShortValue = 0
   holdingsMap.forEach(h => {
     if (h.shares >= 0) {
       totalLongValue += h.value
     } else {
-      totalShortValue += Math.abs(h.value) // Short value as positive for weighting
+      totalShortValue += Math.abs(h.value)
     }
   })
-  // Net portfolio value = longs - shorts (shorts reduce portfolio value)
-  const totalValueAfter = totalLongValue - totalShortValue
-  // For weight calculation, use gross exposure (longs + shorts)
-  const grossExposure = totalLongValue + totalShortValue
+  const totalValueAfter = totalValueBefore
+  const weightDenominator = totalValueBefore > 0 ? totalValueBefore : 1
 
   holdingsMap.forEach(h => {
-    // Weight is value / gross exposure, negative for shorts
-    const newWeight = grossExposure > 0 ? (h.value / grossExposure) * 100 : 0
+    // Weight is value / constant denominator. Negative for shorts.
+    const newWeight = (h.value / weightDenominator) * 100
     h.weight = newWeight
 
     // Only show change_from_baseline for positions affected by trades
-    // This avoids showing "changes" due to market price movements
+    // This avoids showing "changes" due to market price movements.
+    // Compare against the live-price-reconciled pre-trade weight (not the
+    // stored snapshot weight) so the delta reflects the trade only.
     if (tradedAssetIds.has(h.asset_id) || h.is_new || h.is_removed) {
-      const baseline = baselineHoldings.find(b => b.asset_id === h.asset_id)
-      const baselineWeight = baseline?.weight || 0
-      h.change_from_baseline = newWeight - baselineWeight
+      const preTradeWeight = preTradeByAsset.get(h.asset_id)?.weight ?? 0
+      h.change_from_baseline = newWeight - preTradeWeight
     } else {
       h.change_from_baseline = 0
     }
   })
 
+  // Net cash impact from all trades: positive = cash freed (net sell),
+  // negative = cash deployed (net buy). Post-trade position values have
+  // already absorbed the trade deltas, so the cash swing equals the
+  // difference between what we started with and what's now deployed.
+  const postTradeInvested = totalLongValue - totalShortValue
+  const netCashImpact = totalValueBefore - postTradeInvested
+  const cashDeltaWeight = (netCashImpact / weightDenominator) * 100
+
   const sectorExposureBefore: Record<string, number> = {}
   const sectorExposureAfter: Record<string, number> = {}
+  const CASH_SECTOR_KEY = 'Cash'
 
-  baselineHoldings.forEach(h => {
-    const sector = h.sector || 'Other'
-    sectorExposureBefore[sector] = (sectorExposureBefore[sector] || 0) + h.weight
+  // Before: use live-price-reconciled pre-trade weights, not the baseline
+  // snapshot. Otherwise untouched sectors would show a phantom delta equal
+  // to their price drift since the simulation was created.
+  preTradeByAsset.forEach(({ sector, weight }) => {
+    const key = sector || 'Other'
+    sectorExposureBefore[key] = (sectorExposureBefore[key] || 0) + weight
   })
+  // Before-state cash = residual weight not allocated to positions. For a
+  // fully-invested baseline this is 0. Tracked explicitly so the after-state
+  // cash delta from trades has a well-defined starting point and the
+  // before/after sector pie each sum to the same total.
+  const positionWeightBefore = Object.values(sectorExposureBefore).reduce((s, w) => s + w, 0)
+  const cashWeightBefore = Math.max(0, 100 - positionWeightBefore)
+  if (cashWeightBefore > 0) sectorExposureBefore[CASH_SECTOR_KEY] = cashWeightBefore
 
   holdingsMap.forEach(h => {
     if (!h.is_removed && h.shares !== 0) {
@@ -7215,6 +7582,14 @@ function calculateSimulationMetrics(
       sectorExposureAfter[sector] = (sectorExposureAfter[sector] || 0) + h.weight
     }
   })
+  // After-state cash = baseline cash + net proceeds from the trades. A sell
+  // that frees $X grows cash by $X; a buy deploys $X of cash. This is what
+  // makes sector attribution honest: selling GOOGL shows Tech -72bps and
+  // Cash +72bps, not phantom drift across every untouched sector.
+  const cashWeightAfter = cashWeightBefore + cashDeltaWeight
+  if (Math.abs(cashWeightAfter) > 0.0001) {
+    sectorExposureAfter[CASH_SECTOR_KEY] = cashWeightAfter
+  }
 
   const sectorChanges: Record<string, number> = {}
   const allSectors = new Set([...Object.keys(sectorExposureBefore), ...Object.keys(sectorExposureAfter)])
@@ -7232,7 +7607,11 @@ function calculateSimulationMetrics(
     })
   }
 
-  const sortedBefore = [...baselineHoldings].sort((a, b) => b.weight - a.weight)
+  // "Before" concentration must come from the same live-price-reconciled
+  // snapshot the rest of the "before" metrics use. Sorting baselineHoldings
+  // by its stored snapshot weight produced a top-N that reflected prices
+  // from when the simulation was created, which is not what the PM sees.
+  const sortedBefore = [...preTradeByAsset.values()].sort((a, b) => b.weight - a.weight)
 
   // For concentration metrics, only count active long positions
   const activeHoldings = [...holdingsMap.values()]
@@ -7258,7 +7637,12 @@ function calculateSimulationMetrics(
 
   const top5Before = sortedBefore.slice(0, 5).reduce((sum, h) => sum + h.weight, 0)
   const top10Before = sortedBefore.slice(0, 10).reduce((sum, h) => sum + h.weight, 0)
-  const hhiBefore = baselineHoldings.reduce((sum, h) => sum + Math.pow(h.weight / 100, 2), 0)
+  // HHI (Herfindahl) uses live-price-reconciled pre-trade weights so the
+  // before/after delta isolates the trade's concentration effect.
+  const hhiBefore = [...preTradeByAsset.values()].reduce(
+    (sum, h) => sum + Math.pow(h.weight / 100, 2),
+    0,
+  )
 
   // Only show different "after" values if there are actual trades
   // This avoids showing "changes" due to market price movements

@@ -187,6 +187,11 @@ export function useAcceptedTrades(portfolioId: string | undefined) {
         content: params.content,
         comment_type: params.commentType,
       }),
+    onSuccess: (_data, params) => {
+      // Refresh the per-trade comment thread so the newly-added note
+      // appears immediately in TradeRationaleLog.
+      queryClient.invalidateQueries({ queryKey: ['accepted-trade-comments', params.tradeId] })
+    },
   })
 
   // ---- Batch mutations ----

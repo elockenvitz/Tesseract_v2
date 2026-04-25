@@ -245,7 +245,7 @@ export function PromoteToTradeIdeaModal({
         setPromotedTradeIdeaId(result.tradeIdeaId)
         success('Trade Idea created', {
           action: {
-            label: 'View in Queue',
+            label: 'View in Pipeline',
             onClick: () => {
               window.dispatchEvent(new CustomEvent('openTradeQueue', {
                 detail: { selectedTradeId: result.tradeIdeaId }

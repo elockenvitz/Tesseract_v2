@@ -1,13 +1,15 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
-import { TesseractLoader } from './ui/TesseractLoader'
 import { Lock, Clock, LogOut, ArrowRight, Loader2, Mail } from 'lucide-react'
 import { Button } from './ui/Button'
 import { acceptInviteByToken } from '../lib/org-domain-routing'
 import { supabase } from '../lib/supabase'
-import { ClientOnboardingWizard } from './onboarding/ClientOnboardingWizard'
+import { showBootLoader, hideBootLoader } from '../lib/boot-loader'
+// ClientOnboardingWizard removed — new pilot orgs are auto-provisioned with the
+// Tech & Consumer Growth template via the `seed_pilot_template_portfolio` RPC,
+// so there's no interactive setup step for the admin to walk through.
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -28,49 +30,44 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   // ─── All hooks must be called unconditionally (Rules of Hooks) ───
 
-  // Client onboarding status
-  const { data: onboardingStatus, isLoading: onboardingLoading } = useQuery({
-    queryKey: ['org-onboarding-status', currentOrgId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('org_onboarding_status')
-        .select('is_completed')
-        .eq('organization_id', currentOrgId!)
-        .maybeSingle()
-      if (error) return null
-      return data
-    },
-    enabled: !!currentOrgId && !isOpsRoute,
-    staleTime: 60_000,
-  })
-
-  // Org admin check
-  const { data: isOrgAdmin } = useQuery({
-    queryKey: ['is-org-admin-check', currentOrgId, user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organization_memberships')
-        .select('is_org_admin')
-        .eq('organization_id', currentOrgId!)
-        .eq('user_id', user!.id)
-        .eq('status', 'active')
-        .maybeSingle()
-      if (error) return false
-      return data?.is_org_admin || false
-    },
-    enabled: !!currentOrgId && !!user?.id && !isOpsRoute,
-    staleTime: 5 * 60_000,
-  })
+  // Onboarding wizard path was removed — new pilot orgs land ready-to-use
+  // via auto-seeded Tech & Consumer Growth template at provision time.
 
   // ─── Rendering logic (order matters: loading → auth → org → onboarding → app) ───
 
-  // Show loading while checking auth
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <TesseractLoader size={100} text="Verifying access..." />
-      </div>
+  // Boot-loader handoff. While auth is still resolving, keep the
+  // persistent #tesseract-boot-loader (painted by index.html) visible
+  // so the cold-refresh sequence reads as one continuous loading
+  // state. Once we leave auth-loading we hand off to whatever the
+  // route renders — either children (DashboardPage's gate fades it
+  // once the pilot decision settles) or a terminal screen (login
+  // redirect, blocked/pending/no-org), which is real content and
+  // needs the loader gone immediately.
+  const willRenderTerminal =
+    !authLoading &&
+    (
+      !user ||
+      isRecoverySession ||
+      ((user as any)?._routeAction === 'blocked' && !hasOrg) ||
+      ((user as any)?._routeAction === 'request_created' && !hasOrg) ||
+      !hasOrg
     )
+  useEffect(() => {
+    if (authLoading) {
+      showBootLoader('Loading…')
+    } else if (willRenderTerminal) {
+      hideBootLoader()
+    } else if (isOpsRoute) {
+      // Ops routes don't render DashboardPage, so DashboardPage's
+      // hide effect never fires — without this branch the boot
+      // loader sits over the Ops portal forever.
+      hideBootLoader()
+    }
+    // children path (non-ops): DashboardPage owns the hide so the
+    // fade lines up with the actual app paint.
+  }, [authLoading, willRenderTerminal, isOpsRoute])
+  if (authLoading) {
+    return null
   }
 
   // Redirect to login if not authenticated
@@ -191,11 +188,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         </div>
       </div>
     )
-  }
-
-  // ─── Client onboarding wizard ─────────────────────────────────
-  if (!isOpsRoute && !onboardingLoading && onboardingStatus && !onboardingStatus.is_completed && isOrgAdmin) {
-    return <ClientOnboardingWizard />
   }
 
   return <>{children}</>

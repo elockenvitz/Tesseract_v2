@@ -55,54 +55,119 @@ import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
+import { PilotActionDashboard } from '../components/pilot/PilotActionDashboard'
 import { usePilotMode } from '../hooks/usePilotMode'
-import { TAB_TYPE_TO_PILOT_FEATURE } from '../lib/pilot/pilot-access'
+import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
 import { PilotOutcomesPreview } from '../components/pilot/PilotOutcomesPreview'
-import { FeedbackWidget } from '../components/feedback/FeedbackWidget'
 import { useOnboarding } from '../hooks/useOnboarding'
+import { hideBootLoader, showBootLoader } from '../lib/boot-loader'
 import { SetupWizard } from '../components/onboarding/SetupWizard'
 import { useToast } from '../components/common/Toast'
 
-/** Clean loading state for asset tabs while data is being fetched */
+/** Suspense fallback for lazy-loaded tabs (Outcomes, Trade Book,
+ *  Trade Lab, etc.). Visually matches every other in-app spinner so
+ *  switching to a lazy tab doesn't introduce a different style. */
 function AssetLoadingState() {
   return (
-    <div className="h-full flex items-center justify-center">
+    <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm text-gray-400">Loading asset...</p>
+        <p className="text-sm text-gray-400">Loading…</p>
       </div>
     </div>
   )
 }
 
-// Helper to get initial tab state synchronously (avoids flash on refresh)
+// Synchronous pilot hint (reads localStorage the same way usePilotMode does)
+// so we can pick the correct landing tab on the very first render — no flash.
+// Also honours a one-shot `org_switch_target_pilot` sessionStorage flag
+// written by switchOrg right before the reload. That flag wins on the very
+// first render after an org switch: it carries the freshly-fetched pilot_mode
+// of the target org regardless of whether the user record id has fully
+// settled in useAuth's cached state.
+function readPilotHintSync(userId?: string): boolean {
+  try {
+    const switchFlag = sessionStorage.getItem('org_switch_target_pilot')
+    if (switchFlag === '1') return true
+    if (switchFlag === '0') return false
+  } catch {
+    // ignore
+  }
+  if (!userId) return false
+  try {
+    return localStorage.getItem(`was_pilot_${userId}`) === '1'
+  } catch {
+    return false
+  }
+}
+
+// Clear the one-shot switch flag after the first mount has consumed it, so
+// subsequent reloads / org-list refetches don't get stuck in pilot mode.
+function consumePilotSwitchFlag(): void {
+  try {
+    sessionStorage.removeItem('org_switch_target_pilot')
+  } catch {
+    // ignore
+  }
+}
+
+// Helper to get initial tab state synchronously (avoids flash on refresh).
+// For pilots, this shortcuts to Trade Lab as the initial active tab so the
+// first render never puts the Dashboard tab (a pilot-hidden surface) in
+// the active slot — eliminating the dashboard-then-trade-lab flip that
+// otherwise occurs the first time the route-guard effect gets a chance
+// to run.
 function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; activeTabId: string } {
+  const isPilotHint = readPilotHintSync(userId)
   const savedState = TabStateManager.loadMainTabState(userId, orgId)
   if (savedState && savedState.tabs && savedState.tabs.length > 0) {
+    // Dedupe any duplicate-id tabs that earlier bugs may have written into
+    // sessionStorage. Without this, a hard-refresh briefly renders the
+    // same tab twice before the pilot guard / navigate flow consolidates.
+    const seen = new Set<string>()
+    const dedupedTabs: Tab[] = []
+    for (const tab of savedState.tabs as Tab[]) {
+      if (!tab?.id || seen.has(tab.id)) continue
+      seen.add(tab.id)
+      dedupedTabs.push(tab)
+    }
     // Ensure dashboard tab always exists
-    const hasDashboard = savedState.tabs.some(tab => tab.id === 'dashboard')
+    const hasDashboard = dedupedTabs.some(tab => tab.id === 'dashboard')
     if (!hasDashboard) {
-      savedState.tabs.unshift({
+      dedupedTabs.unshift({
         id: 'dashboard',
         title: 'Dashboard',
         type: 'dashboard',
         isActive: false
       })
     }
+    // Pilot: always land on Dashboard on initial mount. Pilots are
+    // starter users — Dashboard is their command center, and an
+    // accidentally-active tab from a prior session (or a legacy
+    // session-storage entry that pre-dated the current code) was
+    // landing them on Trade Lab on org switch. Force Dashboard,
+    // and ensure the dashboard tab is in the list. This doesn't
+    // delete other open tabs; it just resets which one is active.
+    let activeTabId = savedState.activeTabId
+    if (isPilotHint) {
+      activeTabId = 'dashboard'
+    }
     return {
-      tabs: savedState.tabs.map(tab => ({
+      tabs: dedupedTabs.map(tab => ({
         ...tab,
-        isActive: tab.id === savedState.activeTabId,
+        isActive: tab.id === activeTabId,
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
         ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
       })),
-      activeTabId: savedState.activeTabId
+      activeTabId
     }
   }
-  // Default state
+  // Default state — everyone lands on Dashboard. Pilots no longer
+  // get a pre-seeded Trade Lab tab; the dashboard CTA or the "+"
+  // menu opens Trade Lab (and the other pilot surfaces) on demand.
   return {
     tabs: [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }],
     activeTabId: 'dashboard'
@@ -121,6 +186,14 @@ export function DashboardPage() {
   const [activeTabId, setActiveTabId] = useState(initialState.activeTabId)
   const [isInitialized, setIsInitialized] = useState(true)
 
+  // One-shot consume of the org-switch pilot hint — after the first mount
+  // has used it to land on Trade Lab, clear it so subsequent renders use
+  // the persistent localStorage hint managed by usePilotMode.
+  useEffect(() => {
+    consumePilotSwitchFlag()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Ref mirror of activeTabId — used inside handlers that are captured by
   // long-lived event listeners (registered with [] deps). Reading the ref
   // inside the handler avoids stale-closure bugs where the handler sees the
@@ -136,6 +209,24 @@ export function DashboardPage() {
   // ─── Pilot Mode gating ───────────────────────────────────────────────
   const pilotMode = usePilotMode()
   const [pilotTeaser, setPilotTeaser] = useState<{ featureLabel: string; reason: 'preview' | 'hidden' } | null>(null)
+
+  // Pilot users never see tabs backed by a pilot-hidden feature. Filtering
+  // here removes them from the tab bar entirely rather than redirecting on
+  // click. `effectiveIsPilot` + the resolved `access` map are both cache-
+  // aware, so a cold refresh uses last session's pilot hint (and the default
+  // access map) until the real values resolve — no flash of the Dashboard
+  // tab or other pilot-hidden surfaces.
+  const visibleTabs = useMemo(() => {
+    if (!pilotMode.effectiveIsPilot) return tabs
+    const accessFor = pilotMode.isLoading
+      ? (f: keyof typeof PILOT_ACCESS_DEFAULTS) => PILOT_ACCESS_DEFAULTS[f]
+      : pilotMode.accessFor
+    return tabs.filter(tab => {
+      const feature = TAB_TYPE_TO_PILOT_FEATURE[tab.type]
+      if (!feature) return true
+      return accessFor(feature) !== 'hidden'
+    })
+  }, [tabs, pilotMode.effectiveIsPilot, pilotMode.isLoading, pilotMode.access])
 
   const openPilotTradeLab = useCallback(() => {
     // Fire via the existing openTradeLab event — the listener below handles it.
@@ -154,10 +245,13 @@ export function DashboardPage() {
     return () => window.removeEventListener('pilot-teaser', handler as EventListener)
   }, [])
 
-  // Pilot route guard: when a pilot user lands on (or is already looking at) a
-  // tab whose type is gated as 'hidden' for pilots, snap them to Trade Lab.
-  // Also ensures a Trade Lab tab exists on first load. 'preview' tabs stay —
-  // we substitute the rendered content with a preview component further below.
+  // Pilot route guard: when a pilot user lands on (or is already
+  // looking at) a tab whose type is gated as 'hidden' for pilots,
+  // snap them back to Dashboard. Trade Lab is no longer auto-seeded
+  // or pinned — pilots open it on demand from the Dashboard CTA or
+  // the "+" picker, and can close it like any other tab. 'preview'
+  // tabs stay — we substitute the rendered content with a preview
+  // component further below.
   useEffect(() => {
     if (pilotMode.isLoading || !pilotMode.isPilot) return
 
@@ -165,38 +259,27 @@ export function DashboardPage() {
     const activeFeature = active ? TAB_TYPE_TO_PILOT_FEATURE[active.type] : null
     const activeAccess = activeFeature ? pilotMode.accessFor(activeFeature) : 'full'
 
-    // Ensure a Trade Lab tab exists — pilots always have it as their home.
-    const hasTradeLab = tabs.some(t => t.type === 'trade-lab')
-    if (!hasTradeLab) {
-      setTabs(prev => {
-        const newTab: Tab = {
-          id: 'trade-lab',
-          title: 'Trade Lab',
-          type: 'trade-lab',
-          isActive: true,
-          data: {},
-        }
-        return [...prev.map(t => ({ ...t, isActive: false })), newTab]
-      })
-      setActiveTabId('trade-lab')
-      return
-    }
-
-    // If current tab is hidden for pilots, swap to Trade Lab.
     if (activeAccess === 'hidden') {
-      const tradeLab = tabs.find(t => t.type === 'trade-lab')
-      if (tradeLab && tradeLab.id !== activeTabId) {
-        setActiveTabId(tradeLab.id)
-        setTabs(prev => prev.map(t => ({ ...t, isActive: t.id === tradeLab.id })))
+      const dashboard = tabs.find(t => t.id === 'dashboard')
+      if (dashboard && dashboard.id !== activeTabId) {
+        setActiveTabId(dashboard.id)
+        setTabs(prev => prev.map(t => ({ ...t, isActive: t.id === dashboard.id })))
       }
     }
   }, [pilotMode.isPilot, pilotMode.isLoading, pilotMode.access, tabs, activeTabId])
 
-  // Reset tabs when org changes (switch org → load that org's saved tabs or default)
+  // Reset tabs when org changes (switch org → load that org's saved tabs or
+  // default). Also flip `isOrgTransitioning` so the page renders a loading
+  // state until pilot detection resolves — without the gate, we'd paint the
+  // new org's tabs before the pilot filter/route-guard effects run, causing
+  // a visible Dashboard→Trade Lab flash on non-pilot→pilot switches.
   const prevOrgRef = useRef(currentOrgId)
+  const [isOrgTransitioning, setIsOrgTransitioning] = useState(false)
   useEffect(() => {
     if (currentOrgId && currentOrgId !== prevOrgRef.current) {
+      const wasRealSwitch = prevOrgRef.current !== null
       prevOrgRef.current = currentOrgId
+      if (wasRealSwitch) setIsOrgTransitioning(true)
       const saved = TabStateManager.loadMainTabState(user?.id, currentOrgId)
       if (saved) {
         setTabs(saved.tabs as Tab[])
@@ -208,6 +291,25 @@ export function DashboardPage() {
       }
     }
   }, [currentOrgId, user?.id])
+
+  // Clear the transition flag once pilot detection finishes. At that point
+  // both visibleTabs filtering and the pilot route guard have had a chance
+  // to run, so the first post-transition paint is already correct.
+  useEffect(() => {
+    if (isOrgTransitioning && !pilotMode.isLoading) {
+      setIsOrgTransitioning(false)
+    }
+  }, [isOrgTransitioning, pilotMode.isLoading])
+
+  // Safety timeout — never leave the user stuck on the "Switching workspace"
+  // overlay. If pilot detection stalls (e.g. a query never resolves), we'd
+  // otherwise hold the loader forever. 4s is long enough for every normal
+  // fetch to finish and short enough that a hang recovers quickly.
+  useEffect(() => {
+    if (!isOrgTransitioning) return
+    const timer = setTimeout(() => setIsOrgTransitioning(false), 4000)
+    return () => clearTimeout(timer)
+  }, [isOrgTransitioning])
 
   // Save tab state whenever tabs or activeTabId changes
   useEffect(() => {
@@ -221,7 +323,14 @@ export function DashboardPage() {
   // Onboarding: check if new user needs profile setup
   const { onboardingStatus, isLoading: onboardingLoading } = useOnboarding()
   const [onboardingDismissed, setOnboardingDismissed] = useState(false)
-  const needsOnboarding = !onboardingLoading && !onboardingStatus?.wizard_completed && !onboardingDismissed
+  // Setup wizard is for non-pilot users only — pilot orgs are
+  // auto-seeded with the pilot scenario and don't need the guided
+  // setup. Showing it during the pilot loop would be a distraction.
+  const needsOnboarding =
+    !onboardingLoading &&
+    !onboardingStatus?.wizard_completed &&
+    !onboardingDismissed &&
+    !pilotMode.effectiveIsPilot
 
   const toast = useToast()
 
@@ -571,6 +680,13 @@ export function DashboardPage() {
   }
 
   const handleNewTab = () => {
+    // Pilot "+" opens a scoped picker (Trade Lab / Idea Pipeline /
+    // Trade Book / Outcomes) instead of a blank tab. Non-pilots get
+    // the default blank tab behaviour below.
+    if (pilotMode.effectiveIsPilot) {
+      setPilotNewTabPickerOpen(true)
+      return
+    }
     const newTabId = `blank-${Date.now()}`
     const newTab: Tab = {
       id: newTabId,
@@ -579,20 +695,46 @@ export function DashboardPage() {
       isActive: false,
       isBlank: true
     }
-    
-    // Add new blank tab and switch to it
     const updatedTabs = tabs.map(tab => ({ ...tab, isActive: false }))
     updatedTabs.push({ ...newTab, isActive: true })
     setTabs(updatedTabs)
     setActiveTabId(newTabId)
   }
 
+  // Pilot-scoped tab picker state — shown when a pilot clicks "+".
+  const [pilotNewTabPickerOpen, setPilotNewTabPickerOpen] = useState(false)
+
   const handleTabReorder = (fromIndex: number, toIndex: number) => {
-    setTabs(arrayMove(tabs, fromIndex, toIndex))
+    // TabManager's indices reference the `visibleTabs` subset. In pilot mode
+    // (or any other filter) visibleTabs ⊊ tabs, so we must translate to the
+    // full-tabs indices before arrayMove — otherwise we'd move hidden tabs
+    // that the user can't see.
+    const fromVisible = visibleTabs[fromIndex]
+    const toVisible = visibleTabs[toIndex]
+    if (!fromVisible || !toVisible) return
+    const fromFull = tabs.findIndex(t => t.id === fromVisible.id)
+    const toFull = tabs.findIndex(t => t.id === toVisible.id)
+    if (fromFull === -1 || toFull === -1 || fromFull === toFull) return
+    setTabs(arrayMove(tabs, fromFull, toFull))
   }
 
-  const handleTabsReorder = (newTabs: Tab[]) => {
-    setTabs(newTabs)
+  const handleTabsReorder = (newVisibleTabs: Tab[]) => {
+    // newVisibleTabs is the reordered visible subset from TabManager. Splice
+    // it back into the full tabs array, preserving hidden tabs in their
+    // original positions. Without this, pilot mode would drop hidden tabs
+    // (e.g. Dashboard) on any group drag.
+    const visibleIds = new Set(visibleTabs.map(t => t.id))
+    const iter = [...newVisibleTabs]
+    const merged: Tab[] = []
+    for (const tab of tabs) {
+      if (visibleIds.has(tab.id)) {
+        const next = iter.shift()
+        if (next) merged.push(next)
+      } else {
+        merged.push(tab)
+      }
+    }
+    setTabs(merged)
   }
 
   const handleFocusSearch = () => {
@@ -750,8 +892,10 @@ export function DashboardPage() {
     }
 
     // Pilot mode substitution: render read-only preview components for
-    // 'preview' surfaces, instead of the full operational page.
-    if (pilotMode.isPilot && !pilotMode.isLoading) {
+    // 'preview' surfaces, instead of the full operational page. Uses the
+    // cache-aware `effectiveIsPilot` so a cold refresh doesn't flash the
+    // full operational Trade Book / Outcomes before pilot detection resolves.
+    if (pilotMode.effectiveIsPilot) {
       const feature = TAB_TYPE_TO_PILOT_FEATURE[activeTab.type]
       if (feature && pilotMode.accessFor(feature) === 'preview') {
         if (activeTab.type === 'trade-book') return <PilotTradeBookPreview onGoToTradeLab={openPilotTradeLab} />
@@ -984,6 +1128,35 @@ export function DashboardPage() {
   }, [])
 
   const renderDashboardContent = () => {
+    // Pilot users see a lightweight action dashboard (3 cards —
+    // Ready for Decision / In Progress / Feedback Loop) instead of
+    // the full analytics surfaces. Dashboard acts as a routing
+    // layer into the pilot loop, not a data-rich workbench.
+    if (pilotMode.effectiveIsPilot) {
+      return (
+        <PilotActionDashboard
+          onOpenTradeLab={(ctx) => handleSearchResult({
+            id: 'trade-lab',
+            title: 'Trade Lab',
+            type: 'trade-lab',
+            data: ctx ?? {},
+          })}
+          onOpenIdeaPipeline={() => handleOpenTradeQueue()}
+          onOpenTradeBook={() => handleSearchResult({
+            id: 'trade-book',
+            title: 'Trade Book',
+            type: 'trade-book',
+            data: {},
+          })}
+          onOpenOutcomes={() => handleSearchResult({
+            id: 'outcomes',
+            title: 'Outcomes',
+            type: 'outcomes',
+            data: {},
+          })}
+        />
+      )
+    }
     return (
       <div className="h-full overflow-auto">
         <div className="p-3 space-y-2.5">
@@ -1055,6 +1228,80 @@ export function DashboardPage() {
     )
   }
 
+  // Hold a minimal loading state during an org switch until pilot detection
+  // settles. Without this, the new org's tabs paint before pilot filtering
+  // runs — a non-pilot→pilot switch would flash Dashboard before the pilot
+  // route guard swaps to Trade Lab.
+  //
+  // Same treatment on a cold first mount: if we can't yet decide whether
+  // this is a pilot session AND the active tab is one that would be hidden
+  // for pilots (e.g. Dashboard), hold the loader. "Can't yet decide" means:
+  //   - currentOrgId isn't resolved from the cached user yet, OR
+  //   - the org-pilot-flags query is still in flight.
+  // The second check alone wasn't enough — during the first render after a
+  // reload `currentOrgId` is briefly null, which disables the pilot-flags
+  // query (`enabled: !!currentOrgId`) and makes `isLoading` read as false.
+  // Dashboard paints for that one frame, then the query wakes up and the
+  // route guard swaps to Trade Lab — that was the visible flash.
+  const activeTabForGate = tabs.find(t => t.id === activeTabId)
+  const activeTabFeatureForGate = activeTabForGate ? TAB_TYPE_TO_PILOT_FEATURE[activeTabForGate.type] : null
+  const activeTabHiddenForPilot = activeTabFeatureForGate
+    ? PILOT_ACCESS_DEFAULTS[activeTabFeatureForGate] === 'hidden'
+    : false
+  // "Might be a pilot" covers three cases we must hold the loader through:
+  //   1. Auth/org haven't resolved yet (!currentOrgId)
+  //   2. Pilot-flags query still in flight (isLoading)
+  //   3. We've confirmed pilot but the route guard hasn't swapped the
+  //      active tab yet — that happens in a useEffect which runs AFTER the
+  //      render that flipped isLoading to false. Without (3), there's
+  //      always exactly one render where pilotMode.isLoading=false but
+  //      activeTabId is still 'dashboard' — and that's the Dashboard
+  //      flash-in-then-flash-out the user was still seeing.
+  const mightBePilot = pilotMode.effectiveIsPilot || !currentOrgId || pilotMode.isLoading
+  const awaitingPilotDecision = mightBePilot && activeTabHiddenForPilot
+
+  // Boot-loader handoff. The persistent #tesseract-boot-loader paints
+  // the cold-boot sequence (auth → org → pilot decision) without any
+  // remount, so the rotation animation runs continuously instead of
+  // resetting per gate. Once gates pass for the first time we mark
+  // boot complete; subsequent in-session refetches that briefly flip
+  // a gate back to "loading" do NOT re-show the boot loader (which
+  // would feel like a full-screen reload). Only an explicit org
+  // switch (`isOrgTransitioning`, set right before reload) re-paints
+  // the loader because a reload IS imminent.
+  const stillBlocking = isOrgTransitioning || awaitingPilotDecision
+  const bootCompletedRef = useRef(false)
+  useEffect(() => {
+    if (!stillBlocking) {
+      hideBootLoader()
+      bootCompletedRef.current = true
+      return
+    }
+    // Gate is blocking. Show boot loader only when it makes sense:
+    //   - boot is still in its initial window (loader hasn't faded yet), OR
+    //   - the user explicitly triggered an org switch
+    if (!bootCompletedRef.current || isOrgTransitioning) {
+      showBootLoader(isOrgTransitioning ? 'Switching workspace…' : 'Loading…')
+    }
+  }, [stillBlocking, isOrgTransitioning])
+
+  // Gates still blocking. During the cold-boot window the boot loader
+  // covers the screen; after first paint we render an in-flow spinner
+  // so the rest of the app chrome stays visible (header, tabs).
+  if (stillBlocking) {
+    if (!bootCompletedRef.current || isOrgTransitioning) {
+      return null
+    }
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-400">Loading…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
     {/* Onboarding wizard for new users */}
@@ -1070,7 +1317,7 @@ export function DashboardPage() {
       </div>
     )}
     <Layout
-      tabs={tabs}
+      tabs={visibleTabs}
       activeTabId={activeTabId}
       onTabReorder={handleTabReorder}
       onTabsReorder={handleTabsReorder}
@@ -1099,7 +1346,8 @@ export function DashboardPage() {
         />
       </>
     </Layout>
-    <FeedbackWidget />
+    {/* FeedbackWidget moved into Header (next to search) so it
+        doesn't float over the page. */}
     {pilotTeaser && (
       <PilotTeaserModal
         isOpen={!!pilotTeaser}
@@ -1108,6 +1356,46 @@ export function DashboardPage() {
         onClose={() => setPilotTeaser(null)}
         onGoToTradeLab={openPilotTradeLab}
       />
+    )}
+    {/* Pilot tab picker — scoped menu shown when a pilot clicks "+".
+        Only exposes the four pilot surfaces; each item reuses the
+        existing handleSearchResult routing so tab-open behaviour
+        stays identical to any other nav path. */}
+    {pilotNewTabPickerOpen && (
+      <div
+        className="fixed inset-0 z-[100] bg-black/30 flex items-start justify-center pt-24"
+        onClick={() => setPilotNewTabPickerOpen(false)}
+      >
+        <div
+          className="w-[360px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+            <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Open a tab</div>
+            <div className="text-[11px] text-gray-500">Pilot surfaces available to your workspace.</div>
+          </div>
+          <div className="p-2 grid grid-cols-2 gap-1">
+            {[
+              { id: 'trade-queue', title: 'Idea Pipeline', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+              { id: 'trade-lab',   title: 'Trade Lab',     color: 'text-primary-700 bg-primary-50 border-primary-200' },
+              { id: 'trade-book',  title: 'Trade Book',    color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+              { id: 'outcomes',    title: 'Outcomes',      color: 'text-teal-700 bg-teal-50 border-teal-200' },
+            ].map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setPilotNewTabPickerOpen(false)
+                  handleSearchResult({ id: t.id, title: t.title, type: t.id as any, data: null })
+                }}
+                className={`px-3 py-3 rounded-md border text-[12px] font-semibold transition-colors hover:brightness-95 ${t.color}`}
+              >
+                {t.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     )}
     </>
   )

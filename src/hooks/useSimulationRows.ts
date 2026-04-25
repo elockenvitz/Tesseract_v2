@@ -102,13 +102,16 @@ interface UseSimulationRowsOptions {
 // =============================================================================
 
 /** Check if the computed delta conflicts with the originating idea's intended direction.
- *  E.g., idea says SELL but user sized +1% which increases exposure. */
+ *  E.g., idea says SELL but user sized +1% which increases exposure.
+ *  Uses a sub-share threshold so rounding residue (e.g. -0.3 shares from a
+ *  fractional baseline being rounded up) doesn't trip a false conflict. */
+const IDEA_CONFLICT_SHARES_EPS = 1
 function checkIdeaDirectionConflict(
   ideaAction: TradeAction | null | undefined,
   deltaShares: number,
   hasSizing: boolean,
 ): boolean {
-  if (!ideaAction || !hasSizing || deltaShares === 0) return false
+  if (!ideaAction || !hasSizing || Math.abs(deltaShares) < IDEA_CONFLICT_SHARES_EPS) return false
   const isBuyIntent = ideaAction === 'buy' || ideaAction === 'add'
   const isSellIntent = ideaAction === 'sell' || ideaAction === 'trim'
   if (isBuyIntent && deltaShares < 0) return true
@@ -314,9 +317,25 @@ export function useSimulationRows({
         : (est ? simShares - holding.shares : (computed?.delta_shares ?? 0))
       // Signed notional: positive for buys/adds, negative for sells/trims.
       // For closes this is -currentValue so Δ$ reflects the full exit.
+      //
+      // Notional is derived from the *weight delta × NAV*, not from
+      // `computed.delta_shares × current_price`. Why: when normalize-sizing
+      // ran against a stale / fallback price (e.g. a $100 placeholder
+      // because priceMap hadn't populated for a new position yet), the
+      // stored `delta_shares` is inflated relative to the current real
+      // price. Multiplying those inflated shares by the real current
+      // price here then over-consumes cash by whatever factor
+      // (real_price / stale_price) was. The weight delta, on the other
+      // hand, is consistent with intent — so deriving the dollar flow
+      // from it keeps the cash row and AAPL row in sync (AAPL +Xbps,
+      // cash −Xbps), regardless of what price the variant was computed
+      // against. For closes we still emit -currentValue so the full
+      // exit shows up on Δ $.
       const notional = isRemoved
         ? -holding.value
-        : (est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0))
+        : (computed || est)
+          ? (dw / 100) * totalValue
+          : 0
       // Absolute sim notional: post-trade position value. Exactly 0 when
       // the position is being closed (no fractional-share residue).
       const simNotional = isRemoved ? 0 : simShares * price
@@ -325,8 +344,12 @@ export function useSimulationRows({
       // This prevents stale DB action (e.g. 'add' from initial creation) from
       // causing false conflicts when the user's sizing implies a different direction.
       const derived = deriveAction(false, isRemoved, ds, dw, computed !== null || est !== null, variant?.action || 'add')
-      const conflict = variant && (computed || est)
-        ? detectDirectionConflict(derived, ds, 'user_edit')
+      // Only run the conflict check against server-finalized `computed` values.
+      // Using the client-side `est` during the optimistic window can produce a
+      // false-positive conflict from sub-share rounding residue that clears
+      // when the server responds — the "flashing conflict alert" the user sees.
+      const conflict = variant && computed
+        ? detectDirectionConflict(derived, computed.delta_shares ?? ds, 'user_edit')
         : null
 
       rows.push({
@@ -360,9 +383,16 @@ export function useSimulationRows({
         hasConflict: conflict !== null,
         hasWarning: variant?.below_lot_warning ?? false,
         conflict,
-        hasIdeaDirectionConflict: checkIdeaDirectionConflict(
-          ideaActionByAsset?.[assetId] ?? variant?.action, ds, !!variant?.sizing_input
-        ),
+        // Idea-direction conflict: gated on server-finalized `computed` so the
+        // optimistic-update window doesn't flash a false positive from
+        // sub-share rounding in the client-side `est` delta.
+        hasIdeaDirectionConflict: computed
+          ? checkIdeaDirectionConflict(
+              ideaActionByAsset?.[assetId] ?? variant?.action,
+              computed.delta_shares ?? ds,
+              !!variant?.sizing_input,
+            )
+          : false,
         isCommittedPending: isPending(acceptedTradeMap.get(assetId)),
       })
     })
@@ -386,15 +416,22 @@ export function useSimulationRows({
       const simShares = est ? est.shares : (computed?.target_shares ?? 0)
 
       const dw = (computed || est) ? intendedWeight : 0
-      const ds = est ? simShares : (computed?.delta_shares ?? 0)
-      // Signed notional: positive for buys, negative for sells
-      const notional = est ? ds * price : (computed ? (computed.delta_shares ?? 0) * price : 0)
-      // Absolute sim notional: post-trade position value for the new row.
-      const simNotional = simShares * price
+      const ds = est ? simShares : (computed?.target_shares ?? 0)
+      // Signed notional derived from intended weight × NAV (see the baseline
+      // branch for the stale-price rationale). Using weight here keeps the
+      // cash flow consistent with intent even if `computed.delta_shares`
+      // was normalized against a fallback price.
+      const notional = (computed || est) ? (dw / 100) * totalValue : 0
+      // Absolute sim notional: post-trade position value. Also derive from
+      // weight so it stays aligned with the displayed sim-weight column.
+      const simNotional = (dw / 100) * totalValue
 
       const derivedNew = deriveAction(true, false, ds, dw, computed !== null || est !== null, variant.action)
-      const conflict = (computed || est)
-        ? detectDirectionConflict(derivedNew, ds, 'user_edit')
+      // Gate conflict detection on server-finalized `computed` values to avoid
+      // transient false positives from sub-share rounding during the
+      // optimistic-update window. See the baseline branch for full notes.
+      const conflict = computed
+        ? detectDirectionConflict(derivedNew, computed.delta_shares ?? ds, 'user_edit')
         : null
 
       rows.push({
@@ -423,9 +460,16 @@ export function useSimulationRows({
         hasConflict: conflict !== null,
         hasWarning: variant.below_lot_warning ?? false,
         conflict,
-        hasIdeaDirectionConflict: checkIdeaDirectionConflict(
-          ideaActionByAsset?.[assetId] ?? variant.action, ds, !!variant.sizing_input
-        ),
+        // Idea-direction conflict: gated on server-finalized `computed` so the
+        // optimistic-update window doesn't flash a false positive from
+        // sub-share rounding in the client-side `est` delta.
+        hasIdeaDirectionConflict: computed
+          ? checkIdeaDirectionConflict(
+              ideaActionByAsset?.[assetId] ?? variant.action,
+              computed.delta_shares ?? ds,
+              !!variant.sizing_input,
+            )
+          : false,
         isCommittedPending: isPending(acceptedTradeMap.get(assetId)),
       })
     })
@@ -482,6 +526,18 @@ export function useSimulationRows({
 
     // If a real cash holding exists in the rows, update its deltas to reflect trade impact.
     // Cash is treated like a real position: trades consume/add cash, so delta shares = -netTradeNotional / cashPrice.
+    //
+    // Denominator note: a cash-funded trade (buy paid with cash, or sell
+    // releasing cash) PRESERVES NAV — cash decreases/increases exactly as
+    // position value increases/decreases. The post-trade portfolio total is
+    // still `totalValue`. The earlier `totalValue + cashNotional` formula
+    // treated the trade as net-new inflow/outflow, which silently drifted
+    // cash's new weight off the correct value and made the footer "Δ Wt"
+    // total non-zero when it should conserve (e.g. buying $165K of AAPL
+    // with $165K of cash should show AAPL +Xbps and cash −Xbps summing to 0).
+    //
+    // Rule: compute cash's new weight against the SAME denominator as
+    // every other position — `totalValue`. Then cash_delta = new − current.
     if (cashBaseline && netTradeNotional !== 0) {
       const cashRowInList = sortedRows.find(r => r.isCash)
       if (cashRowInList) {
@@ -489,7 +545,7 @@ export function useSimulationRows({
         const cashDeltaShares = Math.round(cashNotional / cashPrice)
         const cashSimShares = cashBaseline.shares + cashDeltaShares
         const cashSimValue = cashSimShares * cashPrice
-        const portfolioSimValue = totalValue + cashNotional // approximate
+        const portfolioSimValue = totalValue // NAV is preserved on cash-funded trades
         const cashNewWeight = portfolioSimValue > 0 ? (cashSimValue / portfolioSimValue) * 100 : 0
         const cashWeightDelta = cashNewWeight - cashBaseline.weight
 
@@ -498,6 +554,7 @@ export function useSimulationRows({
         cashRowInList.simWeight = cashNewWeight
         cashRowInList.deltaWeight = cashWeightDelta
         cashRowInList.notional = cashNotional
+        cashRowInList.simNotional = cashSimValue
         cashRowInList.derivedAction = cashNotional >= 0 ? 'add' : 'trim'
       }
     }

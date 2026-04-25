@@ -2,16 +2,18 @@
  * OpsPilotPanel — ops-portal surface for managing pilot mode on a client org.
  *
  * - Toggle org pilot_mode (writes organizations.settings.pilot_mode)
- * - Toggle individual members' users.is_pilot_user
  * - List / create / archive pilot_scenarios
  * - Set per-org pilot_access feature map (JSONB override)
+ *
+ * Pilot-ness is org-scoped: every active member of an org with
+ * pilot_mode=true is a pilot. There is no per-user pilot flag.
  */
 
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Sparkles, Plus, Check, Trash2, Archive, ArchiveRestore, Star, X,
-  AlertTriangle,
+  AlertTriangle, RefreshCw,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -20,6 +22,7 @@ import { useToast } from '../../components/common/Toast'
 import {
   usePilotScenariosForOrg,
   usePilotScenarioMutations,
+  usePilotUserScenarios,
   type PilotScenario,
 } from '../../hooks/usePilotScenario'
 import { PILOT_ACCESS_DEFAULTS, mergePilotAccess, type PilotAccessConfig, type PilotAccessLevel } from '../../lib/pilot/pilot-access'
@@ -67,35 +70,26 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
     onError: (e: any) => showError(e.message || 'Save failed'),
   })
 
-  // ─── Per-user pilot flag ───────────────────────────────────────────
-  const { data: userFlags = [] } = useQuery({
-    queryKey: ['ops-pilot-user-flags', orgId, members.map(m => m.user_id).join(',')],
+  // ─── Scenarios ─────────────────────────────────────────────────────
+  const { data: scenarios = [], isLoading: scenariosLoading } = usePilotScenariosForOrg(orgId)
+  const { create, update, remove, seedForUser, isCreating, isSeeding } = usePilotScenarioMutations(orgId)
+  const { data: userScenarioMap = {} } = usePilotUserScenarios(orgId)
+  const [showForm, setShowForm] = useState(false)
+
+  // Pilot progress: what stage has each user unlocked? Drives the little
+  // "tb" / "oc" chips in the member row.
+  const { data: progressRows = [] } = useQuery({
+    queryKey: ['ops-pilot-user-progress', orgId, members.map(m => m.user_id).join(',')],
     enabled: members.length > 0,
     queryFn: async () => {
       const { data } = await supabase
         .from('users')
-        .select('id, is_pilot_user')
+        .select('id, pilot_progress')
         .in('id', members.map(m => m.user_id))
-      return (data || []) as Array<{ id: string; is_pilot_user: boolean }>
-    }
-  })
-  const flagMap = new Map(userFlags.map(u => [u.id, u.is_pilot_user]))
-
-  const setUserPilot = useMutation({
-    mutationFn: async ({ userId, enabled }: { userId: string; enabled: boolean }) => {
-      const { error } = await supabase.from('users').update({ is_pilot_user: enabled }).eq('id', userId)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ops-pilot-user-flags', orgId] })
-      queryClient.invalidateQueries({ queryKey: ['user-is-pilot'] })
+      return (data || []) as Array<{ id: string; pilot_progress: Record<string, any> | null }>
     },
   })
-
-  // ─── Scenarios ─────────────────────────────────────────────────────
-  const { data: scenarios = [], isLoading: scenariosLoading } = usePilotScenariosForOrg(orgId)
-  const { create, update, remove, isCreating } = usePilotScenarioMutations(orgId)
-  const [showForm, setShowForm] = useState(false)
+  const progressMap = new Map(progressRows.map(r => [r.id, r.pilot_progress ?? {}]))
 
   return (
     <div className="space-y-5">
@@ -108,8 +102,8 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
               <h3 className="text-sm font-semibold text-gray-900">Pilot mode (org-wide)</h3>
             </div>
             <p className="text-xs text-gray-500">
-              When on, every member of {org?.name || 'this org'} sees the focused pilot experience.
-              Override per-member using "Pilot" toggles below.
+              When on, every active member of {org?.name || 'this org'} sees the focused pilot experience.
+              Switching this off instantly restores the full app for everyone in the org.
             </p>
           </div>
           <Button
@@ -156,11 +150,13 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
         </div>
       </div>
 
-      {/* Per-member pilot flag */}
+      {/* Per-member scenario state + seeding actions */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">Per-member pilot flag</h3>
-          <span className="text-xs text-gray-500">Overrides org-wide off. OR-combined with org mode.</span>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Pilot members</h3>
+            <p className="text-xs text-gray-500">Staged scenario and seeding actions for each member. Pilot mode applies org-wide when the toggle above is on.</p>
+          </div>
         </div>
         {members.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-400">No members yet.</div>
@@ -168,20 +164,85 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
           <ul className="divide-y divide-gray-100">
             {members.map(m => {
               const name = [m.first_name, m.last_name].filter(Boolean).join(' ').trim() || m.email?.split('@')[0] || 'Unknown'
-              const enabled = flagMap.get(m.user_id) ?? false
+              const scenario = userScenarioMap[m.user_id]
+              const progress = progressMap.get(m.user_id) ?? {}
+              const tradeBookUnlocked = !!progress.trade_book_unlocked
+              const outcomesUnlocked = !!progress.outcomes_unlocked
+
               return (
-                <li key={m.user_id} className="flex items-center justify-between px-4 py-2.5">
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{name}</div>
-                    {m.email && <div className="text-xs text-gray-500">{m.email}</div>}
+                <li key={m.user_id} className="px-4 py-3 space-y-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">{name}</div>
+                    {m.email && <div className="text-xs text-gray-500 truncate">{m.email}</div>}
                   </div>
-                  <Button
-                    size="sm"
-                    variant={enabled ? 'primary' : 'outline'}
-                    onClick={() => setUserPilot.mutate({ userId: m.user_id, enabled: !enabled })}
-                  >
-                    {enabled ? 'Pilot' : 'Not pilot'}
-                  </Button>
+
+                  <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                    <StatusChip
+                      label="Scenario"
+                      ok={!!scenario}
+                      detail={scenario?.title || 'none'}
+                    />
+                    <StatusChip
+                      label="Recommendation"
+                      ok={!!scenario?.trade_queue_item_id}
+                      detail={scenario?.trade_queue_item_id ? 'linked' : 'not linked'}
+                    />
+                    <StatusChip
+                      label="Portfolio"
+                      ok={!!scenario?.portfolio_id}
+                      detail={scenario?.portfolio?.name || 'unassigned'}
+                    />
+                    <StatusChip
+                      label="Trade Book"
+                      ok={tradeBookUnlocked}
+                      detail={tradeBookUnlocked ? 'unlocked' : 'preview'}
+                    />
+                    <StatusChip
+                      label="Outcomes"
+                      ok={outcomesUnlocked}
+                      detail={outcomesUnlocked ? 'unlocked' : 'preview'}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isSeeding || !pilotMode}
+                      onClick={async () => {
+                        try {
+                          const result = await seedForUser({ userId: m.user_id, reset: false })
+                          if (result.seeded) success(`Seeded scenario for ${name}`)
+                          else success(`Already had a scenario (${result.reason ?? 'ok'})`)
+                        } catch (e: any) {
+                          showError(e.message || 'Seed failed')
+                        }
+                      }}
+                      title={pilotMode ? 'Ensure this user has an active scenario' : 'Enable pilot mode to seed'}
+                    >
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      Seed
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isSeeding || !pilotMode || !scenario}
+                      onClick={async () => {
+                        if (!confirm(`Reset and re-seed the pilot scenario for ${name}? The current queue item and recommendation will be archived.`)) return
+                        try {
+                          const result = await seedForUser({ userId: m.user_id, reset: true })
+                          if (result.seeded) success(`Reset scenario for ${name}`)
+                          else showError(`Reset skipped: ${result.reason ?? 'unknown'}`)
+                        } catch (e: any) {
+                          showError(e.message || 'Reset failed')
+                        }
+                      }}
+                      title={scenario ? 'Archive and re-create the scenario from template / defaults' : 'Nothing to reset'}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Reset &amp; seed
+                    </Button>
+                  </div>
                 </li>
               )
             })}
@@ -194,7 +255,10 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Staged pilot scenarios</h3>
-            <p className="text-xs text-gray-500">One "active" scenario auto-loads into each pilot user's Trade Lab on landing.</p>
+            <p className="text-xs text-gray-500">
+              <b>Templates</b> (org-wide) are cloned into each pilot user's first-login scenario.
+              <b> User-assigned</b> rows are live instantiations that appear in that user's Trade Lab.
+            </p>
           </div>
           <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus className="w-3.5 h-3.5 mr-1" />
@@ -293,6 +357,7 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
       <div className="flex items-center gap-3 min-w-0">
         <div className={clsx(
           'w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+          scenario.is_template ? 'bg-amber-50 text-amber-600' :
           scenario.status === 'active' ? 'bg-primary-50 text-primary-600' :
           scenario.status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
           'bg-gray-100 text-gray-400'
@@ -302,6 +367,11 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium text-gray-900 truncate">{scenario.title}</span>
+            {scenario.is_template && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wide">
+                Template
+              </span>
+            )}
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">
               {scenario.asset?.symbol || scenario.symbol || '—'}
             </span>
@@ -320,7 +390,7 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
             </span>
           </div>
           <div className="text-xs text-gray-500 mt-0.5">
-            {assignedName ? `Assigned to ${assignedName}` : 'Org-wide'}
+            {scenario.is_template ? 'Org-wide template' : assignedName ? `Assigned to ${assignedName}` : 'Org-wide'}
             {scenario.portfolio?.name && ` · ${scenario.portfolio.name}`}
           </div>
         </div>
@@ -361,7 +431,9 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
   const [whyNow, setWhyNow] = useState('')
   const [proposedAction, setProposedAction] = useState('')
   const [proposedSizing, setProposedSizing] = useState('')
+  const [targetWeight, setTargetWeight] = useState<string>('2')
   const [userId, setUserId] = useState<string>('')
+  const [isTemplate, setIsTemplate] = useState<boolean>(false)
 
   // Portfolio picker (filtered to this org)
   const { data: portfolios = [] } = useQuery({
@@ -449,7 +521,35 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
                 </select>
               </Field>
             </div>
-            {!portfolioId && portfolios.length > 0 && (
+            <Field label="Target weight %">
+              <input
+                type="number"
+                value={targetWeight}
+                onChange={e => setTargetWeight(e.target.value)}
+                placeholder="2"
+                step="0.25"
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white"
+              />
+            </Field>
+
+            <label className="flex items-start gap-2 text-xs text-gray-700 bg-amber-50/60 border border-amber-200 rounded px-2 py-2">
+              <input
+                type="checkbox"
+                checked={isTemplate}
+                onChange={e => {
+                  setIsTemplate(e.target.checked)
+                  if (e.target.checked) setUserId('')
+                }}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-semibold text-amber-800">Save as org template.</span>{' '}
+                Templates aren't shown to users directly — each pilot's first login clones this
+                into a personal instantiation. Keep user assignment empty.
+              </span>
+            </label>
+
+            {!portfolioId && portfolios.length > 0 && !isTemplate && (
               <div className="flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                 <AlertTriangle className="w-3 h-3" />
                 No portfolio selected — pilot user will see their own portfolio list.
@@ -469,13 +569,15 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
                 why_now: whyNow.trim() || null,
                 proposed_action: proposedAction.trim() || null,
                 proposed_sizing_input: proposedSizing.trim() || null,
+                target_weight_pct: targetWeight ? Number(targetWeight) : null,
                 portfolio_id: portfolioId || null,
-                user_id: userId || null,
+                user_id: isTemplate ? null : (userId || null),
                 status: 'active',
+                is_template: isTemplate,
               })}
             >
               <Check className="w-3.5 h-3.5 mr-1" />
-              Stage
+              {isTemplate ? 'Save template' : 'Stage scenario'}
             </Button>
           </div>
         </div>
@@ -490,5 +592,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="block text-[11px] font-medium text-gray-600 uppercase tracking-wide mb-1">{label}</label>
       {children}
     </div>
+  )
+}
+
+function StatusChip({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium',
+        ok
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+          : 'bg-gray-50 border-gray-200 text-gray-500'
+      )}
+      title={detail}
+    >
+      <span className={clsx('w-1 h-1 rounded-full', ok ? 'bg-emerald-500' : 'bg-gray-300')} />
+      <span>{label}</span>
+      {detail && <span className="text-gray-400 font-normal truncate max-w-[96px]">· {detail}</span>}
+    </span>
   )
 }

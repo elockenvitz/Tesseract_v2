@@ -19,8 +19,8 @@ export interface PilotAccessConfig {
   tradeLab:     PilotAccessLevel  // the wedge — always 'full' for pilots
   tradeBook:    PilotAccessLevel  // downstream — starts as 'preview'
   outcomes:     PilotAccessLevel  // further downstream — starts as 'preview'
-  ideaPipeline: PilotAccessLevel  // upstream (Ideas) — starts 'hidden'
-  dashboard:    PilotAccessLevel  // starts 'hidden'
+  ideaPipeline: PilotAccessLevel  // upstream (Ideas) — 'full' so pilots can see where ideas live
+  dashboard:    PilotAccessLevel  // 'full' — pilot lands here on login as the action dashboard
   priorities:   PilotAccessLevel  // starts 'hidden'
   projects:     PilotAccessLevel  // starts 'hidden'
   coverage:     PilotAccessLevel  // starts 'hidden'
@@ -43,8 +43,8 @@ export const PILOT_ACCESS_DEFAULTS: PilotAccessConfig = {
   tradeLab:     'full',
   tradeBook:    'preview',
   outcomes:     'preview',
-  ideaPipeline: 'hidden',
-  dashboard:    'hidden',
+  ideaPipeline: 'full',   // was 'hidden' — pilots can now see the pipeline as a routing surface
+  dashboard:    'full',   // was 'hidden' — pilots now land here on login as a lightweight action dashboard
   priorities:   'hidden',
   projects:     'hidden',
   coverage:     'hidden',

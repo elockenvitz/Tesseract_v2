@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Card } from '../ui/Card'
-import { PieChart } from 'lucide-react'
+import { PieChart, ChevronDown, ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 
 export interface TradeAttribution {
@@ -27,7 +27,17 @@ const SECTOR_COLORS: Record<string, string> = {
   'Materials': '#f97316',
   'Real Estate': '#84cc16',
   'Communication Services': '#06b6d4',
+  'Cash': '#9ca3af',
   'Other': '#6b7280',
+}
+
+/** Format a weight delta in basis points when small, percent otherwise, with
+ *  a sign and fixed precision. 0.72% → "+72 bps"; 3.4% → "+3.40%". */
+function fmtDelta(pct: number): string {
+  const sign = pct > 0 ? '+' : pct < 0 ? '−' : ''
+  const abs = Math.abs(pct)
+  if (abs < 1) return `${sign}${Math.round(abs * 100)} bps`
+  return `${sign}${abs.toFixed(2)}%`
 }
 
 export function SectorExposureChart({ before, after, tradeAttribution }: SectorExposureChartProps) {
@@ -44,7 +54,7 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
       .sort((a, b) => b.after - a.after)
   }, [before, after])
 
-  // Group trade attribution by sector, sorted by |deltaWeight| desc, top 2
+  // Group trade attribution by sector, sorted by |deltaWeight| desc
   const attributionBySector = useMemo(() => {
     if (!tradeAttribution || tradeAttribution.length === 0) return null
     const map = new Map<string, TradeAttribution[]>()
@@ -53,15 +63,23 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
       arr.push(t)
       map.set(t.sector, arr)
     }
-    // Sort each sector's trades by |deltaWeight| desc, keep top 2
     for (const [key, arr] of map) {
       arr.sort((a, b) => Math.abs(b.deltaWeight) - Math.abs(a.deltaWeight))
-      map.set(key, arr.slice(0, 2))
     }
     return map
   }, [tradeAttribution])
 
   const maxValue = Math.max(...sectors.map(s => Math.max(s.before, s.after)), 1)
+
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleExpanded = (sector: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(sector)) next.delete(sector)
+      else next.add(sector)
+      return next
+    })
+  }
 
   return (
     <Card className="p-4">
@@ -70,38 +88,71 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
         Sector Exposure
       </h3>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {sectors.map(sector => {
-          const drivers = attributionBySector?.get(sector.name)
-          return (
-            <div key={sector.name}>
-              <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-gray-700 dark:text-gray-300 truncate flex-1">
-                  {sector.name}
-                </span>
-                <div className="flex items-center gap-2 ml-2">
-                  <span className="text-gray-500 dark:text-gray-400 w-12 text-right">
-                    {sector.before.toFixed(1)}%
-                  </span>
-                  <span className="text-gray-400">→</span>
-                  <span className="font-medium text-gray-900 dark:text-white w-12 text-right">
-                    {sector.after.toFixed(1)}%
-                  </span>
-                  <span className={clsx(
-                    "w-14 text-right text-xs",
-                    sector.change > 0 ? "text-green-600" :
-                    sector.change < 0 ? "text-red-600" : "text-gray-400"
-                  )}>
-                    {sector.change > 0 ? '+' : ''}{sector.change.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
+          const drivers = attributionBySector?.get(sector.name) ?? []
+          const hasDrivers = drivers.length > 0
+          const isExpanded = expanded.has(sector.name)
+          const changed = Math.abs(sector.change) >= 0.005
 
-              {/* Bar + attribution row */}
-              <div className="flex items-center gap-3">
-                {/* Stacked bar showing before/after */}
-                <div className="relative h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex-1">
-                  {/* Before bar (lighter) */}
+          return (
+            <div
+              key={sector.name}
+              className={clsx(
+                'rounded-md transition-colors',
+                hasDrivers && 'hover:bg-gray-50 dark:hover:bg-gray-800/60',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => hasDrivers && toggleExpanded(sector.name)}
+                className={clsx(
+                  'w-full text-left px-1.5 py-1',
+                  hasDrivers ? 'cursor-pointer' : 'cursor-default',
+                )}
+                aria-expanded={isExpanded}
+              >
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    {hasDrivers ? (
+                      isExpanded ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                      )
+                    ) : (
+                      <span className="w-3.5 h-3.5 flex-shrink-0" />
+                    )}
+                    <span className="text-gray-700 dark:text-gray-300 truncate">
+                      {sector.name}
+                    </span>
+                    {hasDrivers && (
+                      <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 flex-shrink-0">
+                        · {drivers.length} trade{drivers.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                    <span className="text-gray-500 dark:text-gray-400 tabular-nums w-14 text-right">
+                      {sector.before.toFixed(2)}%
+                    </span>
+                    <span className="text-gray-400">→</span>
+                    <span className="font-medium text-gray-900 dark:text-white tabular-nums w-14 text-right">
+                      {sector.after.toFixed(2)}%
+                    </span>
+                    <span className={clsx(
+                      'w-20 text-right text-xs tabular-nums',
+                      !changed ? 'text-gray-400'
+                        : sector.change > 0 ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-red-600 dark:text-red-400',
+                    )}>
+                      {changed ? fmtDelta(sector.change) : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bar */}
+                <div className="relative h-2.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden ml-5">
                   <div
                     className="absolute inset-y-0 left-0 opacity-40 rounded-full"
                     style={{
@@ -109,7 +160,6 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
                       backgroundColor: sector.color,
                     }}
                   />
-                  {/* After bar */}
                   <div
                     className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
                     style={{
@@ -118,23 +168,31 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
                     }}
                   />
                 </div>
+              </button>
 
-                {/* Trade attribution — "Driven by" */}
-                {drivers && drivers.length > 0 ? (
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 min-w-[120px] justify-end flex-shrink-0">
-                    {drivers.map(d => (
-                      <span key={d.symbol} className={clsx(
-                        "whitespace-nowrap",
-                        d.deltaWeight > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-                      )}>
-                        {d.deltaWeight > 0 ? '+' : ''}{d.symbol} {d.deltaWeight > 0 ? '+' : ''}{d.deltaWeight.toFixed(1)}%
+              {/* Expanded trade attribution */}
+              {hasDrivers && isExpanded && (
+                <div className="ml-8 mr-2 mt-1 mb-2 border-l-2 border-gray-200 dark:border-gray-700 pl-3 py-1 space-y-1">
+                  {drivers.map(d => (
+                    <div
+                      key={d.symbol}
+                      className="flex items-center justify-between text-xs"
+                    >
+                      <span className="font-medium text-gray-700 dark:text-gray-300 tabular-nums">
+                        {d.symbol}
                       </span>
-                    ))}
-                  </div>
-                ) : attributionBySector ? (
-                  <div className="min-w-[120px] flex-shrink-0" />
-                ) : null}
-              </div>
+                      <span className={clsx(
+                        'tabular-nums font-medium',
+                        d.deltaWeight > 0 ? 'text-emerald-600 dark:text-emerald-400'
+                          : d.deltaWeight < 0 ? 'text-red-600 dark:text-red-400'
+                          : 'text-gray-400',
+                      )}>
+                        {fmtDelta(d.deltaWeight)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
@@ -152,7 +210,7 @@ export function SectorExposureChart({ before, after, tradeAttribution }: SectorE
         </div>
         {attributionBySector && (
           <div className="ml-auto text-gray-400">
-            Top drivers shown per sector
+            Click a sector to see contributing trades
           </div>
         )}
       </div>

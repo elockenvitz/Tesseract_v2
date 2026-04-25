@@ -25,6 +25,7 @@ import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
+import { PilotOutcomesNudge } from '../components/pilot/PilotOutcomesNudge'
 
 // Stable key for TabStateManager — there's only ever one Trade Book
 // tab open, so a literal id is fine. Used to persist view toggle,
@@ -79,12 +80,13 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
   // (rebalances, cash raises, individual ideas) and the batch rationale
   // + name carry the context a PM needs to recall the intent behind a
   // commit. The flat trades list is a drill-down, not the overview.
-  // BUT: if the caller handed us highlightTradeIds (e.g. PM just clicked
-  // "View in Trade Book" from the Decision Recorded modal), force the
-  // Trades view so we can scroll to and flash the new rows.
-  const [view, setView] = useState<BookView>(
-    highlightTradeIds && highlightTradeIds.length > 0 ? 'trades' : (persisted.view || 'batches')
-  )
+  // Always land on Batches on mount — regardless of what view the user
+  // was on when they last left this tab, and regardless of whether the
+  // caller handed us highlightTradeIds. The user asked for this: the
+  // batch context (name, rationale, grouped trades) is the intended
+  // landing. If they switch to the Trades view during the session, the
+  // highlight effect below still scrolls to and flashes the new rows.
+  const [view, setView] = useState<BookView>('batches')
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
     persisted.selectedBatchId ?? null,
   )
@@ -107,7 +109,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
   }, [view])
 
   // Portfolio selector
-  const { data: portfolios = [] } = useQuery({
+  const { data: portfolios = [], isLoading: portfoliosLoading } = useQuery({
     queryKey: ['portfolios-list'],
     queryFn: async () => {
       const { data } = await supabase
@@ -186,7 +188,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
 
   const {
     trades,
-    isLoading,
+    isLoading: tradesLoading,
     updateExecutionStatus,
     updateSizing,
     revert,
@@ -194,7 +196,14 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
     addComment,
   } = useAcceptedTrades(portfolioId)
 
-  const { batches } = useTradeBatches(portfolioId)
+  const { batches, isLoading: batchesLoading } = useTradeBatches(portfolioId)
+
+  // Treat "still resolving the portfolio id" and "either child query
+  // still loading" as loading. Without this guard the page renders the
+  // empty state for one frame between mount and the first query firing
+  // (or between trades resolving and batches resolving) — visible as a
+  // brief "No batches yet" / "No trades" flash.
+  const isLoading = portfoliosLoading || !portfolioId || tradesLoading || batchesLoading
 
   // Pilot unlock for Outcomes: once the pilot user has opened Trade Book at
   // least once with a real committed trade visible, promote outcomes
@@ -374,6 +383,34 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
     setView('trades')
   }, [batches])
 
+  // Batch the user JUST committed (from the Decision Recorded modal's
+  // "View in Trade Book" CTA). Derived from highlightTradeIds — we look up
+  // the first highlighted accepted_trade and take its batch_id. Used to
+  // badge the batch card, paint a continuity line in the detail panel,
+  // and auto-select that batch on first mount so the PM lands on the
+  // right context without having to find it in the left rail.
+  const justCommittedBatchId = useMemo<string | null>(() => {
+    if (!highlightTradeIds || highlightTradeIds.length === 0) return null
+    if (!trades || trades.length === 0) return null
+    for (const id of highlightTradeIds) {
+      const t = trades.find(x => x.id === id)
+      if (t?.batch_id) return t.batch_id
+    }
+    return null
+  }, [highlightTradeIds, trades])
+
+  // Auto-select the just-committed batch once, on first successful
+  // resolve. We use a ref (not a state flag) so switching between the
+  // Trades and Batches views within the same session doesn't re-select
+  // it and fight the user's navigation.
+  const autoSelectedJustCommittedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!justCommittedBatchId) return
+    if (autoSelectedJustCommittedRef.current === justCommittedBatchId) return
+    autoSelectedJustCommittedRef.current = justCommittedBatchId
+    setSelectedBatchId(justCommittedBatchId)
+  }, [justCommittedBatchId])
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
@@ -484,11 +521,22 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
         </div>
       </div>
 
+      {/* Pilot next-step nudge: once outcomes has unlocked (user has at
+          least one committed trade visible on this page), prompt them to
+          move on to Outcomes. Gated on pilot mode so non-pilots never see
+          it. Dismissible per-user. */}
+      {pilotMode.effectiveIsPilot && hasUnlockedOutcomes && trades && trades.length > 0 && (
+        <PilotOutcomesNudge userId={user?.id} />
+      )}
+
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-auto">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-6 h-6 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
+          <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+            <div className="text-center">
+              <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-gray-400">Loading…</p>
+            </div>
           </div>
         ) : view === 'batches' ? (
           <BatchListView
@@ -497,6 +545,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
             selectedBatchId={selectedBatchId}
             onSelectBatch={handleSelectBatch}
             onViewBatchTrades={handleViewBatchTrades}
+            onAddComment={handleAddComment}
           />
         ) : (
           <AcceptedTradesTable
@@ -510,6 +559,11 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBo
             onRevert={handleRevert}
             onCreateCorrection={handleCreateCorrection}
             onAddComment={handleAddComment}
+            onOpenBatch={(batchId) => {
+              setSelectedBatchId(batchId)
+              setPendingTradesSearch(null)
+              setView('batches')
+            }}
             canEdit={canEdit}
             canUpdateExecution={canUpdateExecution}
             canRevert={canRevert}

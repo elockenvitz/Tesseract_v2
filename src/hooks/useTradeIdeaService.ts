@@ -531,7 +531,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
 
       toast.success('Trade idea created', {
         action: {
-          label: 'View in Queue',
+          label: 'View in Pipeline',
           onClick: () => {
             window.dispatchEvent(new CustomEvent('openTradeQueue', {
               detail: { selectedTradeId: result.id }
@@ -580,7 +580,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       invalidateQueries()
       toast.success('Pair trade created', {
         action: {
-          label: 'View in Queue',
+          label: 'View in Pipeline',
           onClick: () => {
             window.dispatchEvent(new CustomEvent('openTradeQueue', {
               detail: { selectedTradeId: result.id }

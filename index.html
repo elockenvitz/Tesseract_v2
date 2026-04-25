@@ -18,7 +18,49 @@
     <title>Tesseract - Investment Dashboard</title>
   </head>
   <body>
+    <!-- Initial loader painted by the browser before any JS runs.
+         CRITICAL: lives OUTSIDE #root as a sibling so React's mount
+         doesn't tear it down. It stays visible across the full cold
+         boot — ProtectedRoute auth check, OrganizationContext resolve,
+         DashboardPage pilot gate — and only fades out once the app
+         signals readiness. Without this, each gate remounts its own
+         spinner and the CSS rotation animation restarts, producing
+         the visible "three loading screens" jank. -->
+    <style>
+      #tesseract-boot-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 12px;
+        background: #f9fafb;
+        z-index: 2147483647;
+        font: 500 12px/1 -apple-system, system-ui, sans-serif;
+        color: #9ca3af;
+        opacity: 1;
+        transition: opacity 220ms ease-out;
+      }
+      #tesseract-boot-loader.is-fading {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #tesseract-boot-loader .ring {
+        width: 32px;
+        height: 32px;
+        border: 2px solid #e5e7eb;
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: tesseract-boot-spin 0.8s linear infinite;
+      }
+      @keyframes tesseract-boot-spin { to { transform: rotate(360deg); } }
+    </style>
     <div id="root"></div>
+    <div id="tesseract-boot-loader">
+      <div class="ring"></div>
+      <div id="tesseract-boot-loader-label">Loading…</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

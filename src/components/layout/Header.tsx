@@ -8,6 +8,7 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { supabase } from '../../lib/supabase'
 import { GlobalSearch } from '../search/GlobalSearch'
+import { FeedbackWidget } from '../feedback/FeedbackWidget'
 import { MorphBanner } from '../support/MorphBanner'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { ProfilePage } from '../../pages/ProfilePage'
@@ -52,6 +53,19 @@ export function Header({
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
   const { currentOrg, userOrgs, switchOrg, isLoading } = useOrganization()
+
+  // Preload every org logo as soon as the user-orgs query resolves, so the
+  // first time the dropdown opens the browser already has the images in
+  // memory cache. Without this, each `<img src={signed-url}>` in the menu
+  // triggers its own network round-trip on the click, and the user sees
+  // empty squares for a beat before the logos pop in.
+  useEffect(() => {
+    for (const org of userOrgs) {
+      if (!org.logo_url) continue
+      const img = new Image()
+      img.src = org.logo_url
+    }
+  }, [userOrgs])
   const { activeSession } = useMorphSession()
   const pilotMode = usePilotMode()
 
@@ -275,7 +289,7 @@ export function Header({
               </button>
 
               {/* App Launcher Panel */}
-              {showAppMenu && pilotMode.isPilot && !pilotMode.isLoading && (
+              {showAppMenu && pilotMode.effectiveIsPilot && (
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
                   {/* Pilot badge */}
                   <div className="px-4 pb-2 flex items-center gap-1.5">
@@ -283,26 +297,58 @@ export function Header({
                     <span className="text-xs font-semibold text-primary-700 uppercase tracking-wider">Pilot</span>
                   </div>
 
-                  {/* Primary: Trade Lab */}
-                  <div className="px-2 pb-3">
+                  {/* Primary — Dashboard as the landing surface. Reads
+                      as "your workspace" so pilots know where to
+                      return when they need an overview. */}
+                  <div className="px-2 pb-2">
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        onSearchResult({ id: 'dashboard', title: 'Dashboard', type: 'dashboard', data: null })
+                      }}
+                      className="w-full flex items-center gap-3 p-3 rounded-lg ring-1 ring-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary-100 shrink-0">
+                        <Activity className="h-5 w-5 text-primary-600" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white">Dashboard</div>
+                        <div className="text-[11px] text-gray-500">What needs your attention</div>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Secondary tiles — the pilot decision loop. Idea
+                      Pipeline → Trade Lab sit alongside each other as
+                      the two routing paths into a decision. */}
+                  <div className="grid grid-cols-2 gap-1 px-2 pb-2">
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        onSearchResult({ id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', data: null })
+                      }}
+                      className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-1 bg-amber-50">
+                        <Lightbulb className="h-5 w-5 text-amber-500" />
+                      </div>
+                      <span className="text-[11px] font-medium text-gray-700 dark:text-gray-200">Idea Pipeline</span>
+                    </button>
                     <button
                       onClick={() => {
                         setShowAppMenu(false)
                         window.dispatchEvent(new CustomEvent('openTradeLab', { detail: {} }))
                       }}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg ring-1 ring-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors group/tile"
+                      className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                     >
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary-100 shrink-0">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-1 bg-primary-50">
                         <Beaker className="h-5 w-5 text-primary-600" />
                       </div>
-                      <div className="flex-1 text-left">
-                        <div className="text-sm font-semibold text-gray-900 dark:text-white">Trade Lab</div>
-                        <div className="text-[11px] text-gray-500">Your pilot workspace</div>
-                      </div>
+                      <span className="text-[11px] font-medium text-gray-700 dark:text-gray-200">Trade Lab</span>
                     </button>
                   </div>
 
-                  {/* Teaser: downstream surfaces (preview-only) */}
+                  {/* Teaser: downstream surfaces (preview until unlocked) */}
                   <div className="border-t border-gray-100 dark:border-gray-700 pt-3 px-4 pb-2 flex items-center justify-between">
                     <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Connected surfaces</span>
                     <Lock className="w-3 h-3 text-gray-300" />
@@ -363,7 +409,7 @@ export function Header({
               )}
 
               {/* Full (non-pilot) app menu */}
-              {showAppMenu && !pilotMode.isPilot && (
+              {showAppMenu && !pilotMode.effectiveIsPilot && (
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
                   {/* Future: System status row can be added here */}
 
@@ -502,7 +548,7 @@ export function Header({
                   <span className="font-semibold text-base text-gray-800 dark:text-gray-200 max-w-[200px] truncate">
                     {currentOrg.name}
                   </span>
-                  {(currentOrg as any).settings?.pilot_mode && (
+                  {!!currentOrg.settings?.pilot_mode && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
                       Pilot
                     </span>
@@ -536,7 +582,13 @@ export function Header({
                         )}
                       >
                         {org.logo_url ? (
-                          <img src={org.logo_url} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
+                          <img
+                            src={org.logo_url}
+                            alt=""
+                            loading="eager"
+                            decoding="async"
+                            className="w-6 h-6 rounded object-cover flex-shrink-0"
+                          />
                         ) : (
                           <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
                             <Building2 className="w-3.5 h-3.5 text-gray-500" />
@@ -558,6 +610,12 @@ export function Header({
             {/* Search */}
             <div className="flex-1 max-w-lg ml-5">
               <GlobalSearch onSelectResult={onSearchResult} onFocusSearch={onFocusSearch} />
+            </div>
+
+            {/* Feedback pill — lives next to the search bar so it's
+                always reachable without floating over the page. */}
+            <div className="ml-3 flex-shrink-0">
+              <FeedbackWidget />
             </div>
 
             {/* Morph-session indicator — only renders when actively morphing */}

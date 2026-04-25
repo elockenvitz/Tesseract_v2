@@ -46,6 +46,7 @@ interface TabManagerProps {
   onCloseTabs?: (tabIds: string[]) => void // Batch close for "close all" in groups
   onNewTab: () => void
   onFocusSearch: () => void
+  hideNewTab?: boolean
 }
 
 // Types that should NOT be grouped (singleton types)
@@ -471,7 +472,7 @@ function SortableTab({ tab, isActive, onTabChange, onTabClose, getTabIcon }: Sor
   )
 }
 
-export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onTabClose, onCloseTabs, onNewTab, onFocusSearch }: TabManagerProps) {
+export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onTabClose, onCloseTabs, onNewTab, onFocusSearch, hideNewTab }: TabManagerProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showLeftArrow, setShowLeftArrow] = useState(false)
   const [showRightArrow, setShowRightArrow] = useState(false)
@@ -902,7 +903,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
                 return null
               })}
               {/* Inline plus button - shown when no overflow */}
-              {!hasOverflow && (
+              {!hasOverflow && !hideNewTab && (
                 <button
                   onClick={handleNewTabClick}
                   className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 ml-1"
@@ -937,13 +938,15 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
               </button>
             )}
 
-            <button
-              onClick={handleNewTabClick}
-              className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white"
-              title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+            {!hideNewTab && (
+              <button
+                onClick={handleNewTabClick}
+                className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white"
+                title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            )}
           </div>
         )}
       </div>

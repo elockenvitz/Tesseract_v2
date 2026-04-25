@@ -6,15 +6,24 @@ import { ImpactHeadlineBand } from './ImpactHeadlineBand'
 import { SectorExposureChart } from './SectorExposureChart'
 import { PortfolioCharacteristics } from './PortfolioCharacteristics'
 import { PortfolioFundamentalsCard } from './PortfolioFundamentalsCard'
+import { PortfolioRiskCard } from './PortfolioRiskCard'
 import { HoldingsComparison } from './HoldingsComparison'
 
 interface PortfolioImpactViewProps {
   metrics: SimulationMetrics
   baseline: BaselineHolding[]
   simulationRows: SimulationRow[]
+  benchmarkWeightMap: Record<string, number>
+  hasBenchmark: boolean
 }
 
-export function PortfolioImpactView({ metrics, baseline, simulationRows }: PortfolioImpactViewProps) {
+export function PortfolioImpactView({
+  metrics,
+  baseline,
+  simulationRows,
+  benchmarkWeightMap,
+  hasBenchmark,
+}: PortfolioImpactViewProps) {
   // Derive trade attribution from simulation rows for sector chart
   const tradeAttribution = useMemo<TradeAttribution[]>(() =>
     simulationRows
@@ -44,8 +53,15 @@ export function PortfolioImpactView({ metrics, baseline, simulationRows }: Portf
         <PortfolioCharacteristics metrics={metrics} simulationRows={simulationRows} />
       </div>
 
-      {/* Row 2: Portfolio fundamentals */}
-      <PortfolioFundamentalsCard holdingsAfterCount={metrics.position_count_after} />
+      {/* Row 2: Portfolio fundamentals + Risk */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PortfolioFundamentalsCard holdingsAfterCount={metrics.position_count_after} />
+        <PortfolioRiskCard
+          simulationRows={simulationRows}
+          benchmarkWeightMap={benchmarkWeightMap}
+          hasBenchmark={hasBenchmark}
+        />
+      </div>
 
       {/* Row 3: Holdings comparison */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

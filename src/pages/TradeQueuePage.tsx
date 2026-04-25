@@ -47,9 +47,12 @@ import {
   FileCheck,
   Timer,
   AlertTriangle,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { usePilotMode } from '../hooks/usePilotMode'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -146,6 +149,15 @@ const CONVICTION_CONFIG: Record<string, { label: string; color: string; bg: stri
 export function TradeQueuePage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const pilotMode = usePilotMode()
+  const [pilotBannerDismissed, setPilotBannerDismissed] = useState(() => {
+    try { return localStorage.getItem('pilot_pipeline_banner_dismissed') === '1' } catch { return false }
+  })
+  const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed
+  const dismissPilotBanner = () => {
+    setPilotBannerDismissed(true)
+    try { localStorage.setItem('pilot_pipeline_banner_dismissed', '1') } catch { /* ignore */ }
+  }
 
   // Trade service for audited mutations
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
@@ -1480,6 +1492,36 @@ export function TradeQueuePage() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Pilot Get Started banner — slim top-of-page strip matching
+          the Trade Lab intro banner pattern: gradient amber wash,
+          numbered step pills, single-row layout. Dismissible per
+          localStorage so it doesn't reappear on refresh. */}
+      {showPilotBanner && (
+        <div className="flex-shrink-0 bg-gradient-to-r from-amber-50 via-amber-50/80 to-white dark:from-amber-900/20 dark:via-amber-900/10 dark:to-gray-900/40 border-b border-amber-200 dark:border-amber-800/60">
+          <div className="px-6 py-1.5 flex items-center gap-3 text-[11px]">
+            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0">
+              <Sparkles className="h-3 w-3" />
+              <span>Get started</span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 min-w-0 overflow-hidden">
+              <PilotPipelineStep n={1} label="Move ideas through stages as they mature" />
+              <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
+              <PilotPipelineStep n={2} label="Make a recommendation when ready for decision" />
+              <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500 shrink-0" />
+              <PilotPipelineStep n={3} label="Open in Trade Lab to simulate and commit" />
+            </div>
+            <button
+              onClick={dismissPilotBanner}
+              className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+              title="Dismiss"
+              aria-label="Dismiss Idea Pipeline intro"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
@@ -2779,11 +2821,16 @@ function PairTradeCard({
   const longSymbols = longLegs.map(l => l.assets?.symbol).filter(Boolean).join(', ') || '?'
   const shortSymbols = shortLegs.map(l => l.assets?.symbol).filter(Boolean).join(', ') || '?'
 
-  // Get info from first leg for author, time, visibility
+  // Get info from first leg for author, time, visibility. Pilot
+  // seeds show a generic "Pilot" label (same rule as the single
+  // card branch above).
   const firstLeg = legs[0]
-  const creatorName = firstLeg?.users?.first_name
-    ? `${firstLeg.users.first_name}${firstLeg.users.last_name ? ' ' + firstLeg.users.last_name[0] + '.' : ''}`
-    : firstLeg?.users?.email?.split('@')[0] || 'Unknown'
+  const firstLegIsPilotSeed = !!(firstLeg?.origin_metadata as any)?.pilot_seed
+  const creatorName = firstLegIsPilotSeed
+    ? 'Pilot'
+    : firstLeg?.users?.first_name
+      ? `${firstLeg.users.first_name}${firstLeg.users.last_name ? ' ' + firstLeg.users.last_name[0] + '.' : ''}`
+      : firstLeg?.users?.email?.split('@')[0] || 'Unknown'
 
   // Aggregate comments and votes from all legs
   const totalComments = legs.reduce((sum, leg) => sum + (leg.trade_queue_comments?.length || 0), 0)
@@ -3988,13 +4035,16 @@ function TradeQueueCard({
   const dragOccurredRef = useRef(false)
 
   const isBuy = item.action === 'buy' || item.action === 'add'
-  // Derive display label from proposed weight when available
+  // Derive display label from proposed weight when available. Pilot
+  // seeds bypass the "NEW LONG / NEW SHORT" inference — those labels
+  // read as too role-specific for the starter scenario; pilots see
+  // the plain action verb ("BUY" / "SELL") so the card reads cleanly.
   const actionLabel = (() => {
+    const isPilotSeedItem = !!(item.origin_metadata as any)?.pilot_seed
+    if (isPilotSeedItem) return getTradeActionLabel(item.action).toUpperCase()
     const pw = item.proposed_weight
     if (pw != null) {
-      // If proposed weight is negative and action is sell/trim → New Short
       if (pw < 0 && (item.action === 'sell' || item.action === 'trim')) return 'NEW SHORT'
-      // If proposed weight is positive and action is buy → could be New Long
       if (pw > 0 && item.action === 'buy') return 'NEW LONG'
     }
     return getTradeActionLabel(item.action).toUpperCase()
@@ -4006,10 +4056,16 @@ function TradeQueueCard({
   const hasMultipleLabs = labCount > 1
   const recCount = labInfo?.recommendationCount || 0
 
-  // Get user display name
-  const creatorName = item.users?.first_name
-    ? `${item.users.first_name}${item.users.last_name ? ' ' + item.users.last_name[0] + '.' : ''}`
-    : item.users?.email?.split('@')[0] || 'Unknown'
+  // Get user display name. Pilot-seeded items show a generic "Pilot"
+  // label so readers understand the card came from the Tesseract
+  // starter scenario rather than a real analyst on their team.
+  // Matches the same override used in Trade Lab's author chip.
+  const isPilotSeed = !!(item.origin_metadata as any)?.pilot_seed
+  const creatorName = isPilotSeed
+    ? 'Pilot'
+    : item.users?.first_name
+      ? `${item.users.first_name}${item.users.last_name ? ' ' + item.users.last_name[0] + '.' : ''}`
+      : item.users?.email?.split('@')[0] || 'Unknown'
 
   // Compute proposal summary for deciding items
   const isDeciding = item.status === 'deciding'
@@ -4194,18 +4250,22 @@ function TradeQueueCard({
               </button>
             )
           ) : item.portfolios?.name ? (
-            // Not in labs but has portfolio — link to portfolio tab
+            // Not in labs but has portfolio — route to Trade Lab
+            // scoped to that portfolio so the click takes the user
+            // to where they can simulate/decide, not to the raw
+            // portfolio tab.
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 const pid = item.portfolios?.id || item.portfolios?.portfolio_id || item.portfolio_id
                 if (pid) {
-                  window.dispatchEvent(new CustomEvent('open-portfolio', {
-                    detail: { id: pid, name: item.portfolios.name }
+                  window.dispatchEvent(new CustomEvent('openTradeLab', {
+                    detail: { portfolioId: pid, tradeQueueItemId: item.id },
                   }))
                 }
               }}
               className="text-xs text-primary-600 dark:text-primary-400 font-medium hover:underline"
+              title={`Open ${item.portfolios.name} in Trade Lab`}
             >
               {item.portfolios.name}
             </button>
@@ -4443,5 +4503,19 @@ function TradeQueueCard({
         </div>
       </div>
     </div>
+  )
+}
+
+// Numbered step pill used in the pilot Get Started banner. Mirrors
+// the Step component in PilotTradeLabIntroBanner so both pages
+// render with identical visuals.
+function PilotPipelineStep({ n, label }: { n: number; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 truncate">
+      <span className="shrink-0 w-4 h-4 rounded-full bg-amber-500/10 text-amber-700 dark:bg-amber-300/20 dark:text-amber-200 flex items-center justify-center text-[10px] font-bold tabular-nums">
+        {n}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
   )
 }

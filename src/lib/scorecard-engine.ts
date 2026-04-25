@@ -258,8 +258,15 @@ export function buildAnalystOutcomeSnapshot(d: AnalystScorecardData | null): Out
   return { winners, losers, winRate, avgMovePct: null, totalDecisions: total, executedDecisions: executed, pendingDecisions: pending, avgDelayCostBps: null, summaryText }
 }
 
+const ANALYST_SKELETON_STAGES: ProcessStage[] = [
+  { id: 'direction', label: 'Direction', status: 'unmeasurable', score: null },
+  { id: 'targets', label: 'Targets', status: 'unmeasurable', score: null },
+  { id: 'recommendations', label: 'Recommendations', status: 'unmeasurable', score: null },
+  { id: 'calibration', label: 'Calibration', status: 'unmeasurable', score: null },
+]
+
 export function buildAnalystProcessBreakdown(d: AnalystScorecardData | null): ProcessBreakdown {
-  if (!d) return { stages: [], failurePoint: null, failureSummary: null }
+  if (!d) return { stages: ANALYST_SKELETON_STAGES, failurePoint: null, failureSummary: null }
 
   const dirScore = d.ratings.totalRated > 0 ? d.ratings.directionalHitRate : null
   const tgtScore = d.priceTargets.hit + d.priceTargets.missed > 0 ? d.priceTargets.overallScore : null
@@ -287,8 +294,31 @@ export function buildAnalystProcessBreakdown(d: AnalystScorecardData | null): Pr
   return { stages, failurePoint, failureSummary: failurePoint ? summaryMap[failurePoint] || null : null }
 }
 
+const ANALYST_SKELETON_PILLARS: DiagnosticPillar[] = [
+  {
+    id: 'directional', title: 'Directional Skill', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Correct', value: '—' }, { label: 'Hit rate', value: '—' }],
+    takeaway: 'Tracks whether your bullish/bearish calls match subsequent price direction. Needs rated ideas to measure.',
+  },
+  {
+    id: 'targets', title: 'Target Accuracy', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Resolved', value: '—' }, { label: 'Pending', value: '—' }],
+    takeaway: 'Tracks whether price targets are being hit. Needs targets with resolved outcomes.',
+  },
+  {
+    id: 'recommendations', title: 'Recommendation Outcomes', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Approved', value: '—' }, { label: 'Outcome', value: '—' }],
+    takeaway: 'Tracks how approved ideas perform post-execution. Needs executed recommendations.',
+  },
+  {
+    id: 'calibration', title: 'Conviction Calibration', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Bias', value: '—' }, { label: 'Avg time to hit', value: '—' }],
+    takeaway: 'Tracks systematic bias in target construction. Needs 3+ resolved targets.',
+  },
+]
+
 export function buildAnalystPillars(d: AnalystScorecardData | null): DiagnosticPillar[] {
-  if (!d) return []
+  if (!d) return ANALYST_SKELETON_PILLARS
   const dirScore = d.ratings.directionalHitRate
   const ptResolved = d.priceTargets.hit + d.priceTargets.missed
   const ptScore = d.priceTargets.overallScore
@@ -360,7 +390,7 @@ export function buildAnalystPillars(d: AnalystScorecardData | null): DiagnosticP
 }
 
 export function buildAnalystInsights(d: AnalystScorecardData | null): BehaviorInsight[] {
-  if (!d) return []
+  if (!d) return [{ text: 'No analyst activity yet. Insights will appear here as you rate ideas, set targets, and propose recommendations.', severity: 'neutral' }]
   const insights: BehaviorInsight[] = []
   const n = analystSampleSize(d)
   if (n === 0) return [{ text: 'No activity recorded. Begin setting targets and ratings to establish track record.', severity: 'neutral' }]
@@ -490,8 +520,15 @@ export function buildPMOutcomeSnapshot(d: PMScorecardData | null): OutcomeSnapsh
   }
 }
 
+const PM_SKELETON_STAGES: ProcessStage[] = [
+  { id: 'approval', label: 'Approval', status: 'unmeasurable', score: null },
+  { id: 'execution', label: 'Execution', status: 'unmeasurable', score: null },
+  { id: 'timing', label: 'Timing', status: 'unmeasurable', score: null },
+  { id: 'outcome', label: 'Outcome', status: 'unmeasurable', score: null },
+]
+
 export function buildPMProcessBreakdown(d: PMScorecardData | null): ProcessBreakdown {
-  if (!d) return { stages: [], failurePoint: null, failureSummary: null }
+  if (!d) return { stages: PM_SKELETON_STAGES, failurePoint: null, failureSummary: null }
 
   const resolved = d.decisionsPositive + d.decisionsNegative
   const qualityScore = resolved > 0 ? d.directionalHitRate : null
@@ -519,8 +556,26 @@ export function buildPMProcessBreakdown(d: PMScorecardData | null): ProcessBreak
   return { stages, failurePoint, failureSummary: failurePoint ? summaryMap[failurePoint] || null : null }
 }
 
+const PM_SKELETON_PILLARS: DiagnosticPillar[] = [
+  {
+    id: 'decision-quality', title: 'Decision Quality', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Outcome', value: '—' }, { label: 'Hit rate', value: '—' }],
+    takeaway: 'Tracks whether approved decisions move in the intended direction. Needs resolved outcomes.',
+  },
+  {
+    id: 'execution', title: 'Execution Discipline', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Traded', value: '—' }, { label: 'Stalled', value: '—' }],
+    takeaway: 'Tracks how many approvals convert into trades. Needs approved decisions.',
+  },
+  {
+    id: 'timing', title: 'Timing & Delay Cost', score: null, strength: 'Not yet measurable', measurable: false,
+    metrics: [{ label: 'Avg lag', value: '—' }, { label: 'Delay cost', value: '—' }],
+    takeaway: 'Tracks approval-to-execution lag and cost of delay. Needs executed decisions with timestamps.',
+  },
+]
+
 export function buildPMPillars(d: PMScorecardData | null): DiagnosticPillar[] {
-  if (!d) return []
+  if (!d) return PM_SKELETON_PILLARS
   const resolved = d.decisionsPositive + d.decisionsNegative
   const timingScore = d.avgExecutionLagDays != null ? Math.max(0, 100 - d.avgExecutionLagDays * 10) : null
 
@@ -568,7 +623,7 @@ export function buildPMPillars(d: PMScorecardData | null): DiagnosticPillar[] {
 }
 
 export function buildPMInsights(d: PMScorecardData | null): BehaviorInsight[] {
-  if (!d) return []
+  if (!d) return [{ text: 'No PM activity yet. Insights will appear here as you approve ideas, execute trades, and outcomes resolve.', severity: 'neutral' }]
   const insights: BehaviorInsight[] = []
 
   if (d.totalDecisions === 0) return [{ text: 'No approved decisions in the system. Begin approving ideas to build PM track record.', severity: 'neutral' }]

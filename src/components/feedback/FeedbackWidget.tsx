@@ -136,17 +136,20 @@ export function FeedbackWidget() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Header-inline trigger — sits next to the search bar rather
+          than floating over the page, and spells out "FEEDBACK" in
+          caps so it reads as an intentional button instead of a
+          mysterious icon. */}
       <button
         onClick={() => setIsOpen(true)}
         className={clsx(
-          'fixed bottom-5 right-5 z-50 w-11 h-11 rounded-full shadow-lg flex items-center justify-center transition-all',
-          'bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105',
+          'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-colors',
           isOpen && 'hidden'
         )}
         title="Send feedback or refer a friend"
       >
-        <MessageSquarePlus className="w-5 h-5" />
+        <MessageSquarePlus className="w-3.5 h-3.5" />
+        <span className="text-[10px] font-bold uppercase tracking-wider">Feedback</span>
       </button>
 
       {/* Modal */}

@@ -370,8 +370,8 @@ async function foldTradesIntoActiveSimulations(
         : []
 
       for (const trade of trades) {
-        const price = trade.price_at_acceptance != null ? Number(trade.price_at_acceptance) : null
-        if (price == null || !Number.isFinite(price)) continue
+        const tradePrice = trade.price_at_acceptance != null ? Number(trade.price_at_acceptance) : null
+        if (tradePrice == null || !Number.isFinite(tradePrice)) continue
 
         const targetShares = trade.target_shares != null ? Number(trade.target_shares) : null
         const deltaShares = trade.delta_shares != null ? Number(trade.delta_shares) : null
@@ -389,10 +389,21 @@ async function foldTradesIntoActiveSimulations(
         if (newShares <= 0) {
           if (idx >= 0) baseline.splice(idx, 1)
         } else if (idx >= 0) {
+          // Keep the EXISTING baseline price — the fold tracks ownership
+          // (shares) changes, not a mark-to-market revaluation. Overwriting
+          // with the trade execution price produced weird weight drift:
+          // a trim at a higher price than baseline would leave the
+          // remaining shares valued higher per share, bumping the
+          // position's displayed weight *up* instead of down. Preserving
+          // the baseline mark keeps weights consistent with the fixed
+          // `baseline_total_value` until the next EOD mark refreshes both.
+          const preservedPrice = Number(baseline[idx].price) || tradePrice
           baseline[idx].shares = newShares
-          baseline[idx].price = price
-          baseline[idx].value = newShares * price
+          baseline[idx].price = preservedPrice
+          baseline[idx].value = newShares * preservedPrice
         } else {
+          // New position — no prior baseline mark, so the trade price is
+          // the best we have. Gets refreshed on the next EOD mark.
           const asset: any = (trade as any).asset || {}
           baseline.push({
             asset_id: trade.asset_id,
@@ -400,8 +411,8 @@ async function foldTradesIntoActiveSimulations(
             company_name: asset.company_name || '',
             sector: asset.sector || null,
             shares: newShares,
-            price,
-            value: newShares * price,
+            price: tradePrice,
+            value: newShares * tradePrice,
             weight: 0,
           })
         }
@@ -759,28 +770,49 @@ export async function executeSimVariants(
     }
   }
 
-  // Post-commit cleanup — one aggregated pass instead of per-variant loops.
-  // Order matters: fold into sim baselines BEFORE deleting sim_trades, so
-  // the sync effect in SimulationPage can't see an orphaned sim_trade
-  // mid-flight. Variant delete runs in parallel with the sim cleanup —
-  // it only touches lab_variants and doesn't affect the sim tables.
-  if (trades.length > 0) {
-    const committedAssetIds = Array.from(new Set(trades.map(t => t.asset_id)))
-    await foldTradesIntoActiveSimulations(trades, portfolioId)
-    await Promise.all([
-      bulkDeleteSimulationTradesForAssets(portfolioId, committedAssetIds),
-      Promise.all(committedVariantIds.map(vid => deleteVariant(vid, context).catch((e) => {
-        console.warn('[ExecuteSim] deleteVariant failed (non-fatal, trade already committed)', vid, e)
-      }))),
-    ])
-  }
-
   // 3. If everything failed, drop the empty batch so it doesn't pollute
   // the Trade Book history.
   if (trades.length === 0) {
     await supabase.from('trade_batches').delete().eq('id', batch.id)
     return { batch, trades, failures }
   }
+
+  // 4. Post-commit cleanup — fire-and-forget.
+  //
+  // Previously this awaited a fold + bulk-delete + per-variant deletes
+  // before returning. Those are housekeeping (keep sim baselines in sync,
+  // clear the working set, drop lab_variants rows) and don't affect
+  // whether the trades were committed. The Decision Recorded modal was
+  // therefore delayed by the full cleanup time on a large batch —
+  // hundreds of ms of perceived "still executing" after the actual
+  // commits had already landed. Running cleanup in the background lets
+  // the UI flip to the Decision Recorded moment immediately; the
+  // client's optimistic cache patches already hide the committed
+  // variants, so the user sees the new working set at the same time
+  // they see the modal. Invalidations in the mutation's onSuccess pick
+  // up the real rows from the server a moment later.
+  //
+  // Order inside the background task is preserved (fold before sim_trade
+  // delete) so the SimulationPage sync effect can't observe an orphaned
+  // sim_trade mid-flight.
+  const committedAssetIds = Array.from(new Set(trades.map(t => t.asset_id)))
+  void (async () => {
+    try {
+      await foldTradesIntoActiveSimulations(trades, portfolioId)
+      await Promise.all([
+        bulkDeleteSimulationTradesForAssets(portfolioId, committedAssetIds),
+        Promise.all(
+          committedVariantIds.map(vid =>
+            deleteVariant(vid, context).catch(e => {
+              console.warn('[ExecuteSim] deleteVariant failed (non-fatal, trade already committed)', vid, e)
+            }),
+          ),
+        ),
+      ])
+    } catch (e) {
+      console.warn('[ExecuteSim] background cleanup failed (non-fatal, trades committed)', e)
+    }
+  })()
 
   return { batch, trades, failures }
 }

@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search, Users, ChevronRight, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/common/Toast'
+import { TEMPLATE_PORTFOLIOS } from '../../lib/pilot/template-portfolios'
 
 interface ClientOrg {
   id: string
@@ -24,7 +25,7 @@ export function OpsClientsPage() {
   const { success, error: showError } = useToast()
   const [searchTerm, setSearchTerm] = useState('')
   const [showProvision, setShowProvision] = useState(false)
-  const [form, setForm] = useState({ name: '', slug: '', email: '' })
+  const [form, setForm] = useState({ name: '', slug: '', email: '', isPilot: true })
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['ops-clients'],
@@ -73,19 +74,63 @@ export function OpsClientsPage() {
 
   const provisionMutation = useMutation({
     mutationFn: async () => {
+      const email = form.email.trim().toLowerCase()
+      // Catch typos like "name@domain,com" (comma-for-dot) before they reach
+      // the RPC. Prior incident: an org was provisioned with a comma-typo
+      // email, so no user matched and no membership was created — the org
+      // became invisible to everyone. The server RPC now validates too, but
+      // we fail fast here for a nicer error.
+      if (!/^[^@\s,]+@[^@\s,]+\.[^@\s,]+$/.test(email)) {
+        throw new Error(`Admin email "${form.email}" isn't a valid address`)
+      }
       const { data, error } = await supabase.rpc('provision_client_org', {
         p_name: form.name.trim(),
         p_slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        p_admin_email: form.email.trim().toLowerCase(),
+        p_admin_email: email,
+        p_settings: form.isPilot ? { pilot_mode: true } : {},
       })
       if (error) throw error
+
+      // Auto-seed the Tech & Consumer Growth template into every new pilot
+      // org. The interactive onboarding wizard has been retired — pilots
+      // now land in a fully-populated workspace immediately. The first
+      // login's `ensure_pilot_scenario_for_user` call owns the preloaded
+      // recommendation + companion idea; the seed RPC only creates the
+      // portfolio + holdings so it doesn't compete with that system.
+      if (form.isPilot && data?.organization_id) {
+        const tpl = TEMPLATE_PORTFOLIOS.find(t => t.id === 'tpl-tech-consumer-growth')
+        if (tpl) {
+          const positions = tpl.positions.map(p => ({
+            symbol: p.symbol,
+            shares: p.shares,
+            price: p.price,
+            weight_pct: p.weight_pct,
+            sector: p.sector,
+          }))
+
+          const { error: seedErr } = await supabase.rpc('seed_pilot_template_portfolio', {
+            p_org_id: data.organization_id,
+            p_name: tpl.name,
+            p_benchmark: tpl.benchmark,
+            p_positions: positions,
+            p_pm_user_id: data.admin_user_id ?? null,
+          })
+          if (seedErr) {
+            // Non-fatal — the org still exists and can be managed. Surface the
+            // error so the operator knows to re-run the seed if needed.
+            console.warn('Template seed failed for new org:', seedErr)
+          }
+        }
+      }
+
       return data
     },
     onSuccess: (data: any) => {
-      success(`"${form.name}" provisioned successfully`)
+      const pilotSuffix = form.isPilot ? ' (pilot mode on, Tech & Consumer Growth seeded)' : ''
+      success(`"${form.name}" provisioned successfully${pilotSuffix}`)
       queryClient.invalidateQueries({ queryKey: ['ops-clients'] })
       setShowProvision(false)
-      setForm({ name: '', slug: '', email: '' })
+      setForm({ name: '', slug: '', email: '', isPilot: true })
       if (data?.organization_id) navigate(`/ops/clients/${data.organization_id}`)
     },
     onError: (err: any) => showError(err.message || 'Failed to provision'),
@@ -153,13 +198,27 @@ export function OpsClientsPage() {
               />
             </div>
           </div>
+          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-gray-200 bg-gray-50/60 hover:bg-gray-50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.isPilot}
+              onChange={(e) => setForm(prev => ({ ...prev, isPilot: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-gray-800">Create as pilot org</div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Enables <span className="font-medium text-amber-700">pilot_mode</span> on the new org so every active member lands in the focused pilot experience. You can toggle this off later from the Pilot panel.
+              </p>
+            </div>
+          </label>
           <div className="flex items-center gap-2">
             <button
               onClick={() => provisionMutation.mutate()}
               disabled={!form.name.trim() || !form.slug.trim() || !form.email.trim() || provisionMutation.isPending}
               className="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors"
             >
-              {provisionMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />Provisioning...</> : 'Create Organization'}
+              {provisionMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />Provisioning...</> : `Create ${form.isPilot ? 'Pilot ' : ''}Organization`}
             </button>
             <button onClick={() => setShowProvision(false)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           </div>
