@@ -81,8 +81,6 @@ export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overla
 
   // Merge price history with events and holdings
   const chartData = useMemo(() => {
-    if (priceHistory.length === 0) return []
-
     // Build event map by date
     const eventsByDate = new Map<string, PositionEvent[]>()
     for (const evt of lifecycle.timeline) {
@@ -100,26 +98,68 @@ export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overla
       }
     }
 
+    // Build a price map for quick lookup, then build the union of all
+    // dates we want to plot. Decisions/executions made on a day that
+    // hasn't landed in price_history_cache yet (e.g., a pilot scenario
+    // approved today) would otherwise be silently dropped — the marker
+    // pipeline anchors to dates present in this array, so the union
+    // ensures every event has a row to attach to.
+    const priceByDate = new Map<string, number>()
+    for (const p of priceHistory) priceByDate.set(p.date, p.close)
+
+    const allDates = new Set<string>()
+    for (const p of priceHistory) allDates.add(p.date)
+    for (const d of eventsByDate.keys()) allDates.add(d)
+    for (const d of holdingsByDate.keys()) allDates.add(d)
+
+    if (allDates.size === 0) return []
+
+    const sortedDates = Array.from(allDates).sort((a, b) => a.localeCompare(b))
+
+    // Forward-fill price across the merged timeline so synthetic event
+    // dates (no cached close) still get a y-coordinate. Falls back to
+    // the decision/execution snapshot price, then the asset's current
+    // price, so the marker can always render somewhere sensible.
+    let lastClose: number | null = null
     // Track last-known shares AND weight for step interpolation. Holdings
     // snapshots aren't taken every day, so without carry-forward the
     // shares/weight/active-weight overlays go blank on any day without a
     // snapshot — makes the line look broken. Forward-fill until the next
     // known snapshot overrides it.
-    let lastShares: number | null = null
-    let lastWeightPct: number | null = null
+    //
+    // For newly-opened positions (one snapshot ever, opened by a buy/
+    // initiate decision), seed a 0-shares baseline so the area has at
+    // least two anchor points and actually renders. Without this, a
+    // "today only" pilot trade leaves the overlay invisible because
+    // Recharts can't draw an area from a single data point.
+    const onlyOneSnapshot = (holdingsHistory?.length ?? 0) <= 1
+    const firstDecision = lifecycle.timeline.find(e => e.type === 'decision' && e.stage === 'approved')
+    const isNewPosition = !!firstDecision && (firstDecision.action === 'buy' || firstDecision.action === 'initiate')
+    let lastShares: number | null = onlyOneSnapshot && isNewPosition ? 0 : null
+    let lastWeightPct: number | null = onlyOneSnapshot && isNewPosition ? 0 : null
     // Missing benchmark weight is treated as 0 — an asset outside the
     // benchmark has an active weight equal to its portfolio weight.
     const benchWt = benchmarkWeightPct != null && Number.isFinite(benchmarkWeightPct)
       ? benchmarkWeightPct
       : 0
 
-    return priceHistory.map(p => {
-      const events = eventsByDate.get(p.date) || []
+    return sortedDates.map(date => {
+      const cachedClose = priceByDate.get(date)
+      if (cachedClose != null) lastClose = cachedClose
+
+      const events = eventsByDate.get(date) || []
       const decisions = events.filter(e => e.type === 'decision' && e.stage === 'approved')
       const executions = events.filter(e => e.type === 'execution')
 
+      // Pick the best available price for this row's price line. Prefer
+      // cached market close, fall back to the day's decision/execution
+      // snapshot, then the carried-forward last close, then current
+      // price as a last resort so the marker still renders.
+      const eventPrice = decisions[0]?.price ?? executions[0]?.price ?? null
+      const price = cachedClose ?? eventPrice ?? lastClose ?? lifecycle.currentPrice ?? null
+
       // Holdings: use exact match or carry forward last known
-      const holding = holdingsByDate.get(p.date)
+      const holding = holdingsByDate.get(date)
       if (holding) {
         lastShares = holding.shares
         if (holding.weightPct != null) lastWeightPct = holding.weightPct
@@ -135,11 +175,11 @@ export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overla
       const selectableEvent = decisions[0] || executions[0] || null
 
       return {
-        date: p.date,
-        price: p.close,
-        shares: shares,
-        weightPct: weightPct,
-        activeWt: activeWt,
+        date,
+        price,
+        shares,
+        weightPct,
+        activeWt,
         decisionAction: decisions[0]?.action || null,
         decisionPrice: decisions[0]?.price || null,
         decisionUser: decisions[0]?.userName || null,
@@ -151,7 +191,7 @@ export function PositionChart({ lifecycle, priceHistory, holdingsHistory, overla
         events,
       }
     })
-  }, [priceHistory, lifecycle.timeline, holdingsHistory, benchmarkWeightPct])
+  }, [priceHistory, lifecycle.timeline, lifecycle.currentPrice, holdingsHistory, benchmarkWeightPct])
 
   if (chartData.length === 0) {
     return (

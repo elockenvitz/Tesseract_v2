@@ -36,6 +36,14 @@ export interface DecisionIntelligence {
   urgency: Urgency
   resultLabel: string | null
   resultDirection: 'positive' | 'negative' | 'neutral' | null
+  /** Signed dollar P&L impact, formatted compact (e.g. "+$1.2K", "−$245").
+   *  Null when impact_proxy is missing or magnitude is too small to be
+   *  meaningful — keeps the column honest about what's actually known. */
+  pnlLabel: string | null
+  /** Signed return percentage formatted with one decimal (e.g. "+5.2%").
+   *  May carry a "missed" suffix for unmatched / pending decisions where
+   *  the move happened but the trade didn't capture it. */
+  returnLabel: string | null
   ageDays: number | null // days since decision/event — used for time pressure
   ageSeverity: 'fresh' | 'aging' | 'overdue' | null
 }
@@ -137,11 +145,15 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
   // a P&L number and confuses the user.
   let resultLabel: string | null = null
   let resultDirection: DecisionIntelligence['resultDirection'] = null
+  let pnlLabel: string | null = null
+  let returnLabel: string | null = null
   if (bestMove != null) {
     const pctSign = bestMove >= 0 ? '+' : ''
     const pctPart = `${pctSign}${bestMove.toFixed(1)}%`
     const dollarPart = formatImpactDollars(row.impact_proxy, bestMove >= 0)
     resultLabel = dollarPart ? `${pctPart} · ${dollarPart}` : pctPart
+    returnLabel = pctPart
+    pnlLabel = dollarPart
     resultDirection = directionalMove != null
       ? directionalMove > 0.5
         ? 'positive'
@@ -159,7 +171,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       primaryIssue: 'Trade made outside decision process',
       actionNeeded: reviewState === 'needs_review' ? 'Add rationale' : null,
       urgency: reviewState === 'needs_review' ? 'medium' : 'low',
-      resultLabel, resultDirection,
+      resultLabel, resultDirection, pnlLabel, returnLabel,
       ageDays: decisionAge, ageSeverity: null,
     }
   }
@@ -179,6 +191,8 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       urgency: 'none',
       resultLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}%` : null,
       resultDirection,
+      pnlLabel: null,
+      returnLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}%` : null,
       ageDays: decisionAge, ageSeverity: null,
     }
   }
@@ -192,6 +206,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       actionNeeded: null,
       urgency: 'none',
       resultLabel: null, resultDirection: null,
+      pnlLabel: null, returnLabel: null,
       ageDays: decisionAge, ageSeverity: null,
     }
   }
@@ -216,6 +231,8 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       urgency: isStalled ? (lagDays > 30 ? 'critical' : 'high') : 'low',
       resultLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% missed` : 'Pending',
       resultDirection: directionalMove != null && directionalMove > 1 ? 'negative' : null,
+      pnlLabel: null,
+      returnLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% missed` : 'Pending',
       ageDays: lagDays, ageSeverity,
     }
   }
@@ -230,6 +247,8 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       urgency: 'high',
       resultLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% missed` : null,
       resultDirection,
+      pnlLabel: null,
+      returnLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% missed` : null,
       ageDays: decisionAge, ageSeverity: 'overdue',
     }
   }
@@ -299,7 +318,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       primaryIssue: `${verb} — ${subtag}`,
       actionNeeded: 'Add context',
       urgency: isNegative ? 'critical' : 'medium',
-      resultLabel, resultDirection,
+      resultLabel, resultDirection, pnlLabel, returnLabel,
       ageDays: decisionAge, ageSeverity,
     }
   }
@@ -314,7 +333,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       primaryIssue: `${row.asset_symbol || 'Position'} moving against thesis`,
       actionNeeded: reviewState !== 'reviewed' ? 'Review outcome' : 'View review',
       urgency: reviewState !== 'reviewed' ? 'high' : 'medium',
-      resultLabel, resultDirection,
+      resultLabel, resultDirection, pnlLabel, returnLabel,
       ageDays: decisionAge, ageSeverity,
     }
   }
@@ -329,7 +348,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       primaryIssue: '',
       actionNeeded: 'View review',
       urgency: 'none',
-      resultLabel, resultDirection,
+      resultLabel, resultDirection, pnlLabel, returnLabel,
       ageDays: decisionAge, ageSeverity: null,
     }
   }
@@ -344,7 +363,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       primaryIssue: '',
       actionNeeded: 'Review outcome',
       urgency: 'medium',
-      resultLabel, resultDirection,
+      resultLabel, resultDirection, pnlLabel, returnLabel,
       ageDays: decisionAge, ageSeverity,
     }
   }
@@ -365,7 +384,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       primaryIssue: '',
       actionNeeded: needsCapture ? 'Capture rationale' : 'Review why this worked',
       urgency: 'none',
-      resultLabel, resultDirection,
+      resultLabel, resultDirection, pnlLabel, returnLabel,
       ageDays: decisionAge, ageSeverity: null,
     }
   }
@@ -379,7 +398,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
     primaryIssue: '',
     actionNeeded: needsCapture ? 'Capture rationale' : null,
     urgency: 'none',
-    resultLabel, resultDirection,
+    resultLabel, resultDirection, pnlLabel, returnLabel,
     ageDays: decisionAge, ageSeverity: null,
   }
 }

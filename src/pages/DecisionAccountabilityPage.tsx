@@ -168,8 +168,8 @@ const SIZE_BASIS_LABEL: Record<string, string> = {
 
 // Dynamic grid — with or without Portfolio column
 // Uses minmax + fr to fill the full screen width
-const GRID_WITH_PORTFOLIO = 'grid-cols-[110px_50px_60px_72px_minmax(100px,1fr)_minmax(80px,0.8fr)_minmax(120px,1.5fr)_72px_minmax(100px,1.2fr)_100px_64px]'
-const GRID_WITHOUT_PORTFOLIO = 'grid-cols-[110px_50px_60px_76px_minmax(120px,1.2fr)_minmax(140px,1.8fr)_72px_minmax(120px,1.5fr)_108px_64px]'
+const GRID_WITH_PORTFOLIO = 'grid-cols-[110px_50px_60px_72px_minmax(100px,1fr)_minmax(80px,0.8fr)_minmax(120px,1.5fr)_84px_64px_minmax(100px,1.2fr)_100px_64px]'
+const GRID_WITHOUT_PORTFOLIO = 'grid-cols-[110px_50px_60px_76px_minmax(120px,1.2fr)_minmax(140px,1.8fr)_84px_64px_minmax(120px,1.5fr)_108px_64px]'
 
 /** Derive the review state for a row. Used consistently for borders, dots, and filters. */
 function getRowReviewState(row: AccountabilityRow): 'needs_review' | 'in_progress' | 'captured' | 'reviewed' | null {
@@ -715,15 +715,32 @@ function DecisionRow({
         )}
       </div>
 
-      {/* Result signal */}
-      <div className="pl-1 pr-2 py-2 flex items-center">
-        {intel.resultLabel ? (
+      {/* P&L (dollars) — split out from the prior combined Result column
+          so cash impact has its own home and a PM can sort/scan by
+          dollars without parsing a "+5.2% · +$1.2K" composite. */}
+      <div className="pl-1 pr-2 py-2 flex items-center justify-end">
+        {intel.pnlLabel ? (
           <span className={`text-[11px] font-semibold tabular-nums ${
             intel.resultDirection === 'positive' ? 'text-emerald-600' :
             intel.resultDirection === 'negative' ? 'text-red-600' :
             'text-gray-400'
           }`}>
-            {intel.resultLabel}
+            {intel.pnlLabel}
+          </span>
+        ) : (
+          <span className="text-[10px] text-gray-300">—</span>
+        )}
+      </div>
+
+      {/* Return (percent) */}
+      <div className="pl-1 pr-2 py-2 flex items-center justify-end">
+        {intel.returnLabel ? (
+          <span className={`text-[11px] font-semibold tabular-nums ${
+            intel.resultDirection === 'positive' ? 'text-emerald-600' :
+            intel.resultDirection === 'negative' ? 'text-red-600' :
+            'text-gray-400'
+          }`}>
+            {intel.returnLabel}
           </span>
         ) : (
           <span className="text-[10px] text-gray-300">—</span>
@@ -1695,13 +1712,17 @@ function DetailPanel({
             if (snap.weight != null) sizingParts.push(`${Number(snap.weight).toFixed(1)}% wt`)
             if (snap.shares != null) sizingParts.push(`${Number(snap.shares).toLocaleString()} shs`)
 
+            // Pilot-seeded recommendations always read as "by Pilot"
+            // — matches the same convention used by the row's owner
+            // chip in the table and Trade Lab's author label.
+            const recommenderLabel = row.owner_name === 'Pilot' ? 'Pilot' : dr.requester_name
             return (
               <div className="mt-3 border-l-2 border-amber-300 pl-2.5">
                 <div className="text-[9px] font-bold uppercase tracking-wider text-amber-700 mb-0.5">
                   Recommendation
-                  {dr.requester_name && (
+                  {recommenderLabel && (
                     <span className="font-medium normal-case tracking-normal text-[10px] text-gray-500 ml-1">
-                      by {dr.requester_name}
+                      by {recommenderLabel}
                     </span>
                   )}
                 </div>
@@ -1985,14 +2006,8 @@ function ExecutionCard({ exec, decisionId }: { exec: MatchedExecution; decisionI
         </div>
       )}
 
-      {/* Rationale — quiet line, no checkmark icon clutter. */}
-      {exec.execution_rationale_summary ? (
-        <p className="text-[10px] text-gray-600 leading-relaxed mt-1 line-clamp-3 italic">
-          “{exec.execution_rationale_summary}”
-        </p>
-      ) : !exec.has_rationale ? (
-        <div className="text-[10px] text-amber-600 mt-1">No rationale captured</div>
-      ) : null}
+      {/* Rationale block removed — redundant with the rationale already
+          surfaced in the "Why this decision was made" section above. */}
     </div>
   )
 }
@@ -2731,6 +2746,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
         case 'name': cmp = (a.asset_name || '').localeCompare(b.asset_name || ''); break
         case 'portfolio': cmp = (a.portfolio_name || '').localeCompare(b.portfolio_name || ''); break
         case 'result': cmp = (a.move_since_decision_pct ?? -999) - (b.move_since_decision_pct ?? -999); break
+        case 'pnl': cmp = (a.impact_proxy ?? -Infinity) - (b.impact_proxy ?? -Infinity); break
         case 'owner': cmp = (a.owner_name || '').localeCompare(b.owner_name || ''); break
         case 'state': cmp = (a.execution_status || '').localeCompare(b.execution_status || ''); break
         case 'type': cmp = (a.direction || '').localeCompare(b.direction || ''); break
@@ -2794,7 +2810,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     [sortedRows, selectedId],
   )
 
-  const handleSort = (col: 'date' | 'lag' | 'ticker' | 'result') => {
+  const handleSort = (col: 'date' | 'lag' | 'ticker' | 'result' | 'pnl') => {
     if (sortBy === col) {
       setSortDesc(!sortDesc)
     } else {
@@ -2819,7 +2835,8 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     }
     cols.push(
       { id: 'issue', label: 'Insight', sortKey: 'state', filterType: 'search' },
-      { id: 'result', label: 'Result', sortKey: 'result', filterType: 'dropdown' },
+      { id: 'pnl', label: 'P&L', sortKey: 'pnl', filterType: 'dropdown' },
+      { id: 'return', label: 'Return', sortKey: 'result', filterType: 'dropdown' },
       { id: 'action', label: 'Action', sortKey: 'state', filterType: 'dropdown' },
       { id: 'owner', label: 'Owner', sortKey: 'owner', filterType: 'dropdown' },
       { id: 'date', label: 'Date', sortKey: 'date', filterType: 'dropdown' },
@@ -3144,8 +3161,9 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
               </div>
             )}
 
-            {/* Result */}
-            {col.id === 'result' && (
+            {/* P&L / Return — same positive/negative chip filter applies
+                to both; the cell split is purely visual. */}
+            {(col.id === 'result' || col.id === 'pnl' || col.id === 'return') && (
               <div className="py-1">
                 {[{ k: 'all', l: 'All' }, { k: 'hurting', l: 'Negative' }, { k: 'working', l: 'Positive' }].map(o => (
                   <button key={o.k} onClick={() => { setActiveChipKey(o.k); setColFilterOpen(null) }}
