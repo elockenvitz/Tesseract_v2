@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -418,28 +418,15 @@ export function Header({
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Core</span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
-                    {/* Priorities - Primary entry point with subtle emphasis */}
-                    <button
-                      onClick={() => {
-                        setShowAppMenu(false)
-                        onSearchResult({ id: 'priorities', title: 'My Priorities', type: 'priorities', data: null })
-                      }}
-                      className="flex flex-col items-center p-3 rounded-lg hover:bg-rose-50 dark:hover:bg-gray-700 transition-colors group/tile ring-1 ring-rose-200 bg-rose-50/30"
-                    >
-                      <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-1 bg-rose-100">
-                        <Flag className="h-6 w-6 text-rose-600" />
-                      </div>
-                      <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 text-center leading-tight">Priorities</span>
-                      <span className="text-[10px] text-gray-500 mt-0.5">Start here</span>
-                    </button>
-
-                    {/* Other Core tiles */}
                     {[
-                      { id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
-                      { id: 'trade-book', title: 'Trade Book', type: 'trade-book', icon: BookOpen, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+                      { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
+                      { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
+                      { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
                       { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-                      { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
+                      { id: 'themes-list', title: 'Themes', type: 'themes-list', icon: Tag, color: 'text-fuchsia-500', bg: 'bg-fuchsia-50' },
+                      { id: 'trade-lab', title: 'Trade Lab', type: 'trade-lab', icon: Beaker, color: 'text-orange-500', bg: 'bg-orange-50' },
+                      { id: 'trade-book', title: 'Trade Book', type: 'trade-book', icon: BookOpen, color: 'text-indigo-500', bg: 'bg-indigo-50' },
                       { id: 'outcomes', title: 'Outcomes', type: 'outcomes', icon: Target, color: 'text-teal-500', bg: 'bg-teal-50' },
                     ].map(item => (
                       <button
@@ -465,8 +452,10 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'lists', title: 'Lists', type: 'lists', icon: List, color: 'text-violet-500', bg: 'bg-violet-50' },
+                      { id: 'notes-list', title: 'Notes', type: 'notes-list', icon: StickyNote, color: 'text-yellow-600', bg: 'bg-yellow-50' },
                       { id: 'workflows', title: 'Process', type: 'workflows', icon: Repeat, color: 'text-cyan-500', bg: 'bg-cyan-50' },
                       { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+                      { id: 'templates', title: 'Templates', type: 'templates', icon: FileText, color: 'text-amber-600', bg: 'bg-amber-50' },
                       { id: 'coverage', title: 'Coverage', type: 'coverage', icon: Users, color: 'text-sky-500', bg: 'bg-sky-50' },
                     ].map(item => (
                       <button
@@ -483,19 +472,6 @@ export function Header({
                         <span className="text-xs font-medium text-gray-700 dark:text-gray-200 text-center leading-tight">{item.title}</span>
                       </button>
                     ))}
-                    {/* Organization - demoted with reduced emphasis */}
-                    <button
-                      onClick={() => {
-                        setShowAppMenu(false)
-                        onSearchResult({ id: 'organization', title: 'Organization', type: 'organization', data: null })
-                      }}
-                      className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile opacity-75"
-                    >
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-1.5 bg-gray-100">
-                        <Building2 className="h-4 w-4 text-gray-400" />
-                      </div>
-                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">Organization</span>
-                    </button>
                     {/* Ops Portal: access via /ops directly — no product UI link */}
                   </div>
 
@@ -508,7 +484,6 @@ export function Header({
                       { id: 'charting', title: 'Charting', type: 'charting', icon: LineChart, color: 'text-gray-400', bg: 'bg-gray-100' },
                       { id: 'files', title: 'Files', type: 'files', icon: FolderOpen, color: 'text-gray-400', bg: 'bg-gray-100' },
                       { id: 'calendar', title: 'Calendar', type: 'calendar', icon: Calendar, color: 'text-gray-400', bg: 'bg-gray-100' },
-                      { id: 'audit', title: 'Activity', type: 'audit', icon: Activity, color: 'text-gray-400', bg: 'bg-gray-100' },
                     ].map(item => (
                       <button
                         key={item.id}

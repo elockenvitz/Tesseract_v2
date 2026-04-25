@@ -3104,6 +3104,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, true)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
+    // Tick step 2 of the pilot Trade Lab Get Started banner — checking
+    // the recommendation in the LEFT pane (Trade Ideas) imports it into
+    // the holdings table.
+    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
+
     // Prime priceMap with a price hint for this asset so quickEstimate in
     // useSimulationRows can compute a non-zero notional immediately. Without
     // this the new-position row has price=0 → shares=0 → notional=0, which

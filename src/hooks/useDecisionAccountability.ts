@@ -1785,7 +1785,53 @@ export function useAddReflection() {
         throw new Error('No linked accepted_trade or decision_request found')
       }
     },
-    onSuccess: () => {
+    // Optimistic insert so the new note shows up in the feed immediately.
+    // Without this, the user has to wait for the insert + invalidation +
+    // refetch round-trip before their reflection appears, which feels
+    // broken on a comment-style surface.
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['decision-reflections'] })
+      const snapshots = queryClient.getQueriesData<{
+        reflections: Reflection[]
+        acceptedTradeId: string | null
+        decisionRequestId: string | null
+      }>({ queryKey: ['decision-reflections'] })
+
+      const tempReflection: Reflection = {
+        id: `temp-${Date.now()}`,
+        content: vars.content,
+        user_id: vars.userId,
+        user_name: 'You',
+        created_at: new Date().toISOString(),
+      }
+
+      queryClient.setQueriesData<{
+        reflections: Reflection[]
+        acceptedTradeId: string | null
+        decisionRequestId: string | null
+      }>(
+        { queryKey: ['decision-reflections'] },
+        (old) => {
+          if (!old) return old
+          // Only add to caches that match the linked decision so other
+          // decisions' feeds aren't polluted.
+          const matches =
+            (vars.acceptedTradeId && old.acceptedTradeId === vars.acceptedTradeId) ||
+            (vars.decisionRequestId && old.decisionRequestId === vars.decisionRequestId)
+          if (!matches) return old
+          return { ...old, reflections: [...old.reflections, tempReflection] }
+        },
+      )
+
+      return { snapshots }
+    },
+    onError: (_err, _vars, context) => {
+      if (!context?.snapshots) return
+      for (const [key, value] of context.snapshots) {
+        queryClient.setQueryData(key, value)
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-reflections'] })
     },
   })

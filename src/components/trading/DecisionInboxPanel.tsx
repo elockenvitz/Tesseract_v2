@@ -167,10 +167,22 @@ export function DecisionInboxPanel({
           the watermark from the last time the user opened the
           drawer). Once opened, the watermark catches up so the
           strip stays neutral when the user closes it again. */}
-      <button
+      {/* Outer is a div+role=button instead of <button> because the
+          fullscreen toggle inside is also a <button>, and nested
+          buttons trip React's DOM nesting validator. We keep
+          keyboard accessibility via the role and a keydown handler. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            toggle()
+          }
+        }}
         className={clsx(
-          "flex-shrink-0 flex items-center justify-between px-4 h-11 cursor-pointer transition-colors group",
+          "flex-shrink-0 flex items-center justify-between px-4 h-11 cursor-pointer transition-colors group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400",
           isCollapsed && hasUnseen
             ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 border-t-2 border-t-amber-400 dark:border-t-amber-600"
             : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
@@ -222,7 +234,7 @@ export function DecisionInboxPanel({
             }
           </div>
         </div>
-      </button>
+      </div>
 
       {/* Inbox content — always mounted for count, hidden when collapsed */}
       <div className={clsx("flex-1 min-h-0 overflow-hidden", isOpen ? "border-t border-gray-100 dark:border-gray-700" : "hidden")}>

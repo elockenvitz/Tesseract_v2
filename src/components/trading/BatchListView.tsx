@@ -571,7 +571,13 @@ function TradeRow({
         rowBg,
         canExpand && 'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-800/40',
       )}
-      onClick={canExpand ? () => setExpanded((v) => !v) : undefined}
+      onClick={canExpand ? () => {
+        setExpanded((v) => !v)
+        // Tick step 1 of the pilot Trade Book Get Started banner —
+        // expanding any trade row to see its audit counts as
+        // "reviewing the recorded decision."
+        try { window.dispatchEvent(new CustomEvent('pilot-tradebook:trade-reviewed')) } catch { /* ignore */ }
+      } : undefined}
     >
       <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">
         {trade.asset?.symbol || 'Unknown'}
@@ -1356,9 +1362,17 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
       if (error) throw error
       return trimmed
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       setEditing(false)
       queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
+      // Tick step 2 of the pilot Trade Book Get Started banner —
+      // editing the batch-level rationale counts as "capturing
+      // rationale," same as adding a per-trade rationale comment.
+      // Only fire when the saved value is non-empty so clearing
+      // the field doesn't tick the step.
+      if (saved && saved.length > 0) {
+        try { window.dispatchEvent(new CustomEvent('pilot-tradebook:rationale-added')) } catch { /* ignore */ }
+      }
     },
   })
 

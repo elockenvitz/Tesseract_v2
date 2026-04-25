@@ -1064,15 +1064,8 @@ export function HoldingsSimulationTable({
   const [selectedForPromote, setSelectedForPromote] = useState<Set<string>>(new Set())
   const togglePromoteSelection = useCallback((variantId: string) => {
     setSelectedForPromote(prev => {
-      const wasSelected = prev.has(variantId)
       const next = new Set(prev)
-      wasSelected ? next.delete(variantId) : next.add(variantId)
-      // Tick step 2 of the pilot Trade Lab Get Started banner the
-      // first time a row is checked for execution. Only fires on
-      // the add direction — unchecking shouldn't undo progress.
-      if (!wasSelected) {
-        try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
-      }
+      next.has(variantId) ? next.delete(variantId) : next.add(variantId)
       return next
     })
   }, [])

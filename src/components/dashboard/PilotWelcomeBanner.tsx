@@ -5,12 +5,12 @@
  * through the core features they need to learn for adoption.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  X, ChevronDown, ChevronRight, CheckCircle2, Circle,
-  FileText, Lightbulb, MessageSquare, Beaker, Star,
-  ArrowRight, BookOpen, Sparkles, Target, PenLine,
+  X, ChevronDown, ChevronRight, CheckCircle2,
+  FileText, Lightbulb, Star,
+  BookOpen, Sparkles, PenLine, Tag, List, Repeat,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -29,7 +29,7 @@ interface TutorialStep {
   icon: typeof FileText
   done: boolean
   action: () => void
-  category: 'research' | 'collaborate' | 'trade'
+  category: 'research' | 'collaborate' | 'discover'
 }
 
 export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
@@ -43,6 +43,28 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     try { return localStorage.getItem(`pilot-banner-expanded-${currentOrgId}`) !== 'false' } catch { return true }
   })
 
+  // Local "has explored an asset page" signal. The DB-backed checks for
+  // this step (notes/ratings/contributions) only fire after a user
+  // actually edits something — opening the page itself doesn't leave a
+  // trace. AssetTab fires `pilot-tutorial:asset-explored` on mount and
+  // also writes a localStorage flag, so we hydrate from that and update
+  // live via the event.
+  const [hasExploredAsset, setHasExploredAsset] = useState(() => {
+    if (!user?.id) return false
+    try { return localStorage.getItem(`pilot-tutorial-asset-explored-${user.id}`) === '1' } catch { return false }
+  })
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      if (localStorage.getItem(`pilot-tutorial-asset-explored-${user.id}`) === '1') {
+        setHasExploredAsset(true)
+      }
+    } catch { /* ignore */ }
+    const handler = () => setHasExploredAsset(true)
+    window.addEventListener('pilot-tutorial:asset-explored', handler)
+    return () => window.removeEventListener('pilot-tutorial:asset-explored', handler)
+  }, [user?.id])
+
   // Track completion of tutorial steps
   const { data: progress } = useQuery({
     queryKey: ['pilot-tutorial-progress', currentOrgId, user?.id],
@@ -52,40 +74,55 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       const [
         assetNotesRes,
         thoughtsRes,
-        tradeIdeasRes,
-        simulationsRes,
         promptsRes,
         ratingsRes,
         contributionsRes,
+        themesRes,
+        themeNotesRes,
+        listsRes,
+        workflowsRes,
       ] = await Promise.all([
         // Has the user written a note on an asset?
         supabase.from('asset_notes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
         // Has the user posted a thought?
-        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        // Has the user created a trade idea?
-        supabase.from('trade_queue_items').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
-        // Has the user created a simulation?
-        supabase.from('simulations').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
+        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
         // Has the user used a prompt?
         supabase.from('user_quick_prompt_history').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         // Has the user rated an asset?
         supabase.from('analyst_ratings').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         // Has the user made a contribution on an asset?
-        supabase.from('asset_contributions').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('asset_contributions').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
+        // Has the user created a theme?
+        supabase.from('themes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
+        // Has the user written a note on a theme?
+        supabase.from('theme_notes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
+        // Has the user built an asset list? Exclude `is_default=true`
+        // because every user gets two system-seeded default lists
+        // ("Investment Ideas", "Work in Process") on signup, which would
+        // otherwise mark this step complete before the user has done a thing.
+        supabase.from('asset_lists').select('id', { count: 'exact', head: true }).eq('created_by', user.id).eq('is_default', false),
+        // Has the user built a workflow?
+        supabase.from('workflows').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
       ])
 
       return {
         hasNote: (assetNotesRes.count ?? 0) > 0,
         hasThought: (thoughtsRes.count ?? 0) > 0,
-        hasTradeIdea: (tradeIdeasRes.count ?? 0) > 0,
-        hasSimulation: (simulationsRes.count ?? 0) > 0,
         hasPrompt: (promptsRes.count ?? 0) > 0,
         hasRating: (ratingsRes.count ?? 0) > 0,
         hasContribution: (contributionsRes.count ?? 0) > 0,
+        hasTheme: (themesRes.count ?? 0) > 0 || (themeNotesRes.count ?? 0) > 0,
+        hasList: (listsRes.count ?? 0) > 0,
+        hasWorkflow: (workflowsRes.count ?? 0) > 0,
       }
     },
     enabled: !!currentOrgId && !!user?.id,
-    staleTime: 30_000,
+    // Short staleTime so the banner re-checks progress when the user
+    // returns to the dashboard after taking an action (rating, note,
+    // contribution, etc). With a 30s stale window the freshly-completed
+    // step would stay un-crossed for half a minute. Refetch on focus is
+    // already on by default, which catches tab-switching too.
+    staleTime: 0,
   })
 
   const handleDismiss = useCallback(() => {
@@ -103,9 +140,21 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
 
   if (dismissed || !progress) return null
 
-  // Navigate to a specific asset (AAPL as default for tutorial)
-  const openAsset = (symbol = 'AAPL') => {
-    onNavigate({ type: 'asset', id: symbol, title: symbol, data: { symbol } })
+  // Navigate to AAPL (the tutorial target asset). `extraData` lets steps
+  // deep-link to a specific view (e.g. "My View" + scroll to a section).
+  const openAsset = (extraData: Record<string, any> = {}) => {
+    onNavigate({
+      type: 'asset',
+      id: 'AAPL',
+      title: 'AAPL',
+      data: { symbol: 'AAPL', ...extraData },
+    })
+  }
+
+  // Open AAPL on the user's own "My View" tab (researchViewFilter = userId).
+  const openAaplMyView = (extraData: Record<string, any> = {}) => {
+    if (!user?.id) { openAsset(extraData); return }
+    openAsset({ researchViewFilter: user.id, ...extraData })
   }
 
   const steps: TutorialStep[] = [
@@ -114,9 +163,9 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       id: 'explore-asset',
       label: 'Explore an asset page',
       description: 'Open any asset to see its research fields, workflow status, and history.',
-      hint: 'Try searching for a ticker in the search bar, or click below to open AAPL.',
+      hint: 'Click below to open AAPL.',
       icon: BookOpen,
-      done: (progress.hasContribution || progress.hasNote || progress.hasRating),
+      done: (hasExploredAsset || progress.hasContribution || progress.hasNote || progress.hasRating),
       action: () => openAsset(),
       category: 'research',
     },
@@ -124,30 +173,40 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       id: 'fill-research',
       label: 'Fill out a research field',
       description: 'Add your thesis, bull/bear case, or any research field on an asset page.',
-      hint: 'On the asset page, click any empty field to start typing. Your input is saved automatically.',
+      hint: 'On AAPL "My View", click any empty field to start typing.',
       icon: PenLine,
       done: progress.hasContribution,
-      action: () => openAsset(),
+      action: () => openAaplMyView(),
       category: 'research',
     },
     {
       id: 'rate-asset',
       label: 'Rate an asset',
       description: 'Set your conviction rating (e.g., Overweight / Neutral / Underweight).',
-      hint: 'On the asset page, find the rating section and select your view.',
+      hint: 'Opens AAPL "My View" and scrolls to the Rating section.',
       icon: Star,
       done: progress.hasRating,
-      action: () => openAsset(),
+      action: () => openAaplMyView({ scrollTo: 'rating' }),
       category: 'research',
     },
     {
       id: 'take-note',
-      label: 'Take a note',
+      label: 'Write a note',
       description: 'Write a research note on an asset — capture your analysis and key takeaways.',
-      hint: 'On the asset page, go to the Notes tab and click "New Note".',
+      hint: 'Open the All Notes page and click "New Note".',
       icon: FileText,
       done: progress.hasNote,
-      action: () => openAsset(),
+      action: () => onNavigate({ type: 'notes-list', id: 'notes-list', title: 'Notes', data: {} }),
+      category: 'research',
+    },
+    {
+      id: 'explore-theme',
+      label: 'Explore a theme',
+      description: 'Group ideas by sector or macro story across many assets at once.',
+      hint: 'Open the All Themes page, then create or open a theme.',
+      icon: Tag,
+      done: progress.hasTheme,
+      action: () => onNavigate({ type: 'themes-list', id: 'themes-list', title: 'Themes', data: {} }),
       category: 'research',
     },
     // Communicate & collaborate
@@ -155,76 +214,82 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       id: 'post-thought',
       label: 'Post a thought',
       description: 'Share a quick insight or observation with your team via Thoughts.',
-      hint: 'Click the lightbulb icon in the header, or use the Thoughts panel to post.',
+      hint: 'Opens the right-hand pane to capture a quick thought.',
       icon: Lightbulb,
       done: progress.hasThought,
-      action: () => openAsset(),
+      action: () => {
+        try {
+          window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+            detail: { captureType: 'thought' },
+          }))
+        } catch { /* ignore */ }
+      },
       category: 'collaborate',
     },
     {
       id: 'use-prompt',
       label: 'Use a prompt',
       description: 'Address a specific question or task using the prompt system.',
-      hint: 'On any asset page, use the command bar or dot-commands to trigger a prompt.',
+      hint: 'Opens the right-hand pane to compose a prompt.',
       icon: Sparkles,
       done: progress.hasPrompt,
-      action: () => openAsset(),
+      action: () => {
+        try {
+          window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
+            detail: { captureType: 'prompt' },
+          }))
+        } catch { /* ignore */ }
+      },
       category: 'collaborate',
     },
-    // Trade workflow
+    // Discover & customize
     {
-      id: 'create-idea',
-      label: 'Create a trade idea',
-      description: 'Submit a trade idea with your thesis — it enters the idea pipeline for review.',
-      hint: 'Use the "+" button or go to the Ideas tab to create a new trade idea.',
-      icon: Target,
-      done: progress.hasTradeIdea,
-      action: () => onNavigate({ type: 'trade-queue', id: 'trade-queue', title: 'Ideas', data: {} }),
-      category: 'trade',
+      id: 'build-list',
+      label: 'Build a list',
+      description: 'Group assets into watchlists, shortlists, or shared lists.',
+      hint: 'Open Lists from the app menu, create a list, and add a few assets to it.',
+      icon: List,
+      done: progress.hasList,
+      action: () => onNavigate({ type: 'lists', id: 'lists', title: 'Lists', data: {} }),
+      category: 'discover',
     },
     {
-      id: 'run-simulation',
-      label: 'Run a simulation',
-      description: 'Open Trade Lab to size positions and see portfolio impact before committing.',
-      hint: 'Go to Trade Lab, select your portfolio, and try sizing a position using the simulation table.',
-      icon: Beaker,
-      done: progress.hasSimulation,
-      action: () => onNavigate({ type: 'trade-lab', id: 'trade-lab', title: 'Trade Lab', data: {} }),
-      category: 'trade',
+      id: 'build-workflow',
+      label: 'Build a workflow',
+      description: 'Automate research checklists across assets — earnings prep, screens, recurring reviews.',
+      hint: 'Open Workflows from the app menu and create your first template.',
+      icon: Repeat,
+      done: progress.hasWorkflow,
+      action: () => onNavigate({ type: 'workflows', id: 'workflows', title: 'Workflows', data: {} }),
+      category: 'discover',
     },
   ]
 
   const completedCount = steps.filter(s => s.done).length
   const allDone = completedCount === steps.length
 
-  // Group steps by category
-  const categories = [
-    { key: 'research', label: 'Research', steps: steps.filter(s => s.category === 'research') },
-    { key: 'collaborate', label: 'Communicate', steps: steps.filter(s => s.category === 'collaborate') },
-    { key: 'trade', label: 'Trade', steps: steps.filter(s => s.category === 'trade') },
-  ]
-
   return (
     <div className="relative bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/20 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
-      {/* Header — always visible */}
-      <div className="flex items-center justify-between px-4 py-3">
-        <button onClick={toggleExpanded} className="flex items-center gap-2 text-left">
+      {/* Header — always visible. Title + one-line "what this is" so the
+          section's purpose is clear even when collapsed. */}
+      <div className="flex items-start justify-between gap-3 px-4 py-2.5">
+        <button onClick={toggleExpanded} className="flex items-start gap-2 text-left flex-1 min-w-0">
           {expanded
-            ? <ChevronDown className="w-4 h-4 text-indigo-400" />
-            : <ChevronRight className="w-4 h-4 text-indigo-400" />
+            ? <ChevronDown className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
+            : <ChevronRight className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
           }
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">
               Getting Started
             </h3>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              {allDone ? 'All done!' : `${completedCount} of ${steps.length} complete`}
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
+              A quick tour of Tesseract — click any step to jump in. {allDone ? 'All done!' : `${completedCount} of ${steps.length} complete.`}
             </p>
           </div>
         </button>
 
-        {/* Progress bar */}
-        <div className="flex items-center gap-3">
+        {/* Progress bar + dismiss */}
+        <div className="flex items-center gap-3 mt-0.5 shrink-0">
           <div className="w-24 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div
               className="h-full bg-indigo-500 rounded-full transition-all duration-500"
@@ -232,7 +297,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
             />
           </div>
           <button
-            onClick={handleDismiss}
+            onClick={(e) => { e.stopPropagation(); handleDismiss() }}
             className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded"
             title="Dismiss"
           >
@@ -241,56 +306,66 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         </div>
       </div>
 
-      {/* Expanded content */}
+      {/* Expanded content — 2-column grid (3 on wide screens). Each card
+          shows icon + label + one-line description so the user always
+          knows what the step is. Compact rows (~36px) keep total height
+          well below the original stacked layout. Category shown as a
+          small colored bar on the left of each card instead of a
+          standalone section header. */}
       {expanded && (
-        <div className="px-4 pb-4 space-y-3">
-          {categories.map(cat => (
-            <div key={cat.key}>
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">
-                {cat.label}
-              </p>
-              <div className="space-y-1">
-                {cat.steps.map(step => (
-                  <button
-                    key={step.id}
-                    onClick={step.action}
-                    className={clsx(
-                      'w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-all group',
-                      step.done
-                        ? 'bg-white/40 dark:bg-gray-800/20'
-                        : 'bg-white/80 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-800/70 hover:shadow-sm'
-                    )}
-                  >
-                    <div className="mt-0.5 flex-shrink-0">
-                      {step.done ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <step.icon className="w-4 h-4 text-indigo-400 dark:text-indigo-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className={clsx(
-                          'text-xs font-medium',
-                          step.done ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-800 dark:text-gray-200'
-                        )}>
-                          {step.label}
-                        </p>
-                        {!step.done && (
-                          <ArrowRight className="w-3 h-3 text-gray-300 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
-                        )}
-                      </div>
-                      {!step.done && (
-                        <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 leading-relaxed">
-                          {step.hint}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="px-4 pb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+            {steps.map(step => (
+              <button
+                key={step.id}
+                onClick={step.action}
+                title={step.hint}
+                className={clsx(
+                  'group relative flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-md border text-left transition-all overflow-hidden',
+                  step.done
+                    ? 'bg-white/40 border-green-200/70 dark:bg-gray-800/30 dark:border-green-800/40'
+                    : 'bg-white/80 border-indigo-200/60 hover:bg-white hover:border-indigo-300 hover:shadow-sm dark:bg-gray-800/60 dark:border-indigo-800/40 dark:hover:bg-gray-800',
+                )}
+              >
+                {/* Category accent bar */}
+                <span
+                  className={clsx(
+                    'absolute left-0 top-0 bottom-0 w-1',
+                    step.category === 'research' && 'bg-indigo-400/70',
+                    step.category === 'collaborate' && 'bg-amber-400/70',
+                    step.category === 'discover' && 'bg-emerald-400/70',
+                  )}
+                  aria-hidden
+                />
+                <div className="shrink-0">
+                  {step.done
+                    ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    : <step.icon className="w-4 h-4 text-indigo-400 dark:text-indigo-500" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={clsx(
+                    'text-[12px] font-medium leading-tight truncate',
+                    step.done ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-800 dark:text-gray-200',
+                  )}>
+                    {step.label}
+                  </p>
+                  <p className={clsx(
+                    'text-[10.5px] leading-tight truncate',
+                    step.done ? 'text-gray-300 dark:text-gray-600' : 'text-gray-500 dark:text-gray-400',
+                  )}>
+                    {step.description}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+          {/* Small legend so the colored bars are decipherable */}
+          <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500 dark:text-gray-400">
+            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-indigo-400/70" /> Research</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-amber-400/70" /> Communicate</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-emerald-400/70" /> Discover</span>
+          </div>
         </div>
       )}
     </div>

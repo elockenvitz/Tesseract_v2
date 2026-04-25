@@ -26,7 +26,7 @@ import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
-import { PilotOutcomesNudge } from '../components/pilot/PilotOutcomesNudge'
+import { PilotTradeBookGetStarted } from '../components/pilot/PilotTradeBookGetStarted'
 
 // Stable key for TabStateManager — there's only ever one Trade Book
 // tab open, so a literal id is fine. Used to persist view toggle,
@@ -552,7 +552,17 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
           move on to Outcomes. Gated on pilot mode so non-pilots never see
           it. Dismissible per-user. */}
       {pilotMode.effectiveIsPilot && hasUnlockedOutcomes && trades && trades.length > 0 && (
-        <PilotOutcomesNudge userId={user?.id} orgId={currentOrgId} />
+        <PilotTradeBookGetStarted
+          userId={user?.id}
+          orgId={currentOrgId}
+          onOpenOutcomes={() => {
+            window.dispatchEvent(
+              new CustomEvent('decision-engine-action', {
+                detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
+              }),
+            )
+          }}
+        />
       )}
 
       {/* Content */}

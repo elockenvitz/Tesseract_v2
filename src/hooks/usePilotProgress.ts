@@ -9,25 +9,47 @@
  *                                Decision Recorded modal
  *   - outcomes_unlocked        — first real visit to Trade Book after
  *                                unlocking (proxies "reviewed")
+ *   - graduated                — first time the user reaches Outcomes
+ *                                in a given org. Tracked per-org via
+ *                                `graduated_at_<orgId>` keys so an
+ *                                analyst running multiple pilot clients
+ *                                stays "not yet graduated" in each new
+ *                                client until they walk the loop there.
  */
 
-import { useCallback } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
 
 export type PilotStage =
   | 'trade_book_unlocked'
   | 'outcomes_unlocked'
+  | 'graduated'
 
 export interface PilotProgress {
   trade_book_unlocked_at?: string | null
   outcomes_unlocked_at?: string | null
+  /** @deprecated retained for compatibility — new code reads
+   *  `graduated_at_<orgId>` instead, since graduation is per-org. */
+  graduated_at?: string | null
+  /** Per-org graduation timestamps live as `graduated_at_<orgId>`
+   *  inside this same JSONB. Index signature below covers them. */
   [key: string]: string | null | undefined
 }
 
-const STAGE_TO_KEY: Record<PilotStage, keyof PilotProgress> = {
+const graduatedKey = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
+
+/** localStorage hint key — read synchronously on mount so a hard refresh
+ *  doesn't flash the pilot dashboard for ~200ms before the real
+ *  pilot_progress query resolves. Mirrors the `was_pilot_<userId>` cache
+ *  in usePilotMode. */
+const cachedGraduatedKey = (userId: string, orgId: string | null) =>
+  `pilot_graduated_${userId}_${orgId || 'no-org'}`
+
+const STAGE_TO_KEY: Record<Exclude<PilotStage, 'graduated'>, keyof PilotProgress> = {
   trade_book_unlocked: 'trade_book_unlocked_at',
   outcomes_unlocked: 'outcomes_unlocked_at',
 }
@@ -35,10 +57,12 @@ const STAGE_TO_KEY: Record<PilotStage, keyof PilotProgress> = {
 const STAGE_TO_EVENT: Record<PilotStage, string> = {
   trade_book_unlocked: 'pilot_trade_book_unlocked',
   outcomes_unlocked: 'pilot_outcomes_unlocked',
+  graduated: 'pilot_graduated',
 }
 
 export function usePilotProgress() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   const query = useQuery({
@@ -61,7 +85,10 @@ export function usePilotProgress() {
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return
-      const key = STAGE_TO_KEY[stage]
+      // Graduation is per-org; everything else is user-level.
+      const key: keyof PilotProgress = stage === 'graduated'
+        ? graduatedKey(currentOrgId)
+        : STAGE_TO_KEY[stage]
       // Already marked? Don't re-write.
       if (progress[key]) return
 
@@ -88,11 +115,46 @@ export function usePilotProgress() {
     markStage.mutate(stage)
   }, [markStage])
 
+  const hasGraduated = !!progress[graduatedKey(currentOrgId)]
+
+  // Cached hint from the previous session: did the user graduate in the
+  // currently selected org? Read synchronously on mount so the very first
+  // render — before pilot_progress has loaded — knows the right answer.
+  // Without this, post-graduation users see the pilot dashboard flash for
+  // a beat on every hard refresh while the query is in flight.
+  const cachedHasGraduated = useMemo<boolean>(() => {
+    if (!user?.id) return false
+    try {
+      return localStorage.getItem(cachedGraduatedKey(user.id, currentOrgId)) === '1'
+    } catch {
+      return false
+    }
+  }, [user?.id, currentOrgId])
+
+  // Keep the cache in sync with the real value once the query resolves so
+  // the next cold refresh starts from the correct hint.
+  useEffect(() => {
+    if (query.isLoading || !user?.id) return
+    try {
+      localStorage.setItem(cachedGraduatedKey(user.id, currentOrgId), hasGraduated ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [query.isLoading, hasGraduated, user?.id, currentOrgId])
+
   return {
     progress,
     isLoading: query.isLoading,
     hasUnlockedTradeBook: !!progress.trade_book_unlocked_at,
     hasUnlockedOutcomes: !!progress.outcomes_unlocked_at,
+    /** Per-org: true only if the user has reached Outcomes in the
+     *  CURRENT org. Each new pilot client starts as not-yet-graduated
+     *  even for an analyst who's graduated in prior clients. */
+    hasGraduated,
+    /** Best-effort `hasGraduated` that falls back to a cached hint from
+     *  the previous session while the real query is loading. Use this
+     *  for UI gates that need to stay stable across a cold refresh. */
+    cachedHasGraduated,
     mark,
   }
 }

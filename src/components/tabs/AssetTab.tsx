@@ -173,6 +173,16 @@ function AssetTabKeyReferencesInline({
 export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
   const { user } = useAuth()
 
+  // Mark the "Explore an asset page" step in PilotWelcomeBanner complete on
+  // first visit. The DB-backed signals (hasNote/hasRating/hasContribution)
+  // only fire after the user actually does something on the page, but the
+  // step itself reads "explore" — opening the page should be enough.
+  useEffect(() => {
+    if (!user?.id) return
+    try { localStorage.setItem(`pilot-tutorial-asset-explored-${user.id}`, '1') } catch { /* ignore */ }
+    try { window.dispatchEvent(new CustomEvent('pilot-tutorial:asset-explored')) } catch { /* ignore */ }
+  }, [user?.id])
+
   // Per-user priority system
   const {
     myPriority,
@@ -435,6 +445,24 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       setActiveSubPage('research')
     }
   }, [asset.data?.researchViewFilter])
+
+  // Handle `scrollTo` navigation hint — used by tutorial steps in
+  // PilotWelcomeBanner to deep-link into a specific section of the asset
+  // page. Defers to next paint so the target element is mounted.
+  useEffect(() => {
+    const scrollTo = asset.data?.scrollTo
+    if (!scrollTo) return
+    const targetId = scrollTo === 'rating' ? 'asset-warning-anchor-rating'
+      : scrollTo === 'targets' ? 'asset-warning-anchor-targets'
+      : null
+    if (!targetId) return
+    setActiveSubPage('research')
+    const t = window.setTimeout(() => {
+      const el = document.getElementById(targetId)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 250)
+    return () => window.clearTimeout(t)
+  }, [asset.data?.scrollTo])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {

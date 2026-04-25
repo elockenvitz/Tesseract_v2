@@ -1,39 +1,42 @@
 /**
- * PilotTradeLabIntroBanner — top-of-page onboarding strip for pilots
- * landing in Trade Lab. Walks them through the three concrete moves
- * to commit a trade:
- *   1. Click / expand the recommendation card to review the details
- *   2. Add the recommendation and size the trade
- *   3. Execute
+ * PilotTradeBookGetStarted — multi-step Get Started banner shown at the
+ * top of the Trade Book once a pilot user has at least one committed
+ * trade visible. Same horizontal step-pill style as the Trade Lab and
+ * Idea Pipeline Get Started banners — amber gradient strip, three
+ * numbered pills with title+hint, arrows between, X to dismiss.
  *
- * Steps tick off as the user does them — same progress pattern as the
- * Idea Pipeline banner. Each step listens for a window event:
- *   - 'pilot-tradelab:rec-reviewed'  (Step 1)
- *   - 'pilot-tradelab:rec-sized'     (Step 2)
- *   - 'pilot-tradelab:executed'      (Step 3)
+ * Steps:
+ *   1. Review the recorded decision — click a trade row to expand it
+ *   2. Capture rationale — write a why-now note on that trade
+ *   3. Open Outcomes — graduation event (flips
+ *      `pilot_progress.graduated_at_<orgId>` and retires pilot gating
+ *      for the rest of the org session)
  *
- * The banner auto-retires once all three are done. Users can also
- * manually dismiss via the X. State is keyed per user+org so each
- * new pilot client gets a fresh banner with all three steps unchecked.
+ * Window events listened for:
+ *   - 'pilot-tradebook:trade-reviewed'  (Step 1)
+ *   - 'pilot-tradebook:rationale-added' (Step 2)
+ *   - 'pilot-tradebook:opened-outcomes' (Step 3)
+ *
+ * State is keyed per user+org so each new pilot client starts fresh.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 
-interface PilotTradeLabIntroBannerProps {
-  userId: string
-  /** Active org id, used to scope the banner state per pilot client. */
+interface PilotTradeBookGetStartedProps {
+  userId: string | undefined
   orgId?: string | null
+  onOpenOutcomes: () => void
 }
 
-const STEP1 = 'rec_reviewed'
-const STEP2 = 'rec_sized'
-const STEP3 = 'executed'
 const DISMISS = 'dismissed'
+const STEP1 = 'reviewed'
+const STEP2 = 'rationale'
+const STEP3 = 'outcomes'
 
 function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
-  return `pilot_tradelab_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
+  return `pilot_tradebook_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
 }
 function readFlag(userId: string, orgId: string | null | undefined, suffix: string) {
   try { return localStorage.getItem(flagKey(userId, orgId, suffix)) === '1' } catch { return false }
@@ -42,15 +45,14 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
-export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBannerProps) {
-  const [dismissed, setDismissed] = useState<boolean>(() => readFlag(userId, orgId, DISMISS))
-  const [step1, setStep1] = useState<boolean>(() => readFlag(userId, orgId, STEP1))
-  const [step2, setStep2] = useState<boolean>(() => readFlag(userId, orgId, STEP2))
-  const [step3, setStep3] = useState<boolean>(() => readFlag(userId, orgId, STEP3))
+export function PilotTradeBookGetStarted({ userId, orgId, onOpenOutcomes }: PilotTradeBookGetStartedProps) {
+  const [dismissed, setDismissed] = useState<boolean>(() => userId ? readFlag(userId, orgId, DISMISS) : false)
+  const [step1, setStep1] = useState<boolean>(() => userId ? readFlag(userId, orgId, STEP1) : false)
+  const [step2, setStep2] = useState<boolean>(() => userId ? readFlag(userId, orgId, STEP2) : false)
+  const [step3, setStep3] = useState<boolean>(() => userId ? readFlag(userId, orgId, STEP3) : false)
 
-  // Reload from localStorage when user/org changes — picks up the
-  // right state when the analyst switches between pilot clients.
   useEffect(() => {
+    if (!userId) return
     setDismissed(readFlag(userId, orgId, DISMISS))
     setStep1(readFlag(userId, orgId, STEP1))
     setStep2(readFlag(userId, orgId, STEP2))
@@ -58,40 +60,32 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
   }, [userId, orgId])
 
   const markStep = useCallback((suffix: string, setter: (v: boolean) => void) => {
-    writeFlag(userId, orgId, suffix)
+    if (userId) writeFlag(userId, orgId, suffix)
     setter(true)
   }, [userId, orgId])
 
-  // Listen for the three step events. Each only fires when this
-  // banner instance is alive — events dispatched while the user
-  // isn't on the lab page just no-op (the matching localStorage
-  // flag stays false), which is fine because the banner's whole
-  // job is on-page coaching.
   useEffect(() => {
-    // Defer the setState via queueMicrotask. Window events dispatch
-    // synchronously, so a dispatch that happens during a parent
-    // component's render (e.g., HoldingsSimulationTable kicks an
-    // event from a state-update callback) would otherwise call our
-    // setState during their render and trip React's "Cannot update
-    // a component while rendering a different component" warning.
-    // queueMicrotask runs after the current render flushes.
+    // See PilotTradeLabIntroBanner for why we queueMicrotask the
+    // listener bodies — keeps render-time event dispatchers from
+    // triggering setState in this banner during another component's
+    // render.
     const defer = (fn: () => void) => () => queueMicrotask(fn)
     const onStep1 = defer(() => markStep(STEP1, setStep1))
     const onStep2 = defer(() => markStep(STEP2, setStep2))
     const onStep3 = defer(() => markStep(STEP3, setStep3))
-    window.addEventListener('pilot-tradelab:rec-reviewed', onStep1)
-    window.addEventListener('pilot-tradelab:rec-sized', onStep2)
-    window.addEventListener('pilot-tradelab:executed', onStep3)
+    window.addEventListener('pilot-tradebook:trade-reviewed', onStep1)
+    window.addEventListener('pilot-tradebook:rationale-added', onStep2)
+    window.addEventListener('pilot-tradebook:opened-outcomes', onStep3)
     return () => {
-      window.removeEventListener('pilot-tradelab:rec-reviewed', onStep1)
-      window.removeEventListener('pilot-tradelab:rec-sized', onStep2)
-      window.removeEventListener('pilot-tradelab:executed', onStep3)
+      window.removeEventListener('pilot-tradebook:trade-reviewed', onStep1)
+      window.removeEventListener('pilot-tradebook:rationale-added', onStep2)
+      window.removeEventListener('pilot-tradebook:opened-outcomes', onStep3)
     }
   }, [markStep])
 
-  // Auto-dismiss when all three actions are done.
+  // Auto-dismiss when all three are done.
   useEffect(() => {
-    if (!dismissed && step1 && step2 && step3) {
+    if (!dismissed && step1 && step2 && step3 && userId) {
       writeFlag(userId, orgId, DISMISS)
       setDismissed(true)
     }
@@ -100,8 +94,14 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
   if (dismissed) return null
 
   const dismiss = () => {
-    writeFlag(userId, orgId, DISMISS)
+    if (userId) writeFlag(userId, orgId, DISMISS)
     setDismissed(true)
+  }
+
+  const handleOpenOutcomes = () => {
+    markStep(STEP3, setStep3)
+    try { window.dispatchEvent(new CustomEvent('pilot-tradebook:opened-outcomes')) } catch { /* ignore */ }
+    onOpenOutcomes()
   }
 
   return (
@@ -114,30 +114,36 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
         <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
           <Step
             n={1}
-            title="Review the recommendation"
-            hint="Click or expand the recommendation card on the left to see all the details."
+            title="Review the recorded decision"
+            hint="Click any trade row to expand its full audit (price, sizing, batch context)."
             done={step1}
           />
           <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
           <Step
             n={2}
-            title="Select the recommendation"
-            hint="Check the box on the recommendation card in the Trade Ideas panel on the left to import it into the holdings table."
+            title="Capture your rationale"
+            hint="Add a why-now note on the trade row — Tesseract scores against this later."
             done={step2}
           />
           <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
-          <Step
-            n={3}
-            title="Select the trade and execute"
-            hint="Check the box on the trade in the holdings table, then click Execute."
-            done={step3}
-          />
+          <button
+            type="button"
+            onClick={handleOpenOutcomes}
+            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
+          >
+            <Step
+              n={3}
+              title="Open Outcomes"
+              hint="See how the decision is performing and unlock the rest of Tesseract."
+              done={step3}
+            />
+          </button>
         </div>
         <button
           onClick={dismiss}
           className="ml-auto -my-1 p-1.5 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
           title="Dismiss"
-          aria-label="Dismiss Trade Lab intro"
+          aria-label="Dismiss Trade Book intro"
         >
           <X className="h-4 w-4" />
         </button>
@@ -157,7 +163,7 @@ function Step({ n, title, hint, done }: { n: number; title: string; hint: string
       >
         {done ? <Check className="h-3 w-3" /> : n}
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 text-left">
         <div
           className={clsx(
             "text-[12px] font-semibold leading-tight whitespace-nowrap",
