@@ -384,6 +384,7 @@ async function fetchIdeas(assetId: string): Promise<IdeaRow[]> {
       action,
       rationale,
       created_at,
+      origin_metadata,
       users:created_by (first_name, last_name),
       portfolios:portfolio_id (id, name)
     `)
@@ -398,7 +399,12 @@ async function fetchIdeas(assetId: string): Promise<IdeaRow[]> {
     action: row.action || 'buy',
     rationale: row.rationale,
     created_at: row.created_at,
-    creator: row.users || null,
+    // Pilot-seeded ideas show as authored by "Pilot" (a synthetic
+    // persona) regardless of the real created_by, so the user doesn't
+    // see the platform admin or their own name attached to demo data.
+    creator: row.origin_metadata?.pilot_seed === true
+      ? { first_name: 'Pilot', last_name: null }
+      : (row.users || null),
     portfolio: row.portfolios || null,
   }))
 }
@@ -475,10 +481,11 @@ interface RecommendationRow {
 }
 
 async function fetchRecommendations(assetId: string): Promise<RecommendationRow[]> {
-  // Get trade_queue_item IDs for this asset
+  // Get trade_queue_item IDs for this asset, plus origin_metadata so we
+  // can override the displayed author for pilot-seeded recommendations.
   const { data: items, error: itemsErr } = await supabase
     .from('trade_queue_items')
-    .select('id, action')
+    .select('id, action, origin_metadata')
     .eq('asset_id', assetId)
 
   if (itemsErr) throw itemsErr
@@ -486,6 +493,9 @@ async function fetchRecommendations(assetId: string): Promise<RecommendationRow[
 
   const itemIds = items.map(i => i.id)
   const actionMap = new Map(items.map(i => [i.id, i.action]))
+  const pilotSeededItemIds = new Set(
+    items.filter((i: any) => i.origin_metadata?.pilot_seed === true).map(i => i.id)
+  )
 
   // Read from decision_requests + submission_snapshot instead of trade_proposals
   const { data, error } = await supabase
@@ -508,6 +518,7 @@ async function fetchRecommendations(assetId: string): Promise<RecommendationRow[
 
   return (data || []).map((row: any) => {
     const snap = row.submission_snapshot as Record<string, any> | null
+    const isPilotSeeded = pilotSeededItemIds.has(row.trade_queue_item_id)
     return {
       id: row.id,
       user_id: row.requested_by,
@@ -517,7 +528,10 @@ async function fetchRecommendations(assetId: string): Promise<RecommendationRow[
       shares: snap?.shares ?? null,
       notes: snap?.notes ?? null,
       created_at: snap?.submitted_at || row.created_at,
-      user: row.requester || null,
+      // Override author display for pilot-seeded data — see fetchIdeas.
+      user: isPilotSeeded
+        ? { first_name: 'Pilot', last_name: null }
+        : (row.requester || null),
       portfolio: row.portfolio || null,
     }
   })

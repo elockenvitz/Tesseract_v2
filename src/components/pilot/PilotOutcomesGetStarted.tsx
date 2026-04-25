@@ -108,61 +108,48 @@ export function PilotOutcomesGetStarted({ userId, orgId, onStartResearch }: Pilo
   }
 
   return (
-    <div className="mx-5 mt-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-gradient-to-r from-emerald-50 via-teal-50 to-primary-50 dark:from-emerald-950/40 dark:via-teal-950/20 dark:to-primary-950/30 px-4 py-3">
-      <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center flex-shrink-0">
-          <Trophy className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+    <div className="flex-shrink-0 bg-gradient-to-r from-emerald-50 via-teal-50 to-primary-50 dark:from-emerald-950/40 dark:via-teal-950/20 dark:to-primary-950/30 border-b border-emerald-200 dark:border-emerald-800/60">
+      <div className="px-6 py-3 flex items-start gap-4">
+        <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-semibold shrink-0 mt-0.5">
+          <Trophy className="h-4 w-4" />
+          <span className="text-[12px] uppercase tracking-wider whitespace-nowrap">Finish the loop</span>
         </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-              <Sparkles className="w-2.5 h-2.5" />
-              You've reached Outcomes — full Tesseract unlocked
-            </span>
-          </div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-            One more pass and you've closed the loop
-          </p>
-          <ol className="space-y-1.5">
-            <Step
-              n={1}
-              title="Inspect the result"
-              hint="Click your decision in the table to see how Outcomes scored the thesis."
-              done={step1}
-            />
-            <Step
-              n={2}
-              title="Review the next-step actions"
-              hint={`Look under "How it's performing" in the right pane for follow-on options.`}
-              done={step2}
-            />
+        <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
+          <Step
+            n={1}
+            title="Inspect the result"
+            hint="Click your decision in the table to see how Outcomes scored the thesis."
+            done={step1}
+          />
+          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
+          <Step
+            n={2}
+            title="Review the next-step actions"
+            hint={`Look under "How it's performing" in the right pane for follow-on options.`}
+            done={step2}
+          />
+          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
+          <button
+            type="button"
+            onClick={handleStartResearch}
+            className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
+          >
             <Step
               n={3}
               title="Start your next research thread"
               hint="Open an asset page and begin the next idea — the loop runs continuously."
               done={step3}
             />
-          </ol>
-        </div>
-
-        <div className="flex flex-col items-stretch gap-1.5 flex-shrink-0">
-          <button
-            onClick={handleStartResearch}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
-          >
-            Start research
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={dismiss}
-            className="self-end p-1 rounded-md hover:bg-white/60 dark:hover:bg-gray-800/60 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            title="Dismiss"
-            aria-label="Dismiss"
-          >
-            <X className="w-3.5 h-3.5" />
           </button>
         </div>
+        <button
+          onClick={dismiss}
+          className="ml-auto -my-1 p-1.5 rounded text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/60 dark:text-emerald-400 dark:hover:text-emerald-200 dark:hover:bg-emerald-900/30 transition-colors shrink-0"
+          title="Dismiss"
+          aria-label="Dismiss Outcomes intro"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
     </div>
   )
@@ -170,19 +157,19 @@ export function PilotOutcomesGetStarted({ userId, orgId, onStartResearch }: Pilo
 
 function Step({ n, title, hint, done }: { n: number; title: string; hint: string; done: boolean }) {
   return (
-    <li className="flex items-start gap-2">
+    <div className="flex items-start gap-2 min-w-0">
       <span
         className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm mt-px",
+          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm",
           done ? "bg-emerald-500 text-white" : "bg-emerald-600 text-white",
         )}
       >
         {done ? <Check className="h-3 w-3" /> : n}
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 text-left">
         <div
           className={clsx(
-            "text-[11px] font-semibold leading-tight",
+            "text-[12px] font-semibold leading-tight whitespace-nowrap",
             done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white",
           )}
         >
@@ -190,13 +177,13 @@ function Step({ n, title, hint, done }: { n: number; title: string; hint: string
         </div>
         <div
           className={clsx(
-            "text-[10px] leading-snug",
+            "text-[11px] leading-snug whitespace-nowrap",
             done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400",
           )}
         >
           {hint}
         </div>
       </div>
-    </li>
+    </div>
   )
 }

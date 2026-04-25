@@ -55,7 +55,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, isLoading: progressLoading } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -145,9 +145,11 @@ export function usePilotMode(): PilotModeState {
   const isLoading = orgLoading || progressLoading
   // Graduation overrides everything: the user has completed the loop
   // and earned the full app — render them as a non-pilot regardless
-  // of org flag state.
+  // of org flag state. Use the cached graduation hint while loading so
+  // a post-graduation user doesn't see the pilot dashboard flash on
+  // every hard refresh before the pilot_progress query resolves.
   const effectiveIsPilot = isLoading
-    ? (hasGraduated ? false : cachedIsPilot)
+    ? ((hasGraduated || cachedHasGraduated) ? false : cachedIsPilot)
     : (hasGraduated ? false : isPilot)
 
   // Keep the cache fresh so the next cold refresh has the correct hint.

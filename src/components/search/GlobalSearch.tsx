@@ -7,6 +7,8 @@ import {
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { TAB_TYPE_TO_PILOT_FEATURE } from '../../lib/pilot/pilot-access'
 
 // Static pages/tabs that should be discoverable via search
 const STATIC_PAGES = [
@@ -165,6 +167,7 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const stableResultsRef = useRef<SearchResult[]>([])
+  const pilotMode = usePilotMode()
 
   // Debounce with 250ms for smoother experience
   useEffect(() => {
@@ -174,15 +177,41 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
     return () => clearTimeout(timer)
   }, [query])
 
+  // Pilot users see only the pages they actually have access to
+  // right now — search results expand naturally as features unlock
+  // (Trade Book / Outcomes flip to 'full' after first commit, then
+  // graduation removes the filter entirely). Hidden features stay
+  // out of search so a pilot can't navigate to a page that's gated
+  // behind a CTA they haven't reached yet. Non-pilots see every
+  // page as usual.
+  const isPilotForGate = pilotMode.effectiveIsPilot && !pilotMode.hasGraduated
+  const visibleStaticPages = useMemo(() => {
+    if (!isPilotForGate) return STATIC_PAGES
+    return STATIC_PAGES.filter(page => {
+      const featureKey = TAB_TYPE_TO_PILOT_FEATURE[page.id]
+      // Pages with no mapped feature (templates, audit, asset-allocation)
+      // are out of the pilot loop entirely — keep them hidden during
+      // the pilot to avoid sending the user into surfaces that don't
+      // fit the guided flow.
+      if (!featureKey) return false
+      const access = pilotMode.access[featureKey]
+      return access !== 'hidden'
+    })
+  }, [isPilotForGate, pilotMode.access])
+
   const { data: searchResults = [], isFetching } = useQuery({
-    queryKey: ['global-search', debouncedQuery],
+    // Re-key on the access state so a flag change forces a fresh
+    // result list (otherwise unlocking Trade Book mid-session would
+    // leave it absent from cached search results).
+    queryKey: ['global-search', debouncedQuery, isPilotForGate, JSON.stringify(pilotMode.access)],
     queryFn: async () => {
       if (!debouncedQuery.trim()) return []
 
       const q = debouncedQuery.trim().toLowerCase()
 
-      // Filter static pages that match the search query
-      const matchingPages = STATIC_PAGES.filter(page =>
+      // Filter static pages that match the search query — using
+      // `visibleStaticPages` so the result set respects pilot gating.
+      const matchingPages = visibleStaticPages.filter(page =>
         page.title.toLowerCase().includes(q) ||
         page.subtitle.toLowerCase().includes(q) ||
         page.keywords.some(kw => kw.includes(q))

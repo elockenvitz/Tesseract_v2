@@ -83,6 +83,42 @@ import type {
 
 type OutcomesSubTab = 'decisions' | 'scorecards'
 
+// Outcomes is rendered via switch-on-active-tab in DashboardPage, so
+// switching to another tab unmounts this page and resets local state.
+// Persist the user-visible "place" (selection, filters, sort, sub-tab)
+// to sessionStorage so returning to the tab restores the same view.
+// SessionStorage (not localStorage) — we want it to live for the
+// session, not bleed across browser restarts.
+interface PersistedOutcomesState {
+  activeTab: OutcomesSubTab
+  selectedPortfolioId: string | null
+  selectedId: string | null
+  activeChipKey: string
+  typeFilter: string | null
+  tickerSearch: string
+  nameSearch: string
+  portfolioFilter: string | null
+  issueSearch: string
+  actionFilter: string | null
+  ownerFilter: string | null
+  sortBy: string
+  sortDesc: boolean
+  filters: Partial<AccountabilityFilters>
+}
+function outcomesStateKey(userId: string | undefined, orgId: string | null) {
+  return `outcomes_page_state_${userId || 'anon'}_${orgId || 'no-org'}`
+}
+function readOutcomesState(userId: string | undefined, orgId: string | null): Partial<PersistedOutcomesState> | null {
+  try {
+    const raw = sessionStorage.getItem(outcomesStateKey(userId, orgId))
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+function writeOutcomesState(userId: string | undefined, orgId: string | null, value: PersistedOutcomesState) {
+  try { sessionStorage.setItem(outcomesStateKey(userId, orgId), JSON.stringify(value)) } catch { /* ignore */ }
+}
+
 // ============================================================
 // Constants
 // ============================================================
@@ -1077,20 +1113,40 @@ const REFLECTION_THESIS_OPTIONS: Array<{ value: ThesisOutcome; label: string }> 
  *  thesis-played-out (segmented) and a short reflection note. Both
  *  are optional; persisting any value flips the row's verdict to
  *  "Reviewed". */
-function YourReflectionSection({ row, intel }: { row: AccountabilityRow; intel: DecisionIntelligence }) {
+// =============================================================================
+// Reflections — single merged surface that replaces the prior
+// "Your Reflection" + "What We Learned" sections.
+//
+// The two sections were functionally overlapping: structured review
+// (decision_reviews: thesis_played_out + process_note) on one side,
+// freeform thread (decision_reflections: multi-entry notes) on the
+// other. Side-by-side they read as the same prompt asked twice. The
+// merged section keeps both data sources but presents them as one
+// focused block: the structured "how did the thesis evolve" + a
+// short note up top, then the running thread of additional notes
+// underneath. Single sectionId="reflection" so the "Add a
+// reflection" CTA in NextStepsSection can pop it open.
+// =============================================================================
+
+function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: DecisionIntelligence }) {
   const { user } = useAuth()
-  const { data: review, isLoading } = useDecisionReview(row.decision_id)
+  const { data: review, isLoading: reviewLoading } = useDecisionReview(row.decision_id)
   const upsert = useUpsertDecisionReview()
+  const { data: threadData, isLoading: threadLoading } = useDecisionReflections(row.decision_id)
+  const addReflection = useAddReflection()
 
-  const [draftNote, setDraftNote] = useState<string>('')
-  const [noteDirty, setNoteDirty] = useState(false)
+  const [threadDraft, setThreadDraft] = useState('')
 
-  React.useEffect(() => {
-    setDraftNote(review?.process_note || '')
-    setNoteDirty(false)
-  }, [review?.process_note, row.decision_id])
+  const reflections = threadData?.reflections || []
+  const acceptedTradeId = threadData?.acceptedTradeId || null
+  const decisionRequestId = threadData?.decisionRequestId || null
+  const canAddThreadEntry = !!(acceptedTradeId || decisionRequestId)
+  const isPassed = row.category === 'passed'
+  const isLoading = reviewLoading || threadLoading
 
-  const hasReflected = !!review?.thesis_played_out || !!(review?.process_note || '').trim()
+  const hasReflected = !!review?.thesis_played_out
+    || !!(review?.process_note || '').trim()
+    || reflections.length > 0
   // Surface the amber dot when the user hasn't reflected yet on a row
   // the engine flags as monitoring or needs_context.
   const needsReflection =
@@ -1110,69 +1166,176 @@ function YourReflectionSection({ row, intel }: { row: AccountabilityRow; intel: 
     })
   }
 
-  return (
-    <StorySection
-      icon={Pencil}
-      title="Your Reflection"
-      defaultOpen={false}
-      needsAttention={needsReflection}
-      badge={hasReflected ? (
+  const handleAddThreadEntry = () => {
+    if (!threadDraft.trim() || !user?.id || !canAddThreadEntry) return
+    addReflection.mutate({
+      acceptedTradeId,
+      decisionRequestId,
+      userId: user.id,
+      content: threadDraft.trim(),
+    })
+    setThreadDraft('')
+  }
+
+  // Composite badge: "Reviewed" wins (the structured review is the
+  // primary signal); a count badge takes over when only thread
+  // entries exist.
+  const badge = (() => {
+    if (review?.thesis_played_out || (review?.process_note || '').trim()) {
+      return (
         <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
           Reviewed
         </span>
-      ) : undefined}
+      )
+    }
+    if (reflections.length > 0) {
+      return (
+        <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">
+          {reflections.length}
+        </span>
+      )
+    }
+    return undefined
+  })()
+
+  const threadPlaceholder = isPassed
+    ? 'In hindsight, was passing the right call? What did you learn that would change the next decision?'
+    : 'What did you learn? What should you do differently next time?'
+
+  return (
+    <StorySection
+      icon={Pencil}
+      title="Reflections"
+      defaultOpen={false}
+      sectionId="reflection"
+      needsAttention={needsReflection}
+      badge={badge}
     >
       {isLoading ? (
         <p className="text-[10px] text-gray-300">Loading…</p>
       ) : (
-        <div className="space-y-3">
-          {/* Thesis evolution — single segmented row, four observational
-              choices, auto-save on click. Frames the question as
-              monitoring (how did things evolve?) rather than grading. */}
-          <div className="space-y-1">
-            <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">How did the thesis evolve?</div>
-            <div className="flex flex-wrap gap-1">
-              {REFLECTION_THESIS_OPTIONS.map(opt => {
-                const selected = review?.thesis_played_out === opt.value
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    disabled={upsert.isPending}
-                    onClick={() => persist({ thesis_played_out: opt.value })}
-                    className={`text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
-                      selected
-                        ? 'border-primary-400 bg-primary-50 text-primary-700 ring-2 ring-primary-200'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                    } ${upsert.isPending ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  >
-                    {opt.label}
-                  </button>
-                )
-              })}
+        <div className="space-y-4">
+          {/* ── Structured review (decision_reviews) ───────────── */}
+          <div className="space-y-3">
+            {/* Thesis evolution — single segmented row, four
+                observational choices, auto-save on click. */}
+            <div className="space-y-1">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">How did the thesis evolve?</div>
+              <div className="flex flex-wrap gap-1">
+                {REFLECTION_THESIS_OPTIONS.map(opt => {
+                  const selected = review?.thesis_played_out === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={upsert.isPending}
+                      onClick={() => persist({ thesis_played_out: opt.value })}
+                      className={`text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
+                        selected
+                          ? 'border-primary-400 bg-primary-50 text-primary-700 ring-2 ring-primary-200'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      } ${upsert.isPending ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
+
+            {upsert.isError && (
+              <p className="text-[10px] text-red-600">Failed to save. {(upsert.error as any)?.message || ''}</p>
+            )}
           </div>
 
-          {/* Reflection note — short textarea. Optional. */}
-          <div className="space-y-1">
-            <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">Reflection note</div>
-            <textarea
-              value={draftNote}
-              onChange={e => { setDraftNote(e.target.value); setNoteDirty(true) }}
-              onBlur={() => {
-                if (!noteDirty) return
-                persist({ process_note: draftNote.trim() || null })
-                setNoteDirty(false)
-              }}
-              rows={2}
-              placeholder="Anything you'd want to remember about this decision…"
-              className="w-full text-[11px] px-2 py-1.5 rounded border border-gray-200 bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-300 leading-relaxed resize-none"
-            />
-            {noteDirty && <p className="text-[9px] text-gray-400 italic">Saves on blur.</p>}
-          </div>
+          {/* ── Reflection notes — comment-feed style ───────────
+              Single feed of dated entries (decision_reflections),
+              with the prior single `process_note` from
+              decision_reviews shown as a synthetic first entry so
+              older sessions' notes don't disappear. New entries
+              always go into the thread. */}
+          {(reflections.length > 0 || (review?.process_note || '').trim() || canAddThreadEntry || (isPassed && row.decision_note)) && (
+            <div className="space-y-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">
+                Reflection notes
+                {reflections.length > 0 && (
+                  <span className="text-gray-400 normal-case font-normal ml-1.5">({reflections.length})</span>
+                )}
+              </div>
 
-          {upsert.isError && (
-            <p className="text-[10px] text-red-600">Failed to save. {(upsert.error as any)?.message || ''}</p>
+              {/* Synthetic first entry — older "process_note" from
+                  decision_reviews when one exists. Read-only (the
+                  user can append new notes via the composer below
+                  to keep the feed append-only and audited). */}
+              {(review?.process_note || '').trim() && (
+                <div className="flex gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Pencil className="w-3 h-3 text-emerald-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{review!.process_note}</p>
+                    <p className="text-[9px] text-gray-400 mt-0.5">
+                      Initial reflection
+                      {review?.created_at && (
+                        <> &middot; {format(new Date(review.created_at), 'MMM d')}</>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {reflections.length > 0 && (
+                <div className="space-y-3">
+                  {reflections.map(r => (
+                    <div key={r.id} className="flex gap-2.5">
+                      <div className="w-5 h-5 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <User className="w-3 h-3 text-indigo-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{r.content}</p>
+                        <p className="text-[9px] text-gray-400 mt-0.5">
+                          {r.user_name} &middot; {format(new Date(r.created_at), 'MMM d')}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Decision note from rejection/deferral (for passed decisions) */}
+              {isPassed && row.decision_note && reflections.length === 0 && !(review?.process_note || '').trim() && (
+                <div className="rounded-md bg-gray-50 border border-gray-100 px-3 py-2.5">
+                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Decision note</div>
+                  <p className="text-[11px] text-gray-600 leading-relaxed">{row.decision_note}</p>
+                </div>
+              )}
+
+              {canAddThreadEntry && (
+                <div className="pt-1">
+                  <textarea
+                    value={threadDraft}
+                    onChange={e => setThreadDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddThreadEntry() } }}
+                    placeholder={threadPlaceholder}
+                    rows={2}
+                    className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none"
+                  />
+                  {threadDraft.trim() && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button
+                        onClick={handleAddThreadEntry}
+                        disabled={addReflection.isPending}
+                        className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                      >
+                        {addReflection.isPending ? 'Saving…' : 'Post note'}
+                      </button>
+                      <button onClick={() => setThreadDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700">Cancel</button>
+                      <span className="text-[9px] text-gray-300 ml-auto">Enter to save, Shift+Enter for new line</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -1296,115 +1459,9 @@ function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
   )
 }
 
-// =============================================================================
-// Lessons Section — unified outcome reflection for any decision.
-// Replaces the old structured 8-field post-mortem with a simple narrative +
-// reflection thread. Available on ALL decisions (acted and passed).
-// =============================================================================
-
-function LessonsSection({ row }: { row: AccountabilityRow }) {
-  const { user } = useAuth()
-  const { data, isLoading } = useDecisionReflections(row.decision_id)
-  const addReflection = useAddReflection()
-  const [draft, setDraft] = useState('')
-
-  const reflections = data?.reflections || []
-  const acceptedTradeId = data?.acceptedTradeId || null
-  const decisionRequestId = data?.decisionRequestId || null
-  const canAdd = !!(acceptedTradeId || decisionRequestId)
-  const isPassed = row.category === 'passed'
-
-  const handleSubmit = () => {
-    if (!draft.trim() || !user?.id || !canAdd) return
-    addReflection.mutate({
-      acceptedTradeId,
-      decisionRequestId,
-      userId: user.id,
-      content: draft.trim(),
-    })
-    setDraft('')
-  }
-
-  const placeholder = isPassed
-    ? 'In hindsight, was passing the right call? What did you learn that would change the next decision?'
-    : 'What did you learn? What should you do differently next time?'
-
-  return (
-    <StorySection
-      icon={MessageSquare}
-      title="What We Learned"
-      defaultOpen={false}
-      needsAttention={false}
-      badge={reflections.length > 0 ? (
-        <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">{reflections.length}</span>
-      ) : undefined}
-    >
-      {isLoading ? (
-        <p className="text-[10px] text-gray-300">Loading...</p>
-      ) : (
-        <div className="space-y-2">
-          {/* Existing reflections */}
-          {reflections.length > 0 && (
-            <div className="space-y-3">
-              {reflections.map(r => (
-                <div key={r.id} className="flex gap-2.5">
-                  <div className="w-5 h-5 rounded-full bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <User className="w-3 h-3 text-indigo-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{r.content}</p>
-                    <p className="text-[9px] text-gray-400 mt-0.5">
-                      {r.user_name} &middot; {format(new Date(r.created_at), 'MMM d')}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Decision note from rejection/deferral (for passed decisions) */}
-          {isPassed && row.decision_note && reflections.length === 0 && (
-            <div className="rounded-md bg-gray-50 border border-gray-100 px-3 py-2.5">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Decision note</div>
-              <p className="text-[11px] text-gray-600 leading-relaxed">{row.decision_note}</p>
-            </div>
-          )}
-
-          {/* Input */}
-          {canAdd ? (
-            <div className="pt-1">
-              <textarea
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } }}
-                placeholder={placeholder}
-                rows={2}
-                className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none"
-              />
-              {draft.trim() && (
-                <div className="flex items-center gap-2 mt-1.5">
-                  <button
-                    onClick={handleSubmit}
-                    disabled={addReflection.isPending}
-                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                  >
-                    {addReflection.isPending ? 'Saving...' : 'Save'}
-                  </button>
-                  <button onClick={() => setDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700">Cancel</button>
-                  <span className="text-[9px] text-gray-300 ml-auto">Enter to save, Shift+Enter for new line</span>
-                </div>
-              )}
-            </div>
-          ) : reflections.length === 0 ? (
-            <p className="text-[10px] text-gray-400 italic">
-              {isPassed ? 'No linked decision record found.' : 'No learning captured yet.'}
-            </p>
-          ) : null}
-        </div>
-      )}
-    </StorySection>
-  )
-}
+// LessonsSection has been merged into ReflectionsSection above.
+// Keeping the section split made the reflection moment feel diffuse —
+// the same prompt asked twice in two different surfaces.
 
 /** Loop footer — small horizontal "Idea → Decision → Execution →
  *  Outcome" strip rendered at the bottom of the detail panel. The
@@ -1870,8 +1927,6 @@ function DetailPanel({
           return (
             <>
               <ConsiderationsSection row={row} />
-              <YourReflectionSection row={row} intel={intel} />
-              <LessonsSection row={row} />
               {/* More suggestions below the primary CTA. Renders the
                   full 1–2 button list so the secondary actions stay
                   reachable without crowding the primary block. */}
@@ -1879,6 +1934,17 @@ function DetailPanel({
             </>
           )
         })()}
+
+        {/* Reflections / Where-to-next stay OUTSIDE the
+            meaningful-outcome gate. Even a flat trade or a row with
+            no price data yet benefits from capturing the user's
+            read on the thesis (the system needs the reflection
+            regardless of whether the price moved), and the
+            next-move CTAs apply universally. ReflectionsSection has
+            `sectionId="reflection"` so the "Add a reflection" CTA
+            in NextStepsSection can pop it open. */}
+        <ReflectionsSection row={row} intel={intel} />
+        <NextStepsSection row={row} />
 
         {/* (Execution lag moved into the Execution section above so
             it sits with the other execution facts. The loop-footer
@@ -2331,29 +2397,21 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
           {row.move_since_decision_pct === null && row.move_since_execution_pct === null && !lifecycle && (
             <EmptyField text="Outcome not yet measurable — no price data available" />
           )}
-
-          {/* ── Next steps — what to do with this analysis ─────────
-              Closes the loop: every committed decision should
-              produce one of these three follow-ons. Surfaces
-              regardless of P&L state because reflection is the
-              point — a flat trade still teaches you something.
-              Each click fires `pilot-outcomes:next-action-viewed`
-              so the pilot Get Started banner can tick step 2. */}
-          <NextStepsFooter row={row} />
         </div>
       )}
     </StorySection>
   )
 }
 
-// ─── Next-step CTAs surfaced under "How it's performing" ──────────
-// Each option is a one-click jump to the right next surface — open
-// a new trade idea on the same asset, refresh the asset's research
-// thread, or capture a reflection in this same Outcomes view. The
-// goal is to make "what do I do with this" obvious instead of
-// leaving the user staring at numbers.
+// ─── Where to next — its OWN StorySection sibling to the
+// "How it's performing" block. Splitting it out keeps the
+// performance numbers focused on data and elevates the next-step
+// CTAs to peer status with the other story blocks. The Reflection
+// CTA dispatches `outcomes:open-section { sectionId: 'reflection' }`
+// which the Your Reflection StorySection's listener catches —
+// expanding that section and scrolling it into view.
 
-function NextStepsFooter({ row }: { row: AccountabilityRow }) {
+function NextStepsSection({ row }: { row: AccountabilityRow }) {
   const fireNextActionView = () => {
     try { window.dispatchEvent(new CustomEvent('pilot-outcomes:next-action-viewed')) } catch { /* ignore */ }
   }
@@ -2365,6 +2423,9 @@ function NextStepsFooter({ row }: { row: AccountabilityRow }) {
   }
   const handleUpdateResearch = () => {
     fireNextActionView()
+    // Counts as the "start your next research thread" milestone for the
+    // Outcomes Get Started banner (step 3).
+    try { window.dispatchEvent(new CustomEvent('pilot-outcomes:research-started')) } catch { /* ignore */ }
     if (!row.asset_id) return
     window.dispatchEvent(new CustomEvent('navigate-to-asset', {
       detail: {
@@ -2383,51 +2444,50 @@ function NextStepsFooter({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <div className="border-t border-gray-100 pt-2.5 mt-1 space-y-2">
-      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
-        Where to next
+    <StorySection icon={ArrowUpRight} title="Where to next" defaultOpen={true}>
+      <div className="space-y-2">
+        <p className="text-[10px] text-gray-500 leading-snug">
+          The loop runs continuously — pick the next move on this thesis.
+        </p>
+        <div className="grid grid-cols-1 gap-1.5 mt-1">
+          <button
+            type="button"
+            onClick={handleNewIdea}
+            className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-amber-200 bg-amber-50 hover:bg-amber-100 dark:border-amber-800/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-800 dark:text-amber-200 text-[11px] font-semibold transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <Lightbulb className="w-3 h-3" />
+              Capture a new trade idea
+            </span>
+            <span className="text-[10px] font-normal text-amber-600/80 dark:text-amber-300/70">
+              {row.asset_symbol ?? 'this asset'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleUpdateResearch}
+            className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-sky-200 bg-sky-50 hover:bg-sky-100 dark:border-sky-800/60 dark:bg-sky-950/30 dark:hover:bg-sky-950/50 text-sky-800 dark:text-sky-200 text-[11px] font-semibold transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <FileText className="w-3 h-3" />
+              Update research on this asset
+            </span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={handleAddReflection}
+            className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 text-[11px] font-semibold transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <MessageSquare className="w-3 h-3" />
+              Add a reflection on this decision
+            </span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
       </div>
-      <p className="text-[10px] text-gray-500 leading-snug">
-        The loop runs continuously — pick the next move on this thesis.
-      </p>
-      <div className="grid grid-cols-1 gap-1.5 mt-1">
-        <button
-          type="button"
-          onClick={handleNewIdea}
-          className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-amber-200 bg-amber-50 hover:bg-amber-100 dark:border-amber-800/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-800 dark:text-amber-200 text-[11px] font-semibold transition-colors"
-        >
-          <span className="flex items-center gap-1.5">
-            <Lightbulb className="w-3 h-3" />
-            Capture a new trade idea
-          </span>
-          <span className="text-[10px] font-normal text-amber-600/80 dark:text-amber-300/70">
-            {row.asset_symbol ?? 'this asset'}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={handleUpdateResearch}
-          className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-sky-200 bg-sky-50 hover:bg-sky-100 dark:border-sky-800/60 dark:bg-sky-950/30 dark:hover:bg-sky-950/50 text-sky-800 dark:text-sky-200 text-[11px] font-semibold transition-colors"
-        >
-          <span className="flex items-center gap-1.5">
-            <FileText className="w-3 h-3" />
-            Update research on this asset
-          </span>
-          <ArrowRight className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          onClick={handleAddReflection}
-          className="w-full inline-flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 text-[11px] font-semibold transition-colors"
-        >
-          <span className="flex items-center gap-1.5">
-            <MessageSquare className="w-3 h-3" />
-            Add a reflection on this decision
-          </span>
-          <ArrowRight className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
+    </StorySection>
   )
 }
 
@@ -2761,28 +2821,67 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
 // ============================================================
 
 export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabilityPageProps) {
-  const [activeTab, setActiveTab] = useState<OutcomesSubTab>('decisions')
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null)
+  // Hoisted above state so the lazy initializers can hydrate from the
+  // sessionStorage snapshot keyed per (user, org).
+  const { user: pilotBannerUser } = useAuth()
+  const { currentOrgId: pilotBannerOrgId } = useOrganization()
+  const persisted = useMemo(
+    () => readOutcomesState(pilotBannerUser?.id, pilotBannerOrgId),
+    // Only re-hydrate on identity change, not on every render. Subsequent
+    // updates flow through the writer effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pilotBannerUser?.id, pilotBannerOrgId],
+  )
+
+  const [activeTab, setActiveTab] = useState<OutcomesSubTab>(() => persisted?.activeTab ?? 'decisions')
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(() => persisted?.selectedPortfolioId ?? null)
   const { data: allPortfolios = [] } = usePortfoliosForFilter()
-  const [filters, setFilters] = useState<Partial<AccountabilityFilters>>({
+  const [filters, setFilters] = useState<Partial<AccountabilityFilters>>(() => persisted?.filters ?? {
     showApproved: true,
     showRejected: true,
     showCancelled: true,
     resultFilter: 'all',
     directionFilter: [],
   })
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [activeChipKey, setActiveChipKey] = useState<string>('all')
+  const [selectedId, setSelectedId] = useState<string | null>(() => persisted?.selectedId ?? null)
+  const [activeChipKey, setActiveChipKey] = useState<string>(() => persisted?.activeChipKey ?? 'all')
   const [colFilterOpen, setColFilterOpen] = useState<string | null>(null)
-  const [typeFilter, setTypeFilter] = useState<string | null>(null)
-  const [tickerSearch, setTickerSearch] = useState('')
-  const [nameSearch, setNameSearch] = useState('')
-  const [portfolioFilter, setPortfolioFilter] = useState<string | null>(null)
-  const [issueSearch, setIssueSearch] = useState('')
-  const [actionFilter, setActionFilter] = useState<string | null>(null)
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<string>('date')
-  const [sortDesc, setSortDesc] = useState(true)
+  const [typeFilter, setTypeFilter] = useState<string | null>(() => persisted?.typeFilter ?? null)
+  const [tickerSearch, setTickerSearch] = useState(() => persisted?.tickerSearch ?? '')
+  const [nameSearch, setNameSearch] = useState(() => persisted?.nameSearch ?? '')
+  const [portfolioFilter, setPortfolioFilter] = useState<string | null>(() => persisted?.portfolioFilter ?? null)
+  const [issueSearch, setIssueSearch] = useState(() => persisted?.issueSearch ?? '')
+  const [actionFilter, setActionFilter] = useState<string | null>(() => persisted?.actionFilter ?? null)
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(() => persisted?.ownerFilter ?? null)
+  const [sortBy, setSortBy] = useState<string>(() => persisted?.sortBy ?? 'date')
+  const [sortDesc, setSortDesc] = useState(() => persisted?.sortDesc ?? true)
+
+  // Persist the user-visible "place" so leaving and returning to this
+  // tab restores the same selection / filters / sort. Keyed per user+org
+  // so each pilot client (and each user) tracks independently.
+  useEffect(() => {
+    writeOutcomesState(pilotBannerUser?.id, pilotBannerOrgId, {
+      activeTab,
+      selectedPortfolioId,
+      selectedId,
+      activeChipKey,
+      typeFilter,
+      tickerSearch,
+      nameSearch,
+      portfolioFilter,
+      issueSearch,
+      actionFilter,
+      ownerFilter,
+      sortBy,
+      sortDesc,
+      filters,
+    })
+  }, [
+    pilotBannerUser?.id, pilotBannerOrgId,
+    activeTab, selectedPortfolioId, selectedId, activeChipKey,
+    typeFilter, tickerSearch, nameSearch, portfolioFilter,
+    issueSearch, actionFilter, ownerFilter, sortBy, sortDesc, filters,
+  ])
 
   // Reaching Outcomes is the graduation moment — the user has walked
   // the full pilot loop (capture → develop → decide → review → analyze)
@@ -2791,8 +2890,6 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   // the next render and the rest of the app reconfigures itself.
   const pilotMode = usePilotMode()
   const { mark: markPilotStage, hasGraduated } = usePilotProgress()
-  const { user: pilotBannerUser } = useAuth()
-  const { currentOrgId: pilotBannerOrgId } = useOrganization()
   // True only on the very first time the user lands here (before
   // graduation has been marked). After graduation, the org-pilot
   // gate flips off and `pilotMode.isPilot` may still be true (org
