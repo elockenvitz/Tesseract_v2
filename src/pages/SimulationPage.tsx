@@ -2339,9 +2339,31 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const tradeAssetIds = new Set(persistedTrades.map(t => t.asset_id))
       const variantAssetIds = new Set(intentVariants.map(v => v.asset_id))
 
-      // Forward: trades without variants
+      // Build a set of asset_ids that have already been committed
+      // to the Trade Book for this portfolio. Without this, the
+      // forward sync below could re-create a variant for an asset
+      // the user just executed — the table would then re-render
+      // the just-decided AAPL row with its old "ready for decision"
+      // state instead of disappearing into baseline holdings.
+      const committedAssetIds = new Set<string>()
+      ;(acceptedTrades || []).forEach(at => {
+        if (at.asset_id) committedAssetIds.add(at.asset_id)
+      })
+
+      // Forward: trades without variants — and not already committed.
       const unsyncedTrades = persistedTrades.filter(
-        t => !variantAssetIds.has(t.asset_id) && checkboxOverridesRef.current.get(t.asset_id) !== false
+        t => !variantAssetIds.has(t.asset_id)
+          && !committedAssetIds.has(t.asset_id)
+          && checkboxOverridesRef.current.get(t.asset_id) !== false
+      )
+
+      // Reverse-sync addendum — if a variant exists for an asset
+      // that's already been committed, drop it. This is in addition
+      // to the orphan check below; even if the simulation_trade is
+      // still present (mid-cleanup race), a committed variant is
+      // never the right thing to render.
+      const committedVariantsToDrop = intentVariants.filter(
+        v => !v.id.startsWith('temp-') && committedAssetIds.has(v.asset_id)
       )
 
       // Reverse: delete orphaned variants (no matching trade). Only run during
@@ -2355,7 +2377,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               && checkboxOverridesRef.current.get(v.asset_id) !== true
           )
 
-      if (unsyncedTrades.length === 0 && orphanedVariants.length === 0) {
+      if (
+        unsyncedTrades.length === 0 &&
+        orphanedVariants.length === 0 &&
+        committedVariantsToDrop.length === 0
+      ) {
         initialSyncDoneRef.current = true
         return
       }
@@ -2368,6 +2394,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           v3DeleteVariant({ variantId: variant.id })
         } catch (err) {
           console.warn('⚠️ Failed to clean up orphaned variant:', err)
+        }
+      }
+
+      // Clean up variants for already-committed assets (runs every
+      // sync, not just initial — once an asset is committed, it
+      // should never have a working variant in the lab again).
+      for (const variant of committedVariantsToDrop) {
+        try {
+          v3DeleteVariant({ variantId: variant.id })
+        } catch (err) {
+          console.warn('⚠️ Failed to clean up committed variant:', err)
         }
       }
 
@@ -2420,7 +2457,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
 
     syncVariants()
-  }, [realTradeIds, tradeLab?.id, priceMap, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, v3DeleteVariant, simulation?.simulation_trades, getActiveWeightConfig, hasBenchmark])
+  }, [realTradeIds, tradeLab?.id, priceMap, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, v3DeleteVariant, simulation?.simulation_trades, getActiveWeightConfig, hasBenchmark, acceptedTrades])
 
   // Create simulation mutation
   const createSimulationMutation = useMutation({

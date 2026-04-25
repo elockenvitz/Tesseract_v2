@@ -369,6 +369,14 @@ async function foldTradesIntoActiveSimulations(
         ? sim.baseline_holdings.map((h: any) => ({ ...h }))
         : []
 
+      // Track total cash impact of this trade batch — every share
+      // increase at baseline price debits cash by the same amount,
+      // every share decrease credits it. Without this, total holding
+      // value drifts away from `baseline_total_value` and weights
+      // sum to over (or under) 100%. Buys + sells in one batch
+      // net out as a single cash adjustment at the end.
+      let cashDelta = 0
+
       for (const trade of trades) {
         const tradePrice = trade.price_at_acceptance != null ? Number(trade.price_at_acceptance) : null
         if (tradePrice == null || !Number.isFinite(tradePrice)) continue
@@ -378,32 +386,37 @@ async function foldTradesIntoActiveSimulations(
         if (targetShares == null && deltaShares == null) continue
 
         const idx = baseline.findIndex((h: any) => h.asset_id === trade.asset_id)
+        const prevShares = idx >= 0 ? Number(baseline[idx].shares) || 0 : 0
         let newShares: number
         if (targetShares != null) {
           newShares = targetShares
         } else {
-          const prev = idx >= 0 ? Number(baseline[idx].shares) || 0 : 0
-          newShares = prev + (deltaShares ?? 0)
+          newShares = prevShares + (deltaShares ?? 0)
         }
+        const sharesChange = newShares - prevShares
 
         if (newShares <= 0) {
-          if (idx >= 0) baseline.splice(idx, 1)
+          if (idx >= 0) {
+            // Position fully closed — credit cash for the disposed
+            // shares at the (preserved) baseline price.
+            const closedPrice = Number(baseline[idx].price) || tradePrice
+            cashDelta += prevShares * closedPrice
+            baseline.splice(idx, 1)
+          }
         } else if (idx >= 0) {
-          // Keep the EXISTING baseline price — the fold tracks ownership
-          // (shares) changes, not a mark-to-market revaluation. Overwriting
-          // with the trade execution price produced weird weight drift:
-          // a trim at a higher price than baseline would leave the
-          // remaining shares valued higher per share, bumping the
-          // position's displayed weight *up* instead of down. Preserving
-          // the baseline mark keeps weights consistent with the fixed
-          // `baseline_total_value` until the next EOD mark refreshes both.
+          // Keep the EXISTING baseline price — the fold tracks
+          // ownership (shares) changes, not a mark-to-market. Cash
+          // moves by sharesChange × baseline price so the total
+          // value stays pegged to baseline_total_value.
           const preservedPrice = Number(baseline[idx].price) || tradePrice
           baseline[idx].shares = newShares
           baseline[idx].price = preservedPrice
           baseline[idx].value = newShares * preservedPrice
+          cashDelta -= sharesChange * preservedPrice
         } else {
-          // New position — no prior baseline mark, so the trade price is
-          // the best we have. Gets refreshed on the next EOD mark.
+          // New position — no prior baseline mark, so the trade
+          // price is the best we have. Cash debits by the full
+          // notional at trade price. Refreshes on next EOD mark.
           const asset: any = (trade as any).asset || {}
           baseline.push({
             asset_id: trade.asset_id,
@@ -415,6 +428,22 @@ async function foldTradesIntoActiveSimulations(
             value: newShares * tradePrice,
             weight: 0,
           })
+          cashDelta -= newShares * tradePrice
+        }
+      }
+
+      // Apply the net cash adjustment to CASH_USD so the total
+      // holdings value stays equal to baseline_total_value and
+      // weights sum to ~100%.
+      if (cashDelta !== 0) {
+        const cashIdx = baseline.findIndex(
+          (h: any) => h.symbol === 'CASH_USD' || h.symbol === 'CASH',
+        )
+        if (cashIdx >= 0) {
+          const newCash = (Number(baseline[cashIdx].shares) || 0) + cashDelta
+          baseline[cashIdx].shares = newCash
+          baseline[cashIdx].price = 1
+          baseline[cashIdx].value = newCash
         }
       }
 

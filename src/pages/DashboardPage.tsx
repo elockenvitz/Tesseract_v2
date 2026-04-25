@@ -420,24 +420,34 @@ export function DashboardPage() {
       ? result.data.portfolio_id
       : result.title
 
-    // All state reads happen inside the functional updater so this is safe
-    // to call from stale-captured event listeners AND after async awaits.
-    // The updater decides: activate existing tab, replace blank tab, or append new tab.
-    let finalActiveId: string | null = null
+    // Compute the target active id from the CURRENT tabs state up
+    // front so we can call setActiveTabId without depending on the
+    // setTabs updater having run. React 18 may defer functional
+    // updaters, which previously caused finalActiveId to read null
+    // when called from synthetic-event chains (e.g. dispatching
+    // navigate-to-asset from a modal click). The updater below
+    // also writes finalActiveId as a fallback for any cases where
+    // the precomputed match misses (shouldn't happen in practice).
+    const findExistingTab = (tabsList: Tab[]) => tabsList.find(tab => {
+      if (tab.id === result.id) return true
+      if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
+      if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
+      if (result.type === 'coverage' && tab.type === 'coverage') return true
+      if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
+      if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
+      if (result.type === 'trade-book' && tab.type === 'trade-book') return true
+      if (result.type === 'workflows' && tab.type === 'workflows') return true
+      if (result.type === 'priorities' && tab.type === 'priorities') return true
+      return false
+    })
+    const precomputedExisting = findExistingTab(tabs)
+    const precomputedActiveId = precomputedExisting
+      ? precomputedExisting.id
+      : (tabs.find(t => t.id === activeTabIdRef.current)?.isBlank ? activeTabIdRef.current : result.id)
+
+    let finalActiveId: string | null = precomputedActiveId
     setTabs(prev => {
-      const existingTab = prev.find(tab => {
-        if (tab.id === result.id) return true
-        if (result.type === 'asset' && result.data?.symbol && tab.data?.symbol === result.data.symbol) return true
-        if (result.type === 'asset' && result.data?.symbol && tab.id === result.data.symbol) return true
-        // Singleton tabs: only one allowed per type
-        if (result.type === 'coverage' && tab.type === 'coverage') return true
-        if (result.type === 'trade-lab' && tab.type === 'trade-lab') return true
-        if (result.type === 'trade-queue' && tab.type === 'trade-queue') return true
-        if (result.type === 'trade-book' && tab.type === 'trade-book') return true
-        if (result.type === 'workflows' && tab.type === 'workflows') return true
-        if (result.type === 'priorities' && tab.type === 'priorities') return true
-        return false
-      })
+      const existingTab = findExistingTab(prev)
 
       if (existingTab) {
         finalActiveId = existingTab.id
