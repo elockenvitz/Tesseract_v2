@@ -19,6 +19,7 @@ import { useUpdateDecisionRequest, useAcceptFromInbox } from '../../hooks/useDec
 import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { useSidebarStore } from '../../stores/sidebarStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
@@ -54,30 +55,41 @@ export function ThoughtsSection({
   onOpenInspector,
 }: ThoughtsSectionProps) {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
+  const { currentOrgId } = useOrganization()
   const [captureMode, setCaptureMode] = useState<CaptureMode>('collapsed')
   // Pilot Get Started banner — visible until the pilot has captured
-  // their first trade idea OR explicitly dismisses it. Stored in
-  // localStorage so a returning user isn't re-nagged. Mirrors the
-  // dismiss pattern used by the Trade Lab and Idea Pipeline banners.
-  const pilotCaptureBannerKey = `pilot_capture_banner_dismissed_${user?.id || 'anon'}`
+  // their first trade idea OR explicitly dismisses it. Keyed per
+  // user+org so an analyst running multiple pilot clients sees a
+  // fresh banner for each new client (otherwise dismissing once in
+  // pilot org A would silently hide it in pilot org B too).
+  const pilotCaptureBannerKey = `pilot_capture_banner_dismissed_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
   const [pilotBannerDismissed, setPilotBannerDismissed] = useState<boolean>(() => {
     try {
-      return user?.id ? localStorage.getItem(pilotCaptureBannerKey) === '1' : false
+      return user?.id && currentOrgId ? localStorage.getItem(pilotCaptureBannerKey) === '1' : false
     } catch {
       return false
     }
   })
   useEffect(() => {
     try {
-      setPilotBannerDismissed(user?.id ? localStorage.getItem(pilotCaptureBannerKey) === '1' : false)
+      setPilotBannerDismissed(
+        user?.id && currentOrgId
+          ? localStorage.getItem(pilotCaptureBannerKey) === '1'
+          : false
+      )
     } catch { /* ignore */ }
-  }, [user?.id, pilotCaptureBannerKey])
+  }, [user?.id, currentOrgId, pilotCaptureBannerKey])
   const dismissPilotCaptureBanner = useCallback(() => {
     try { localStorage.setItem(pilotCaptureBannerKey, '1') } catch { /* ignore */ }
     setPilotBannerDismissed(true)
   }, [pilotCaptureBannerKey])
-  const showPilotCaptureBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && captureMode === 'collapsed'
+  // Banner only fires inside the Add Trade Idea form — the pilot UX
+  // hint is "here's how to fill this thing out", not a generic intro
+  // for the whole Quick Ideas surface. Hidden on the main capture
+  // mode picker so the right rail doesn't open with a wall of copy.
+  const showPilotCaptureBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && captureMode === 'trade_idea'
   const [currentIdeaType, setCurrentIdeaType] = useState<IdeaType>('thought')
   const [showPromptList, setShowPromptList] = useState(false)
   const [showPendingReview, setShowPendingReview] = useState(false)
@@ -184,6 +196,18 @@ export function ThoughtsSection({
 
     // Refresh recent ideas list
     invalidateRecentIdeas()
+
+    // Pilot dashboard's System Loop reads from the trade-queue-items
+    // queries to decide which stage is "done". The dashboard's queries
+    // share the `trade-queue-items` prefix so QuickTradeIdeaCapture's
+    // own invalidation already covers the dashboard. We still fire a
+    // window event as a belt-and-suspenders refresh signal so the
+    // listener can refetch defensively.
+    queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+    queryClient.refetchQueries({ queryKey: ['pilot-dashboard-recorded'] })
+    try {
+      window.dispatchEvent(new CustomEvent('pilot-loop:refresh', { detail: { reason: 'trade-idea-submitted' } }))
+    } catch { /* ignore */ }
 
     // Close the pane after a brief delay
     setTimeout(() => {
@@ -376,52 +400,6 @@ export function ThoughtsSection({
         </div>
       )}
 
-      {/* Pilot Get Started banner — same visual family as the
-          Trade Lab + Idea Pipeline intros. Walks the pilot through
-          what a "Trade Idea" entry actually is and why they should
-          capture it here. Auto-retires once they submit their first
-          trade idea (handleTradeIdeaSuccess) or after manual dismiss. */}
-      {showPilotCaptureBanner && (
-        <div className="bg-gradient-to-b from-amber-50 to-amber-100/30 dark:from-amber-900/25 dark:to-amber-900/5 border-b border-amber-200 dark:border-amber-800/60">
-          <div className="px-3 pt-3 pb-3 flex items-start gap-2">
-            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="text-[11px] uppercase tracking-wider">Get started</span>
-            </div>
-            <button
-              onClick={dismissPilotCaptureBanner}
-              className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
-              title="Dismiss"
-              aria-label="Dismiss capture intro"
-            >
-              <XIcon className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="px-3 pb-3 space-y-2">
-            <p className="text-[12px] font-semibold text-gray-900 dark:text-white leading-snug">
-              This is your Quick Capture sidebar — log new ideas the moment they hit you.
-            </p>
-            <ol className="space-y-1.5">
-              <PilotCaptureStep
-                n={1}
-                title="Click Trade Idea below"
-                hint="Each entry creates a card in the Idea Pipeline, ready to mature into a recommendation."
-              />
-              <PilotCaptureStep
-                n={2}
-                title="Add a quick thesis"
-                hint="A one-liner is enough — you can flesh it out later in the pipeline."
-              />
-              <PilotCaptureStep
-                n={3}
-                title="Submit"
-                hint="The new idea jumps into the Aware stage of your pipeline so the loop can pick it up."
-              />
-            </ol>
-          </div>
-        </div>
-      )}
-
       {/* Purpose statement - only show when no mode selected */}
       {captureMode === 'collapsed' && (
         <div className="px-3 pt-1 pb-2">
@@ -574,10 +552,52 @@ export function ThoughtsSection({
         {/* Capture form for trade ideas */}
         {captureMode === 'trade_idea' && (
           <div className="pt-3">
-            {/* Mode-specific guidance */}
-            <p className="mb-3 text-xs text-gray-400">
-              Capture a potential trade to review or decide on later.
-            </p>
+            {/* Pilot Get Started banner — lives inside the Add Trade
+                Idea form so the steps describe THIS form, not the
+                generic Quick Ideas picker. Auto-retires once the
+                pilot submits their first trade idea, or via manual
+                dismiss. Same visual family as the Trade Lab + Idea
+                Pipeline banners for cross-surface consistency. */}
+            {showPilotCaptureBanner && (
+              <div className="mb-3 rounded-md bg-gradient-to-b from-amber-50 to-amber-100/30 dark:from-amber-900/25 dark:to-amber-900/5 border border-amber-200 dark:border-amber-800/60">
+                <div className="px-3 pt-2.5 pb-2 flex items-start gap-2">
+                  <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold shrink-0 mt-0.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span className="text-[11px] uppercase tracking-wider">Get started</span>
+                  </div>
+                  <button
+                    onClick={dismissPilotCaptureBanner}
+                    className="ml-auto -my-1 p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
+                    title="Dismiss"
+                    aria-label="Dismiss capture intro"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="px-3 pb-3 space-y-2">
+                  <p className="text-[12px] font-semibold text-gray-900 dark:text-white leading-snug">
+                    Capture a potential trade — it lands in the Aware stage of your pipeline.
+                  </p>
+                  <ol className="space-y-1.5">
+                    <PilotCaptureStep
+                      n={1}
+                      title="Pick a ticker"
+                      hint="Search for the symbol you want to trade — that's the asset this idea is about."
+                    />
+                    <PilotCaptureStep
+                      n={2}
+                      title="Add a quick thesis and pick a portfolio"
+                      hint="A one-liner thesis is enough, and the portfolio tells Tesseract where this idea lives."
+                    />
+                    <PilotCaptureStep
+                      n={3}
+                      title="Submit"
+                      hint="The idea jumps into the Aware stage so the loop can pick it up."
+                    />
+                  </ol>
+                </div>
+              </div>
+            )}
 
             <QuickTradeIdeaCapture
               compact={true}

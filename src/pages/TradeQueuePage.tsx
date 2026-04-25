@@ -1505,19 +1505,19 @@ export function TradeQueuePage() {
               <Sparkles className="h-4 w-4" />
               <span className="text-[12px] uppercase tracking-wider">Get started</span>
             </div>
-            <div className="flex items-stretch gap-2 text-gray-700 dark:text-gray-300 min-w-0 flex-1 overflow-hidden">
+            <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
               <PilotPipelineStep
                 n={1}
                 title="Drag ideas through the pipeline"
                 hint="Click and drag ideas left to right through stages as they mature."
               />
-              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-3" />
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
               <PilotPipelineStep
                 n={2}
                 title="Open the Decision Inbox"
                 hint="The bottom drawer is where recommendations wait for your decision — click it."
               />
-              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-3" />
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
               <PilotPipelineStep
                 n={3}
                 title="Open in Trade Lab"
@@ -4525,15 +4525,15 @@ function TradeQueueCard({
 // hint so the user knows exactly what to do, not just "step 1."
 function PilotPipelineStep({ n, title, hint }: { n: number; title: string; hint: string }) {
   return (
-    <div className="flex items-start gap-2 min-w-0 flex-1">
+    <div className="flex items-start gap-2 min-w-0">
       <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm">
         {n}
       </span>
       <div className="min-w-0">
-        <div className="text-[12px] font-semibold text-gray-900 dark:text-white leading-tight truncate">
+        <div className="text-[12px] font-semibold text-gray-900 dark:text-white leading-tight whitespace-nowrap">
           {title}
         </div>
-        <div className="text-[11px] text-gray-600 dark:text-gray-400 leading-snug truncate">
+        <div className="text-[11px] text-gray-600 dark:text-gray-400 leading-snug whitespace-nowrap">
           {hint}
         </div>
       </div>

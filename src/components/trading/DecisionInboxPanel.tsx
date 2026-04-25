@@ -4,7 +4,7 @@
  * Three states: collapsed (slim strip), half (55%), fullscreen (100%).
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Gavel,
   ChevronUp,
@@ -14,6 +14,24 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { DecisionInbox } from './DecisionInbox'
+
+// Persist the "last acknowledged pending count" across tab navigation
+// and page refresh so amber ("new decision!") doesn't re-pin every time
+// the panel re-mounts. Keyed per-portfolio so different portfolios
+// track independently.
+const ACK_KEY_PREFIX = 'decision_inbox_acknowledged_count_'
+const ackKey = (portfolioId?: string) => `${ACK_KEY_PREFIX}${portfolioId || 'global'}`
+function readAck(portfolioId?: string): number {
+  try {
+    const raw = localStorage.getItem(ackKey(portfolioId))
+    if (!raw) return 0
+    const n = parseInt(raw, 10)
+    return Number.isFinite(n) ? n : 0
+  } catch { return 0 }
+}
+function writeAck(portfolioId: string | undefined, n: number) {
+  try { localStorage.setItem(ackKey(portfolioId), String(n)) } catch { /* ignore */ }
+}
 
 type DrawerSize = 'collapsed' | 'half' | 'full'
 
@@ -54,6 +72,26 @@ export function DecisionInboxPanel({
   // nothing to avoid the wrong-number flash.
   const displayCount = resolvedPendingCount ?? null
 
+  // Track the count the user has already SEEN — the moment they open the
+  // drawer, every pending row currently in the inbox is marked as
+  // acknowledged. The amber "new decision" tint then only returns when
+  // the count grows above that watermark (i.e. a genuinely new request
+  // arrived afterwards). Persisted to localStorage so the watermark
+  // survives tab navigation and page refresh — without this the amber
+  // state re-pins every time the panel re-mounts, defeating the
+  // acknowledgement flow.
+  const [acknowledgedCount, setAcknowledgedCountState] = useState<number>(() => readAck(portfolioId))
+  // Reload the watermark when the active portfolio changes — different
+  // portfolios track independently.
+  useEffect(() => {
+    setAcknowledgedCountState(readAck(portfolioId))
+  }, [portfolioId])
+  const setAcknowledgedCount = useCallback((n: number) => {
+    setAcknowledgedCountState(n)
+    writeAck(portfolioId, n)
+  }, [portfolioId])
+  const hasUnseen = (displayCount ?? 0) > acknowledgedCount
+
   // Derive size from controlled collapsed prop or internal state
   const size: DrawerSize = controlledCollapsed === true ? 'collapsed'
     : controlledCollapsed === false && internalSize === 'collapsed' ? 'half'
@@ -66,6 +104,9 @@ export function DecisionInboxPanel({
   const toggle = () => {
     if (onToggleCollapsed) {
       if (isCollapsed) {
+        // Opening — mark the current pending count as seen so the
+        // amber "new decision" tint resets to neutral.
+        setAcknowledgedCount(displayCount ?? 0)
         onToggleCollapsed() // open → half
         setInternalSize('half')
       } else {
@@ -73,7 +114,13 @@ export function DecisionInboxPanel({
         setInternalSize('collapsed')
       }
     } else {
-      setInternalSize(prev => prev === 'collapsed' ? 'half' : 'collapsed')
+      setInternalSize(prev => {
+        if (prev === 'collapsed') {
+          setAcknowledgedCount(displayCount ?? 0)
+          return 'half'
+        }
+        return 'collapsed'
+      })
     }
   }
 
@@ -93,17 +140,16 @@ export function DecisionInboxPanel({
         size === 'full' && "h-full",
       )}
     >
-      {/* Header strip — always visible. Pulsing amber tint when
-          collapsed AND there's a pending decision so the pilot's
-          eye lands on it; once opened or empty, the strip goes
-          neutral. The "click to open" hint reinforces that the
-          drawer is interactive (pilots told us they didn't realize
-          this was a click target). */}
+      {/* Header strip — always visible. Amber tint signals an
+          UNSEEN pending decision (collapsed AND the count is above
+          the watermark from the last time the user opened the
+          drawer). Once opened, the watermark catches up so the
+          strip stays neutral when the user closes it again. */}
       <button
         onClick={toggle}
         className={clsx(
           "flex-shrink-0 flex items-center justify-between px-4 h-11 cursor-pointer transition-colors group",
-          isCollapsed && (displayCount ?? 0) > 0
+          isCollapsed && hasUnseen
             ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:hover:bg-amber-900/30 border-t-2 border-t-amber-400 dark:border-t-amber-600"
             : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
         )}
@@ -111,13 +157,13 @@ export function DecisionInboxPanel({
         <div className="flex items-center gap-2">
           <Gavel className={clsx(
             "h-4 w-4",
-            isCollapsed && (displayCount ?? 0) > 0
+            isCollapsed && hasUnseen
               ? "text-amber-600 dark:text-amber-400"
               : "text-gray-400 dark:text-gray-500"
           )} />
           <span className={clsx(
             "text-[13px] font-semibold",
-            isCollapsed && (displayCount ?? 0) > 0
+            isCollapsed && hasUnseen
               ? "text-amber-900 dark:text-amber-200"
               : "text-gray-700 dark:text-gray-300"
           )}>
@@ -128,7 +174,7 @@ export function DecisionInboxPanel({
               {displayCount} pending
             </span>
           )}
-          {isCollapsed && (displayCount ?? 0) > 0 && (
+          {isCollapsed && hasUnseen && (
             <span className="hidden sm:inline text-[11px] text-amber-700 dark:text-amber-300 font-medium animate-pulse">
               · Click to review
             </span>

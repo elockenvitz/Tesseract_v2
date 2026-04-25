@@ -22,12 +22,12 @@
  * user is currently looking.
  */
 
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   ArrowRight, Workflow, CheckCircle2, Lightbulb, FileText,
-  ListChecks, Beaker, BookOpen, MessageSquare, Sparkles, Plus,
+  ListChecks, Beaker, BookOpen, Sparkles, Plus,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -44,7 +44,7 @@ interface PilotActionDashboardProps {
 
 // ── Stage definitions ─────────────────────────────────────────────
 
-type StageKey = 'capture' | 'develop' | 'decide' | 'record' | 'review' | 'improve'
+type StageKey = 'capture' | 'develop' | 'decide' | 'review' | 'analyze'
 
 interface StageMeta {
   key: StageKey
@@ -82,25 +82,18 @@ const STAGES: StageMeta[] = [
     accent: 'primary',
   },
   {
-    key: 'record',
-    label: 'Record',
-    description: 'Committing in Trade Lab writes the decision to the Trade Book — your system of record.',
+    key: 'review',
+    label: 'Review',
+    description: 'See the committed decision land on the Trade Book — your system of record for every trade.',
     icon: BookOpen,
     accent: 'violet',
   },
   {
-    key: 'review',
-    label: 'Review',
-    description: 'Outcomes interprets results and asks you to reflect on whether the thesis played out.',
-    icon: MessageSquare,
-    accent: 'emerald',
-  },
-  {
-    key: 'improve',
-    label: 'Improve',
-    description: 'Captured reflections become evidence for sharper future ideas and recommendations.',
+    key: 'analyze',
+    label: 'Analyze',
+    description: 'Reflect on whether the thesis played out — Outcomes turns those reflections into evidence for sharper future ideas.',
     icon: Sparkles,
-    accent: 'teal',
+    accent: 'emerald',
   },
 ]
 
@@ -158,8 +151,47 @@ export function PilotActionDashboard({
 }: PilotActionDashboardProps) {
   const { user } = useAuth()
   const { currentOrganization } = useOrganization()
+  const queryClient = useQueryClient()
   const { scenario, state, acceptedTrade, committedAt, hasReview } = usePilotScenarioStatus()
   const { hasUnlockedTradeBook, hasUnlockedOutcomes } = usePilotProgress()
+
+  // Listen for cross-component refresh signals (e.g., user submitted a
+  // trade idea in the right-hand capture sidebar). Without this, the
+  // System Loop's "stage 1 done?" check would lag behind the database
+  // until the next manual refresh.
+  useEffect(() => {
+    const handler = () => {
+      queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.refetchQueries({ queryKey: ['pilot-dashboard-recorded'] })
+    }
+    window.addEventListener('pilot-loop:refresh', handler)
+    return () => window.removeEventListener('pilot-loop:refresh', handler)
+  }, [queryClient])
+
+  // Realtime subscription to trade_queue_items inserts/updates — gives
+  // the dashboard a database-driven refresh path that doesn't depend on
+  // any specific component being mounted at submit time. Belt-and-
+  // suspenders alongside the React Query invalidations.
+  useEffect(() => {
+    if (!user?.id) return
+    const channel = supabase
+      .channel(`pilot-dashboard-tqi-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trade_queue_items' },
+        () => {
+          // Tiny delay so the insert is fully visible to readers before
+          // we refetch (avoids race against postgres replica lag).
+          setTimeout(() => {
+            queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+          }, 300)
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id, queryClient])
 
   // Pilot scenario context — passed when opening Trade Lab so the
   // recommendation card highlights immediately.
@@ -175,8 +207,19 @@ export function PilotActionDashboard({
 
   // ── Pipeline items (fuels Capture/Develop/Decide attention lists) ──
   const { data: pipelineItems, isLoading: pipelineLoading } = useQuery({
-    queryKey: ['pilot-dashboard-pipeline-items', currentOrganization?.id, pilotPortfolioId],
+    // Sharing the `trade-queue-items` prefix means every place in the
+    // app that invalidates that key (QuickTradeIdeaCapture, the
+    // pipeline page, etc.) automatically refreshes the dashboard's
+    // System Loop. Without this, the dashboard had its own private
+    // key and only refetched when explicitly nudged.
+    queryKey: ['trade-queue-items', 'pilot-dashboard-pipeline', currentOrganization?.id, pilotPortfolioId],
     enabled: !!currentOrganization?.id,
+    // Aggressive refresh strategy — the System Loop relies on this
+    // data being current, and the cost of an extra fetch is trivial.
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    staleTime: 0,
     queryFn: async () => {
       let q = supabase
         .from('trade_queue_items')
@@ -199,7 +242,6 @@ export function PilotActionDashboard({
         asset: { symbol: string | null; company_name: string | null } | null
       }>
     },
-    staleTime: 30_000,
   })
 
   // ── Recorded decisions (Record + Review + Improve stages) ──
@@ -242,8 +284,17 @@ export function PilotActionDashboard({
   // `trade_queue_items` so a freshly-typed thought from the right
   // sidebar shows up here even before it reaches the kanban. ──
   const { data: userCaptured } = useQuery({
-    queryKey: ['pilot-dashboard-user-captured', currentOrganization?.id, user?.id],
+    // Same reasoning as pipelineItems — share the `trade-queue-items`
+    // prefix so any in-app invalidation also refreshes this list.
+    queryKey: ['trade-queue-items', 'pilot-dashboard-user-captured', currentOrganization?.id, user?.id],
     enabled: !!currentOrganization?.id && !!user?.id,
+    // Same aggressive refresh strategy as pipelineItems — see comment
+    // there. The System Loop is the dashboard's most prominent state
+    // and pilots must see step 1 turn green the instant they submit.
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    staleTime: 0,
     queryFn: async () => {
       const [tqRes, qtRes] = await Promise.all([
         supabase
@@ -253,10 +304,14 @@ export function PilotActionDashboard({
           .eq('created_by', user!.id)
           .order('created_at', { ascending: false })
           .limit(10),
+        // quick_thoughts uses `created_by` as the owning user column —
+        // there's no `user_id` field. Wrong column name silently
+        // returned 0 rows, so a captured Thought never counted toward
+        // hasUserIdea even though it was saved.
         supabase
           .from('quick_thoughts')
           .select('id, content, idea_type, created_at')
-          .eq('user_id', user!.id)
+          .eq('created_by', user!.id)
           .in('idea_type', ['trade_idea', 'thesis', 'thought'])
           .order('created_at', { ascending: false })
           .limit(10),
@@ -281,8 +336,17 @@ export function PilotActionDashboard({
         thoughts: qtRows,
       }
     },
-    staleTime: 30_000,
   })
+
+  // Treat any non-pilot-seed pipeline item as a captured idea — the
+  // pipeline query is the same source the Idea Pipeline page reads
+  // from, so anything visible there counts here. (The dedicated
+  // `userCaptured` query was returning empty for some pilot sessions
+  // even when the row clearly existed; piggy-backing on `pipelineItems`
+  // sidesteps that by reusing the known-good fetch.)
+  const userIdeasFromPipeline = useMemo(() => {
+    return (pipelineItems || []).filter(i => !(i.origin_metadata as any)?.pilot_seed)
+  }, [pipelineItems])
 
   // ── Stage completion (drives the active step + pulse) ──
   // Capture: user has logged any of their own ideas/thoughts
@@ -291,10 +355,10 @@ export function PilotActionDashboard({
   // Review: pilot scenario has a saved reflection
   // Improve: review captured (always-future visual)
   const hasUserIdea = useMemo(() => {
-    const ideas = userCaptured?.ideas?.length ?? 0
-    const thoughts = userCaptured?.thoughts?.length ?? 0
-    return (ideas + thoughts) > 0
-  }, [userCaptured])
+    const fromPipeline = userIdeasFromPipeline.length
+    const fromCaptured = (userCaptured?.ideas?.length ?? 0) + (userCaptured?.thoughts?.length ?? 0)
+    return (fromPipeline + fromCaptured) > 0
+  }, [userIdeasFromPipeline, userCaptured])
   const hasMovedIdea = useMemo(() => {
     return (pipelineItems || []).some(i => {
       if (!i.stage_changed_at) return false
@@ -308,9 +372,13 @@ export function PilotActionDashboard({
     capture: hasUserIdea,
     develop: hasMovedIdea,
     decide:  completed,
-    record:  completed,
-    review:  completed && hasReview,
-    improve: false,
+    // Review closes the moment the trade lands on the Trade Book —
+    // that happens at commit, so it tracks `completed`.
+    review:  completed,
+    // Analyze closes once the user has captured a reflection — that's
+    // the signal Tesseract has the data it needs to feed back into
+    // future ideas. Until then it's the open work.
+    analyze: completed && hasReview,
   }
 
   // First incomplete step is the active one. The pilot lands on
@@ -323,13 +391,27 @@ export function PilotActionDashboard({
     for (const s of STAGES) {
       if (!stepDone[s.key]) return s.key
     }
-    return 'improve'
+    return 'analyze'
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepDone.capture, stepDone.develop, stepDone.decide, stepDone.record, stepDone.review])
+  }, [stepDone.capture, stepDone.develop, stepDone.decide, stepDone.review, stepDone.analyze])
 
   // Open stage = whatever the user clicked (defaults to active).
   const [openKey, setOpenKey] = useState<StageKey>(activeKey)
   const openStage = STAGES.find(s => s.key === openKey) ?? STAGES[0]
+
+  // Auto-advance: the moment the currently-open stage transitions
+  // from "active" to "done" (e.g., the pilot just submitted their
+  // first idea, completing Capture), shift the open panel to the
+  // next active stage so the user is naturally walked forward
+  // through the loop instead of staring at a now-checked-off step.
+  // Guarded by `openKey !== activeKey` so we don't loop on
+  // already-aligned state.
+  const openIsDone = stepDone[openKey]
+  useEffect(() => {
+    if (openIsDone && openKey !== activeKey) {
+      setOpenKey(activeKey)
+    }
+  }, [openIsDone, openKey, activeKey])
 
   // Capture handler — opens the right-hand sidebar pre-focused on
   // the trade-idea capture form (same as the lightbulb icon).
@@ -350,9 +432,8 @@ export function PilotActionDashboard({
       case 'capture': return { label: 'Start a new trade idea', icon: Plus, run: openCapture }
       case 'develop': return { label: 'Open Idea Pipeline', icon: ArrowRight, run: onOpenIdeaPipeline }
       case 'decide':  return { label: 'Open Trade Lab', icon: ArrowRight, run: () => onOpenTradeLab(scenarioContext) }
-      case 'record':  return { label: 'Open Trade Book', icon: ArrowRight, run: hasUnlockedTradeBook ? onOpenTradeBook : () => onOpenTradeLab(scenarioContext) }
-      case 'review':  return { label: 'Open Outcomes', icon: ArrowRight, run: hasUnlockedOutcomes ? onOpenOutcomes : onOpenTradeBook }
-      case 'improve': return { label: 'Open Outcomes', icon: ArrowRight, run: hasUnlockedOutcomes ? onOpenOutcomes : onOpenTradeBook }
+      case 'review':  return { label: 'Open Trade Book', icon: ArrowRight, run: hasUnlockedTradeBook ? onOpenTradeBook : () => onOpenTradeLab(scenarioContext) }
+      case 'analyze': return { label: 'Open Outcomes', icon: ArrowRight, run: hasUnlockedOutcomes ? onOpenOutcomes : onOpenTradeBook }
     }
   }
 
@@ -361,18 +442,28 @@ export function PilotActionDashboard({
       <div className="max-w-6xl mx-auto p-6 space-y-5">
 
         {/* ── Page header ────────────────────────────────────────
-            Three lines: H1, supporting subtitle, then the loop
-            tagline so the user sees the metaphor before they reach
-            the loop card itself. */}
+            H1 + a single supporting subtitle. The loop tagline is
+            already shown inline with the System Loop card title
+            below — repeating it here was redundant. */}
         <div className="space-y-0.5">
-          <h1 className="text-[20px] font-semibold text-gray-900 dark:text-white leading-tight">
-            What needs your attention
-          </h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-[20px] font-semibold text-gray-900 dark:text-white leading-tight">
+              What needs your attention
+            </h1>
+            <button
+              type="button"
+              onClick={() => {
+                queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+                queryClient.refetchQueries({ queryKey: ['pilot-dashboard-recorded'] })
+              }}
+              className="text-[10px] text-gray-400 hover:text-gray-600 underline"
+              title={`pipeline=${(pipelineItems ?? []).length} captured=${userIdeasFromPipeline.length} hasUserIdea=${String(hasUserIdea)} active=${activeKey}`}
+            >
+              Refresh
+            </button>
+          </div>
           <p className="text-[13px] text-gray-600 dark:text-gray-400 leading-snug">
             Tesseract prioritizes ideas, decisions, and reviews so you know what to work on next.
-          </p>
-          <p className="text-[12px] text-gray-500 dark:text-gray-500 leading-snug">
-            How ideas become decisions, and decisions become learnings.
           </p>
         </div>
 
@@ -406,6 +497,7 @@ export function PilotActionDashboard({
           pipelineLoading={pipelineLoading}
           recorded={recordedDecisions ?? null}
           userCaptured={userCaptured ?? null}
+          userIdeasFromPipeline={userIdeasFromPipeline}
           onOpenTradeLab={() => onOpenTradeLab(scenarioContext)}
           onOpenIdeaPipeline={onOpenIdeaPipeline}
           onOpenTradeBook={onOpenTradeBook}
@@ -452,7 +544,7 @@ function SystemLoopCard({
 
       {/* Stage strip */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-        <div className="grid grid-cols-6 gap-1.5 items-stretch">
+        <div className="grid grid-cols-5 gap-1.5 items-stretch">
           {stages.map((s, i) => {
             const Icon = s.icon
             const done = stepDone[s.key]
@@ -557,6 +649,17 @@ interface StagePanelProps {
       created_at: string
     }>
   } | null
+  // Pipeline items already filtered to non-pilot-seed entries — used
+  // as the primary source for the Capture stage list.
+  userIdeasFromPipeline: Array<{
+    id: string
+    stage: string
+    status: string
+    created_at: string
+    stage_changed_at: string | null
+    origin_metadata: Record<string, unknown> | null
+    asset: { symbol: string | null; company_name: string | null } | null
+  }>
   onOpenTradeLab: () => void
   onOpenIdeaPipeline: () => void
   onOpenTradeBook: () => void
@@ -570,7 +673,7 @@ type PilotActionDashboardCtaBuilder = (key: StageKey) => { label: string; icon: 
 
 function StagePanel({
   stage, cta, state, scenario, acceptedTrade, committedAt, hasReview,
-  pipelineItems, pipelineLoading, recorded, userCaptured,
+  pipelineItems, pipelineLoading, recorded, userCaptured, userIdeasFromPipeline,
   onOpenTradeLab, onOpenIdeaPipeline, onOpenTradeBook, onOpenOutcomes,
   onCapture, hasUnlockedTradeBook, hasUnlockedOutcomes,
 }: StagePanelProps) {
@@ -609,7 +712,16 @@ function StagePanel({
       <div className="px-5 py-4">
         {stage.key === 'capture' && (
           <CaptureAttention
-            ideas={userCaptured?.ideas ?? []}
+            // Prefer pipelineItems-derived ideas — that query is the
+            // same one feeding the Idea Pipeline page so any visible
+            // there is guaranteed to show here too. Fall back to the
+            // dedicated capture query if the pipeline list is empty
+            // (e.g., scenario portfolio not yet known).
+            ideas={
+              userIdeasFromPipeline.length > 0
+                ? userIdeasFromPipeline
+                : (userCaptured?.ideas ?? [])
+            }
             thoughts={userCaptured?.thoughts ?? []}
             onCapture={onCapture}
           />
@@ -633,8 +745,8 @@ function StagePanel({
           />
         )}
 
-        {stage.key === 'record' && (
-          <RecordAttention
+        {stage.key === 'review' && (
+          <ReviewAttention
             trades={recorded?.trades ?? []}
             committedAt={committedAt}
             scenarioState={state}
@@ -644,21 +756,12 @@ function StagePanel({
           />
         )}
 
-        {stage.key === 'review' && (
-          <ReviewAttention
+        {stage.key === 'analyze' && (
+          <AnalyzeAttention
             trades={recorded?.trades ?? []}
             reviewedIds={recorded?.reviewedIds ?? new Set()}
             scenarioState={state}
             hasReview={hasReview}
-            hasUnlockedOutcomes={hasUnlockedOutcomes}
-            onOpenOutcomes={onOpenOutcomes}
-          />
-        )}
-
-        {stage.key === 'improve' && (
-          <ImproveAttention
-            trades={recorded?.trades ?? []}
-            reviewedIds={recorded?.reviewedIds ?? new Set()}
             hasUnlockedOutcomes={hasUnlockedOutcomes}
             onOpenOutcomes={onOpenOutcomes}
           />
@@ -670,10 +773,22 @@ function StagePanel({
 
 // ── Per-stage attention sections ─────────────────────────────────
 
+// Accepts ideas from either the dedicated capture query or the
+// broader pipeline query — both share the same minimal shape we
+// render below (id, asset, created_at, stage). Typed as the union
+// so TS doesn't reject either source.
+type CaptureIdea = {
+  id: string
+  created_at: string
+  stage: string | null
+  asset: { symbol: string | null; company_name: string | null } | null
+  origin_metadata: Record<string, unknown> | null
+}
+
 function CaptureAttention({
   ideas, thoughts, onCapture,
 }: {
-  ideas: StagePanelProps['userCaptured'] extends infer T ? T extends { ideas: infer I } ? I : never : never
+  ideas: ReadonlyArray<CaptureIdea>
   thoughts: StagePanelProps['userCaptured'] extends infer T ? T extends { thoughts: infer Q } ? Q : never : never
   onCapture: () => void
 }) {
@@ -900,7 +1015,10 @@ function DecideAttention({
   )
 }
 
-function RecordAttention({
+// Review stage = "see the trade land on the Trade Book." Lists the
+// most recent committed decisions; this is the destination of the
+// commit, not the place to reflect.
+function ReviewAttention({
   trades, committedAt, scenarioState, acceptedTrade, hasUnlockedTradeBook, onOpenTradeBook,
 }: {
   trades: StagePanelProps['recorded'] extends infer T ? T extends { trades: infer X } ? X : never : never
@@ -914,7 +1032,7 @@ function RecordAttention({
   if (!hasAny) {
     return (
       <EmptyAttention
-        title="No decisions recorded yet"
+        title="No decisions on the Trade Book yet"
         body="Once you commit a trade in Trade Lab, it lands here permanently. The Trade Book is your system of record — every committed decision lives there."
         ctaLabel={hasUnlockedTradeBook ? 'Open Trade Book' : 'Open Trade Lab'}
         onCta={onOpenTradeBook}
@@ -924,7 +1042,7 @@ function RecordAttention({
   return (
     <>
       <AttentionHeader
-        title="Recently recorded decisions"
+        title="Recently committed decisions"
         count={trades.length}
         helper="Click through to the Trade Book to see the full audit trail."
       />
@@ -959,7 +1077,11 @@ function RecordAttention({
   )
 }
 
-function ReviewAttention({
+// Analyze stage = the merged Review + Improve work. Shows pending
+// reflections (top of the list, the open work) followed by captured
+// learnings (closed loop). Empty state explains that reflections
+// only become available after a commit lands.
+function AnalyzeAttention({
   trades, reviewedIds, scenarioState, hasReview, hasUnlockedOutcomes, onOpenOutcomes,
 }: {
   trades: StagePanelProps['recorded'] extends infer T ? T extends { trades: infer X } ? X : never : never
@@ -970,124 +1092,84 @@ function ReviewAttention({
   onOpenOutcomes: () => void
 }) {
   const pendingReview = trades.filter(t => !reviewedIds.has(t.id))
+  const reviewed = trades.filter(t => reviewedIds.has(t.id))
   if (trades.length === 0) {
     return (
       <EmptyAttention
-        title="Nothing to review yet"
-        body="Reviews open up after you commit a decision. Outcomes will measure the result and prompt you to capture what worked."
+        title="Nothing to analyze yet"
+        body="Analysis opens up after you commit a decision. Outcomes will measure the result and prompt you to reflect on whether the thesis played out."
         ctaLabel={hasUnlockedOutcomes ? 'Open Outcomes' : 'Outcomes unlocks after committing'}
         onCta={hasUnlockedOutcomes ? onOpenOutcomes : () => {}}
       />
     )
   }
-  if (scenarioState === 'completed' && !hasReview) {
-    return (
-      <>
-        <AttentionHeader
-          title="Capture your reflection"
-          count={pendingReview.length}
-          helper="Tesseract has the price data — it just needs your read on whether the thesis played out."
-        />
-        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-          {pendingReview.slice(0, 4).map(t => (
-            <li key={t.id} className="py-2.5 flex items-center gap-3">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700">
-                <MessageSquare className="w-3 h-3" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[13px] font-semibold text-gray-900 dark:text-white">
+  // Hot state — pilot scenario committed but no reflection yet.
+  // Surface the prompt above everything so it's the single thing
+  // the user does next.
+  const pilotPromptingReflection = scenarioState === 'completed' && !hasReview
+  return (
+    <>
+      {pendingReview.length > 0 && (
+        <>
+          <AttentionHeader
+            title={pilotPromptingReflection ? 'Capture your reflection' : 'Reflections waiting on you'}
+            count={pendingReview.length}
+            helper="Tesseract has the price data — it just needs your read on whether the thesis played out."
+          />
+          <ul className="divide-y divide-gray-100 dark:divide-gray-700 mb-4">
+            {pendingReview.slice(0, 4).map(t => (
+              <li key={t.id} className="py-2.5 flex items-center gap-3">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700">
+                  <Sparkles className="w-3 h-3" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[13px] font-semibold text-gray-900 dark:text-white">
+                      {(t.action || 'TRADE').toUpperCase()} {t.asset?.symbol || '—'}
+                    </span>
+                    <span className="text-[10px] text-gray-400">{fmtRelative(t.created_at)}</span>
+                  </div>
+                  <div className="text-[10px] text-emerald-700">Reflection pending</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenOutcomes}
+                  disabled={!hasUnlockedOutcomes}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  Reflect
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {reviewed.length > 0 ? (
+        <>
+          <AttentionHeader
+            title="Captured learnings"
+            count={reviewed.length}
+            helper="Reflections you've completed. These shape future recommendations."
+          />
+          <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+            {reviewed.slice(0, 4).map(t => (
+              <li key={t.id} className="py-2.5 flex items-center gap-3">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 border border-teal-200 text-teal-700">
+                  <Sparkles className="w-3 h-3" />
+                </span>
+                <div className="min-w-0 flex-1 text-[12px]">
+                  <span className="font-semibold text-gray-900 dark:text-white">
                     {(t.action || 'TRADE').toUpperCase()} {t.asset?.symbol || '—'}
                   </span>
-                  <span className="text-[10px] text-gray-400">{fmtRelative(t.created_at)}</span>
+                  <span className="text-gray-400 ml-2 text-[10px]">{fmtRelative(t.created_at)}</span>
                 </div>
-                <div className="text-[10px] text-emerald-700">Review pending</div>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenOutcomes}
-                disabled={!hasUnlockedOutcomes}
-                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                Review
-              </button>
-            </li>
-          ))}
-        </ul>
-      </>
-    )
-  }
-  return (
-    <>
-      <AttentionHeader
-        title={pendingReview.length > 0 ? 'Reviews waiting on your reflection' : 'All decisions reviewed'}
-        count={pendingReview.length}
-        helper="Reflections feed into Tesseract's learning model — they're how the system improves."
-      />
-      {pendingReview.length === 0 ? (
-        <p className="text-[11px] text-emerald-700">Caught up — no outstanding reviews.</p>
-      ) : (
-        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-          {pendingReview.slice(0, 4).map(t => (
-            <li key={t.id} className="py-2.5 flex items-center gap-3">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700">
-                <MessageSquare className="w-3 h-3" />
-              </span>
-              <div className="min-w-0 flex-1 text-[12px]">
-                <span className="font-semibold text-gray-900 dark:text-white">
-                  {(t.action || 'TRADE').toUpperCase()} {t.asset?.symbol || '—'}
-                </span>
-                <span className="text-gray-400 ml-2 text-[10px]">{fmtRelative(t.created_at)}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  )
-}
-
-function ImproveAttention({
-  trades, reviewedIds, hasUnlockedOutcomes, onOpenOutcomes,
-}: {
-  trades: StagePanelProps['recorded'] extends infer T ? T extends { trades: infer X } ? X : never : never
-  reviewedIds: Set<string>
-  hasUnlockedOutcomes: boolean
-  onOpenOutcomes: () => void
-}) {
-  const reviewed = trades.filter(t => reviewedIds.has(t.id))
-  if (reviewed.length === 0) {
-    return (
-      <EmptyAttention
-        title="No learnings captured yet"
-        body="Once you start reflecting on outcomes, those reflections feed back into future ideas. The loop only closes when reviews exist."
-        ctaLabel={hasUnlockedOutcomes ? 'Open Outcomes' : 'Outcomes unlocks after committing'}
-        onCta={hasUnlockedOutcomes ? onOpenOutcomes : () => {}}
-      />
-    )
-  }
-  return (
-    <>
-      <AttentionHeader
-        title="Captured learnings"
-        count={reviewed.length}
-        helper="Reviews you've completed. These shape the system's recommendations going forward."
-      />
-      <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-        {reviewed.slice(0, 4).map(t => (
-          <li key={t.id} className="py-2.5 flex items-center gap-3">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 border border-teal-200 text-teal-700">
-              <Sparkles className="w-3 h-3" />
-            </span>
-            <div className="min-w-0 flex-1 text-[12px]">
-              <span className="font-semibold text-gray-900 dark:text-white">
-                {(t.action || 'TRADE').toUpperCase()} {t.asset?.symbol || '—'}
-              </span>
-              <span className="text-gray-400 ml-2 text-[10px]">{fmtRelative(t.created_at)}</span>
-            </div>
-          </li>
-        ))}
-      </ul>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : pendingReview.length === 0 ? (
+        <p className="text-[11px] text-emerald-700">Caught up — every decision has a reflection on file.</p>
+      ) : null}
     </>
   )
 }
