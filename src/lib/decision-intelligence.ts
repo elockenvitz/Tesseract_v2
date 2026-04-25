@@ -14,16 +14,17 @@ import type { AccountabilityRow } from '../types/decision-accountability'
 // ─── Types ────────────────────────────────────────────────────
 
 export type DecisionVerdict =
-  | 'working'       // executed, positive/neutral outcome
-  | 'hurting'       // executed, negative outcome
-  | 'stalled'       // approved but not executed, aging
-  | 'awaiting'      // approved recently, normal pending
-  | 'unmatched'     // approved 30d+ with no trade
-  | 'needs_review'  // executed but no post-mortem
-  | 'rejected'      // decision was rejected
-  | 'withdrawn'     // decision was cancelled
-  | 'discretionary' // trade without decision
-  | 'resolved'      // healthy, review complete
+  | 'working'        // executed, positive/neutral outcome
+  | 'hurting'        // executed, negative outcome
+  | 'stalled'        // approved but not executed, aging
+  | 'awaiting'       // approved recently, normal pending
+  | 'unmatched'      // approved 30d+ with no trade
+  | 'needs_review'   // executed but no rationale text yet (Add Rationale)
+  | 'evaluate'       // rationale exists but no decision-quality evaluation yet (Evaluate Decision)
+  | 'rejected'       // decision was rejected
+  | 'withdrawn'      // decision was cancelled
+  | 'discretionary'  // trade without decision
+  | 'resolved'       // executed AND reviewed — decision quality captured
 
 export type Urgency = 'critical' | 'high' | 'medium' | 'low' | 'none'
 
@@ -39,6 +40,40 @@ export interface DecisionIntelligence {
   ageSeverity: 'fresh' | 'aging' | 'overdue' | null
 }
 
+/**
+ * Short, human-readable explanation for each verdict — surfaced as a
+ * hover tooltip on the verdict badge in Outcomes so a PM who sees
+ * "Needs Review" or "Stalled" can understand *why* at a glance without
+ * having to look up the semantics elsewhere. Keep each entry to 1–2
+ * sentences: what the state means, and what the PM is expected to do
+ * about it. Rendered as a plain `title` attribute, so no markup / line
+ * breaks here — one continuous sentence reads best in the OS tooltip.
+ */
+export const VERDICT_EXPLANATIONS: Record<DecisionVerdict, string> = {
+  working:
+    'Executed and moving with the thesis. Tesseract is monitoring the outcome — capture a quick reflection if you want this on the record.',
+  resolved:
+    'Reflection captured. Tesseract has the context it needs to feed this decision back into your scorecards.',
+  hurting:
+    'Executed but moving against the thesis. Review what changed and decide whether the original case still holds.',
+  stalled:
+    'Approved but not yet executed and the clock is running. Either execute it or withdraw the decision so it stops sitting in limbo.',
+  awaiting:
+    'Approved recently and pending execution. Normal state — no action needed yet.',
+  unmatched:
+    'Approved 30+ days ago with no matching trade on the book. Either execute it or mark it withdrawn so Outcomes stops flagging it.',
+  needs_review:
+    'The trade executed but no rationale was captured. Add the missing context so Tesseract can interpret why you made the call.',
+  evaluate:
+    'Tesseract is monitoring this decision. Add a short reflection when you have a view on whether the thesis played out.',
+  rejected:
+    'The decision was rejected at approval. No trade was made — kept on the log for accountability.',
+  withdrawn:
+    'The decision was cancelled before execution. No trade was made.',
+  discretionary:
+    'A trade was made without going through the decision process. Add a rationale to bring it into the accountability loop.',
+}
+
 export const VERDICT_DISPLAY: Record<DecisionVerdict, {
   label: string
   color: string
@@ -46,36 +81,74 @@ export const VERDICT_DISPLAY: Record<DecisionVerdict, {
   borderColor: string
 }> = {
   working:       { label: 'Working',       color: 'text-emerald-700', bgColor: 'bg-emerald-50',  borderColor: 'border-l-emerald-400' },
-  resolved:      { label: 'Resolved',      color: 'text-emerald-600', bgColor: 'bg-emerald-50',  borderColor: 'border-l-emerald-300' },
+  resolved:      { label: 'Reviewed',      color: 'text-emerald-700', bgColor: 'bg-emerald-50',  borderColor: 'border-l-emerald-300' },
   hurting:       { label: 'Hurting',       color: 'text-red-700',     bgColor: 'bg-red-50',      borderColor: 'border-l-red-500' },
   stalled:       { label: 'Stalled',       color: 'text-amber-700',   bgColor: 'bg-amber-50',    borderColor: 'border-l-amber-400' },
   awaiting:      { label: 'Awaiting',      color: 'text-blue-600',    bgColor: 'bg-blue-50',     borderColor: 'border-l-blue-300' },
   unmatched:     { label: 'Unmatched',     color: 'text-red-600',     bgColor: 'bg-red-50',      borderColor: 'border-l-red-400' },
-  needs_review:  { label: 'Needs Review',  color: 'text-orange-700',  bgColor: 'bg-orange-50',   borderColor: 'border-l-orange-400' },
+  needs_review:  { label: 'Needs Context', color: 'text-orange-700',  bgColor: 'bg-orange-50',   borderColor: 'border-l-orange-400' },
+  evaluate:      { label: 'Monitoring',    color: 'text-blue-700',    bgColor: 'bg-blue-50',     borderColor: 'border-l-blue-400' },
   rejected:      { label: 'Rejected',      color: 'text-gray-500',    bgColor: 'bg-gray-100',    borderColor: 'border-l-gray-300' },
   withdrawn:     { label: 'Withdrawn',     color: 'text-gray-400',    bgColor: 'bg-gray-50',     borderColor: 'border-l-gray-200' },
   discretionary: { label: 'Ad Hoc',        color: 'text-violet-700',  bgColor: 'bg-violet-50',   borderColor: 'border-l-violet-400' },
 }
 
+// ─── Formatting helpers ───────────────────────────────────────
+
+/** Format the signed dollar impact (`impact_proxy`) compact. Returns
+ *  null when magnitude is tiny so the label doesn't carry a noisy
+ *  "+$12" tail for effectively-zero P&L. Sign matches the move — if
+ *  the move helped, dollars read as positive; if the move hurt, negative. */
+function formatImpactDollars(impact: number | null | undefined, movePositive: boolean): string | null {
+  if (impact == null || !Number.isFinite(impact)) return null
+  const magnitude = Math.abs(impact)
+  if (magnitude < 100) return null
+  const sign = movePositive ? '+' : '−'
+  if (magnitude >= 1_000_000) return `${sign}$${(magnitude / 1_000_000).toFixed(1)}M`
+  if (magnitude >= 1_000) return `${sign}$${(magnitude / 1_000).toFixed(0)}K`
+  return `${sign}$${Math.round(magnitude)}`
+}
+
 // ─── Per-Row Intelligence ─────────────────────────────────────
 
 export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntelligence {
+  // `move_since_decision_pct` and `move_since_execution_pct` are ALREADY
+  // directionalized by `computeDirectionalMove` at source: positive means
+  // the price moved favorably for the decision's direction (rose for a
+  // buy/add, fell for a sell/trim), negative means it moved against.
+  // Do NOT re-directionalize here — doing so double-negated bearish
+  // decisions and flipped "Helping" / "Hurting" labels. The raw bullish/
+  // bearish signal is already baked in.
   const move = row.move_since_decision_pct
   const execMove = row.move_since_execution_pct
   const bestMove = move ?? execMove
-  const isBullish = row.direction === 'buy' || row.direction === 'add' || row.direction === 'long'
-  const directionalMove = bestMove != null ? (isBullish ? bestMove : -bestMove) : null
+  const directionalMove = bestMove
   const reviewState = getReviewState(row)
   const lagDays = row.execution_lag_days ?? row.days_since_decision ?? 0
   const decisionAge = row.days_since_decision ?? 0
   const ageSeverity: DecisionIntelligence['ageSeverity'] = decisionAge > 21 ? 'overdue' : decisionAge > 7 ? 'aging' : 'fresh'
 
-  // Format result label
+  // Format result label — sign reflects whether the move helped (+) or
+  // hurt (−) the decision, matching what resultDirection conveys. We
+  // also append the dollar impact when `impact_proxy` is available so
+  // the PM sees P&L in cash terms, not just a percentage. When there's
+  // no reliable price move the cell stays blank (honest "we don't know
+  // yet") rather than showing a trade-size substitute that reads like
+  // a P&L number and confuses the user.
   let resultLabel: string | null = null
   let resultDirection: DecisionIntelligence['resultDirection'] = null
   if (bestMove != null) {
-    resultLabel = `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}%`
-    resultDirection = directionalMove != null ? (directionalMove > 0.5 ? 'positive' : directionalMove < -0.5 ? 'negative' : 'neutral') : null
+    const pctSign = bestMove >= 0 ? '+' : ''
+    const pctPart = `${pctSign}${bestMove.toFixed(1)}%`
+    const dollarPart = formatImpactDollars(row.impact_proxy, bestMove >= 0)
+    resultLabel = dollarPart ? `${pctPart} · ${dollarPart}` : pctPart
+    resultDirection = directionalMove != null
+      ? directionalMove > 0.5
+        ? 'positive'
+        : directionalMove < -0.5
+          ? 'negative'
+          : 'neutral'
+      : null
   }
 
   // ── Discretionary trade (no decision backing it)
@@ -161,57 +234,150 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
     }
   }
 
-  // ── Executed — determine quality
-  const isPositive = resultDirection === 'positive'
-  const isNegative = resultDirection === 'negative'
+  // ── Executed — determine quality.
+  // Working/Hurting verdicts claim the decision is "playing out" one way
+  // or the other, which requires enough elapsed time for price movement
+  // to be meaningful. On day-0 (same-session trades) a noisy stale-price
+  // comparison can produce a huge directional move that misrepresents
+  // reality. Require at least one full day of age before claiming a
+  // positive or negative verdict — younger trades stay "Executed" and
+  // the result number speaks for itself.
+  const MIN_DAYS_FOR_VERDICT = 1
+  const hasMeaningfulAge = decisionAge >= MIN_DAYS_FOR_VERDICT
+  const isPositive = hasMeaningfulAge && resultDirection === 'positive'
+  const isNegative = hasMeaningfulAge && resultDirection === 'negative'
 
-  // Check review state
+  // ── Decision-quality gate ────────────────────────────────────
+  // Three explicit states drive the badge so the PM sees a clear next
+  // step instead of one generic "needs review" label:
+  //   needs_review = no rationale captured → "Explain decision"
+  //   evaluate     = rationale exists but no quality eval → "Evaluate decision"
+  //   reviewed     = quality + thesis + sizing assessed → "Reviewed"
+  // Negative-outcome rows still escalate to 'hurting' so the impact
+  // signal isn't drowned out by the workflow signal.
+
+  // No rationale at all — the entry-level gap. The badge label
+  // stays short ("Needs Context" / "Hurting") for the table; the
+  // diagnostic sub-reason rides on `primaryIssue` so the Insight
+  // column tells the PM *why* this row is flagged, not just that
+  // it is. A negative outcome still escalates to 'hurting' so the
+  // impact signal leads.
   if (reviewState === 'needs_review') {
+    const move = row.move_since_decision_pct
+    const moveMag = move != null ? Math.abs(move) : 0
+    const sym = row.asset_symbol || 'this'
+    const dir = String(row.direction || '').toLowerCase()
+    const isIncrease = dir === 'buy' || dir === 'add' || dir === 'initiate' || dir === 'increase'
+    const isReduce = dir === 'sell' || dir === 'trim' || dir === 'exit' || dir === 'reduce'
+    const verb = isIncrease ? (dir === 'buy' || dir === 'initiate' ? `Bought ${sym}` : `Added to ${sym}`)
+              : isReduce   ? (dir === 'sell' || dir === 'exit' ? `Sold ${sym}` : `Trimmed ${sym}`)
+              : sym
+    // STATE in the table reads as a multi-factor diagnosis:
+    // action verb + symbol leads, sub-tag captures the result-tier
+    // interpretation (skill vs timing, diverging, weakness, etc.).
+    // The right-panel INSIGHT covers WHAT it means in full — these
+    // two surfaces complement, not duplicate.
+    let subtag: string
+    if (move != null && move <= -5) {
+      subtag = isReduce ? 'risk reduced before weakness' : 'outcome diverging materially'
+    } else if (move != null && move >= 5) {
+      subtag = isReduce ? 'upside left on the table' : 'strong outcome — skill or timing?'
+    } else if (move != null && move <= -1.5) {
+      subtag = isReduce ? 'early move favours the trim' : 'early move against the call'
+    } else if (move != null && move >= 1.5) {
+      subtag = isReduce ? 'upside continuing — re-entry?' : 'early signal favours the call'
+    } else if (decisionAge < 7) {
+      subtag = 'capture reasoning while it\'s fresh'
+    } else if (resultDirection === 'positive' || resultDirection === 'negative') {
+      subtag = 'outcome forming — capture rationale'
+    } else {
+      subtag = 'no reasoning recorded'
+    }
     return {
       verdict: isNegative ? 'hurting' : 'needs_review',
-      verdictLabel: isNegative ? 'Hurting' : 'Needs Review',
-      primaryIssue: isNegative
-        ? `${row.asset_symbol || 'Stock'} ${resultLabel || 'down'} — review missing`
-        : 'Executed — post-mortem not captured',
-      actionNeeded: 'Complete review',
+      verdictLabel: isNegative ? 'Hurting' : 'Needs Context',
+      primaryIssue: `${verb} — ${subtag}`,
+      actionNeeded: 'Add context',
       urgency: isNegative ? 'critical' : 'medium',
       resultLabel, resultDirection,
       ageDays: decisionAge, ageSeverity,
     }
   }
 
-  // Executed with negative outcome
+  // Negative outcome with rationale captured — surface as 'hurting'
+  // regardless of whether the user has reflected. Action shifts from
+  // "review outcome" → "view review" once they've reflected.
   if (isNegative) {
     return {
       verdict: 'hurting',
       verdictLabel: 'Hurting',
       primaryIssue: `${row.asset_symbol || 'Position'} moving against thesis`,
-      actionNeeded: reviewState !== 'reviewed' ? 'Review outcome' : null,
+      actionNeeded: reviewState !== 'reviewed' ? 'Review outcome' : 'View review',
       urgency: reviewState !== 'reviewed' ? 'high' : 'medium',
       resultLabel, resultDirection,
       ageDays: decisionAge, ageSeverity,
     }
   }
 
-  // Executed with positive outcome and review complete
+  // Reviewed — the user has captured a reflection (thesis_played_out
+  // or process note). Tesseract has the context it needs to feed
+  // this back into scorecards.
   if (reviewState === 'reviewed') {
     return {
       verdict: 'resolved',
-      verdictLabel: 'Resolved',
-      primaryIssue: `${row.asset_symbol || 'Position'} working — review complete`,
-      actionNeeded: null,
+      verdictLabel: 'Reviewed',
+      primaryIssue: '',
+      actionNeeded: 'View review',
       urgency: 'none',
       resultLabel, resultDirection,
       ageDays: decisionAge, ageSeverity: null,
     }
   }
 
-  // Executed, working
+  // Rationale exists but the user hasn't reflected on the outcome
+  // yet. We call this "Monitoring" — Tesseract is still observing,
+  // waiting for the PM's view on whether the thesis played out.
+  if (reviewState === 'in_progress' || reviewState === 'captured') {
+    return {
+      verdict: 'evaluate',
+      verdictLabel: 'Monitoring',
+      primaryIssue: '',
+      actionNeeded: 'Review outcome',
+      urgency: 'medium',
+      resultLabel, resultDirection,
+      ageDays: decisionAge, ageSeverity,
+    }
+  }
+
+  // Executed without a positive-or-negative signal — could be neutral
+  // ("flat since execution") or we simply don't have reliable price
+  // data yet. Either way, calling this "Working" is too confident —
+  // "Working" implies the thesis is playing out. Downgrade to a
+  // neutral "Executed" verdict when there's no directional signal.
+  const hasSignal = resultDirection === 'positive' || resultDirection === 'negative'
+  const sym = row.asset_symbol || 'Position'
+  const needsCapture = reviewState !== 'captured' && reviewState !== 'reviewed'
+
+  if (hasSignal && isPositive) {
+    return {
+      verdict: 'working',
+      verdictLabel: 'Working',
+      primaryIssue: '',
+      actionNeeded: needsCapture ? 'Capture rationale' : 'Review why this worked',
+      urgency: 'none',
+      resultLabel, resultDirection,
+      ageDays: decisionAge, ageSeverity: null,
+    }
+  }
+
+  // Executed with no directional signal — neutral state. The "Issue"
+  // column is reserved for actual problems; a quietly-executed trade
+  // doesn't belong there. Leave primaryIssue blank.
   return {
     verdict: 'working',
-    verdictLabel: 'Working',
-    primaryIssue: isPositive ? `${row.asset_symbol || 'Position'} moving in the right direction` : `${row.asset_symbol || 'Position'} flat since execution`,
-    actionNeeded: reviewState !== 'captured' && reviewState !== 'reviewed' ? 'Capture rationale' : null,
+    verdictLabel: 'Executed',
+    primaryIssue: '',
+    actionNeeded: needsCapture ? 'Capture rationale' : null,
     urgency: 'none',
     resultLabel, resultDirection,
     ageDays: decisionAge, ageSeverity: null,
@@ -251,8 +417,12 @@ export interface ProcessHealth {
     stalled: number
     unmatched: number
     needsReview: number
+    /** Rationale captured but no decision-quality evaluation yet. */
+    needsEvaluation: number
     discretionary: number
     awaiting: number
+    rejected: number
+    withdrawn: number
     approved: number
     executed: number
     resolved: number
@@ -282,6 +452,7 @@ export function buildProcessHealth(rows: AccountabilityRow[]): ProcessHealth {
     stalled: intels.filter(i => i.intel.verdict === 'stalled').length,
     unmatched: intels.filter(i => i.intel.verdict === 'unmatched').length,
     needsReview: intels.filter(i => i.intel.verdict === 'needs_review').length,
+    needsEvaluation: intels.filter(i => i.intel.verdict === 'evaluate').length,
     discretionary: intels.filter(i => i.intel.verdict === 'discretionary').length,
     awaiting: intels.filter(i => i.intel.verdict === 'awaiting').length,
     rejected: intels.filter(i => i.intel.verdict === 'rejected').length,
@@ -292,7 +463,7 @@ export function buildProcessHealth(rows: AccountabilityRow[]): ProcessHealth {
   }
 
   const urgentCount = intels.filter(i => i.intel.urgency === 'critical' || i.intel.urgency === 'high').length
-  const problemCount = counts.hurting + counts.stalled + counts.unmatched + counts.needsReview
+  const problemCount = counts.hurting + counts.stalled + counts.unmatched + counts.needsReview + counts.needsEvaluation
 
   // Health level
   let level: ProcessHealthLevel = 'healthy'
@@ -304,7 +475,7 @@ export function buildProcessHealth(rows: AccountabilityRow[]): ProcessHealth {
   const breakdowns = [
     { area: 'Execution', score: counts.stalled + counts.awaiting },
     { area: 'Outcome quality', score: counts.hurting * 2 },
-    { area: 'Review discipline', score: counts.needsReview },
+    { area: 'Review discipline', score: counts.needsReview + counts.needsEvaluation },
     { area: 'Trade matching', score: counts.unmatched * 2 },
   ].filter(b => b.score > 0).sort((a, b) => b.score - a.score)
   const primaryBreakdown = breakdowns.length > 0 ? breakdowns[0].area : null
@@ -344,8 +515,10 @@ export function buildProcessHealth(rows: AccountabilityRow[]): ProcessHealth {
     headline = 'Outcome quality problem — executed decisions are underperforming.'
     narrative = `${counts.hurting} decision${counts.hurting !== 1 ? 's are' : ' is'} hurting the portfolio.${counts.needsReview > 0 ? ` ${counts.needsReview} need review.` : ''}`
   } else if (primaryBreakdown === 'Review discipline') {
-    headline = 'Review discipline gap — executed trades lack post-mortem.'
-    narrative = `${counts.needsReview} executed decision${counts.needsReview !== 1 ? 's' : ''} missing rationale capture.`
+    headline = 'Your decisions aren\'t being fully reviewed.'
+    narrative = counts.needsEvaluation > 0
+      ? `Tesseract can track what happened and surface what to consider, but ${counts.needsReview} decision${counts.needsReview !== 1 ? 's are' : ' is'} missing context and ${counts.needsEvaluation} ${counts.needsEvaluation !== 1 ? 'are' : 'is'} still being monitored — missing reflection makes the feedback loop weaker.`
+      : `Tesseract can track what happened and surface what to consider, but ${counts.needsReview} decision${counts.needsReview !== 1 ? 's are' : ' is'} missing context — missing reflection makes the feedback loop weaker.`
   } else if (primaryBreakdown === 'Trade matching') {
     headline = 'Trade matching problem — approved decisions have no matched trades.'
     narrative = `${counts.unmatched} decision${counts.unmatched !== 1 ? 's' : ''} unmatched after 30+ days.`
@@ -354,11 +527,13 @@ export function buildProcessHealth(rows: AccountabilityRow[]): ProcessHealth {
     narrative = 'Multiple areas need intervention.'
   }
 
-  // Recommendations
+  // Recommendations — order by sequence the PM actually performs:
+  // first add context to bare decisions, then review monitored ones,
+  // then chase down execution/matching gaps.
   const recommendations: string[] = []
+  if (counts.needsReview > 0) recommendations.push(`Add context to ${counts.needsReview} decision${counts.needsReview !== 1 ? 's' : ''}`)
+  if (counts.needsEvaluation > 0) recommendations.push(`Review ${counts.needsEvaluation} outcome${counts.needsEvaluation !== 1 ? 's' : ''}`)
   if (counts.stalled > 0) recommendations.push(`Execute or cancel ${counts.stalled} stalled approval${counts.stalled !== 1 ? 's' : ''}`)
-  if (counts.hurting > 0 && counts.needsReview > 0) recommendations.push(`Review ${counts.needsReview} decision${counts.needsReview !== 1 ? 's' : ''} with missing post-mortem`)
-  else if (counts.needsReview > 0) recommendations.push(`Complete ${counts.needsReview} post-mortem review${counts.needsReview !== 1 ? 's' : ''}`)
   if (counts.unmatched > 0) recommendations.push(`Resolve ${counts.unmatched} unmatched trade${counts.unmatched !== 1 ? 's' : ''}`)
   if (counts.discretionary > 0) recommendations.push(`Add context to ${counts.discretionary} discretionary trade${counts.discretionary !== 1 ? 's' : ''}`)
 
@@ -401,9 +576,14 @@ export function buildSmartChips(counts: ProcessHealth['counts']): SmartChip[] {
       icon: 'link', filterFn: i => i.verdict === 'unmatched',
     },
     {
-      key: 'review', label: 'needs review', count: counts.needsReview,
+      key: 'review', label: 'needs context', count: counts.needsReview,
       color: 'text-orange-700', bgColor: 'bg-orange-50', activeColor: 'border-orange-300 bg-orange-100 text-orange-800',
       icon: 'pencil', filterFn: i => i.verdict === 'needs_review',
+    },
+    {
+      key: 'evaluate', label: 'monitoring', count: counts.needsEvaluation,
+      color: 'text-blue-700', bgColor: 'bg-blue-50', activeColor: 'border-blue-300 bg-blue-100 text-blue-800',
+      icon: 'pencil', filterFn: i => i.verdict === 'evaluate',
     },
     {
       key: 'working', label: 'working', count: counts.working,

@@ -23,6 +23,7 @@ interface LayoutProps {
   onTabsReorder?: (newTabs: Tab[]) => void
   onSearchResult?: (result: any) => void
   onFocusSearch?: () => void
+  hideNewTab?: boolean
 }
 
 // Tab types that should render full-width without padding
@@ -39,7 +40,8 @@ export function Layout({
   onTabReorder,
   onTabsReorder,
   onSearchResult,
-  onFocusSearch
+  onFocusSearch,
+  hideNewTab,
 }: LayoutProps) {
   const {
     isCommPaneOpen,
@@ -394,6 +396,7 @@ export function Layout({
         onTabReorder={onTabReorder}
         onTabsReorder={onTabsReorder}
         onFocusSearch={onFocusSearch}
+        hideNewTab={hideNewTab}
       />
       <main className="flex-1 min-h-0 overflow-hidden">
         {(() => {

@@ -122,8 +122,6 @@ function FlagBadge({ flag }: { flag: ScorecardFlag }) {
 // ════════════════════════════════════════════════════════════════
 
 function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBreakdown; snapshot: OutcomeSnapshot }) {
-  if (breakdown.stages.length === 0 && snapshot.totalDecisions === 0) return null
-
   const resolved = snapshot.winners + snapshot.losers
 
   return (
@@ -228,11 +226,19 @@ function StatCell({ value, label, color, muted }: { value: React.ReactNode; labe
 
 function DiagnosticPillarsSection({ pillars }: { pillars: DiagnosticPillar[] }) {
   if (pillars.length === 0) return null
+  const anyMeasurable = pillars.some(p => p.measurable)
   const sorted = [...pillars].sort((a, b) => (b.measurable ? 1 : 0) - (a.measurable ? 1 : 0))
 
   return (
-    <div className={clsx('grid gap-2', sorted.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 xl:grid-cols-4')}>
-      {sorted.map(p => <PillarCard key={p.id} pillar={p} />)}
+    <div>
+      {!anyMeasurable && (
+        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+          Diagnostic pillars · Preview
+        </div>
+      )}
+      <div className={clsx('grid gap-2', sorted.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 xl:grid-cols-4')}>
+        {sorted.map(p => <PillarCard key={p.id} pillar={p} />)}
+      </div>
     </div>
   )
 }
@@ -542,13 +548,26 @@ export function PMScorecardsView({ portfolioId }: { portfolioId?: string | null 
   if (access.isLoading || membersLoading) return <LoadingSkeleton />
   if (selectedUserId) return <PMDetailView userId={selectedUserId} onBack={() => setSelectedUserId(null)} />
 
+  const verdict = interpretPMScorecard(myScorecard ?? null)
+  const pillars = buildPMPillars(myScorecard ?? null)
+  const snapshot = buildPMOutcomeSnapshot(myScorecard ?? null)
+  const breakdown = buildPMProcessBreakdown(myScorecard ?? null)
+  const insights = buildPMInsights(myScorecard ?? null)
+
   if (!isPM) {
     return (
       <div className="space-y-2.5">
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="text-[12px] text-gray-600 font-medium">PM scorecards evaluate decision quality, execution discipline, and timing.</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">You are not assigned as a portfolio manager.</p>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          <p className="text-[11px] text-gray-600">PM scorecards evaluate decision quality, execution discipline, and timing. You are not assigned as a portfolio manager — the format below is a preview.</p>
         </div>
+        {myLoading ? <LoadingSkeleton /> : (
+          <>
+            <ExecutiveHeader verdict={verdict} mode="pm" />
+            <ProcessBreakdownStrip breakdown={breakdown} snapshot={snapshot} />
+            <DiagnosticPillarsSection pillars={pillars} />
+            <BehaviorInsightsSection insights={insights} />
+          </>
+        )}
         {(access.canViewLeaderboard || access.visibility === 'open') && rosterEntries.length > 0 && (
           <div>
             <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Portfolio Managers · {rosterEntries.length}</div>
@@ -558,12 +577,6 @@ export function PMScorecardsView({ portfolioId }: { portfolioId?: string | null 
       </div>
     )
   }
-
-  const verdict = interpretPMScorecard(myScorecard ?? null)
-  const pillars = buildPMPillars(myScorecard ?? null)
-  const snapshot = buildPMOutcomeSnapshot(myScorecard ?? null)
-  const breakdown = buildPMProcessBreakdown(myScorecard ?? null)
-  const insights = buildPMInsights(myScorecard ?? null)
 
   return (
     <div className="space-y-2.5">

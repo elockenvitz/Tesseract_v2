@@ -282,3 +282,15 @@
 .dependency-added {
   animation: dependency-highlight 0.6s ease;
 }
+
+/* Decision Recorded flash — applied briefly to the accepted_trades row that
+   the PM just committed, when they click "View in Trade Book" from the
+   Decision Recorded modal. Amber to match the "captured moment" motif. */
+@keyframes decision-recorded-flash {
+  0%   { background-color: rgba(245, 158, 11, 0); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  15%  { background-color: rgba(245, 158, 11, 0.18); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35); }
+  100% { background-color: rgba(245, 158, 11, 0); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+.decision-recorded-flash {
+  animation: decision-recorded-flash 2.5s ease-out;
+}

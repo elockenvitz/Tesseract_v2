@@ -2203,6 +2203,29 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     return userData.email?.split('@')[0] || 'Unknown'
   }
 
+  // Pilot seed rows carry a synthetic author (the first admin in the org) so
+  // that foreign-key constraints and audit trails stay valid, but surfacing
+  // that person's name as the creator / recommender confuses the pilot user.
+  // These helpers swap in "Pilot" whenever the row is pilot-seeded.
+  const isPilotSeedTrade = (tradeRow: any): boolean =>
+    !!(tradeRow?.origin_metadata as any)?.pilot_seed
+  const isPilotSeedProposal = (proposalRow: any): boolean =>
+    (proposalRow?.sizing_context as any)?.source === 'pilot_scenario'
+
+  const getTradeCreatorDisplayName = (tradeRow: any): string =>
+    isPilotSeedTrade(tradeRow)
+      ? 'Pilot'
+      : (tradeRow?.users ? getUserDisplayName(tradeRow.users) : 'Unknown')
+  const getTradeCreatorInitials = (tradeRow: any): string =>
+    isPilotSeedTrade(tradeRow)
+      ? 'P'
+      : (tradeRow?.users ? getUserInitials(tradeRow.users) : '?')
+
+  const getProposerDisplayName = (proposalRow: any): string =>
+    isPilotSeedProposal(proposalRow)
+      ? 'Pilot'
+      : (proposalRow?.users ? getUserDisplayName(proposalRow.users) : 'Unknown')
+
   // Derive discussion stakeholders: portfolio PMs + idea creator + collaborators + assignee
   const discussionParticipants = useMemo(() => {
     const seen = new Map<string, { id: string; name: string; initials: string }>()
@@ -2219,9 +2242,12 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       seen.set(userData.id, { id: userData.id, name, initials })
     }
 
-    // 1. Idea creator
-    const creator = trade?.users || (trade as any)?.user
-    if (creator) addUser(creator)
+    // 1. Idea creator — skip for pilot-seeded trades so the synthetic admin
+    // doesn't appear in the discussion avatar stack.
+    if (!isPilotSeedTrade(trade)) {
+      const creator = trade?.users || (trade as any)?.user
+      if (creator) addUser(creator)
+    }
 
     // 2. Assigned analyst
     const assignee = (trade as any)?.assigned_user
@@ -3732,10 +3758,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   }))
                                 }
 
-                                // Get proposer info
-                                const proposerName = proposal.users?.first_name && proposal.users?.last_name
-                                  ? `${proposal.users.first_name} ${proposal.users.last_name.charAt(0)}.`
-                                  : proposal.users?.first_name || proposal.users?.email?.split('@')[0] || 'Unknown'
+                                // Get proposer info. Pilot-seeded proposals always display as
+                                // "Pilot" regardless of the synthetic author on the row.
+                                const proposerName = isPilotSeedProposal(proposal)
+                                  ? 'Pilot'
+                                  : proposal.users?.first_name && proposal.users?.last_name
+                                    ? `${proposal.users.first_name} ${proposal.users.last_name.charAt(0)}.`
+                                    : proposal.users?.first_name || proposal.users?.email?.split('@')[0] || 'Unknown'
 
                                 // Get portfolio-specific role
                                 const portfolioRole = (proposal.users as any)?.portfolio_role
@@ -4433,13 +4462,22 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   }
                 }
 
-                // Creator
-                if (pairTradeData.users) addParticipant(pairTradeData.created_by || 'creator', pairTradeData.users, 'Creator')
+                // Creator — pilot-seeded trades surface as "Pilot" rather than
+                // the synthetic admin the seeding RPC happened to pick.
+                if (isPilotSeedTrade(pairTradeData)) {
+                  addParticipant('pilot', { first_name: 'Pilot', last_name: '' } as any, 'Creator')
+                } else if (pairTradeData.users) {
+                  addParticipant(pairTradeData.created_by || 'creator', pairTradeData.users, 'Creator')
+                }
                 // Assignee
                 if ((pairTradeData as any).assigned_user) addParticipant((pairTradeData as any).assigned_to, (pairTradeData as any).assigned_user, 'Assignee')
-                // Recommenders
+                // Recommenders — same pilot-seed treatment.
                 const proposalsData = proposals || []
                 proposalsData.forEach((p: any) => {
+                  if (isPilotSeedProposal(p)) {
+                    addParticipant('pilot', { first_name: 'Pilot', last_name: '' } as any, 'Recommender')
+                    return
+                  }
                   const proposerData = p.users || p.user
                   if (proposerData) addParticipant(p.user_id, proposerData, 'Recommender')
                 })
@@ -5137,9 +5175,9 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           <span className="text-[10px] text-gray-400 uppercase tracking-wide w-20">Owner</span>
                           <div className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
                             <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-[10px] font-medium">
-                              {trade.users ? getUserInitials(trade.users) : '?'}
+                              {getTradeCreatorInitials(trade)}
                             </div>
-                            <span className="font-medium">{trade.users ? getUserDisplayName(trade.users) : 'Unknown'}</span>
+                            <span className="font-medium">{getTradeCreatorDisplayName(trade)}</span>
                           </div>
                         </div>
 
@@ -6181,9 +6219,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                         const sizingCtx = proposal.sizing_context as any
                                         let legs = sizingCtx?.legs || []
                                         const sizingMode = sizingCtx?.sizingMode || sizingCtx?.proposalType || legs[0]?.sizingMode || proposal.sizing_mode || 'weight'
-                                        const userName = proposal.users?.first_name && proposal.users?.last_name
-                                          ? `${proposal.users.first_name} ${proposal.users.last_name}`
-                                          : proposal.users?.email?.split('@')[0] || 'Unknown'
+                                        const userName = getProposerDisplayName(proposal)
 
                                         // Build legs from pair trade data if not in sizing_context
                                         if (legs.length === 0 && isPairTrade && pairTradeData) {
@@ -6369,9 +6405,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 }
 
                                 const renderRecCard = (proposal: any, isMe: boolean) => {
-                                  const userName = proposal.users?.first_name && proposal.users?.last_name
-                                    ? `${proposal.users.first_name} ${proposal.users.last_name}`
-                                    : proposal.users?.email?.split('@')[0] || 'Unknown'
+                                  const userName = getProposerDisplayName(proposal)
                                   const propTarget = proposal.weight != null ? Number(proposal.weight) : null
                                   const tc = propTarget != null ? classifyTrade(propTarget) : null
                                   const propTime = proposal.updated_at || proposal.created_at
@@ -6831,9 +6865,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       /* Proposals exist but no portfolio context cards — show a flat list */
                       <div className="space-y-2">
                         {proposals.map((proposal: any) => {
-                          const userName = proposal.users?.first_name && proposal.users?.last_name
-                            ? `${proposal.users.first_name} ${proposal.users.last_name}`
-                            : proposal.users?.email?.split('@')[0] || 'Unknown'
+                          const userName = getProposerDisplayName(proposal)
                           const isCurrentUser = proposal.user_id === user?.id
                           const portfolioName = proposal.portfolio?.name || proposal.portfolios?.name || 'Unknown Portfolio'
 
@@ -6915,13 +6947,22 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                   }
                 }
 
-                // Creator
-                if (trade.users) addParticipant(trade.created_by || 'creator', trade.users, 'Creator')
+                // Creator — pilot-seeded trades surface as "Pilot" rather than
+                // the synthetic admin the seeding RPC happened to pick.
+                if (isPilotSeedTrade(trade)) {
+                  addParticipant('pilot', { first_name: 'Pilot', last_name: '' } as any, 'Creator')
+                } else if (trade.users) {
+                  addParticipant(trade.created_by || 'creator', trade.users, 'Creator')
+                }
                 // Assignee
                 if ((trade as any).assigned_user) addParticipant((trade as any).assigned_to, (trade as any).assigned_user, 'Assignee')
-                // Recommenders
+                // Recommenders — same pilot-seed treatment.
                 const proposalsData = proposals || []
                 proposalsData.forEach((p: any) => {
+                  if (isPilotSeedProposal(p)) {
+                    addParticipant('pilot', { first_name: 'Pilot', last_name: '' } as any, 'Recommender')
+                    return
+                  }
                   const proposerData = p.users || p.user
                   if (proposerData) addParticipant(p.user_id, proposerData, 'Recommender')
                 })

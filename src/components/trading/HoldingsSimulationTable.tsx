@@ -494,11 +494,21 @@ function HoldingRow({
       )
     }
 
-    // No sizing: for existing baseline holdings, show the current weight as
-    // the sim weight (untraded → sim equals current). For genuine new
-    // positions with zero baseline, show the "enter size" placeholder. This
-    // prevents the confusing blank-cell look when a row has a stray empty
-    // variant (left over from a click-to-edit that was abandoned).
+    // Variant exists but no sizing yet (e.g. user just checked an idea with
+    // no suggested weight). Show the "enter size" prompt so they know the
+    // row is queued and waiting on a size, rather than looking identical to
+    // an untraded row.
+    if (v) {
+      return (
+        <span className="text-[13px] text-primary-500 dark:text-primary-400 italic">
+          {suggestMode ? 'suggest' : 'enter size'}
+        </span>
+      )
+    }
+
+    // No variant at all: for existing baseline holdings, show the current
+    // weight as the sim weight (untraded → sim equals current). For genuine
+    // new positions with zero baseline, show the "enter size" placeholder.
     if (!row.isNew) {
       const hoverClass = suggestMode
         ? 'group-hover/row:text-amber-500 dark:group-hover/row:text-amber-400'
@@ -579,9 +589,17 @@ function HoldingRow({
     )
   }
 
+  // Pending-sizing state: variant exists but no sizing has been entered yet
+  // (e.g. user just checked an idea that had no proposed weight). Shown with
+  // a softer tint + dashed left accent so the user can tell their click
+  // landed and knows to enter a size.
+  const isPendingSizing = !!v && !v.sizing_input
+
   const leftBorder = hasSizing && v
     ? `border-l-2 ${ACTION_BORDER[action]}`
-    : 'border-l-2 border-l-transparent'
+    : isPendingSizing
+      ? 'border-l-2 border-dashed border-l-primary-300 dark:border-l-primary-600'
+      : 'border-l-2 border-l-transparent'
 
   return (
     <tr
@@ -597,6 +615,10 @@ function HoldingRow({
         !row.isNew && hasSizing && !isFocused && !row.isRemoved && (action === 'sell' || action === 'trim'
           ? '!bg-amber-50/80 dark:!bg-amber-950/15'
           : '!bg-blue-50/80 dark:!bg-blue-950/15'),
+        // Pending-sizing tint (lighter than active sizing, only when not
+        // already painted by hasSizing / isNew branches above).
+        !row.isNew && !hasSizing && isPendingSizing && !isFocused && !row.isRemoved &&
+          '!bg-primary-50/40 dark:!bg-primary-950/10',
         row.isRemoved && '!bg-red-50 dark:!bg-red-950/20 opacity-50',
         !isFocused && 'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
         isFocused && '!bg-primary-50/40 dark:!bg-primary-950/10',
@@ -1627,6 +1649,19 @@ export function HoldingsSimulationTable({
           </button>
         )}
 
+        {/* Cash-negative badge — compact warning that the simulation's staged
+            buys exceed available cash. Shows the shortfall in dollars as a
+            tooltip so the user can size the fix without the big banner. */}
+        {cashRow && (cashRow.simNotional < -0.005 || cashRow.simWeight < -0.005) && (
+          <span
+            title={`Cash is negative by ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Math.abs(cashRow.simNotional))}. Reduce a buy, add a trim, or raise the target cash weight.`}
+            className="text-[11px] font-semibold tabular-nums px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 flex items-center gap-1 border border-red-200/70 dark:border-red-800/40"
+          >
+            <AlertTriangle className="h-3 w-3" />
+            Cash negative
+          </span>
+        )}
+
         {/* Execute Trades — commit checked trades to Trade Book */}
         {!readOnly && !suggestMode && onBulkPromote && promotableRows.length > 0 && (
           <button
@@ -1893,15 +1928,26 @@ export function HoldingsSimulationTable({
             {cashRow && (() => {
               // With border-separate, row-level borders don't render. The
               // top dashed separator lives on every td instead.
-              const cashSep = 'border-t border-dashed border-gray-300 dark:border-gray-600 bg-gray-50/50 dark:bg-gray-800/40'
+              const cashIsNegative = cashRow.simNotional < -0.005 || cashRow.simWeight < -0.005
+              const cashSep = clsx(
+                'border-t border-dashed',
+                cashIsNegative
+                  ? 'border-red-300 dark:border-red-700/60 bg-red-50/70 dark:bg-red-900/20'
+                  : 'border-gray-300 dark:border-gray-600 bg-gray-50/50 dark:bg-gray-800/40'
+              )
               return (
               <tr>
                 {showCheckboxCol && <td className={clsx('px-2 py-1.5 w-6', cashSep)} />}
-                <td className={clsx('pl-3 pr-2 py-1.5 border-l-2 border-l-transparent whitespace-nowrap', cashSep)}>
-                  <span className="text-[13px] font-semibold text-gray-600 dark:text-gray-300">CASH_USD</span>
+                <td className={clsx('pl-3 pr-2 py-1.5 border-l-2 whitespace-nowrap', cashSep, cashIsNegative ? 'border-l-red-500' : 'border-l-transparent')}>
+                  <span className={clsx('text-[13px] font-semibold inline-flex items-center gap-1', cashIsNegative ? 'text-red-700 dark:text-red-300' : 'text-gray-600 dark:text-gray-300')}>
+                    {cashIsNegative && <AlertTriangle className="h-3 w-3" />}
+                    CASH_USD
+                  </span>
                 </td>
                 <td className={clsx('px-2 py-1.5 whitespace-nowrap', cashSep)}>
-                  <span className="text-[12px] text-gray-400 dark:text-gray-500">Cash &amp; Equivalents</span>
+                  <span className={clsx('text-[12px]', cashIsNegative ? 'text-red-600 dark:text-red-300/80' : 'text-gray-400 dark:text-gray-500')}>
+                    {cashIsNegative ? 'Over-invested — cash is negative' : 'Cash & Equivalents'}
+                  </span>
                 </td>
                 {/* Shares — not applicable */}
                 <td className={clsx('px-2 py-1.5', cashSep)} />
@@ -1955,19 +2001,19 @@ export function HoldingsSimulationTable({
                       className="w-16 h-5 text-[13px] font-mono tabular-nums text-right px-1.5 -my-0.5 rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm focus:outline-none focus:ring-1 focus:ring-primary-400"
                     />
                   ) : (
-                    <span className={clsx(NUM, 'text-gray-600 dark:text-gray-300')}>{fmtWt(cashRow.simWeight)}</span>
+                    <span className={clsx(NUM, cashIsNegative ? 'text-red-700 dark:text-red-300 font-semibold' : 'text-gray-600 dark:text-gray-300')}>
+                      {fmtWt(cashRow.simWeight)}
+                    </span>
                   )}
                 </td>
                 {/* Sim Shrs — not applicable */}
                 <td className={clsx('px-2 py-1.5', cashSep)} />
-                {/* Sim $ — post-trade cash value = target weight × total.
-                    Always show a dollar figure for cash (clamped at $0
-                    for negative/rounding-noise values) instead of '—',
-                    so the row is informative even when the portfolio
-                    is fully invested. */}
+                {/* Sim $ — post-trade cash value. When cash is negative
+                    the real (signed) figure is shown in red so the user
+                    can see exactly how much they're over-invested by. */}
                 <td className={clsx('px-2 py-1.5 text-right whitespace-nowrap', cashSep)}>
-                  <span className={clsx(NUM, 'font-medium text-gray-600 dark:text-gray-300')}>
-                    {fmtNotional(Math.max(0, cashRow.simNotional))}
+                  <span className={clsx(NUM, 'font-medium', cashIsNegative ? 'text-red-700 dark:text-red-300' : 'text-gray-600 dark:text-gray-300')}>
+                    {fmtNotional(cashRow.simNotional)}
                   </span>
                 </td>
                 {/* Δ Wt */}

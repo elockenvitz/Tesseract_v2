@@ -23,6 +23,9 @@ import { markStaleAcceptedTrades } from '../lib/services/trade-reconciliation-se
 import { BatchListView } from '../components/trading/BatchListView'
 import { TabStateManager } from '../lib/tabStateManager'
 import type { ExecutionStatus, ActionContext, TradeAction } from '../types/trading'
+import { usePilotMode } from '../hooks/usePilotMode'
+import { usePilotProgress } from '../hooks/usePilotProgress'
+import { PilotOutcomesNudge } from '../components/pilot/PilotOutcomesNudge'
 
 // Stable key for TabStateManager — there's only ever one Trade Book
 // tab open, so a literal id is fine. Used to persist view toggle,
@@ -50,9 +53,13 @@ type BookView = 'trades' | 'batches'
 
 interface TradeBookPageProps {
   initialPortfolioId?: string
+  /** Optional list of accepted_trade ids to scroll into view + briefly
+   *  highlight on mount. Set by SimulationPage's "View in Trade Book" CTA in
+   *  the Decision Recorded modal so the PM immediately sees what just landed. */
+  highlightTradeIds?: string[]
 }
 
-export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
+export function TradeBookPage({ initialPortfolioId, highlightTradeIds }: TradeBookPageProps = {}) {
   const { user } = useAuth()
 
   // Hydrate from session-persisted state once, at mount. TabStateManager
@@ -73,7 +80,13 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   // (rebalances, cash raises, individual ideas) and the batch rationale
   // + name carry the context a PM needs to recall the intent behind a
   // commit. The flat trades list is a drill-down, not the overview.
-  const [view, setView] = useState<BookView>(persisted.view || 'batches')
+  // Always land on Batches on mount — regardless of what view the user
+  // was on when they last left this tab, and regardless of whether the
+  // caller handed us highlightTradeIds. The user asked for this: the
+  // batch context (name, rationale, grouped trades) is the intended
+  // landing. If they switch to the Trades view during the session, the
+  // highlight effect below still scrolls to and flashes the new rows.
+  const [view, setView] = useState<BookView>('batches')
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
     persisted.selectedBatchId ?? null,
   )
@@ -96,7 +109,7 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
   }, [view])
 
   // Portfolio selector
-  const { data: portfolios = [] } = useQuery({
+  const { data: portfolios = [], isLoading: portfoliosLoading } = useQuery({
     queryKey: ['portfolios-list'],
     queryFn: async () => {
       const { data } = await supabase
@@ -175,7 +188,7 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
 
   const {
     trades,
-    isLoading,
+    isLoading: tradesLoading,
     updateExecutionStatus,
     updateSizing,
     revert,
@@ -183,7 +196,59 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
     addComment,
   } = useAcceptedTrades(portfolioId)
 
-  const { batches } = useTradeBatches(portfolioId)
+  const { batches, isLoading: batchesLoading } = useTradeBatches(portfolioId)
+
+  // Treat "still resolving the portfolio id" and "either child query
+  // still loading" as loading. Without this guard the page renders the
+  // empty state for one frame between mount and the first query firing
+  // (or between trades resolving and batches resolving) — visible as a
+  // brief "No batches yet" / "No trades" flash.
+  const isLoading = portfoliosLoading || !portfolioId || tradesLoading || batchesLoading
+
+  // Pilot unlock for Outcomes: once the pilot user has opened Trade Book at
+  // least once with a real committed trade visible, promote outcomes
+  // 'preview' → 'full'. Idempotent — markPilotStage no-ops if already set.
+  const pilotMode = usePilotMode()
+  const { mark: markPilotStage, hasUnlockedOutcomes } = usePilotProgress()
+  useEffect(() => {
+    if (!pilotMode.isPilot || pilotMode.isLoading) return
+    if (hasUnlockedOutcomes) return
+    if (!trades || trades.length === 0) return
+    markPilotStage('outcomes_unlocked')
+  }, [pilotMode.isPilot, pilotMode.isLoading, hasUnlockedOutcomes, trades, markPilotStage])
+
+  // Highlight newly-committed rows: when the PM clicks "View in Trade Book"
+  // from the Decision Recorded modal, we receive their accepted_trade ids
+  // via highlightTradeIds. Wait until the trades list actually includes the
+  // target rows, then scroll the first one into view and apply a brief
+  // ring animation. Fires once.
+  const highlightedAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!highlightTradeIds || highlightTradeIds.length === 0) return
+    if (!trades || trades.length === 0) return
+    const firstId = highlightTradeIds[0]
+    if (highlightedAppliedRef.current === firstId) return
+    // Wait until at least the first target is present in the list
+    if (!trades.some(t => t.id === firstId)) return
+
+    highlightedAppliedRef.current = firstId
+
+    // Give the table a tick to mount
+    const timeout = setTimeout(() => {
+      for (const id of highlightTradeIds) {
+        const el = document.querySelector<HTMLElement>(`tr[data-trade-id="${id}"]`)
+        if (!el) continue
+        if (id === firstId) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+        // Flash class — a soft amber ring that fades out.
+        el.classList.add('decision-recorded-flash')
+        setTimeout(() => el.classList.remove('decision-recorded-flash'), 2600)
+      }
+    }, 80)
+
+    return () => clearTimeout(timeout)
+  }, [highlightTradeIds, trades])
 
   // Staleness sweep: flag pending accepted_trades whose activity clock has
   // crossed the portfolio's inactivity window. Fire once per portfolio mount
@@ -318,6 +383,34 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
     setView('trades')
   }, [batches])
 
+  // Batch the user JUST committed (from the Decision Recorded modal's
+  // "View in Trade Book" CTA). Derived from highlightTradeIds — we look up
+  // the first highlighted accepted_trade and take its batch_id. Used to
+  // badge the batch card, paint a continuity line in the detail panel,
+  // and auto-select that batch on first mount so the PM lands on the
+  // right context without having to find it in the left rail.
+  const justCommittedBatchId = useMemo<string | null>(() => {
+    if (!highlightTradeIds || highlightTradeIds.length === 0) return null
+    if (!trades || trades.length === 0) return null
+    for (const id of highlightTradeIds) {
+      const t = trades.find(x => x.id === id)
+      if (t?.batch_id) return t.batch_id
+    }
+    return null
+  }, [highlightTradeIds, trades])
+
+  // Auto-select the just-committed batch once, on first successful
+  // resolve. We use a ref (not a state flag) so switching between the
+  // Trades and Batches views within the same session doesn't re-select
+  // it and fight the user's navigation.
+  const autoSelectedJustCommittedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!justCommittedBatchId) return
+    if (autoSelectedJustCommittedRef.current === justCommittedBatchId) return
+    autoSelectedJustCommittedRef.current = justCommittedBatchId
+    setSelectedBatchId(justCommittedBatchId)
+  }, [justCommittedBatchId])
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
@@ -428,11 +521,22 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
         </div>
       </div>
 
+      {/* Pilot next-step nudge: once outcomes has unlocked (user has at
+          least one committed trade visible on this page), prompt them to
+          move on to Outcomes. Gated on pilot mode so non-pilots never see
+          it. Dismissible per-user. */}
+      {pilotMode.effectiveIsPilot && hasUnlockedOutcomes && trades && trades.length > 0 && (
+        <PilotOutcomesNudge userId={user?.id} />
+      )}
+
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-auto">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-6 h-6 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
+          <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+            <div className="text-center">
+              <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-gray-400">Loading…</p>
+            </div>
           </div>
         ) : view === 'batches' ? (
           <BatchListView
@@ -441,6 +545,7 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
             selectedBatchId={selectedBatchId}
             onSelectBatch={handleSelectBatch}
             onViewBatchTrades={handleViewBatchTrades}
+            onAddComment={handleAddComment}
           />
         ) : (
           <AcceptedTradesTable
@@ -454,6 +559,11 @@ export function TradeBookPage({ initialPortfolioId }: TradeBookPageProps = {}) {
             onRevert={handleRevert}
             onCreateCorrection={handleCreateCorrection}
             onAddComment={handleAddComment}
+            onOpenBatch={(batchId) => {
+              setSelectedBatchId(batchId)
+              setPendingTradesSearch(null)
+              setView('batches')
+            }}
             canEdit={canEdit}
             canUpdateExecution={canUpdateExecution}
             canRevert={canRevert}

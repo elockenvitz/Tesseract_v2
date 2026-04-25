@@ -44,10 +44,10 @@ const TRADE_SELECT = `
   trade_queue_item:trade_queue_items!accepted_trades_trade_queue_item_id_fkey(id, pair_id, pair_trade_id, pair_leg_type, action)
 `
 
-const COMMENT_SELECT = `
-  *,
-  user:users!accepted_trade_comments_user_id_fkey(id, email, first_name, last_name)
-`
+// Select comment rows; user display info is fetched separately so the
+// embed isn't coupled to the FK constraint name (which PostgREST can't
+// always resolve when the FK targets auth.users instead of public.users).
+const COMMENT_SELECT = `*`
 
 // ---------------------------------------------------------------------------
 // CRUD
@@ -1060,7 +1060,15 @@ export async function addComment(
     .single()
 
   if (error) throw error
-  return data as unknown as AcceptedTradeComment
+  const row = data as unknown as AcceptedTradeComment
+  // Attach display info with a separate lookup (see getComments for why
+  // we don't use a PostgREST embed here).
+  const { data: userRow } = await supabase
+    .from('users')
+    .select('id, email, first_name, last_name')
+    .eq('id', userId)
+    .maybeSingle()
+  return { ...row, user: (userRow ?? undefined) as AcceptedTradeComment['user'] }
 }
 
 export async function getComments(tradeId: string): Promise<AcceptedTradeComment[]> {
@@ -1071,7 +1079,24 @@ export async function getComments(tradeId: string): Promise<AcceptedTradeComment
     .order('created_at', { ascending: true })
 
   if (error) throw error
-  return (data as unknown as AcceptedTradeComment[]) || []
+  const rows = (data as unknown as AcceptedTradeComment[]) || []
+  if (rows.length === 0) return rows
+
+  // Attach display info by looking up public.users in a second round
+  // trip. Doing this client-side avoids a PostgREST embed that breaks
+  // when the FK on accepted_trade_comments.user_id points at auth.users
+  // instead of public.users.
+  const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)))
+  if (userIds.length === 0) return rows
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, email, first_name, last_name')
+    .in('id', userIds)
+  const byId = new Map((users || []).map((u) => [u.id as string, u]))
+  return rows.map((r) => ({
+    ...r,
+    user: byId.get(r.user_id) as AcceptedTradeComment['user'],
+  }))
 }
 
 // ---------------------------------------------------------------------------

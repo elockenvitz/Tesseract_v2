@@ -201,8 +201,10 @@ export function useAuth() {
       handleAuthSession(session)
     })
 
-    // Listen for org-switched event — re-read localStorage to update React state
-    // without a full page reload.
+    // Listen for org-switched event — re-read localStorage to update React state.
+    // Kept for any non-reload callers (e.g. background session refresh). The
+    // main switchOrg path now does a full page reload, so in practice this
+    // handler rarely fires in that flow.
     const handleOrgSwitched = () => {
       const cached = getCachedUser()
       if (cached) setUser(cached)

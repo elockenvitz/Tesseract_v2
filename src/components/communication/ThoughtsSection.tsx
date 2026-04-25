@@ -141,7 +141,7 @@ export function ThoughtsSection({
     success('Trade idea added.', {
       description: 'Decision queued in Priorities.',
       action: tradeIdeaId ? {
-        label: 'View in Queue',
+        label: 'View in Pipeline',
         onClick: () => {
           window.dispatchEvent(new CustomEvent('openTradeQueue', {
             detail: { selectedTradeId: tradeIdeaId }

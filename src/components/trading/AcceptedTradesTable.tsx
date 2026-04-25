@@ -14,7 +14,7 @@ import {
   Wrench,
   Inbox,
   FlaskConical,
-  Plus,
+  PenLine,
   ArrowUpDown,
   Layers,
   Search,
@@ -23,6 +23,7 @@ import {
 import { clsx } from 'clsx'
 import { ExecutionStatusDropdown } from './ExecutionStatusDropdown'
 import { PairBadge } from './PairBadge'
+import { CreateCorrectionModal } from './CreateCorrectionModal'
 import { buildPairInfoByAsset } from '../../lib/trade-lab/pair-info'
 import { useAcceptedTradeComments } from '../../hooks/useAcceptedTrades'
 import { useAuth } from '../../hooks/useAuth'
@@ -57,13 +58,13 @@ const ACTION_COLORS: Record<string, string> = {
 const SOURCE_ICONS: Record<string, React.ElementType> = {
   inbox: Inbox,
   simulation: FlaskConical,
-  adhoc: Plus,
+  adhoc: PenLine,
 }
 
 const SOURCE_LABELS: Record<string, string> = {
   inbox: 'Inbox',
   simulation: 'Sim',
-  adhoc: 'Ad-hoc',
+  adhoc: 'Manual',
 }
 
 type SortKey = 'symbol' | 'action' | 'target_weight' | 'delta_weight' | 'delta_shares' | 'notional_value' | 'state' | 'created_at'
@@ -142,6 +143,10 @@ interface AcceptedTradesTableProps {
     context: ActionContext,
   ) => void
   onAddComment?: (tradeId: string, content: string) => void
+  /** Navigate to the Batches view with this batch selected. Used by the
+   *  Batch chip so clicking it jumps to the batch's detail instead of
+   *  filtering the trades list. */
+  onOpenBatch?: (batchId: string) => void
   canEdit?: boolean
   canUpdateExecution?: boolean
   canRevert?: boolean
@@ -206,13 +211,44 @@ export function ReasonBlock({
 }
 
 // ---------------------------------------------------------------------------
-// Comment Thread
+// Trade Rationale Log
 // ---------------------------------------------------------------------------
 
-function CommentThread({ tradeId, onAddComment }: { tradeId: string; onAddComment?: (tradeId: string, content: string) => void }) {
-  const { data: comments = [] } = useAcceptedTradeComments(tradeId)
+/**
+ * Unified view of a committed trade's decision narrative.
+ *
+ *   1. The INITIAL rationale is whatever acceptance_note was captured at
+ *      commit time. We label it "At commit" so the reader knows that was
+ *      the PM's stated reason as of the moment the trade landed. When
+ *      the note exactly matches the batch description we label it
+ *      "From batch rationale" so batch-level context isn't misread as
+ *      trade-specific.
+ *   2. ADDITIONS are rows on accepted_trade_comments. The DB calls them
+ *      comments for historical reasons, but in the UI we treat them as
+ *      follow-on rationale entries — a running log of "what else we
+ *      learned" after the commit.
+ *
+ *   Collapsed together into a single log with a single input so the PM
+ *   sees the trade's full "why" story in one place instead of navigating
+ *   between a reason block and a separate discussion thread.
+ */
+export function TradeRationaleLog({
+  tradeId,
+  acceptanceNote,
+  batchDescription,
+  onAddComment,
+}: {
+  tradeId: string
+  acceptanceNote: string | null | undefined
+  batchDescription?: string | null
+  onAddComment?: (tradeId: string, content: string) => void
+}) {
+  const { data: additions = [] } = useAcceptedTradeComments(tradeId)
   const [draft, setDraft] = useState('')
-  const { user } = useAuth()
+
+  const initial = (acceptanceNote || '').trim()
+  const batchDesc = (batchDescription || '').trim()
+  const isInherited = initial.length > 0 && initial === batchDesc
 
   const handleSubmit = () => {
     if (!draft.trim() || !onAddComment) return
@@ -221,43 +257,72 @@ function CommentThread({ tradeId, onAddComment }: { tradeId: string; onAddCommen
   }
 
   return (
-    <div>
-      <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">
-        Comments
+    <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/60">
+      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+        Trade rationale
       </div>
-      {comments.length > 0 ? (
-        <div className="space-y-1.5 mb-2">
-          {comments.map((c: AcceptedTradeComment) => (
-            <div key={c.id} className="flex gap-2 text-xs">
-              <span className="font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">
+
+      <div className="px-3 py-2 space-y-2.5">
+        {/* Initial rationale — the reason captured at commit time. */}
+        {initial ? (
+          <div className="flex gap-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5 w-16 flex-shrink-0">
+              {isInherited ? 'From batch' : 'At commit'}
+            </span>
+            <p className="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed flex-1">
+              {initial}
+            </p>
+          </div>
+        ) : (
+          <div className="flex gap-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5 w-16 flex-shrink-0">
+              At commit
+            </span>
+            <p className="text-xs italic text-gray-400 dark:text-gray-500 flex-1">
+              No reason was captured at commit time.
+            </p>
+          </div>
+        )}
+
+        {/* Additions — timestamped follow-ons. Stored in
+            accepted_trade_comments; presented here as continuations of
+            the rationale, not as a separate discussion. */}
+        {additions.map((c: AcceptedTradeComment) => (
+          <div key={c.id} className="flex gap-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5 w-16 flex-shrink-0">
+              Added
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
+                {c.content}
+              </p>
+              <div className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500">
                 {c.user?.first_name || c.user?.email?.split('@')[0] || 'User'}
-              </span>
-              <span className="text-gray-500 dark:text-gray-500 flex-1">{c.content}</span>
-              <span className="text-gray-400 dark:text-gray-600 whitespace-nowrap">
+                {' · '}
                 {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
-              </span>
+              </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-gray-400 dark:text-gray-600 mb-2">No comments yet</p>
-      )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add-to-rationale input */}
       {onAddComment && (
-        <div className="flex gap-2">
+        <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-700/60 flex gap-2">
           <input
             type="text"
             value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            placeholder="Add a comment..."
-            className="flex-1 text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            placeholder="Add to rationale — what's changed, what you learned..."
+            className="flex-1 text-xs px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400"
           />
           <button
             onClick={handleSubmit}
             disabled={!draft.trim()}
-            className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 transition-colors"
+            className="text-xs px-2.5 py-1.5 rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 transition-colors whitespace-nowrap"
           >
-            Send
+            Add note
           </button>
         </div>
       )}
@@ -278,6 +343,7 @@ export function AcceptedTradesTable({
   onRevert,
   onCreateCorrection,
   onAddComment,
+  onOpenBatch,
   canEdit = false,
   canUpdateExecution = false,
   canRevert = false,
@@ -292,6 +358,7 @@ export function AcceptedTradesTable({
   // expanded row underneath the trade which crowded the table and
   // pushed other trades out of view.
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null)
+  const [correctionTradeId, setCorrectionTradeId] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [filterPhase, setFilterPhase] = useState<LifecyclePhase | 'all'>('all')
@@ -539,7 +606,7 @@ export function AcceptedTradesTable({
           <option value="all">All Sources</option>
           <option value="inbox">Inbox</option>
           <option value="simulation">Simulation</option>
-          <option value="adhoc">Ad-hoc</option>
+          <option value="adhoc">Manual</option>
         </select>
         {/* Free-text search. Matches symbol, company name, batch
             name, or reason. Replaces the old per-batch dropdown —
@@ -592,16 +659,18 @@ export function AcceptedTradesTable({
             <SortHeader label="State" k="state" />
             <th className="py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-left">Next action</th>
             <th className="py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-left">Source</th>
+            <th className="py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-left">Batch</th>
             <th className="py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((trade, idx) => {
             const isSelected = selectedTradeId === trade.id
-            const SourceIcon = SOURCE_ICONS[trade.source] || Plus
+            const SourceIcon = SOURCE_ICONS[trade.source] || PenLine
             return (
               <React.Fragment key={trade.id}>
                 <tr
+                  data-trade-id={trade.id}
                   onClick={() => setSelectedTradeId(isSelected ? null : trade.id)}
                   className={clsx(
                     'border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors',
@@ -815,33 +884,39 @@ export function AcceptedTradesTable({
                   <td className="py-2 px-3 text-xs text-gray-600 dark:text-gray-300">
                     {nextActionCopy(phaseByTradeId.get(trade.id) || { phase: 'queued' })}
                   </td>
+                  {/* Source — trade origin (idea / manual / proposal etc.) */}
                   <td className="py-2 px-3">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                        <SourceIcon className="w-3 h-3" />
-                        {SOURCE_LABELS[trade.source]}
-                      </span>
-                      {/* Batch chip — clicking it drops the batch name
-                          into the search, which narrows the result
-                          set to that batch's trades (same end state
-                          the old dropdown produced). */}
-                      {trade.batch_id && batchMap.get(trade.batch_id) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSearchQuery(batchMap.get(trade.batch_id!)?.name || '')
-                          }}
-                          className={clsx(
-                            'inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded w-fit cursor-pointer hover:ring-1 hover:ring-indigo-300 dark:hover:ring-indigo-600 transition-shadow',
-                            BATCH_STATUS_STYLES[batchMap.get(trade.batch_id)!.status] || BATCH_STATUS_STYLES.active
-                          )}
-                          title="Search for this batch"
-                        >
-                          <Layers className="w-2.5 h-2.5" />
-                          {batchMap.get(trade.batch_id)!.name || 'Batch'}
-                        </button>
-                      )}
-                    </div>
+                    <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                      <SourceIcon className="w-3 h-3" />
+                      {SOURCE_LABELS[trade.source]}
+                    </span>
+                  </td>
+                  {/* Batch — parent grouping. Clicking jumps to the
+                      Batches view with this batch selected so the PM sees
+                      the batch's full context (rationale, grouped trades,
+                      commit metadata). Falls back to search-filter when
+                      no onOpenBatch handler is provided. */}
+                  <td className="py-2 px-3">
+                    {trade.batch_id && batchMap.get(trade.batch_id) ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const id = trade.batch_id!
+                          if (onOpenBatch) onOpenBatch(id)
+                          else setSearchQuery(batchMap.get(id)?.name || '')
+                        }}
+                        className={clsx(
+                          'inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded w-fit cursor-pointer hover:ring-1 hover:ring-indigo-300 dark:hover:ring-indigo-600 transition-shadow',
+                          BATCH_STATUS_STYLES[batchMap.get(trade.batch_id)!.status] || BATCH_STATUS_STYLES.active
+                        )}
+                        title={onOpenBatch ? 'Open batch detail' : 'Filter to this batch'}
+                      >
+                        <Layers className="w-2.5 h-2.5" />
+                        {batchMap.get(trade.batch_id)!.name || 'Batch'}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-gray-300 dark:text-gray-600">—</span>
+                    )}
                   </td>
                   <td
                     className="py-2 px-3 text-right"
@@ -899,15 +974,9 @@ export function AcceptedTradesTable({
                         && !correctionLinks.forward.get(trade.id)
                         && !correctionLinks.backward.get(trade.id) && (
                         <button
-                          onClick={() => {
-                            const sizing = window.prompt(
-                              `Correct ${trade.asset?.symbol}: enter new sizing (e.g. "2.5", "+0.5", "#500")`,
-                              trade.sizing_input || '',
-                            )
-                            if (!sizing || !sizing.trim()) return
-                            const note = window.prompt('Reason for correction:', '')
-                            if (note == null) return
-                            onCreateCorrection(trade.id, sizing.trim(), note.trim() || 'PM correction', getContext())
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setCorrectionTradeId(trade.id)
                           }}
                           className="p-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/20 text-gray-400 hover:text-amber-600"
                           title="Create correction trade"
@@ -945,6 +1014,25 @@ export function AcceptedTradesTable({
           onAddComment={onAddComment}
         />
       )}
+
+      {/* Correction modal — proper form replacing the old twin
+          window.prompt() dialogs. Shows the original trade's context so
+          the PM knows what they're correcting. */}
+      <CreateCorrectionModal
+        isOpen={!!correctionTradeId}
+        trade={correctionTradeId ? trades.find(t => t.id === correctionTradeId) || null : null}
+        onClose={() => setCorrectionTradeId(null)}
+        onSubmit={(sizingInput, note) => {
+          if (!correctionTradeId || !onCreateCorrection) return
+          onCreateCorrection(
+            correctionTradeId,
+            sizingInput,
+            note || 'PM correction',
+            getContext(),
+          )
+          setCorrectionTradeId(null)
+        }}
+      />
     </div>
   )
 }
@@ -1003,24 +1091,16 @@ function TradeDetailPane({
         </button>
       </div>
 
-      {/* Body — reason + comments. Scrolls independently of the main
-          table so long comment threads don't lock up the list. */}
-      <div className="flex-1 overflow-auto px-4 py-3 space-y-4">
-        <section>
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">
-            {/* Header label is inside ReasonBlock too, but keep a
-                section heading here for rhythm with the Comments
-                section below. */}
-          </div>
-          <ReasonBlock
-            acceptanceNote={trade.acceptance_note}
-            batchDescription={batchDescription ?? null}
-          />
-        </section>
-
-        <section>
-          <CommentThread tradeId={trade.id} onAddComment={onAddComment} />
-        </section>
+      {/* Body — unified rationale log. The initial commit reason plus
+          any follow-on rationale notes all live in one place so the
+          PM sees the trade's full "why" story at a glance. */}
+      <div className="flex-1 overflow-auto px-4 py-3">
+        <TradeRationaleLog
+          tradeId={trade.id}
+          acceptanceNote={trade.acceptance_note}
+          batchDescription={batchDescription ?? null}
+          onAddComment={onAddComment}
+        />
       </div>
     </aside>
   )

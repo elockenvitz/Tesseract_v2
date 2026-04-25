@@ -468,6 +468,95 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     staleTime: 120_000,
   })
 
+  // ── Step 5a: Fetch accepted_trades + their follow-on rationale notes
+  // for each decision so the Outcomes view can read the canonical
+  // rationale from the same place the Trade Book stores it. Prior
+  // behavior only read from trade_event_rationales, which left every
+  // manually-entered acceptance_note AND every "Add note" follow-on
+  // invisible on this page.
+  const acceptedTradesQuery = useQuery({
+    queryKey: ['decision-accountability', 'accepted-trades-for-decisions', decisionIds.length],
+    queryFn: async () => {
+      const empty = {
+        byDecisionId: new Map<
+          string,
+          {
+            id: string
+            acceptance_note: string | null
+            latest_note: string | null
+            note_count: number
+          }
+        >(),
+      }
+      if (decisionIds.length === 0) return empty
+
+      const { data: trades, error: tErr } = await supabase
+        .from('accepted_trades')
+        .select('id, trade_queue_item_id, acceptance_note')
+        .in('trade_queue_item_id', decisionIds)
+      if (tErr) {
+        console.error('[decision-accountability] Failed to fetch accepted_trades:', tErr)
+        return empty
+      }
+
+      const tradesById = new Map<string, { id: string; trade_queue_item_id: string; acceptance_note: string | null }>()
+      const tradeIds: string[] = []
+      for (const t of (trades ?? []) as Array<{ id: string; trade_queue_item_id: string | null; acceptance_note: string | null }>) {
+        if (!t.trade_queue_item_id) continue
+        tradesById.set(t.id, { id: t.id, trade_queue_item_id: t.trade_queue_item_id, acceptance_note: t.acceptance_note })
+        tradeIds.push(t.id)
+      }
+
+      // Fetch the latest follow-on note per accepted_trade. Newest first
+      // so the "Rationale" surface on Outcomes reflects the most recent
+      // context the PM captured, not a stale batch-level note.
+      const latestNoteByTradeId = new Map<string, string>()
+      const noteCountByTradeId = new Map<string, number>()
+      if (tradeIds.length > 0) {
+        const { data: comments, error: cErr } = await supabase
+          .from('accepted_trade_comments')
+          .select('accepted_trade_id, content, created_at')
+          .in('accepted_trade_id', tradeIds)
+          .order('created_at', { ascending: false })
+        if (cErr) {
+          console.error('[decision-accountability] Failed to fetch accepted_trade_comments:', cErr)
+        } else {
+          for (const c of (comments ?? []) as Array<{ accepted_trade_id: string; content: string | null }>) {
+            noteCountByTradeId.set(
+              c.accepted_trade_id,
+              (noteCountByTradeId.get(c.accepted_trade_id) ?? 0) + 1,
+            )
+            if (!latestNoteByTradeId.has(c.accepted_trade_id) && c.content && c.content.trim()) {
+              latestNoteByTradeId.set(c.accepted_trade_id, c.content.trim())
+            }
+          }
+        }
+      }
+
+      const byDecisionId = new Map<
+        string,
+        {
+          id: string
+          acceptance_note: string | null
+          latest_note: string | null
+          note_count: number
+        }
+      >()
+      for (const trade of tradesById.values()) {
+        byDecisionId.set(trade.trade_queue_item_id, {
+          id: trade.id,
+          acceptance_note: trade.acceptance_note,
+          latest_note: latestNoteByTradeId.get(trade.id) ?? null,
+          note_count: noteCountByTradeId.get(trade.id) ?? 0,
+        })
+      }
+
+      return { byDecisionId }
+    },
+    enabled: enabled && decisionIds.length > 0,
+    staleTime: 30_000,
+  })
+
   // ── Step 5b: Fetch passed decisions (rejected/deferred) ────────
   const passedDecisionsQuery = useQuery({
     queryKey: ['decision-accountability', 'passed', filters?.portfolioIds, filters?.dateRange],
@@ -522,6 +611,8 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     const rationaleMap = rationalesQuery.data || new Map<string, RationaleInfo>()
     const priceMap = pricesQuery.data || new Map<string, number>()
     const snapshotMap = snapshotsQuery.data || new Map<string, { price: number; at: string }>()
+    const acceptedByDecision = acceptedTradesQuery.data?.byDecisionId
+      || new Map<string, { id: string; acceptance_note: string | null; latest_note: string | null; note_count: number }>()
     const now = new Date()
 
     // Index events by linked_trade_idea_id for explicit matching
@@ -687,6 +778,47 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
           claimedEventIds.add(evt.id)
           matched.push(buildMatchedExecution(evt, 'fuzzy_match', daysAfterApproval))
           break // Take first fuzzy match only
+        }
+      }
+
+      // Merge in the accepted_trade's canonical rationale — it lives on
+      // `accepted_trades.acceptance_note` (+ accepted_trade_comments for
+      // follow-on notes) and is the same surface the Trade Book shows.
+      // Without this the Decisions view only read from the legacy
+      // `trade_event_rationales` table and missed every rationale set
+      // at commit time or added via the "Add note" button.
+      //
+      // Precedence for the displayed summary (newest / most-trade-specific
+      // context first):
+      //   1. Latest user-added note (from accepted_trade_comments)
+      //   2. acceptance_note if it wasn't inherited from the batch
+      //   3. acceptance_note inherited from the batch (last resort)
+      const acceptedForDecision = acceptedByDecision.get(item.id)
+      if (acceptedForDecision) {
+        const trimmedNote = (acceptedForDecision.acceptance_note || '').trim()
+        const latestFollowOn = (acceptedForDecision.latest_note || '').trim()
+        const followOnCount = acceptedForDecision.note_count
+        const hasAnyRationale = trimmedNote.length > 0 || followOnCount > 0
+        const preferredSummary = latestFollowOn || trimmedNote
+        if (hasAnyRationale) {
+          for (const m of matched) {
+            if (!m.has_rationale) {
+              m.has_rationale = true
+            }
+            // Stamp `complete` so downstream `getReviewState` classifies
+            // the row as 'captured' — otherwise the UI still shows a
+            // "Capture rationale" action chip even though the PM has
+            // already written a rationale on the accepted_trade.
+            if (!m.rationale_status || m.rationale_status === 'in_progress') {
+              m.rationale_status = 'complete'
+            }
+            // Always prefer the accepted_trade rationale — the legacy
+            // `trade_event_rationales` summary rarely stays in sync with
+            // what a PM sees in the Trade Book panel.
+            if (preferredSummary) {
+              m.execution_rationale_summary = preferredSummary
+            }
+          }
         }
       }
 
@@ -910,7 +1042,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     })
 
     return [...decisionRows, ...discretionaryRows, ...passedRows]
-  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data])
+  }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data])
 
   // ── Step 7: Apply client-side filters ─────────────────────────
   const filteredRows = useMemo(() => {
@@ -1654,6 +1786,49 @@ export function useAddReflection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decision-reflections'] })
+    },
+  })
+}
+
+// =============================================================================
+// Thesis capture — lets a PM attach a thesis to any idea after the fact.
+// Useful for discretionary Trade Lab commits where no formal recommendation
+// existed, so the "Idea & Thesis" section is otherwise empty.
+// =============================================================================
+
+export function useAddThesis() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      decisionId,
+      userId,
+      direction,
+      rationale,
+      conviction,
+    }: {
+      decisionId: string
+      userId: string
+      direction: 'bull' | 'bear' | 'neutral'
+      rationale: string
+      conviction?: 'low' | 'medium' | 'high' | null
+    }) => {
+      const { error } = await supabase
+        .from('trade_idea_theses')
+        .insert({
+          trade_queue_item_id: decisionId,
+          created_by: userId,
+          direction,
+          rationale,
+          conviction: conviction ?? null,
+        })
+      if (error) throw error
+    },
+    onSuccess: (_data, vars) => {
+      // Refresh the decision-story query so the new thesis shows up
+      // without a manual reload.
+      queryClient.invalidateQueries({ queryKey: ['decision-story', vars.decisionId] })
+      queryClient.invalidateQueries({ queryKey: ['decision-story'] })
     },
   })
 }

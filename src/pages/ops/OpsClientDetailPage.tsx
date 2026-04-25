@@ -6,13 +6,14 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck } from 'lucide-react'
+import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles } from 'lucide-react'
+import { OpsPilotPanel } from './OpsPilotPanel'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { useToast } from '../../components/common/Toast'
 
-type Tab = 'members' | 'portfolios' | 'holdings' | 'engagement' | 'onboarding'
+type Tab = 'members' | 'portfolios' | 'holdings' | 'engagement' | 'onboarding' | 'pilot'
 
 export function OpsClientDetailPage() {
   const { orgId } = useParams<{ orgId: string }>()
@@ -197,6 +198,7 @@ export function OpsClientDetailPage() {
     { key: 'holdings', label: 'Holdings', icon: Database, count: holdingsStatus.length },
     { key: 'engagement', label: 'Engagement', icon: TrendingUp },
     { key: 'onboarding', label: 'Onboarding', icon: CheckCircle2, count: onboardingItems.length > 0 ? onboardingDone : undefined },
+    { key: 'pilot', label: 'Pilot', icon: Sparkles },
   ]
 
   const handleMorph = async (userId: string) => {
@@ -436,6 +438,23 @@ export function OpsClientDetailPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Pilot */}
+      {activeTab === 'pilot' && orgId && (
+        <OpsPilotPanel
+          orgId={orgId}
+          members={members.map((m: any) => {
+            const fullName = (m.user_full_name || '').trim()
+            const [first, ...rest] = fullName.split(' ')
+            return {
+              user_id: m.user_id,
+              email: m.user_email ?? null,
+              first_name: first || null,
+              last_name: rest.length > 0 ? rest.join(' ') : null,
+            }
+          })}
+        />
       )}
     </div>
   )
