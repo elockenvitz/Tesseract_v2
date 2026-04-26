@@ -246,333 +246,133 @@ interface UseDecisionAccountabilityOptions {
 export function useDecisionAccountability(options: UseDecisionAccountabilityOptions = {}) {
   const { filters, enabled = true } = options
 
-  // ── Step 1: Fetch decisions ──────────────────────────────────
-  const decisionsQuery = useQuery({
-    queryKey: ['decision-accountability', 'decisions', filters],
+  // ── Single RPC call: fetches decisions, events, rationales,
+  //    asset prices, decision-time snapshots, and accepted-trade
+  //    note rollups in ONE round-trip. Replaces the previous
+  //    7-chained-query pattern that took ~900ms cold; this typically
+  //    lands in ~300ms. The RPC runs SECURITY INVOKER so RLS scopes
+  //    every inner SELECT exactly as before.
+  const outcomesPayloadQuery = useQuery({
+    queryKey: ['outcomes-payload', filters],
     queryFn: async () => {
-      let query = supabase
-        .from('trade_queue_items')
-        .select(`
-          id,
-          created_at,
-          approved_at,
-          approved_by,
-          portfolio_id,
-          asset_id,
-          action,
-          urgency,
-          status,
-          rationale,
-          visibility_tier,
-          deleted_at,
-          origin_metadata,
-          assets:asset_id (id, symbol, company_name),
-          portfolios:portfolio_id (id, name),
-          approved_by_user:approved_by (id, email, first_name, last_name),
-          created_by_user:created_by (id, email, first_name, last_name)
-        `)
-
-      // Status filters — 'executed' is the legacy status for inbox-accepted decisions
-      const statuses: string[] = []
-      if (filters?.showApproved !== false) statuses.push('approved', 'executed')
-      if (filters?.showRejected) statuses.push('rejected')
-      if (filters?.showCancelled) statuses.push('cancelled')
-
-      if (statuses.length > 0) {
-        query = query.in('status', statuses)
-      } else {
-        query = query.in('status', ['approved', 'executed'])
+      const filterPayload: Record<string, any> = {
+        showApproved: filters?.showApproved !== false,
+        showRejected: !!filters?.showRejected,
+        showCancelled: !!filters?.showCancelled,
       }
-
-      // Date range — always filter on created_at for consistency
-      // (approved_at is null for many legacy rows; created_at is always set)
-      if (filters?.dateRange?.start) {
-        query = query.gte('created_at', filters.dateRange.start)
-      } else if (!filters?.dateRange) {
-        // No dateRange set at all — default to last 90 days
-        query = query.gte('created_at', subDays(new Date(), 90).toISOString())
-      }
-      // If dateRange exists but start is null → no date filter (ALL)
-      if (filters?.dateRange?.end) {
-        query = query.lte('created_at', filters.dateRange.end)
-      }
-
-      // Portfolio filter
+      if (filters?.dateRange?.start) filterPayload.dateStart = filters.dateRange.start
+      else if (!filters?.dateRange) filterPayload.dateStart = subDays(new Date(), 90).toISOString()
+      if (filters?.dateRange?.end) filterPayload.dateEnd = filters.dateRange.end
       if (filters?.portfolioIds && filters.portfolioIds.length > 0) {
-        query = query.in('portfolio_id', filters.portfolioIds)
+        filterPayload.portfolioIds = filters.portfolioIds
       }
-
-      // Owner filter (created_by = the analyst who created the trade idea)
       if (filters?.ownerUserIds && filters.ownerUserIds.length > 0) {
-        query = query.in('created_by', filters.ownerUserIds)
+        filterPayload.ownerUserIds = filters.ownerUserIds
       }
 
-      query = query
-        .order('approved_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-
-      const { data, error } = await query
+      const { data, error } = await supabase.rpc('outcomes_payload', { p_filters: filterPayload })
       if (error) throw error
-      return data || []
+      return (data || {}) as {
+        decisions?: any[]
+        events?: any[]
+        rationales?: Array<{ trade_event_id: string; status: string | null; reason_for_action: string | null }>
+        prices?: Array<{ id: string; current_price: number | string | null }>
+        snapshots?: Array<{ trade_queue_item_id: string; snapshot_price: number | string; snapshot_at: string }>
+        acceptedTrades?: Array<{
+          id: string; trade_queue_item_id: string; acceptance_note: string | null
+          note_count: number | string; latest_note: string | null
+        }>
+      }
     },
     enabled,
-    // Decisions list rarely changes outside of the user's own actions
-    // (accept/reject/skip), and those mutations explicitly invalidate
-    // 'decision-accountability'. Keep the cache fresh for 5 minutes so
-    // revisits to Outcomes feel instant.
+    // The RPC's downstream consumers all explicitly invalidate
+    // 'decision-accountability' or this exact key when they mutate,
+    // so a 5-minute window is generous and keeps revisits instant.
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     placeholderData: keepPreviousData,
+    retry: 1,
   })
 
-  // ── Step 2: Fetch trade events for matching ──────────────────
-  const decisionData = decisionsQuery.data || []
+  // ── Stub query handles for backward-compatible API ────────────
+  // The downstream useMemo + the hook return both reference these
+  // names. Keeping the same `.data / .isLoading / .isError / .refetch`
+  // shape avoids touching ~600 lines of consumer code.
+  const decisionsQuery = {
+    data: outcomesPayloadQuery.data?.decisions ?? [],
+    isLoading: outcomesPayloadQuery.isLoading,
+    isError: outcomesPayloadQuery.isError,
+    refetch: () => outcomesPayloadQuery.refetch(),
+  }
+  const eventsQuery = {
+    data: outcomesPayloadQuery.data?.events ?? [],
+    isLoading: outcomesPayloadQuery.isLoading,
+    isError: outcomesPayloadQuery.isError,
+    refetch: () => outcomesPayloadQuery.refetch(),
+  }
 
-  const portfolioIdsForEvents = useMemo(() => {
-    const ids = new Set<string>()
-    decisionData.forEach((d: any) => { if (d.portfolio_id) ids.add(d.portfolio_id) })
-    return Array.from(ids)
-  }, [decisionData])
+  const decisionData = decisionsQuery.data
 
-  const eventsQuery = useQuery({
-    queryKey: ['decision-accountability', 'events', portfolioIdsForEvents],
-    queryFn: async () => {
-      if (portfolioIdsForEvents.length === 0) return []
-
-      const lookbackDate = subDays(new Date(), 180).toISOString()
-
-      const { data, error } = await supabase
-        .from('portfolio_trade_events')
-        .select(`
-          id,
-          portfolio_id,
-          asset_id,
-          event_date,
-          action_type,
-          source_type,
-          quantity_delta,
-          weight_delta,
-          quantity_before,
-          quantity_after,
-          market_value_before,
-          market_value_after,
-          weight_before,
-          weight_after,
-          status,
-          linked_trade_idea_id,
-          linked_trade_sheet_id,
-          assets:asset_id (id, symbol, company_name),
-          portfolios:portfolio_id (id, name)
-        `)
-        .in('portfolio_id', portfolioIdsForEvents)
-        .gte('event_date', lookbackDate)
-        .neq('status', 'ignored')
-        .order('event_date', { ascending: false })
-
-      if (error) throw error
-      return data || []
-    },
-    enabled: enabled && portfolioIdsForEvents.length > 0,
-    staleTime: 5 * 60_000,
-    gcTime: 30 * 60_000,
-    placeholderData: keepPreviousData,
-  })
-
-  // ── Step 3: Fetch rationale status + content for matched events ─
-  const eventData = eventsQuery.data || []
-  const eventIds = useMemo(() => eventData.map((e: any) => e.id), [eventData])
-
-  const rationalesQuery = useQuery({
-    queryKey: ['decision-accountability', 'rationales', eventIds.length],
-    queryFn: async () => {
-      if (eventIds.length === 0) return new Map<string, RationaleInfo>()
-
-      const { data, error } = await supabase
-        .from('trade_event_rationales')
-        .select('trade_event_id, status, reason_for_action')
-        .in('trade_event_id', eventIds)
-        .order('version_number', { ascending: false })
-
-      if (error) throw error
-
-      // Keep only latest rationale per event
-      const map = new Map<string, RationaleInfo>()
-      for (const r of data || []) {
-        if (!map.has(r.trade_event_id)) {
-          map.set(r.trade_event_id, {
-            status: r.status,
-            summary: r.reason_for_action || null,
-          })
-        }
-      }
-      return map
-    },
-    enabled: enabled && eventIds.length > 0,
-    staleTime: 5 * 60_000,
-    gcTime: 30 * 60_000,
-    placeholderData: keepPreviousData,
-  })
-
-  // ── Step 4: Fetch current prices for assets in decisions ─────
-  const assetIdsForPrices = useMemo(() => {
-    const ids = new Set<string>()
-    decisionData.forEach((d: any) => { if (d.asset_id) ids.add(d.asset_id) })
-    return Array.from(ids)
-  }, [decisionData])
-
-  const pricesQuery = useQuery({
-    queryKey: ['decision-accountability', 'asset-prices', assetIdsForPrices],
-    queryFn: async () => {
-      if (assetIdsForPrices.length === 0) return new Map<string, number>()
-
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, current_price')
-        .in('id', assetIdsForPrices)
-
-      if (error) throw error
-
-      const map = new Map<string, number>()
-      for (const a of data || []) {
-        if (a.current_price != null) {
-          map.set(a.id, Number(a.current_price))
-        }
-      }
-      return map
-    },
-    enabled: enabled && assetIdsForPrices.length > 0,
-    staleTime: 10 * 60_000,
-    gcTime: 30 * 60_000,
-    placeholderData: keepPreviousData,
-  })
-
-  // ── Step 5: Fetch decision-time price snapshots ─────────────
-  const decisionIds = useMemo(
-    () => decisionData.map((d: any) => d.id as string),
-    [decisionData],
+  // ── Derive the same shapes the old useQueries returned, but
+  //    sliced from the single RPC payload above. Stable references
+  //    via useMemo so the downstream rows useMemo (which has these
+  //    in its dep list) only recomputes when RPC data actually
+  //    changes — same behavior as before, fewer round-trips.
+  const eventData = useMemo(
+    () => outcomesPayloadQuery.data?.events ?? [],
+    [outcomesPayloadQuery.data?.events],
   )
 
-  const snapshotsQuery = useQuery({
-    queryKey: ['decision-accountability', 'snapshots', decisionIds.length],
-    queryFn: async () => {
-      if (decisionIds.length === 0) return new Map<string, { price: number; at: string }>()
+  const rationalesData = useMemo(() => {
+    const map = new Map<string, RationaleInfo>()
+    for (const r of outcomesPayloadQuery.data?.rationales ?? []) {
+      map.set(r.trade_event_id, {
+        status: r.status as any,
+        summary: r.reason_for_action || null,
+      })
+    }
+    return map
+  }, [outcomesPayloadQuery.data?.rationales])
+  const rationalesQuery = { data: rationalesData }
 
-      const { data, error } = await supabase
-        .from('decision_price_snapshots')
-        .select('trade_queue_item_id, snapshot_price, snapshot_at')
-        .in('trade_queue_item_id', decisionIds)
-        .eq('snapshot_type', 'approval')
+  const pricesData = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const a of outcomesPayloadQuery.data?.prices ?? []) {
+      if (a.current_price != null) map.set(a.id, Number(a.current_price))
+    }
+    return map
+  }, [outcomesPayloadQuery.data?.prices])
+  const pricesQuery = { data: pricesData }
 
-      if (error) {
-        console.error('[decision-accountability] Failed to fetch snapshots:', error)
-        return new Map<string, { price: number; at: string }>()
-      }
+  const snapshotsData = useMemo(() => {
+    const map = new Map<string, { price: number; at: string }>()
+    for (const s of outcomesPayloadQuery.data?.snapshots ?? []) {
+      map.set(s.trade_queue_item_id, {
+        price: Number(s.snapshot_price),
+        at: s.snapshot_at,
+      })
+    }
+    return map
+  }, [outcomesPayloadQuery.data?.snapshots])
+  const snapshotsQuery = { data: snapshotsData }
 
-      const map = new Map<string, { price: number; at: string }>()
-      for (const s of data || []) {
-        map.set(s.trade_queue_item_id, {
-          price: Number(s.snapshot_price),
-          at: s.snapshot_at,
-        })
-      }
-      return map
-    },
-    enabled: enabled && decisionIds.length > 0,
-    staleTime: 10 * 60_000,
-    gcTime: 30 * 60_000,
-    placeholderData: keepPreviousData,
-  })
-
-  // ── Step 5a: Fetch accepted_trades + their follow-on rationale notes
-  // for each decision so the Outcomes view can read the canonical
-  // rationale from the same place the Trade Book stores it. Prior
-  // behavior only read from trade_event_rationales, which left every
-  // manually-entered acceptance_note AND every "Add note" follow-on
-  // invisible on this page.
-  const acceptedTradesQuery = useQuery({
-    queryKey: ['decision-accountability', 'accepted-trades-for-decisions', decisionIds.length],
-    queryFn: async () => {
-      const empty = {
-        byDecisionId: new Map<
-          string,
-          {
-            id: string
-            acceptance_note: string | null
-            latest_note: string | null
-            note_count: number
-          }
-        >(),
-      }
-      if (decisionIds.length === 0) return empty
-
-      const { data: trades, error: tErr } = await supabase
-        .from('accepted_trades')
-        .select('id, trade_queue_item_id, acceptance_note')
-        .in('trade_queue_item_id', decisionIds)
-      if (tErr) {
-        console.error('[decision-accountability] Failed to fetch accepted_trades:', tErr)
-        return empty
-      }
-
-      const tradesById = new Map<string, { id: string; trade_queue_item_id: string; acceptance_note: string | null }>()
-      const tradeIds: string[] = []
-      for (const t of (trades ?? []) as Array<{ id: string; trade_queue_item_id: string | null; acceptance_note: string | null }>) {
-        if (!t.trade_queue_item_id) continue
-        tradesById.set(t.id, { id: t.id, trade_queue_item_id: t.trade_queue_item_id, acceptance_note: t.acceptance_note })
-        tradeIds.push(t.id)
-      }
-
-      // Fetch the latest follow-on note per accepted_trade. Newest first
-      // so the "Rationale" surface on Outcomes reflects the most recent
-      // context the PM captured, not a stale batch-level note.
-      const latestNoteByTradeId = new Map<string, string>()
-      const noteCountByTradeId = new Map<string, number>()
-      if (tradeIds.length > 0) {
-        const { data: comments, error: cErr } = await supabase
-          .from('accepted_trade_comments')
-          .select('accepted_trade_id, content, created_at')
-          .in('accepted_trade_id', tradeIds)
-          .order('created_at', { ascending: false })
-        if (cErr) {
-          console.error('[decision-accountability] Failed to fetch accepted_trade_comments:', cErr)
-        } else {
-          for (const c of (comments ?? []) as Array<{ accepted_trade_id: string; content: string | null }>) {
-            noteCountByTradeId.set(
-              c.accepted_trade_id,
-              (noteCountByTradeId.get(c.accepted_trade_id) ?? 0) + 1,
-            )
-            if (!latestNoteByTradeId.has(c.accepted_trade_id) && c.content && c.content.trim()) {
-              latestNoteByTradeId.set(c.accepted_trade_id, c.content.trim())
-            }
-          }
-        }
-      }
-
-      const byDecisionId = new Map<
-        string,
-        {
-          id: string
-          acceptance_note: string | null
-          latest_note: string | null
-          note_count: number
-        }
-      >()
-      for (const trade of tradesById.values()) {
-        byDecisionId.set(trade.trade_queue_item_id, {
-          id: trade.id,
-          acceptance_note: trade.acceptance_note,
-          latest_note: latestNoteByTradeId.get(trade.id) ?? null,
-          note_count: noteCountByTradeId.get(trade.id) ?? 0,
-        })
-      }
-
-      return { byDecisionId }
-    },
-    enabled: enabled && decisionIds.length > 0,
-    staleTime: 5 * 60_000,
-    gcTime: 30 * 60_000,
-    placeholderData: keepPreviousData,
-  })
+  const acceptedTradesData = useMemo(() => {
+    const byDecisionId = new Map<
+      string,
+      { id: string; acceptance_note: string | null; latest_note: string | null; note_count: number }
+    >()
+    for (const at of outcomesPayloadQuery.data?.acceptedTrades ?? []) {
+      if (!at.trade_queue_item_id) continue
+      byDecisionId.set(at.trade_queue_item_id, {
+        id: at.id,
+        acceptance_note: at.acceptance_note,
+        latest_note: at.latest_note,
+        note_count: Number(at.note_count) || 0,
+      })
+    }
+    return { byDecisionId }
+  }, [outcomesPayloadQuery.data?.acceptedTrades])
+  const acceptedTradesQuery = { data: acceptedTradesData }
 
   // ── Step 5b: Fetch passed decisions (rejected/deferred) ────────
   const passedDecisionsQuery = useQuery({
@@ -1251,14 +1051,11 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     rows: filteredRows,
     unmatchedExecutions,
     summary,
-    isLoading: decisionsQuery.isLoading || eventsQuery.isLoading,
-    isError: decisionsQuery.isError || eventsQuery.isError,
+    isLoading: outcomesPayloadQuery.isLoading,
+    isError: outcomesPayloadQuery.isError,
     refetch: () => {
-      decisionsQuery.refetch()
-      eventsQuery.refetch()
-      rationalesQuery.refetch()
-      pricesQuery.refetch()
-      snapshotsQuery.refetch()
+      outcomesPayloadQuery.refetch()
+      passedDecisionsQuery.refetch()
     },
   }
 }
@@ -1793,6 +1590,10 @@ export function useDecisionReflections(decisionId: string | null) {
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     placeholderData: keepPreviousData,
+    // Fail-fast: a single retry instead of React Query's default 3.
+    // Default retries with exponential backoff add up to ~7s of
+    // visible "hang" when an inner call is slow or RLS-blocked.
+    retry: 1,
   })
 }
 

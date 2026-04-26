@@ -61,7 +61,8 @@ export function useDecisionReview(decisionId: string | null | undefined) {
       if (error) throw error
       return (data as DecisionReview | null) ?? null
     },
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
   })
 }
 

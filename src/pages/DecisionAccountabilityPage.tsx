@@ -1157,7 +1157,11 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
   const decisionRequestId = threadData?.decisionRequestId || null
   const canAddThreadEntry = !!(acceptedTradeId || decisionRequestId)
   const isPassed = row.category === 'passed'
-  const isLoading = reviewLoading || threadLoading
+  // Only gate on threadLoading — reviewLoading shouldn't hang the
+  // reflections list. The structured review buttons (How did the
+  // thesis evolve?) gracefully no-op when `review` is undefined and
+  // light up the moment it lands.
+  const isLoading = threadLoading
 
   const hasReflected = !!review?.thesis_played_out
     || !!(review?.process_note || '').trim()
@@ -2590,8 +2594,28 @@ function BottomChartPanel({ row, onSelectDecision }: {
     staleTime: 5 * 60 * 1000,
   })
 
-  const isLoading = lcLoading || phLoading
+  // Render the chart as soon as price history is ready — that's the
+  // dominant visual element. Lifecycle (decision/event markers) and
+  // holdings (overlay line) layer in when they resolve, but the user
+  // shouldn't stare at a spinner while they load. If we have neither
+  // a price line nor a lifecycle yet, only then show a spinner.
+  const isLoading = phLoading && lcLoading
   const hasHoldings = holdingsHistory.length > 0
+  // PositionChart requires a non-null lifecycle. While the real
+  // lifecycle loads, supply a minimal stub so the chart renders the
+  // price line without markers; the markers fill in once the live
+  // lifecycle data lands and React Query swaps it.
+  const effectiveLifecycle = lifecycle ?? {
+    symbol: row.asset_symbol || '',
+    assetName: null,
+    timeline: [],
+    currentPrice: null,
+    avgEntryPrice: null,
+    totalReturnPct: null,
+    realizedPnL: null,
+    unrealizedPnL: null,
+    currentShares: 0,
+  } as any
 
   return (
     <div className="shrink-0 border-t border-gray-200 bg-white">
@@ -2651,9 +2675,9 @@ function BottomChartPanel({ row, onSelectDecision }: {
           <div className="flex items-center justify-center h-[240px]">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
           </div>
-        ) : priceHistory.length > 0 && lifecycle ? (
+        ) : priceHistory.length > 0 ? (
           <PositionChart
-            lifecycle={lifecycle}
+            lifecycle={effectiveLifecycle}
             priceHistory={priceHistory}
             holdingsHistory={hasHoldings && overlay !== 'none' ? holdingsHistory : undefined}
             overlayField={overlay !== 'none' ? overlay : undefined}
