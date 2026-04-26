@@ -32,6 +32,7 @@ import { format, subDays, parseISO } from 'date-fns'
 import {
   useDecisionAccountability,
   useDecisionStory,
+  fetchDecisionStory,
   usePortfoliosForFilter,
   useUsersForFilter,
   useCandidateTradeEvents,
@@ -2557,6 +2558,40 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
 
 type PositionOverlay = 'none' | 'shares' | 'weight' | 'active_weight'
 
+// Defer the chart's mount one paint cycle so the DetailPanel on the
+// right gets first paint. Renders an empty 220px placeholder during
+// the brief delay so the layout doesn't reflow when the real chart
+// drops in. The chart bundle is already prefetched at page level,
+// so once mounted the panel reads warm cache.
+function DeferredChartPanel(props: {
+  row: AccountabilityRow
+  onSelectDecision?: (decisionId: string) => void
+}) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    setReady(false)
+    // Two rAFs: the first commits the DetailPanel render; the second
+    // mounts the chart on the following frame. One rAF works on most
+    // hardware but the second guarantees the right pane has actually
+    // painted before the chart's heavier renderer kicks in.
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setReady(true))
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      if (raf2) cancelAnimationFrame(raf2)
+    }
+  }, [props.row.decision_id])
+
+  if (!ready) {
+    return (
+      <div className="shrink-0 border-t border-gray-200 bg-white" style={{ height: 260 }} />
+    )
+  }
+  return <BottomChartPanel {...props} />
+}
+
 function BottomChartPanel({ row, onSelectDecision }: {
   row: AccountabilityRow
   onSelectDecision?: (decisionId: string) => void
@@ -3197,6 +3232,35 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
         },
         staleTime: 5 * 60_000,
       })
+
+      // Decision story — single RPC bundling the right pane's primary
+      // payload (theses, decision request, accepted trade, execution
+      // rationale, idea extras). Without this prefetch, the right pane
+      // hits a cold round-trip on every first click.
+      const firstExecId = decision.matched_executions?.[0]?.event_id || null
+      void prefetchClient.prefetchQuery({
+        queryKey: ['decision-story', decision.decision_id, firstExecId],
+        queryFn: () => fetchDecisionStory(decision.decision_id, firstExecId),
+        staleTime: 60_000,
+      })
+
+      // Decision review — single-row read keyed on decision_id. The
+      // bulk-fetch (useDecisionReviewsByIds) already pulls these for
+      // verdict promotion; seeding the per-row cache here means the
+      // detail-pane's useDecisionReview hits warm cache on click.
+      void prefetchClient.prefetchQuery({
+        queryKey: ['decision-review', decision.decision_id],
+        queryFn: async () => {
+          const { data, error } = await supabase
+            .from('decision_reviews')
+            .select('*')
+            .eq('decision_id', decision.decision_id)
+            .maybeSingle()
+          if (error) throw error
+          return data ?? null
+        },
+        staleTime: 5 * 60_000,
+      })
     }
     // We intentionally don't depend on `prefetchClient` because it's
     // stable; including it would re-prefetch on every render that
@@ -3423,9 +3487,15 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                 )}
               </div>
 
-              {/* Bottom chart — below table, left of detail panel */}
+              {/* Bottom chart — below table, left of detail panel.
+                  Mount is deferred one frame so the DetailPanel below
+                  paints first (per UX request: right pane visible
+                  before the chart). The chart's data is already warm
+                  via the page-level prefetch, so the visual delay is
+                  ~16ms — imperceptible — but it guarantees the right
+                  pane wins the first paint. */}
               {selectedRow && (
-                <BottomChartPanel
+                <DeferredChartPanel
                   row={selectedRow}
                   onSelectDecision={(decisionId) => setSelectedId(decisionId)}
                 />
