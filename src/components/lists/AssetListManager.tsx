@@ -50,17 +50,28 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
 
-  // Reset to list view when opening modal
+  // When the modal opens for the "Add to List" flow (selectedAssetId
+  // is provided), show the existing-lists picker. Otherwise the user
+  // came from a "New List" button, so jump straight into the create
+  // form rather than making them click through the list management view.
   useEffect(() => {
     if (isOpen) {
-      setShowCreateForm(false)
+      setShowCreateForm(!selectedAssetId)
     }
-  }, [isOpen])
+  }, [isOpen, selectedAssetId])
   const [newListName, setNewListName] = useState('')
   const [newListDescription, setNewListDescription] = useState('')
   const [newListColor, setNewListColor] = useState('#3b82f6')
   const [newListType, setNewListType] = useState<ListType>('mutual')
   const [newContentMode, setNewContentMode] = useState<ContentMode>('manual')
+  // Pending collaborator invites entered during create-list flow.
+  // Resolved server-side when the list is actually inserted.
+  const [pendingInvites, setPendingInvites] = useState<
+    Array<{ email: string; permission: 'read' | 'write' }>
+  >([])
+  const [inviteEmailDraft, setInviteEmailDraft] = useState('')
+  const [invitePermissionDraft, setInvitePermissionDraft] = useState<'read' | 'write'>('read')
+  const [inviteFailures, setInviteFailures] = useState<string[]>([])
   const [showListMenu, setShowListMenu] = useState<string | null>(null)
   const [editingListId, setEditingListId] = useState<string | null>(null)
   const [addedToLists, setAddedToLists] = useState<Set<string>>(new Set())
@@ -154,10 +165,20 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
     enabled: isOpen
   })
 
-  // Create list mutation
+  // Create list mutation. Returns the new list + any failed invite
+  // messages so the form can surface them inline.
   const createListMutation = useMutation({
-    mutationFn: async ({ name, description, color, list_type, content_mode }: { name: string; description: string; color: string; list_type: ListType; content_mode: ContentMode }) => {
-      const { error } = await supabase
+    mutationFn: async ({
+      name, description, color, list_type, content_mode, invites,
+    }: {
+      name: string
+      description: string
+      color: string
+      list_type: ListType
+      content_mode: ContentMode
+      invites: Array<{ email: string; permission: 'read' | 'write' }>
+    }) => {
+      const { data: created, error } = await supabase
         .from('asset_lists')
         .insert([{
           name,
@@ -169,19 +190,74 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           screen_criteria: content_mode === 'screen'
             ? { id: crypto.randomUUID(), combinator: 'AND', rules: [] }
             : null,
-          created_by: user?.id
+          created_by: user?.id,
         }])
+        .select('*')
+        .single()
 
       if (error) throw error
+      if (!created) throw new Error('List creation returned no row')
+
+      // Resolve invites → user lookups → collaboration rows.
+      // Failed lookups are returned (not thrown) so the list itself
+      // still creates and the user sees per-invite errors inline.
+      const failures: string[] = []
+      for (const invite of invites) {
+        const email = invite.email.trim().toLowerCase()
+        if (!email) continue
+        const { data: u, error: lookupErr } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle()
+        if (lookupErr || !u) {
+          failures.push(`${invite.email} — not found in your org`)
+          continue
+        }
+        const { error: collabErr } = await supabase
+          .from('asset_list_collaborations')
+          .insert({
+            list_id: created.id,
+            user_id: u.id,
+            permission: invite.permission,
+            created_at: new Date().toISOString(),
+          })
+        if (collabErr) {
+          failures.push(`${invite.email} — ${collabErr.message}`)
+        }
+      }
+
+      return { list: created, failures }
     },
-    onSuccess: () => {
+    onSuccess: ({ failures }) => {
+      // Refresh BOTH the underlying lists query AND the surface query
+      // that the Lists page reads from. Without invalidating
+      // 'list-surfaces' the new list wouldn't appear until a hard
+      // refresh.
       queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
+      queryClient.invalidateQueries({ queryKey: ['list-surfaces'] })
+
+      if (failures.length > 0) {
+        // Keep the form open so the user can see / fix the failures.
+        setInviteFailures(failures)
+        // Clear only the parts that succeeded — the failed invites
+        // stay so the user can retry/edit them.
+        setPendingInvites(prev => prev.filter(p =>
+          failures.some(f => f.startsWith(`${p.email} —`))
+        ))
+        return
+      }
+
+      setInviteFailures([])
       setShowCreateForm(false)
       setNewListName('')
       setNewListDescription('')
       setNewListColor('#3b82f6')
       setNewListType('mutual')
       setNewContentMode('manual')
+      setPendingInvites([])
+      setInviteEmailDraft('')
+      setInvitePermissionDraft('read')
     }
   })
 
@@ -272,16 +348,37 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
     }
   }, [showListMenu])
 
+  // Map list type/content_mode → swatch color. Lists no longer let
+  // the user pick a color; the type drives the look so similar lists
+  // are visually grouped at a glance.
+  const colorForList = (
+    listType: ListType,
+    contentMode: ContentMode,
+  ): string => {
+    if (contentMode === 'screen') return '#f59e0b' // amber — auto-screened
+    if (listType === 'collaborative') return '#10b981' // emerald — team list
+    return '#3b82f6' // blue — solo manual list (default)
+  }
+
   const handleCreateList = () => {
     if (!newListName.trim()) return
+
+    const resolvedListType = newContentMode === 'screen' ? 'mutual' : newListType
+    // Capture any draft email the user typed but hasn't pressed "Add" on.
+    const trailing = inviteEmailDraft.trim()
+    const allInvites = trailing
+      ? [...pendingInvites, { email: trailing, permission: invitePermissionDraft }]
+      : pendingInvites
 
     createListMutation.mutate({
       name: newListName.trim(),
       description: newListDescription.trim(),
-      color: newListColor,
+      // Color derived from type + mode, not user-picked.
+      color: colorForList(resolvedListType, newContentMode),
       // Screens ignore the mutual/collaborative distinction (no per-row ownership).
-      list_type: newContentMode === 'screen' ? 'mutual' : newListType,
-      content_mode: newContentMode
+      list_type: resolvedListType,
+      content_mode: newContentMode,
+      invites: allInvites,
     })
   }
 
@@ -381,12 +478,66 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                 <Card>
                   <h4 className="text-sm font-semibold text-gray-900 mb-4">Create New List</h4>
                   <div className="space-y-4">
-                    <Input
-                      label="List Name"
-                      value={newListName}
-                      onChange={(e) => setNewListName(e.target.value)}
-                      placeholder="Enter list name..."
-                    />
+                    <div>
+                      <Input
+                        label="List Name"
+                        value={newListName}
+                        onChange={(e) => setNewListName(e.target.value)}
+                        placeholder="Enter list name..."
+                        // Disable the browser's local-history autofill — the
+                        // in-app duplicate detection below is the only
+                        // suggestion surface we want.
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        name="list-name-no-autofill"
+                      />
+                      {/* Similar lists found — surfaced to prevent
+                          duplication. Filters the user's already-loaded
+                          asset lists by name/description substring match. */}
+                      {(() => {
+                        const q = newListName.trim().toLowerCase()
+                        if (q.length < 2) return null
+                        const matches = (assetLists || []).filter((l: any) => {
+                          const n = (l.name || '').toLowerCase()
+                          const d = (l.description || '').toLowerCase()
+                          return n.includes(q) || d.includes(q)
+                        }).slice(0, 5)
+                        if (matches.length === 0) return null
+                        return (
+                          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <p className="text-sm font-medium text-amber-900 mb-2">
+                              You already have similar lists:
+                            </p>
+                            <div className="space-y-1">
+                              {matches.map((l: any) => (
+                                <button
+                                  key={l.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setShowCreateForm(false)
+                                    onListSelect?.(l)
+                                    onClose()
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left bg-white border border-amber-200 rounded hover:bg-amber-50 transition-colors"
+                                >
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: l.color || '#3b82f6' }}
+                                  />
+                                  <span className="font-medium text-gray-900 truncate">{l.name}</span>
+                                  {l.description && (
+                                    <span className="text-xs text-gray-500 truncate">— {l.description}</span>
+                                  )}
+                                  <span className="ml-auto text-xs text-amber-700 shrink-0">Open →</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -401,27 +552,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Color
-                      </label>
-                      <div className="flex space-x-2">
-                        {colorOptions.map((color) => (
-                          <button
-                            key={color.value}
-                            onClick={() => setNewListColor(color.value)}
-                            className={clsx(
-                              'w-8 h-8 rounded-full border-2 transition-all',
-                              newListColor === color.value
-                                ? 'border-gray-900 scale-110'
-                                : 'border-gray-300 hover:scale-105'
-                            )}
-                            style={{ backgroundColor: color.value }}
-                            title={color.label}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                    {/* Color is derived from list type + content mode —
+                        no user picker. */}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -474,6 +606,84 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       />
                     )}
 
+                    {/* Invite collaborators */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Invite collaborators (optional)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="email"
+                          value={inviteEmailDraft}
+                          onChange={(e) => setInviteEmailDraft(e.target.value)}
+                          placeholder="email@yourorg.com"
+                          autoComplete="off"
+                          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              const v = inviteEmailDraft.trim()
+                              if (!v) return
+                              setPendingInvites(prev => [...prev, { email: v, permission: invitePermissionDraft }])
+                              setInviteEmailDraft('')
+                            }
+                          }}
+                        />
+                        <select
+                          value={invitePermissionDraft}
+                          onChange={(e) => setInvitePermissionDraft(e.target.value as 'read' | 'write')}
+                          className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        >
+                          <option value="read">Read</option>
+                          <option value="write">Write</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const v = inviteEmailDraft.trim()
+                            if (!v) return
+                            setPendingInvites(prev => [...prev, { email: v, permission: invitePermissionDraft }])
+                            setInviteEmailDraft('')
+                          }}
+                          disabled={!inviteEmailDraft.trim()}
+                          className="px-3 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {pendingInvites.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {pendingInvites.map((inv, idx) => (
+                            <span
+                              key={`${inv.email}-${idx}`}
+                              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs bg-primary-50 text-primary-700 border border-primary-200 rounded-md"
+                            >
+                              {inv.email}
+                              <span className="px-1 py-0.5 text-[10px] font-medium bg-white text-primary-700 border border-primary-200 rounded">
+                                {inv.permission}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setPendingInvites(prev => prev.filter((_, i) => i !== idx))}
+                                className="text-primary-500 hover:text-primary-700"
+                                title="Remove"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {inviteFailures.length > 0 && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-xs font-medium text-red-800 mb-1">Some invites couldn't be sent:</p>
+                          <ul className="text-xs text-red-700 space-y-0.5 list-disc list-inside">
+                            {inviteFailures.map((f, i) => <li key={i}>{f}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex space-x-3">
                       <Button
                         variant="outline"
@@ -484,6 +694,10 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                           setNewListColor('#3b82f6')
                           setNewListType('mutual')
                           setNewContentMode('manual')
+                          setPendingInvites([])
+                          setInviteEmailDraft('')
+                          setInvitePermissionDraft('read')
+                          setInviteFailures([])
                         }}
                         className="flex-1"
                       >

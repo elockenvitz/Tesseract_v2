@@ -20,6 +20,20 @@ interface ThemesListPageProps {
   onThemeSelect?: (theme: any) => void
 }
 
+/** Map a theme_type tag → swatch color. Themes are no longer free-color
+ *  picked by the user; the type drives the color so visually similar
+ *  swatches signal "same category of theme". */
+const THEME_TYPE_COLOR: Record<string, string> = {
+  general:   '#6b7280', // slate
+  sector:    '#6366f1', // indigo
+  geography: '#10b981', // emerald
+  strategy:  '#f59e0b', // amber
+  macro:     '#ef4444', // rose
+}
+function colorForThemeType(type: string | null | undefined) {
+  return THEME_TYPE_COLOR[type || 'general'] ?? THEME_TYPE_COLOR.general
+}
+
 export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -227,7 +241,11 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
           theme_type: themeData.theme_type,
           color: themeData.color,
           is_public: themeData.is_public,
-          created_by: user?.id
+          created_by: user?.id,
+          // RLS requires organization_id = current_org_id() on insert.
+          // Without this the row is silently rejected by the policy and
+          // the "Create Theme" click did nothing.
+          organization_id: currentOrgId,
         }])
         .select()
         .single()
@@ -267,7 +285,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       name: newThemeName.trim(),
       description: newThemeDescription.trim(),
       theme_type: newThemeType,
-      color: newThemeColor,
+      // Color derived from the theme_type tag — users no longer pick.
+      color: colorForThemeType(newThemeType),
       is_public: newThemeIsPublic
     })
   }
@@ -557,6 +576,22 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     value={newThemeName}
                     onChange={(e) => setNewThemeName(e.target.value)}
                     placeholder="Enter theme name..."
+                    // Show the "checking for duplicates" spinner INSIDE the
+                    // input (rightAdornment-style) instead of as a sibling
+                    // block below it. The previous separate indicator was
+                    // toggling in/out of flow on every keystroke and
+                    // shoving the rest of the form down each time.
+                    // NOTE: Input also disables itself when `loading` is
+                    // true, so use a tiny rightAdornment spinner instead
+                    // — the user must still be able to type.
+                    rightAdornment={searchingSimilar ? (
+                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary-500" />
+                    ) : undefined}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    name="theme-name-no-autofill"
                   />
                   
                   {/* Similar Themes Warning */}
@@ -606,26 +641,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     </div>
                   )}
                   
-                  {searchingSimilar && (
-                    <div className="mt-2 flex items-center text-sm text-gray-500">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-2" />
-                      Checking for similar themes...
-                    </div>
-                  )}
-                </div>
-                
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Description (optional)
-                  </label>
-                  <textarea
-                    value={newThemeDescription}
-                    onChange={(e) => setNewThemeDescription(e.target.value)}
-                    placeholder="Describe this investment theme..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    rows={3}
-                  />
+                  {/* (loading spinner is now rendered inside the input via
+                       rightAdornment so it doesn't push content) */}
                 </div>
                 
                 {/* Theme Type */}
@@ -641,52 +658,33 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     { value: 'macro', label: 'Macro' }
                   ]}
                 />
-                
-                {/* Color Selection */}
+
+                {/* Visibility — moved above Description so the user doesn't
+                    have to scroll past a tall textarea to find it. */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newThemeIsPublic}
+                    onChange={(e) => setNewThemeIsPublic(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Make public — visible to your whole org
+                  </span>
+                </label>
+
+                {/* Description */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Color
+                    Description (optional)
                   </label>
-                  <div className="flex space-x-2">
-                    {colorOptions.map((color) => (
-                      <button
-                        key={color.value}
-                        onClick={() => setNewThemeColor(color.value)}
-                        className={clsx(
-                          'w-8 h-8 rounded-full border-2 transition-all',
-                          newThemeColor === color.value
-                            ? 'border-gray-900 scale-110'
-                            : 'border-gray-300 hover:scale-105'
-                        )}
-                        style={{ backgroundColor: color.value }}
-                        title={color.label}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Public/Private Settings */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Visibility
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={newThemeIsPublic}
-                      onChange={(e) => setNewThemeIsPublic(e.target.checked)}
-                      className="mr-2 rounded"
-                    />
-                    <span className="text-sm text-gray-700">
-                      Make public (visible to all users)
-                    </span>
-                  </label>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {newThemeIsPublic
-                      ? 'This theme will be visible to everyone. You can share write access with specific users after creation.'
-                      : 'This theme will be private. You can share it with specific users after creation.'
-                    }
-                  </p>
+                  <textarea
+                    value={newThemeDescription}
+                    onChange={(e) => setNewThemeDescription(e.target.value)}
+                    placeholder="Describe this investment theme..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    rows={3}
+                  />
                 </div>
               </div>
               {/* Footer */}

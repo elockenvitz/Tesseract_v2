@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   X, ChevronDown, ChevronRight, CheckCircle2,
   FileText, Lightbulb, Star,
-  BookOpen, Sparkles, PenLine, Tag, List, Repeat,
+  BookOpen, Sparkles, PenLine, Tag, List,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -65,6 +65,24 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     return () => window.removeEventListener('pilot-tutorial:asset-explored', handler)
   }, [user?.id])
 
+  // Same pattern for the ideas feed step — fired by IdeasFeedPage
+  // on mount.
+  const [hasViewedIdeasFeed, setHasViewedIdeasFeed] = useState(() => {
+    if (!user?.id) return false
+    try { return localStorage.getItem(`pilot-tutorial-ideas-feed-viewed-${user.id}`) === '1' } catch { return false }
+  })
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      if (localStorage.getItem(`pilot-tutorial-ideas-feed-viewed-${user.id}`) === '1') {
+        setHasViewedIdeasFeed(true)
+      }
+    } catch { /* ignore */ }
+    const handler = () => setHasViewedIdeasFeed(true)
+    window.addEventListener('pilot-tutorial:ideas-feed-viewed', handler)
+    return () => window.removeEventListener('pilot-tutorial:ideas-feed-viewed', handler)
+  }, [user?.id])
+
   // Track completion of tutorial steps
   const { data: progress } = useQuery({
     queryKey: ['pilot-tutorial-progress', currentOrgId, user?.id],
@@ -75,19 +93,24 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         assetNotesRes,
         thoughtsRes,
         promptsRes,
+        promptThoughtsRes,
         ratingsRes,
         contributionsRes,
         themesRes,
         themeNotesRes,
         listsRes,
-        workflowsRes,
       ] = await Promise.all([
         // Has the user written a note on an asset?
         supabase.from('asset_notes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
         // Has the user posted a thought?
         supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
-        // Has the user used a prompt?
+        // Has the user used a prompt? Two flows count:
+        //   1. user_quick_prompt_history — template/saved prompt usage
+        //   2. quick_thoughts with idea_type='prompt' — the "ask a colleague"
+        //      flow from PromptModal (right-pane "Prompt" capture).
+        // We run both and OR the results below.
         supabase.from('user_quick_prompt_history').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).eq('created_by', user.id).eq('idea_type', 'prompt'),
         // Has the user rated an asset?
         supabase.from('analyst_ratings').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         // Has the user made a contribution on an asset?
@@ -101,19 +124,16 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         // ("Investment Ideas", "Work in Process") on signup, which would
         // otherwise mark this step complete before the user has done a thing.
         supabase.from('asset_lists').select('id', { count: 'exact', head: true }).eq('created_by', user.id).eq('is_default', false),
-        // Has the user built a workflow?
-        supabase.from('workflows').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
       ])
 
       return {
         hasNote: (assetNotesRes.count ?? 0) > 0,
         hasThought: (thoughtsRes.count ?? 0) > 0,
-        hasPrompt: (promptsRes.count ?? 0) > 0,
+        hasPrompt: (promptsRes.count ?? 0) > 0 || (promptThoughtsRes.count ?? 0) > 0,
         hasRating: (ratingsRes.count ?? 0) > 0,
         hasContribution: (contributionsRes.count ?? 0) > 0,
         hasTheme: (themesRes.count ?? 0) > 0 || (themeNotesRes.count ?? 0) > 0,
         hasList: (listsRes.count ?? 0) > 0,
-        hasWorkflow: (workflowsRes.count ?? 0) > 0,
       }
     },
     enabled: !!currentOrgId && !!user?.id,
@@ -137,6 +157,26 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       return next
     })
   }, [currentOrgId])
+
+  // Auto-dismiss the banner once every Get Started step is complete.
+  // Computed inline (rather than from the `steps` array further down)
+  // so this effect runs BEFORE the early-return guard — placing it
+  // after would change the hook count between loading vs loaded
+  // renders and trip "Rendered fewer hooks than expected".
+  const allDoneForAutoDismiss = !!progress
+    && hasViewedIdeasFeed
+    && !!progress.hasContribution
+    && !!progress.hasRating
+    && !!progress.hasNote
+    && !!progress.hasTheme
+    && !!progress.hasThought
+    && !!progress.hasPrompt
+    && !!progress.hasList
+  useEffect(() => {
+    if (allDoneForAutoDismiss && !dismissed) {
+      handleDismiss()
+    }
+  }, [allDoneForAutoDismiss, dismissed, handleDismiss])
 
   if (dismissed || !progress) return null
 
@@ -186,7 +226,9 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       hint: 'Opens AAPL "My View" and scrolls to the Rating section.',
       icon: Star,
       done: progress.hasRating,
-      action: () => openAaplMyView({ scrollTo: 'rating' }),
+      // scrollNonce ensures the AssetTab scroll effect re-fires on
+      // repeat clicks even though scrollTo='rating' is unchanged.
+      action: () => openAaplMyView({ scrollTo: 'rating', scrollNonce: Date.now() }),
       category: 'research',
     },
     {
@@ -219,8 +261,11 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       done: progress.hasThought,
       action: () => {
         try {
+          // The right-pane sidebar's quick-capture form for thoughts is
+          // keyed 'idea' in PendingCaptureType. ('thought' isn't a valid
+          // value — the sidebar would open with no form auto-selected.)
           window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-            detail: { captureType: 'thought' },
+            detail: { captureType: 'idea' },
           }))
         } catch { /* ignore */ }
       },
@@ -254,13 +299,13 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       category: 'discover',
     },
     {
-      id: 'build-workflow',
-      label: 'Build a workflow',
-      description: 'Automate research checklists across assets — earnings prep, screens, recurring reviews.',
-      hint: 'Open Workflows from the app menu and create your first template.',
-      icon: Repeat,
-      done: progress.hasWorkflow,
-      action: () => onNavigate({ type: 'workflows', id: 'workflows', title: 'Workflows', data: {} }),
+      id: 'view-ideas-feed',
+      label: 'View the ideas feed',
+      description: 'Browse the trade ideas, prompts, and thoughts your team has captured.',
+      hint: 'Opens the Ideas tab — just visiting it counts.',
+      icon: Lightbulb,
+      done: hasViewedIdeasFeed,
+      action: () => onNavigate({ type: 'idea-generator', id: 'idea-generator', title: 'Ideas', data: {} }),
       category: 'discover',
     },
   ]

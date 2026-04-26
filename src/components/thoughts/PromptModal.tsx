@@ -13,6 +13,7 @@ import { clsx } from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePendingLineageStore } from '../../stores/pendingLineageStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import { PendingResearchBanner } from '../common/PendingResearchBanner'
@@ -70,6 +71,7 @@ function audienceToVisibility(audience: AudienceMember[]): 'private' | 'team' {
 
 export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = false }: PromptModalProps) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
   const { success, error: showError } = useToast()
   const clearPendingResearch = usePendingResearchLinksStore(s => s.clear)
@@ -114,15 +116,40 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
     }
   }, [isOpen])
 
-  // Fetch team members
+  // Fetch team members in the CURRENT org only.
+  // Belt-and-suspenders: even though RLS scopes user reads to current
+  // org for normal users, platform admins (who have a separate global
+  // SELECT policy) would otherwise see every user in the system. We
+  // filter via organization_memberships explicitly so the dropdown
+  // never leaks cross-org users regardless of RLS scope.
   const { data: teamMembers = [] } = useQuery({
-    queryKey: ['team-members-for-prompt'],
+    queryKey: ['team-members-for-prompt', currentOrgId],
     queryFn: async () => {
-      if (!user?.id) return []
+      if (!user?.id || !currentOrgId) return []
+
+      const { data: memberships, error: memberErr } = await supabase
+        .from('organization_memberships')
+        .select('user_id')
+        .eq('organization_id', currentOrgId)
+        .eq('status', 'active')
+
+      if (memberErr) {
+        console.error('Failed to fetch org memberships:', memberErr)
+        return []
+      }
+
+      // Include the user themselves — assigning a prompt to yourself
+      // is a valid way to track an action you owe yourself.
+      const memberIds = (memberships ?? [])
+        .map(m => m.user_id)
+        .filter((id): id is string => !!id)
+
+      if (memberIds.length === 0) return []
+
       const { data, error } = await supabase
         .from('users')
         .select('id, full_name, email')
-        .neq('id', user.id)
+        .in('id', memberIds)
         .order('full_name')
         .limit(50)
 
@@ -132,7 +159,7 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
       }
       return data as TeamMember[]
     },
-    enabled: isOpen && !!user?.id,
+    enabled: isOpen && !!user?.id && !!currentOrgId,
   })
 
   // Fetch org groups (departments + teams) and portfolios for audience picker
@@ -376,13 +403,24 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
       const authorName = userDetails?.full_name || userDetails?.email || 'Someone'
       const promptTitle = title.trim() || `Question on ${primaryCtx?.title || 'context'}`
 
+      // Notification routing:
+      //   - Prompt has a real context (asset/portfolio/theme) → click
+      //     opens that surface with the prompt id passed alongside.
+      //   - Prompt has NO context (e.g. self-assigned reminder) →
+      //     click opens the prompt itself in the right-pane inspector
+      //     via `context_type='prompt'`. The previous code defaulted
+      //     to context_type='asset' with the prompt's UUID, which
+      //     produced an asset tab pointing at a non-existent asset.
+      const notificationContextType = primaryCtx?.type || 'prompt'
+      const notificationContextId = primaryCtx?.id || prompt.id
+
       await supabase.from('notifications').insert({
         user_id: assigneeId,
         type: 'note_shared',
         title: promptTitle,
         message: `${authorName} asked you: "${question.trim().slice(0, 100)}${question.trim().length > 100 ? '...' : ''}"`,
-        context_type: primaryCtx?.type || 'asset',
-        context_id: primaryCtx?.id || prompt.id,
+        context_type: notificationContextType,
+        context_id: notificationContextId,
         context_data: {
           prompt_id: prompt.id,
           author_name: authorName,

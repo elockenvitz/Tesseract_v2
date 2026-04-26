@@ -131,6 +131,25 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
       markAsReadMutation.mutate(notification.id)
     }
 
+    // Prompt notifications open the prompt in the right-pane inspector.
+    // Includes the legacy case where pre-fix prompts were stored with
+    // context_type='asset' but a prompt_id in context_data — we detect
+    // that and route to the inspector anyway.
+    const promptIdFromData = (notification.context_data as any)?.prompt_id
+    const isPromptCtx = notification.context_type === 'prompt' || notification.context_type === 'quick_thought'
+    if (isPromptCtx || promptIdFromData) {
+      const promptId = promptIdFromData || notification.context_id
+      if (promptId) {
+        try {
+          window.dispatchEvent(new CustomEvent('openThoughtDetail', {
+            detail: { thoughtId: promptId, itemType: 'prompt' },
+          }))
+        } catch { /* ignore */ }
+      }
+      onClose()
+      return
+    }
+
     // Handle list suggestion notifications
     if (
       ['list_suggestion_received', 'list_suggestion_accepted', 'list_suggestion_rejected'].includes(notification.type) &&
