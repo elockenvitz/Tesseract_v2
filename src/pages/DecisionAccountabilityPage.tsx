@@ -69,7 +69,6 @@ import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetSta
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { chartDataService } from '../lib/chartData'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
 import type {
@@ -1173,16 +1172,18 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
 
   const persist = (patch: { thesis_played_out?: ThesisOutcome | null; process_note?: string | null }) => {
     if (!user?.id) return
-    upsert.mutate({
-      decisionId: row.decision_id,
-      userId: user.id,
-      patch: {
-        decision_quality: review?.decision_quality ?? null,
-        sizing_quality: review?.sizing_quality ?? null,
-        thesis_played_out: patch.thesis_played_out !== undefined ? patch.thesis_played_out : (review?.thesis_played_out ?? null),
-        process_note: patch.process_note !== undefined ? patch.process_note : (review?.process_note ?? null),
+    upsert.mutate(
+      {
+        decisionId: row.decision_id,
+        userId: user.id,
+        patch: {
+          decision_quality: review?.decision_quality ?? null,
+          sizing_quality: review?.sizing_quality ?? null,
+          thesis_played_out: patch.thesis_played_out !== undefined ? patch.thesis_played_out : (review?.thesis_played_out ?? null),
+          process_note: patch.process_note !== undefined ? patch.process_note : (review?.process_note ?? null),
+        },
       },
-    })
+    )
   }
 
   const handleAddThreadEntry = () => {
@@ -1206,13 +1207,6 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
       {
         onSuccess: () => {
           toast.success('Reflection posted')
-          // Tick step 2 of the pilot Outcomes Get Started banner. The
-          // step is "Capture a reflection" (look backward) and is what
-          // we actually want to credit when a reflection is posted —
-          // the upstream NextStepsSection only fires this event when
-          // the user clicks the CTA, not when they actually capture
-          // a reflection via the Reflections section.
-          try { window.dispatchEvent(new CustomEvent('pilot-outcomes:next-action-viewed')) } catch { /* ignore */ }
         },
         onError: (err: any) => {
           // Restore the draft so the user can retry without retyping.
@@ -2164,6 +2158,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   const { data: lifecycle, isLoading: lcLoading } = usePositionLifecycle({
     assetId: row.asset_id,
     portfolioId: row.portfolio_id,
+    symbol: row.asset_symbol,
   })
 
   const pnlColor = (v: number | null) => v == null ? 'text-gray-400' : v >= 0 ? 'text-emerald-600' : 'text-red-600'
@@ -2189,7 +2184,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   // ── Not applicable (rejected/cancelled) ──
   if (isNotApplicable) {
     return (
-      <StorySection icon={TrendingUp} title="How it's performing" defaultOpen={false} badge={
+      <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
         rawMove != null ? (
           <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
             directionalMove != null && directionalMove >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
@@ -2232,7 +2227,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
   // ── Pending / Unmatched — approved but no trade yet ──
   if (isPending) {
     return (
-      <StorySection icon={TrendingUp} title="How it's performing" defaultOpen={false} badge={
+      <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
         rawMove != null ? (
           <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded bg-amber-50 text-amber-700`}>
             {fmtPct(rawMove)} missed
@@ -2278,7 +2273,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
 
   // ── Executed — has matched trade ──
   return (
-    <StorySection icon={TrendingUp} title="How it's performing" defaultOpen={false} badge={
+    <StorySection icon={TrendingUp} title="How it's performing" sectionId="performance" defaultOpen={false} badge={
       badgeLabel ? (
         <span className={`text-[8px] font-bold uppercase px-1.5 py-[2px] rounded ${
           (badgeValue || 0) >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
@@ -2571,8 +2566,13 @@ function BottomChartPanel({ row, onSelectDecision }: {
   const { data: lifecycle, isLoading: lcLoading } = usePositionLifecycle({
     assetId: row.asset_id,
     portfolioId: row.portfolio_id,
+    symbol: row.asset_symbol,
   })
-  const { data: priceHistory = [], isLoading: phLoading } = usePositionPriceHistory(row.asset_symbol)
+  const { data: priceHistory = [], isLoading: phLoading } = usePositionPriceHistory(
+    row.asset_symbol,
+    row.asset_id,
+    row.portfolio_id,
+  )
   const { data: holdingsHistory = [] } = useHoldingsTimeSeries(row.portfolio_id, row.asset_symbol, row.asset_id)
 
   // Per-asset benchmark weight, used for the active-weight overlay.
@@ -3119,16 +3119,14 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     const top = sortedRows.slice(0, 5)
     if (top.length === 0) return
 
-    // Unique (symbol, asset_id, portfolio_id, decision_id) keys.
-    const uniqueSymbols = new Set<string>()
-    const uniqueAssets = new Map<string, { assetId: string; portfolioId: string | null }>()
-
+    // Unique (asset_id, portfolio_id, symbol) tuples — chart bundle key.
+    const uniqueChartKeys = new Map<string, { assetId: string; portfolioId: string; symbol: string }>()
     for (const r of top) {
-      if (r.asset_symbol) uniqueSymbols.add(r.asset_symbol)
-      if (r.asset_id && r.portfolio_id) {
-        uniqueAssets.set(`${r.asset_id}:${r.portfolio_id}`, {
+      if (r.asset_id && r.portfolio_id && r.asset_symbol) {
+        uniqueChartKeys.set(`${r.asset_id}:${r.portfolio_id}:${r.asset_symbol}`, {
           assetId: r.asset_id,
           portfolioId: r.portfolio_id,
+          symbol: r.asset_symbol,
         })
       }
     }
@@ -3136,52 +3134,36 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     // Fire prefetches in parallel. Each is a no-op if the cache
     // already has fresh data for that query key.
     //
-    // PRICE HISTORY: full path including Yahoo fallback + write-back.
-    // The previous DB-only prefetch was a no-op when the cache was
-    // empty (which is most of the time for a fresh portfolio), so
-    // the user still hit the cold Yahoo path on their first click.
-    // By eagerly hydrating Yahoo for the top symbols on Outcomes
-    // mount, the click → render path is purely cache reads (~30ms).
-    for (const symbol of uniqueSymbols) {
+    // CHART BUNDLE: one RPC returning lifecycle + price + holdings
+    // source rows + Yahoo fallback if the cache is empty for that
+    // symbol. By prefetching the bundle (not just price history) on
+    // Outcomes mount, the click → chart-paint path is purely cache
+    // reads — price line and shares overlay arrive together because
+    // they're sliced from the same cached payload.
+    for (const { assetId, portfolioId, symbol } of uniqueChartKeys.values()) {
+      // Resolve only the RPC during prefetch — Yahoo fallback streams
+      // in later through useChartBundle's effect once the bundle lands
+      // in cache. Blocking prefetch on Yahoo would serialize 5 outbound
+      // HTTPS calls (~5-10s) before any row click could read warm data.
       void prefetchClient.prefetchQuery({
-        queryKey: ['position-price-history', symbol],
+        queryKey: ['position-chart-bundle', assetId, portfolioId, symbol],
         queryFn: async () => {
-          const { data } = await supabase
-            .from('price_history_cache')
-            .select('date, close')
-            .eq('symbol', symbol)
-            .order('date', { ascending: true })
-          if (data && data.length > 0) {
-            return data.map(d => ({ date: d.date, close: Number(d.close) }))
-          }
-          // Cache miss → Yahoo. Trimmed range (1y) keeps payload
-          // small. Write back to price_history_cache so the next
-          // session is instant.
-          try {
-            const candles = await chartDataService.getChartData({
-              symbol, interval: '1d', range: '1y',
-            })
-            const points = candles
-              .filter(c => c.close > 0)
-              .map(c => ({
-                date: typeof c.time === 'string' ? c.time : new Date(Number(c.time) * 1000).toISOString().slice(0, 10),
-                close: c.close,
-              }))
-            if (points.length > 0) {
-              void supabase.from('price_history_cache').upsert(
-                points.map(p => ({ symbol, date: p.date, close: p.close, source: 'yahoo_finance' })),
-                { onConflict: 'symbol,date' },
-              ).then(({ error: e }) => {
-                if (e) console.warn('[outcomes prefetch] cache upsert failed:', e.message)
-              })
-            }
-            return points
-          } catch (e) {
-            console.warn('[outcomes prefetch] Yahoo fetch failed:', e)
-            return []
-          }
+          const { data, error } = await supabase.rpc('position_chart_payload', {
+            p_asset_id: assetId,
+            p_portfolio_id: portfolioId,
+            p_symbol: symbol,
+          })
+          if (error) throw error
+          const bundle = (data || {}) as any
+          bundle.decisions = bundle.decisions || []
+          bundle.events = bundle.events || []
+          bundle.snapshots = bundle.snapshots || []
+          bundle.priceHistory = bundle.priceHistory || []
+          bundle.holdingsEvents = bundle.holdingsEvents || []
+          bundle.portfolioAum = Number(bundle.portfolioAum || 0)
+          return bundle
         },
-        staleTime: 15 * 60 * 1000,
+        staleTime: 2 * 60 * 1000,
       })
     }
 
@@ -3194,50 +3176,24 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     // enough to leave on the critical path now that price history
     // (the real bottleneck) is hot.
 
-    for (const decision of top.slice(0, 3)) {
-      // Reflections — same query useDecisionReflections fires.
+    for (const decision of top) {
+      // Reflections — same RPC useDecisionReflections calls. Single
+      // round-trip; the cache key is shared so the real hook reuses it.
+      // Prefetched for all top rows (not just top 3) so any click in
+      // the visible window opens to a warm reflections panel.
       void prefetchClient.prefetchQuery({
         queryKey: ['decision-reflections', decision.decision_id],
         queryFn: async () => {
-          // Mirror useDecisionReflections's fast-path: just look up
-          // the linked accepted_trade and decision_request, plus their
-          // comments. Identical structure so the real hook can reuse
-          // the cache.
-          const { data: at } = await supabase
-            .from('accepted_trades')
-            .select('id')
-            .eq('trade_queue_item_id', decision.decision_id)
-            .eq('is_active', true)
-            .limit(1)
-            .maybeSingle()
-          const { data: dr } = await supabase
-            .from('decision_requests')
-            .select('id')
-            .eq('trade_queue_item_id', decision.decision_id)
-            .limit(1)
-            .maybeSingle()
-          const reflections: any[] = []
-          if (at?.id) {
-            const { data: c } = await supabase
-              .from('accepted_trade_comments')
-              .select('id, content, user_id, created_at')
-              .eq('accepted_trade_id', at.id)
-              .order('created_at', { ascending: true })
-            for (const r of c || []) reflections.push({ id: r.id, content: r.content, user_id: r.user_id, created_at: r.created_at, user_name: '' })
+          const { data, error } = await supabase.rpc('decision_reflections_payload', {
+            p_decision_id: decision.decision_id,
+          })
+          if (error) throw error
+          const payload = (data || {}) as any
+          return {
+            reflections: payload.reflections || [],
+            acceptedTradeId: payload.acceptedTradeId ?? null,
+            decisionRequestId: payload.decisionRequestId ?? null,
           }
-          if (dr?.id) {
-            const { data: c } = await supabase
-              .from('decision_request_comments')
-              .select('id, content, user_id, created_at')
-              .eq('decision_request_id', dr.id)
-              .order('created_at', { ascending: true })
-            for (const r of c || []) {
-              if (!reflections.find(x => x.id === r.id)) {
-                reflections.push({ id: r.id, content: r.content, user_id: r.user_id, created_at: r.created_at, user_name: '' })
-              }
-            }
-          }
-          return { reflections, acceptedTradeId: at?.id ?? null, decisionRequestId: dr?.id ?? null }
         },
         staleTime: 5 * 60_000,
       })

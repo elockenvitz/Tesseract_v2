@@ -1494,93 +1494,25 @@ export function useDecisionReflections(decisionId: string | null) {
     queryFn: async (): Promise<{ reflections: Reflection[]; acceptedTradeId: string | null; decisionRequestId: string | null }> => {
       if (!decisionId) return { reflections: [], acceptedTradeId: null, decisionRequestId: null }
 
-      const reflections: Reflection[] = []
-      type RawComment = { id: string; content: string; user_id: string; created_at: string }
-      const rawComments: RawComment[] = []
+      // Single RPC: links + merged comments + resolved display names
+      // in one round-trip. Replaces the previous 5-Supabase-call
+      // sequence (link lookups → comments × 2 → users) which was the
+      // dominant source of the "reflections is hanging" feel.
+      const { data, error } = await supabase.rpc('decision_reflections_payload', {
+        p_decision_id: decisionId,
+      })
+      if (error) throw error
 
-      // Stage 1: parallel lookup for the accepted_trade and the
-      // decision_request linked to this trade_queue_item.
-      const [atRes, drRes] = await Promise.all([
-        supabase
-          .from('accepted_trades')
-          .select('id')
-          .eq('trade_queue_item_id', decisionId)
-          .eq('is_active', true)
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('decision_requests')
-          .select('id')
-          .eq('trade_queue_item_id', decisionId)
-          .limit(1)
-          .maybeSingle(),
-      ])
-
-      const at = atRes.data
-      const dr = drRes.data
-      const acceptedTradeId = at?.id ?? null
-      const decisionRequestId = dr?.id ?? null
-
-      // Stage 2: parallel-fetch the comments for both link targets.
-      // Skipping a query if no link target was found.
-      const commentPromises: Promise<any>[] = []
-      if (at?.id) {
-        commentPromises.push(
-          supabase
-            .from('accepted_trade_comments')
-            .select('id, content, user_id, created_at')
-            .eq('accepted_trade_id', at.id)
-            .order('created_at', { ascending: true }),
-        )
+      const payload = (data || {}) as {
+        reflections?: Reflection[]
+        acceptedTradeId?: string | null
+        decisionRequestId?: string | null
       }
-      if (dr?.id) {
-        commentPromises.push(
-          supabase
-            .from('decision_request_comments')
-            .select('id, content, user_id, created_at')
-            .eq('decision_request_id', dr.id)
-            .order('created_at', { ascending: true }),
-        )
+      return {
+        reflections: payload.reflections || [],
+        acceptedTradeId: payload.acceptedTradeId ?? null,
+        decisionRequestId: payload.decisionRequestId ?? null,
       }
-      const commentResults = commentPromises.length > 0
-        ? await Promise.all(commentPromises)
-        : []
-      for (const res of commentResults) {
-        if (res.error) console.warn('Failed to load reflection comments:', res.error)
-        for (const c of (res.data || []) as RawComment[]) {
-          if (!rawComments.find(r => r.id === c.id)) rawComments.push(c)
-        }
-      }
-
-      // Stage 3: resolve display names. Comments tables FK their
-      // user_id columns to auth.users, which PostgREST won't embed —
-      // so we fetch from public.users (mirrors auth.users by id).
-      const userIds = Array.from(new Set(rawComments.map(c => c.user_id).filter(Boolean)))
-      const usersById = new Map<string, { full_name?: string; email?: string }>()
-      if (userIds.length > 0) {
-        const { data: users } = await supabase
-          .from('users')
-          .select('id, first_name, last_name, email')
-          .in('id', userIds)
-        for (const u of (users || []) as any[]) {
-          const full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim()
-          usersById.set(u.id, { full_name: full || undefined, email: u.email })
-        }
-      }
-
-      for (const c of rawComments) {
-        const u = usersById.get(c.user_id)
-        reflections.push({
-          id: c.id,
-          content: c.content,
-          user_id: c.user_id,
-          user_name: u?.full_name || u?.email?.split('@')[0] || 'Unknown',
-          created_at: c.created_at,
-        })
-      }
-
-      reflections.sort((a, b) => a.created_at.localeCompare(b.created_at))
-      return { reflections, acceptedTradeId, decisionRequestId }
     },
     enabled: !!decisionId,
     // Reflections rarely change outside of the user's own posts (which

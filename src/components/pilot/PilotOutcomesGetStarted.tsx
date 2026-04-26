@@ -12,8 +12,9 @@
  *   2. Review why the decision was made — open the "Why this
  *      decision was made" section in the right pane to revisit
  *      the original thesis, why-now, and recommendation.
- *   3. Add a reflection — capture what you learned in the
- *      Reflections section. Posting graduates the user.
+ *   3. Check how the trade is performing — open the "How it's
+ *      performing" section to see price move, P&L, and the
+ *      decision-level scoring. Opening it graduates the user.
  *
  * Graduation now happens entirely on Outcomes — no navigation away
  * — so the user gets the graduation modal in context.
@@ -22,11 +23,10 @@
  * Window events the banner listens for:
  *   - 'pilot-outcomes:result-inspected'   (Step 1)
  *   - 'outcomes:section-opened' { sectionId: 'thesis' } (Step 2)
- *   - 'pilot-outcomes:next-action-viewed' (Step 3 — fired by
- *     useAddReflection when a reflection is posted)
+ *   - 'outcomes:section-opened' { sectionId: 'performance' } (Step 3)
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { X, ArrowRight, Check, Trophy } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -56,54 +56,77 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
   try { localStorage.setItem(flagKey(userId, orgId, suffix), '1') } catch { /* ignore */ }
 }
 
+// Internal store: dispatch our state-changed event after every flag
+// write so any subscribed banner re-renders immediately. We dispatch
+// from the same call site that writes the flag, eliminating the prior
+// race where a setState in a listener could be missed during a busy
+// render flush.
+function setFlag(userId: string, orgId: string | null | undefined, suffix: string) {
+  writeFlag(userId, orgId, suffix)
+  try { window.dispatchEvent(new CustomEvent('pilot-outcomes:state-changed')) } catch { /* ignore */ }
+}
+
+// Subscribe to localStorage flag changes from any source — same-tab
+// custom events (most posts) AND cross-tab `storage` events (rare,
+// e.g. user has Outcomes open in two windows).
+const subscribe = (cb: () => void) => {
+  window.addEventListener('pilot-outcomes:state-changed', cb)
+  window.addEventListener('storage', cb)
+  return () => {
+    window.removeEventListener('pilot-outcomes:state-changed', cb)
+    window.removeEventListener('storage', cb)
+  }
+}
+
+function useFlag(userId: string | undefined, orgId: string | null | undefined, suffix: string): boolean {
+  const getSnapshot = useCallback(
+    () => (userId ? readFlag(userId, orgId, suffix) : false),
+    [userId, orgId, suffix],
+  )
+  // SSR snapshot is always false — these flags are user/browser scoped
+  // and have no meaning during server render.
+  return useSyncExternalStore(subscribe, getSnapshot, () => false)
+}
+
 export function PilotOutcomesGetStarted({
   userId,
   orgId,
 }: PilotOutcomesGetStartedProps) {
-  const [dismissed, setDismissed] = useState<boolean>(() => userId ? readFlag(userId, orgId, DISMISS) : false)
-  const [step1, setStep1] = useState<boolean>(() => userId ? readFlag(userId, orgId, STEP1) : false)
-  const [step2, setStep2] = useState<boolean>(() => userId ? readFlag(userId, orgId, STEP2) : false)
-  const [step3, setStep3] = useState<boolean>(() => userId ? readFlag(userId, orgId, STEP3) : false)
+  // Flags are read straight from localStorage on every render via
+  // useSyncExternalStore — the source of truth is the disk, not React
+  // state. Any writeFlag elsewhere immediately re-renders the banner
+  // because `setFlag` dispatches `pilot-outcomes:state-changed`.
+  const dismissed = useFlag(userId, orgId, DISMISS)
+  const step1 = useFlag(userId, orgId, STEP1)
+  const step2 = useFlag(userId, orgId, STEP2)
+  const step3 = useFlag(userId, orgId, STEP3)
 
+  // Step listeners just write the corresponding flag — the
+  // useSyncExternalStore subscription handles re-rendering. No
+  // setState/setter wiring needed.
+  //
+  // Steps 2 and 3 both key off `outcomes:section-opened` — Step 2
+  // when the "Why this decision was made" section opens
+  // (sectionId='thesis'), Step 3 when "How it's performing" opens
+  // (sectionId='performance'). One listener handles both.
   useEffect(() => {
     if (!userId) return
-    setDismissed(readFlag(userId, orgId, DISMISS))
-    setStep1(readFlag(userId, orgId, STEP1))
-    setStep2(readFlag(userId, orgId, STEP2))
-    setStep3(readFlag(userId, orgId, STEP3))
-  }, [userId, orgId])
-
-  const markStep = useCallback((suffix: string, setter: (v: boolean) => void) => {
-    if (userId) writeFlag(userId, orgId, suffix)
-    setter(true)
-  }, [userId, orgId])
-
-  useEffect(() => {
-    // See PilotTradeLabIntroBanner for why we queueMicrotask the
-    // listener bodies.
-    const defer = (fn: () => void) => () => queueMicrotask(fn)
-    const onStep1 = defer(() => markStep(STEP1, setStep1))
-    // Step 2 listens for `outcomes:section-opened` and only ticks
-    // when the opened section is the "Why this decision was made"
-    // (sectionId='thesis') — every other section opening is ignored.
+    const onStep1 = () => setFlag(userId, orgId, STEP1)
     const onSectionOpened = (e: Event) => {
       const detail = (e as CustomEvent).detail
-      if (detail?.sectionId !== 'thesis') return
-      queueMicrotask(() => markStep(STEP2, setStep2))
+      if (detail?.sectionId === 'thesis') {
+        setFlag(userId, orgId, STEP2)
+      } else if (detail?.sectionId === 'performance') {
+        setFlag(userId, orgId, STEP3)
+      }
     }
-    // Step 3 fires when a reflection is posted; the addReflection
-    // mutation already dispatches `pilot-outcomes:next-action-viewed`
-    // on success.
-    const onStep3 = defer(() => markStep(STEP3, setStep3))
     window.addEventListener('pilot-outcomes:result-inspected', onStep1)
     window.addEventListener('outcomes:section-opened', onSectionOpened as EventListener)
-    window.addEventListener('pilot-outcomes:next-action-viewed', onStep3)
     return () => {
       window.removeEventListener('pilot-outcomes:result-inspected', onStep1)
       window.removeEventListener('outcomes:section-opened', onSectionOpened as EventListener)
-      window.removeEventListener('pilot-outcomes:next-action-viewed', onStep3)
     }
-  }, [markStep])
+  }, [userId, orgId])
 
   // Once all three are done, retire the 3-step strip AND set the
   // pending-graduation flag so the global PilotGraduationModal (mounted
@@ -111,24 +134,26 @@ export function PilotOutcomesGetStarted({
   // outside this component so it survives the navigation that step 3
   // typically triggers (Update Research opens the asset tab and
   // unmounts Outcomes).
+  //
+  // The trigger does NOT depend on `!dismissed` — a user who manually
+  // X'd the banner still earns graduation when they finish the loop.
+  // PENDING_GRAD is the gate that prevents double-firing within a
+  // session; GRAD_DISMISS is the gate that prevents re-celebrating
+  // someone who already saw it.
   useEffect(() => {
-    if (!dismissed && step1 && step2 && step3 && userId) {
-      writeFlag(userId, orgId, DISMISS)
-      // Only set the pending flag if the user hasn't already
-      // dismissed graduation in a previous session.
-      if (!readFlag(userId, orgId, GRAD_DISMISS)) {
-        writeFlag(userId, orgId, PENDING_GRAD)
-        try { window.dispatchEvent(new CustomEvent('pilot-graduation:trigger')) } catch { /* ignore */ }
-      }
-      setDismissed(true)
+    if (!userId || !step1 || !step2 || !step3) return
+    if (readFlag(userId, orgId, GRAD_DISMISS)) return
+    if (!readFlag(userId, orgId, PENDING_GRAD)) {
+      writeFlag(userId, orgId, PENDING_GRAD)
+      try { window.dispatchEvent(new CustomEvent('pilot-graduation:trigger')) } catch { /* ignore */ }
     }
+    if (!dismissed) setFlag(userId, orgId, DISMISS)
   }, [dismissed, step1, step2, step3, userId, orgId])
 
   if (dismissed) return null
 
   const dismiss = () => {
-    if (userId) writeFlag(userId, orgId, DISMISS)
-    setDismissed(true)
+    if (userId) setFlag(userId, orgId, DISMISS)
   }
 
   // Step 2 click — scroll the right pane to the "Why this decision
@@ -142,14 +167,12 @@ export function PilotOutcomesGetStarted({
     } catch { /* ignore */ }
   }
 
-  // Step 3 click — scroll the right pane to the Reflections section
-  // so the user can write one. Step 3 ticks when the reflection is
-  // actually posted (useAddReflection.onSuccess dispatches
-  // pilot-outcomes:next-action-viewed).
-  const handleAddReflection = () => {
+  // Step 3 click — open the "How it's performing" section. The section's
+  // own open broadcast (sectionId='performance') ticks step 3.
+  const handleCheckPerformance = () => {
     try {
       window.dispatchEvent(new CustomEvent('outcomes:open-section', {
-        detail: { sectionId: 'reflection' },
+        detail: { sectionId: 'performance' },
       }))
     } catch { /* ignore */ }
   }
@@ -184,13 +207,13 @@ export function PilotOutcomesGetStarted({
           <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
           <button
             type="button"
-            onClick={handleAddReflection}
+            onClick={handleCheckPerformance}
             className="flex items-start gap-2 min-w-0 cursor-pointer hover:opacity-90 transition-opacity"
           >
             <Step
               n={3}
-              title="Add a reflection"
-              hint="Capture what you learned in the Reflections section — that's the loop."
+              title="Check how the trade is performing"
+              hint="Open the “How it's performing” section to see the price move, P&L, and decision scoring."
               done={step3}
             />
           </button>

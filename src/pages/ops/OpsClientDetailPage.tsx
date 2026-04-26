@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles } from 'lucide-react'
+import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles, Mail, X } from 'lucide-react'
 import { OpsPilotPanel } from './OpsPilotPanel'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -86,6 +86,40 @@ export function OpsClientDetailPage() {
       return data || []
     },
     enabled: !!orgId,
+  })
+
+  // Pending invites — emails invited at provision time who haven't signed
+  // up yet. They live in organization_invites (status='pending') until the
+  // invitee creates their account, at which point a trigger converts the
+  // invite into an organization_memberships row.
+  const { data: pendingInvites = [] } = useQuery({
+    queryKey: ['ops-client-invites', orgId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('organization_invites')
+        .select('id, email, invited_is_org_admin, created_at, invited_by')
+        .eq('organization_id', orgId!)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!orgId,
+  })
+
+  const cancelInviteM = useMutation({
+    mutationFn: async (inviteId: string) => {
+      const { error } = await supabase
+        .from('organization_invites')
+        .update({ status: 'cancelled' })
+        .eq('id', inviteId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ops-client-invites', orgId] })
+      success('Invite cancelled')
+    },
+    onError: (err: any) => showError(err.message),
   })
 
   // Portfolios
@@ -254,9 +288,63 @@ export function OpsClientDetailPage() {
 
       {/* Members */}
       {activeTab === 'members' && (
-        <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+        <div className="space-y-4">
+          {pendingInvites.length > 0 && (
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-amber-200 flex items-center gap-2">
+                <Mail className="w-3.5 h-3.5 text-amber-700" />
+                <span className="text-xs font-semibold text-amber-900 uppercase tracking-wide">
+                  Pending invites
+                </span>
+                <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                  {pendingInvites.length}
+                </span>
+                <span className="text-[11px] text-amber-700/80 ml-1">— invited but haven't signed up yet</span>
+              </div>
+              <div className="divide-y divide-amber-100">
+                {pendingInvites.map((inv: any) => (
+                  <div key={inv.id} className="px-5 py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-7 h-7 rounded-full bg-amber-200/60 flex items-center justify-center flex-shrink-0">
+                        <Mail className="w-3.5 h-3.5 text-amber-700" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 truncate">{inv.email}</span>
+                          {inv.invited_is_org_admin && (
+                            <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded">Admin</span>
+                          )}
+                          <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700">pending</span>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Invited {new Date(inv.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Cancel pending invite for ${inv.email}?`)) {
+                          cancelInviteM.mutate(inv.id)
+                        }
+                      }}
+                      disabled={cancelInviteM.isPending}
+                      className="px-2 py-1 text-[10px] font-medium rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors flex items-center gap-1"
+                    >
+                      <X className="w-3 h-3" />
+                      Cancel
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
           {members.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-gray-400">No members</div>
+            <div className="px-5 py-8 text-center text-sm text-gray-400">
+              {pendingInvites.length > 0
+                ? 'No active members yet — pending invites listed above.'
+                : 'No members'}
+            </div>
           ) : members.map((m: any) => (
             <div key={m.id} className="px-5 py-3 flex items-center justify-between">
               <div className="flex items-center gap-3 min-w-0">
@@ -327,6 +415,7 @@ export function OpsClientDetailPage() {
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
 
