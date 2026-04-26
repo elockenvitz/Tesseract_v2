@@ -1161,131 +1161,44 @@ export interface DecisionStory {
   } | null
 }
 
+// Standalone fetcher reused by both the hook and the page-level
+// prefetch effect. One RPC round-trip replaces the prior 6 parallel
+// supabase reads — the right pane can paint as soon as the click
+// resolves, instead of waiting on the slowest of six.
+export async function fetchDecisionStory(
+  decisionId: string,
+  executionEventId?: string | null,
+): Promise<DecisionStory> {
+  const { data, error } = await supabase.rpc('decision_story_payload', {
+    p_decision_id: decisionId,
+    p_execution_event_id: executionEventId ?? null,
+  })
+  if (error) throw error
+  const payload = (data || {}) as any
+  return {
+    theses: payload.theses || [],
+    decisionRequest: payload.decisionRequest ?? null,
+    acceptedTrade: payload.acceptedTrade
+      ? {
+          ...payload.acceptedTrade,
+          price_at_acceptance:
+            payload.acceptedTrade.price_at_acceptance != null
+              ? Number(payload.acceptedTrade.price_at_acceptance)
+              : null,
+        }
+      : null,
+    executionRationale: payload.executionRationale ?? null,
+    linkedResearchCount: payload.linkedResearchCount ?? 0,
+    ideaExtras: payload.ideaExtras ?? null,
+  }
+}
+
 export function useDecisionStory(decisionId: string | null, executionEventId?: string | null) {
   return useQuery<DecisionStory | null>({
     queryKey: ['decision-story', decisionId, executionEventId],
     enabled: !!decisionId,
     staleTime: 60_000,
-    queryFn: async () => {
-      if (!decisionId) return null
-
-      // Run all queries in parallel
-      const [thesesRes, drRes, atRes, ratRes, linksRes, ideaRes] = await Promise.all([
-        // 1. Theses for this idea
-        supabase
-          .from('trade_idea_theses')
-          .select('id, direction, rationale, conviction, created_at, users:created_by(first_name, last_name, email)')
-          .eq('trade_queue_item_id', decisionId)
-          .order('created_at', { ascending: true }),
-
-        // 2. Decision request (latest for this idea)
-        supabase
-          .from('decision_requests')
-          .select('id, urgency, context_note, decision_note, status, submission_snapshot, created_at, reviewed_at, requester:requested_by(first_name, last_name, email), reviewer:reviewed_by(first_name, last_name, email)')
-          .eq('trade_queue_item_id', decisionId)
-          .in('status', ['accepted', 'accepted_with_modification', 'rejected', 'deferred'])
-          .order('created_at', { ascending: false })
-          .limit(1),
-
-        // 3. Accepted trade (latest active for this idea)
-        supabase
-          .from('accepted_trades')
-          .select('id, acceptance_note, price_at_acceptance, execution_status, execution_note, source, created_at')
-          .eq('trade_queue_item_id', decisionId)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(1),
-
-        // 4. Execution rationale (for the matched execution event, if any)
-        executionEventId
-          ? supabase
-              .from('trade_event_rationales')
-              .select('id, reason_for_action, why_now, what_changed, thesis_context, catalyst_trigger, sizing_logic, risk_context, execution_context, divergence_from_plan, divergence_explanation, rationale_type, status, created_at, author:authored_by(first_name, last_name, email), reviewer:reviewed_by(first_name, last_name, email)')
-              .eq('trade_event_id', executionEventId)
-              .order('version_number', { ascending: false })
-              .limit(1)
-          : Promise.resolve({ data: null, error: null }),
-
-        // 5. Linked research count
-        supabase
-          .from('object_links')
-          .select('id', { count: 'exact', head: true })
-          .eq('target_type', 'trade_idea')
-          .eq('target_id', decisionId),
-
-        // 6. Trade idea extra fields
-        supabase
-          .from('trade_queue_items')
-          .select('conviction, time_horizon, urgency, thesis_text')
-          .eq('id', decisionId)
-          .single(),
-      ])
-
-      // Format user names
-      const userName = (u: any) => u ? [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email || null : null
-
-      return {
-        theses: (thesesRes.data || []).map((t: any) => ({
-          id: t.id,
-          direction: t.direction,
-          rationale: t.rationale,
-          conviction: t.conviction,
-          created_by_name: userName(t.users),
-          created_at: t.created_at,
-        })),
-
-        decisionRequest: drRes.data?.[0] ? {
-          id: drRes.data[0].id,
-          urgency: drRes.data[0].urgency,
-          context_note: drRes.data[0].context_note,
-          decision_note: drRes.data[0].decision_note,
-          status: drRes.data[0].status,
-          submission_snapshot: drRes.data[0].submission_snapshot as Record<string, unknown> | null,
-          requester_name: userName(drRes.data[0].requester),
-          reviewed_by_name: userName(drRes.data[0].reviewer),
-          reviewed_at: drRes.data[0].reviewed_at,
-          created_at: drRes.data[0].created_at,
-        } : null,
-
-        acceptedTrade: atRes.data?.[0] ? {
-          id: atRes.data[0].id,
-          acceptance_note: atRes.data[0].acceptance_note,
-          price_at_acceptance: atRes.data[0].price_at_acceptance ? Number(atRes.data[0].price_at_acceptance) : null,
-          execution_status: atRes.data[0].execution_status,
-          execution_note: atRes.data[0].execution_note,
-          source: atRes.data[0].source,
-          created_at: atRes.data[0].created_at,
-        } : null,
-
-        executionRationale: ratRes.data?.[0] ? {
-          id: ratRes.data[0].id,
-          reason_for_action: ratRes.data[0].reason_for_action,
-          why_now: ratRes.data[0].why_now,
-          what_changed: ratRes.data[0].what_changed,
-          thesis_context: ratRes.data[0].thesis_context,
-          catalyst_trigger: ratRes.data[0].catalyst_trigger,
-          sizing_logic: ratRes.data[0].sizing_logic,
-          risk_context: ratRes.data[0].risk_context,
-          execution_context: ratRes.data[0].execution_context,
-          divergence_from_plan: ratRes.data[0].divergence_from_plan ?? false,
-          divergence_explanation: ratRes.data[0].divergence_explanation,
-          rationale_type: ratRes.data[0].rationale_type,
-          status: ratRes.data[0].status,
-          authored_by_name: userName(ratRes.data[0].author),
-          reviewed_by_name: userName(ratRes.data[0].reviewer),
-          created_at: ratRes.data[0].created_at,
-        } : null,
-
-        linkedResearchCount: linksRes.count ?? 0,
-
-        ideaExtras: ideaRes.data ? {
-          conviction: ideaRes.data.conviction,
-          time_horizon: ideaRes.data.time_horizon,
-          urgency: ideaRes.data.urgency,
-          thesis_text: ideaRes.data.thesis_text,
-        } : null,
-      }
-    },
+    queryFn: () => decisionId ? fetchDecisionStory(decisionId, executionEventId) : Promise.resolve(null),
   })
 }
 
