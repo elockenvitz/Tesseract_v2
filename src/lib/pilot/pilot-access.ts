@@ -24,12 +24,12 @@ export interface PilotAccessConfig {
   priorities:   PilotAccessLevel  // starts 'hidden'
   projects:     PilotAccessLevel  // starts 'hidden'
   coverage:     PilotAccessLevel  // starts 'hidden'
-  workflows:    PilotAccessLevel  // starts 'hidden'
+  workflows:    PilotAccessLevel  // 'full' — Get Started step "Build a workflow" sends users here
   notes:        PilotAccessLevel  // starts 'full' — notes support the idea
   assets:       PilotAccessLevel  // starts 'full' — can pivot to research
   portfolios:   PilotAccessLevel  // starts 'full'
   themes:       PilotAccessLevel  // starts 'full'
-  lists:        PilotAccessLevel  // starts 'hidden'
+  lists:        PilotAccessLevel  // 'full' — Get Started step "Build a list" sends users here
   calendar:     PilotAccessLevel  // starts 'hidden'
   charting:     PilotAccessLevel  // starts 'hidden'
   files:        PilotAccessLevel  // starts 'hidden'
@@ -48,12 +48,12 @@ export const PILOT_ACCESS_DEFAULTS: PilotAccessConfig = {
   priorities:   'hidden',
   projects:     'hidden',
   coverage:     'hidden',
-  workflows:    'hidden',
+  workflows:    'full',   // Get Started teaches "Build a workflow"
   notes:        'full',
   assets:       'full',
   portfolios:   'full',
   themes:       'full',
-  lists:        'hidden',
+  lists:        'full',   // Get Started teaches "Build a list"
   calendar:     'hidden',
   charting:     'hidden',
   files:        'hidden',

@@ -553,29 +553,14 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       {/* Theme Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 flex-1 min-w-0">
-          {/* Color swatch (click to change) */}
-          <div className="relative mt-1.5" ref={colorPickerRef}>
-            <button
-              onClick={() => setShowColorPicker(s => !s)}
-              className="w-5 h-5 rounded-full border-2 border-white shadow-sm ring-1 ring-gray-200 hover:ring-gray-400 transition-all"
+          {/* Color swatch — display-only. Color is derived from
+              theme_type (sector/macro/etc.), not user-picked. */}
+          <div className="mt-1.5">
+            <span
+              className="block w-5 h-5 rounded-full border-2 border-white shadow-sm ring-1 ring-gray-200"
               style={{ backgroundColor: theme.color || '#3b82f6' }}
-              title="Change color"
+              title={`Color reflects this theme's type (${theme.theme_type || 'general'})`}
             />
-            {showColorPicker && (
-              <div className="absolute left-0 top-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 flex items-center gap-2">
-                {colorOptions.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => { handleColorChange(c); setShowColorPicker(false) }}
-                    className={clsx(
-                      'w-6 h-6 rounded-full border-2 transition-transform',
-                      theme.color === c ? 'border-gray-900 scale-110' : 'border-gray-200 hover:scale-105'
-                    )}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="min-w-0 flex-1">

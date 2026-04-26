@@ -962,9 +962,19 @@ export function DashboardPage() {
       case 'note': {
         // Handle notes from different sources: asset, portfolio, theme
         const entityType = activeTab.data?.entityType || 'asset' // Default to asset for backwards compatibility
-        // Use data.id for the selected note. Only fall back to activeTab.id if it looks like a UUID (not a synthetic tab ID like "notes-{assetId}")
+        // Use data.id for the selected note. Only fall back to activeTab.id if it looks like a UUID
+        // (not a synthetic tab ID like "notes-{assetId}", "note-{entityType}-{entityId}", or "research-...").
+        // The 'note-' prefix matters: NotesListPage groups all notes for the same entity under
+        // a single synthetic tab ID — passing that string as a UUID 400s the content query and
+        // leaves the editor stuck on its loading spinner.
         const rawNoteId = activeTab.data?.isNew ? undefined : activeTab.data?.id
-        const noteId = rawNoteId || (activeTab.id && !activeTab.id.startsWith('notes-') && !activeTab.id.startsWith('research-') ? activeTab.id : undefined)
+        const noteId = rawNoteId || (
+          activeTab.id
+          && !activeTab.id.startsWith('notes-')
+          && !activeTab.id.startsWith('note-')
+          && !activeTab.id.startsWith('research-')
+          ? activeTab.id : undefined
+        )
 
         const handleNoteSelect = (newNoteId: string) => {
           // Update the tab's data.id to the new note (but keep the stable tab ID)

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { RichTextEditor, type RichTextEditorRef } from '../../rich-text-editor/RichTextEditor'
+import { SmartInputRenderer } from '../../smart-input'
 import { useAuth } from '../../../hooks/useAuth'
 import {
   useThemeContributionsV2,
@@ -175,7 +176,11 @@ export function ThemeContributionSection({
     ? fieldContributions.reduce<string | null>((max, c) => (!max || c.updated_at > max ? c.updated_at : max), null)
     : focusedContribution?.updated_at ?? null
 
-  const canEditInline = user && (isAggregated || isOwnView)
+  // Match the asset page: the prominent pencil button only appears on
+  // the user's own view, never on the aggregated "Our View" — the
+  // aggregated view is read-only by convention. Editing from the
+  // aggregated view goes through the (subtle) title-click affordance.
+  const canEditInline = user && isOwnView
   const showEditButton = canEditInline && !isEditing && isHovered
 
   return (
@@ -197,18 +202,9 @@ export function ThemeContributionSection({
             <FileText className={clsx('w-4 h-4', TILE_THEME.iconColor)} />
           </div>
           <div className="flex items-center gap-3 flex-wrap min-w-0">
-            {isAggregated && user && !isEditing ? (
-              <button
-                onClick={startEdit}
-                className="group flex items-center gap-1.5"
-                title="Click to add your view"
-              >
-                <h3 className="text-base font-semibold text-gray-900 group-hover:text-primary-600 transition-colors truncate">{field.name}</h3>
-                <Edit3 className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-            ) : (
-              <h3 className="text-base font-semibold text-gray-900 truncate">{field.name}</h3>
-            )}
+            {/* Our View is read-only — title is static, no edit
+                affordance. Editing happens from the user's own view tab. */}
+            <h3 className="text-base font-semibold text-gray-900 truncate">{field.name}</h3>
             {lastUpdated && (
               <span className="text-xs text-gray-400">
                 Updated {formatDistanceToNow(new Date(lastUpdated), { addSuffix: true })}
@@ -365,91 +361,42 @@ function AggregatedContent({
 }: AggregatedContentProps) {
   const hasAny = others.length > 0 || (!!own && hasText(own.content))
   if (!hasAny) {
+    // Our View is pure read-only aggregation — no edit affordance.
+    // Editing happens from the user's own view tab.
     return (
-      <button
-        onClick={onStartEdit}
-        className="w-full text-left text-sm text-gray-400 italic hover:text-gray-600 transition-colors py-2"
-      >
-        {placeholder} <span className="text-xs text-primary-600 not-italic ml-1">Add yours →</span>
-      </button>
+      <p className="text-sm text-gray-400 italic py-1">
+        No views shared yet.
+      </p>
     )
   }
 
+  // Mirror the asset page's "Our View" — a flat list where each
+  // contribution renders as `<Name>: <content>` inline. No per-row
+  // chrome (avatars, visibility badges, pin toggles) — keeps the
+  // aggregation visually scannable like the asset page.
+  const all: ThemeContribution[] = [
+    ...(own && hasText(own.content) ? [own] : []),
+    ...others.filter(o => hasText(o.content)),
+  ]
   return (
-    <div className="space-y-4">
-      {own && hasText(own.content) && (
-        <div className="group">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-100 text-primary-700">
-              You
-            </span>
-            <VisibilityBadge visibility={own.visibility} isOwn />
-            <span className="text-xs text-gray-400">
-              {formatDistanceToNow(new Date(own.updated_at), { addSuffix: true })}
-            </span>
-            <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={onStartEdit}
-                className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
-                title="Edit"
-              >
-                <Edit3 className="w-3 h-3" />
-              </button>
-              <button
-                onClick={onClearOwn}
-                className="p-1 text-gray-400 hover:text-error-600 hover:bg-error-50 rounded"
-                title="Clear your contribution"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-          <div
-            className="pl-5 text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0"
-            dangerouslySetInnerHTML={{ __html: own.content }}
-          />
-        </div>
-      )}
-      {others.map(c => (
-        <div key={c.id} className="group">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-5 h-5 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center text-[10px] font-semibold shrink-0">
-              {initials(c)}
-            </div>
-            <button
-              onClick={() => onContributorClick(c.created_by)}
-              className="text-sm font-medium text-gray-700 hover:text-primary-600 hover:underline transition-colors"
-              title={`View ${displayName(c)}'s full research`}
+    <div className="space-y-3">
+      {all.map(c => {
+        const isOwn = !!currentUserId && c.created_by === currentUserId
+        return (
+          <div key={c.id} className="text-sm text-gray-700 leading-relaxed">
+            <span
+              className="font-medium text-gray-900 inline-flex items-center gap-1 align-top cursor-pointer hover:text-primary-600 transition-colors"
+              onClick={() => !isOwn && onContributorClick(c.created_by)}
+              title={isOwn ? 'You' : `View ${displayName(c)}'s full research`}
             >
-              {displayName(c)}
-            </button>
-            <VisibilityBadge visibility={c.visibility} />
-            {c.is_pinned && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
-                <Pin className="w-2.5 h-2.5" /> Pinned
-              </span>
-            )}
-            <span className="text-xs text-gray-400">
-              {formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}
+              {isOwn ? 'You' : displayName(c)}:
+            </span>{' '}
+            <span className="prose prose-sm max-w-none inline [&>p]:inline [&>p]:m-0">
+              <SmartInputRenderer content={c.content} inline />
             </span>
-            {currentUserId && (
-              <button
-                onClick={() => onTogglePin(c.id, !c.is_pinned)}
-                className="ml-auto p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                title={c.is_pinned ? 'Unpin' : 'Pin'}
-              >
-                {c.is_pinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-              </button>
-            )}
           </div>
-          <button
-            onClick={() => onContributorClick(c.created_by)}
-            className="text-left w-full text-sm text-gray-600 leading-relaxed pl-7 prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 hover:text-gray-900 transition-colors cursor-pointer"
-          >
-            <span dangerouslySetInnerHTML={{ __html: c.content }} />
-          </button>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -491,9 +438,17 @@ function FocusedOwn({ own, placeholder, onStartEdit, onClear }: {
           </div>
         </div>
       ) : (
-        <p className="text-sm text-gray-400 italic group-hover:text-gray-600 transition-colors">
-          {placeholder} <span className="text-xs text-primary-600 not-italic ml-1">Click to add →</span>
-        </p>
+        // Mirror the asset page's empty state — styled "Add your view"
+        // button rather than an italic placeholder line.
+        <div className="text-center py-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); onStartEdit() }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            Add your view
+          </button>
+        </div>
       )}
     </div>
   )

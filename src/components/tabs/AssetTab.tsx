@@ -448,7 +448,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   // Handle `scrollTo` navigation hint — used by tutorial steps in
   // PilotWelcomeBanner to deep-link into a specific section of the asset
-  // page. Defers to next paint so the target element is mounted.
+  // page. Effect re-runs on every (scrollTo, scrollNonce) change so a
+  // second click of the same step also fires. The poll handles two
+  // realities: (a) the layout/template query may still be loading, and
+  // (b) the section containing the anchor may be collapsed so we
+  // expand it first.
   useEffect(() => {
     const scrollTo = asset.data?.scrollTo
     if (!scrollTo) return
@@ -457,12 +461,39 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       : null
     if (!targetId) return
     setActiveSubPage('research')
-    const t = window.setTimeout(() => {
+    // The rating anchor only exists in the Individual "All" view branch
+    // (thesisViewMode='all' + researchViewFilter !== 'aggregated'). If a
+    // saved state restored 'summary' / 'history' / 'references', the
+    // anchor isn't in the DOM at all. Force 'all' so the field renders.
+    setThesisViewMode('all')
+    // Rating + Price Targets live in the Forecasts section, keyed
+    // 'outcomes' for collapsed state. Force-expand so the anchor
+    // element is in the DOM.
+    if (scrollTo === 'rating' || scrollTo === 'targets') {
+      setCollapsedSections(prev => ({ ...prev, outcomes: false }))
+    }
+    let cancelled = false
+    let attempts = 0
+    const tick = () => {
+      if (cancelled) return
       const el = document.getElementById(targetId)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 250)
-    return () => window.clearTimeout(t)
-  }, [asset.data?.scrollTo])
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      // Retry for up to ~3s while the layout/template query resolves.
+      if (attempts++ < 30) window.setTimeout(tick, 100)
+    }
+    const initial = window.setTimeout(tick, 200)
+    return () => {
+      cancelled = true
+      window.clearTimeout(initial)
+    }
+    // scrollNonce is a millisecond timestamp set by the caller — used
+    // so re-clicking the same banner step re-fires the scroll even
+    // though `scrollTo` itself didn't change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset.data?.scrollTo, asset.data?.scrollNonce])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {

@@ -1843,8 +1843,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           break
         case 'all':
         default:
+          // Show: workflows the user owns + workflows shared with them
+          // + ANY public workflow in the org. Public is what surfaces
+          // the org's pre-canned templates (Earnings Prep, New Idea
+          // Diligence, Quarterly Position Review) to every member.
           const sharedFilter = allAccessibleIds.length > 0 ? `,id.in.(${allAccessibleIds.join(',')})` : ''
-          workflowQuery = workflowQuery.or(`created_by.eq.${userId}${sharedFilter}`)
+          workflowQuery = workflowQuery.or(`created_by.eq.${userId},is_public.eq.true${sharedFilter}`)
           break
       }
 

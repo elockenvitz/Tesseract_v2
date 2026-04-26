@@ -50,6 +50,7 @@ import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import type { CadenceTimeframe, WorkflowScopeType } from '../../types/workflow'
 import { getScopeColor } from '../../utils/workflow/runHelpers'
 import {
@@ -159,6 +160,7 @@ const CADENCE_OPTIONS: { value: CadenceTimeframe; label: string; description: st
 
 export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWizardProps) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -244,13 +246,35 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
-  // Query for users
+  // Query for users — scoped to the CURRENT org explicitly. The
+  // `users` table has a "platform admins can read all users" RLS
+  // policy that bypasses the normal org-scoped policy when the
+  // caller is a platform admin, so a global query on `users` would
+  // leak cross-org users into the access dropdown. We resolve the
+  // member set via organization_memberships first to defend against
+  // that.
   const { data: allUsers } = useQuery({
-    queryKey: ['users-search'],
+    queryKey: ['users-search', currentOrgId],
     queryFn: async () => {
+      if (!currentOrgId) return []
+
+      const { data: memberships, error: memberErr } = await supabase
+        .from('organization_memberships')
+        .select('user_id')
+        .eq('organization_id', currentOrgId)
+        .eq('status', 'active')
+
+      if (memberErr) throw memberErr
+      const memberIds = (memberships ?? [])
+        .map(m => m.user_id)
+        .filter((id): id is string => !!id)
+
+      if (memberIds.length === 0) return []
+
       const { data, error } = await supabase
         .from('users')
         .select('id, email, first_name, last_name')
+        .in('id', memberIds)
         .order('first_name')
         .order('last_name')
 
@@ -260,7 +284,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         email: u.email,
         name: `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email
       }))
-    }
+    },
+    enabled: !!currentOrgId,
   })
 
   // Query for portfolios (used when scopeType === 'portfolio')

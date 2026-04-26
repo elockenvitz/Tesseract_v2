@@ -215,6 +215,23 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
       markAsReadMutation.mutate(notification.id)
     }
 
+    // Prompt notifications open the prompt in the right-pane
+    // inspector. Includes the legacy case where pre-fix prompts were
+    // stored with context_type='asset' but a prompt_id in context_data.
+    const promptIdFromData = (notification.context_data as any)?.prompt_id
+    const isPromptCtx = notification.context_type === 'prompt' || notification.context_type === 'quick_thought'
+    if (isPromptCtx || promptIdFromData) {
+      const promptId = promptIdFromData || notification.context_id
+      if (promptId) {
+        try {
+          window.dispatchEvent(new CustomEvent('openThoughtDetail', {
+            detail: { thoughtId: promptId, itemType: 'prompt' },
+          }))
+        } catch { /* ignore */ }
+      }
+      return
+    }
+
     // Navigate to the related content
     if (onNotificationClick) {
       let navigationData = null

@@ -20,6 +20,7 @@ import {
   FileText, TrendingUp, GitBranch, Zap,
 } from 'lucide-react'
 import { useMemo } from 'react'
+import { useAuth } from '../../../hooks/useAuth'
 import { useIdeasFeed, type FeedMode, type IdeasFeedFilters, type MixedFeedItem, isSignalCard } from '../../../hooks/ideas/useIdeasFeed'
 import { useSignalCards, insertSignalsIntoFeed } from '../../../hooks/ideas/useSignalCards'
 import { FeedCard, GroupedThesisCard } from './FeedCard'
@@ -62,6 +63,18 @@ interface IdeasFeedPageProps {
 // ============================================================
 
 export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
+  const { user } = useAuth()
+
+  // Mark the "View the ideas feed" Get Started step done on mount.
+  // Same pattern as AssetTab's `pilot-tutorial:asset-explored` flag —
+  // localStorage + a window event so the banner ticks live without
+  // waiting for a refetch.
+  useEffect(() => {
+    if (!user?.id) return
+    try { localStorage.setItem(`pilot-tutorial-ideas-feed-viewed-${user.id}`, '1') } catch { /* ignore */ }
+    try { window.dispatchEvent(new CustomEvent('pilot-tutorial:ideas-feed-viewed')) } catch { /* ignore */ }
+  }, [user?.id])
+
   // ── State ──
   const [mode, setMode] = useState<FeedMode>('for_you')
   const [typeFilter, setTypeFilter] = useState<ItemType | null>(null)
