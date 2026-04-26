@@ -11,7 +11,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { BookOpen, Layers, List, Briefcase, ChevronDown, Search, Check } from 'lucide-react'
+import { BookOpen, Layers, List, Briefcase, ChevronDown, Search, Check, Target, ArrowRight } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -545,6 +545,26 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
             </button>
           </div>
         </div>
+
+        {/* Right side: shortcut to Outcomes — the natural next step
+            after looking at committed trades. Reuses the existing
+            `decision-engine-action` event the dashboard listens on
+            for tab routing. */}
+        <button
+          onClick={() => {
+            try {
+              window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
+              }))
+            } catch { /* ignore */ }
+          }}
+          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-lg transition-colors"
+          title="See how these decisions are performing"
+        >
+          <Target className="w-3.5 h-3.5" />
+          View Outcomes
+          <ArrowRight className="w-3 h-3 opacity-70" />
+        </button>
       </div>
 
       {/* Pilot next-step nudge: once outcomes has unlocked (user has at

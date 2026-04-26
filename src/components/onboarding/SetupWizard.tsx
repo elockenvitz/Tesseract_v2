@@ -109,10 +109,19 @@ interface OrgNodeMember {
   email: string
 }
 
+/** Wizard framing.
+ *  - 'initial_setup': cold-start, blocking, "Welcome to Tesseract".
+ *  - 'workspace_customization': post-graduation, optional, "Make this
+ *    your workspace". Same steps, different copy + always-exitable.
+ */
+export type SetupWizardMode = 'initial_setup' | 'workspace_customization'
+
 interface SetupWizardProps {
   onComplete: () => void
   onSkip?: () => void
   isModal?: boolean
+  /** Defaults to 'initial_setup' for backwards compat. */
+  mode?: SetupWizardMode
 }
 
 const STEPS = [
@@ -195,7 +204,8 @@ const MARKET_DATA_PROVIDERS = [
   { id: 'none', label: 'None / Not Sure' },
 ]
 
-export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizardProps) {
+export function SetupWizard({ onComplete, onSkip, isModal = false, mode = 'initial_setup' }: SetupWizardProps) {
+  const isCustomization = mode === 'workspace_customization'
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [currentStep, setCurrentStep] = useState(0)
@@ -511,6 +521,16 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
       // Still advance even if save fails - we don't want to block the user
     }
 
+    // Notify per-org listeners (e.g. PilotWorkspaceCustomizationCard)
+    // that a step finished. The underlying user_onboarding_status row
+    // is per-user globally; this event lets per-org checklists track
+    // completion in their own scope.
+    try {
+      window.dispatchEvent(new CustomEvent('setup-wizard:step-completed', {
+        detail: { stepId, mode },
+      }))
+    } catch { /* ignore */ }
+
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1)
     }
@@ -538,6 +558,15 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
         await submitAccessRequestsMutation.mutateAsync(accessRequests)
       }
       await completeWizardMutation.mutateAsync()
+      // Notify per-org listeners (PilotWelcomeBanner Get Started step)
+      // that the user finished the wizard end-to-end. The
+      // step-completed events fire per-step; this fires once at
+      // wizard completion regardless of how many steps were skipped.
+      try {
+        window.dispatchEvent(new CustomEvent('setup-wizard:completed', {
+          detail: { mode },
+        }))
+      } catch { /* ignore */ }
       // Navigate away after successful completion
       onComplete()
     } catch (error) {
@@ -648,13 +677,22 @@ export function SetupWizard({ onComplete, onSkip, isModal = false }: SetupWizard
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Welcome to Tesseract</h1>
-              <p className="text-gray-600">Let's get you set up in just a few steps</p>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {isCustomization ? 'Make this your workspace' : 'Welcome to Tesseract'}
+              </h1>
+              <p className="text-gray-600">
+                {isCustomization
+                  ? "You've seen how Tesseract works. Customize it to match how you actually invest."
+                  : "Let's get you set up in just a few steps"}
+              </p>
             </div>
-            {onSkip && (
+            {/* In customization mode the wizard is always exit-able even
+                if the parent didn't pass an onSkip — nothing here is
+                blocking the user from working. */}
+            {(onSkip || isCustomization) && (
               <Button variant="ghost" onClick={onSkip}>
                 <X className="h-4 w-4 mr-2" />
-                Exit Setup
+                {isCustomization ? 'Close' : 'Exit Setup'}
               </Button>
             )}
           </div>

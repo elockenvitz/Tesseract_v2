@@ -3104,9 +3104,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, true)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
-    // Tick step 2 of the pilot Trade Lab Get Started banner — checking
-    // the recommendation in the LEFT pane (Trade Ideas) imports it into
-    // the holdings table.
+    // Tick steps 1 AND 2 of the pilot Trade Lab Get Started banner.
+    // Checking the recommendation in the LEFT pane (Trade Ideas)
+    // imports it into the holdings table — that single action
+    // implies the user has both reviewed AND selected the rec, so
+    // we fire both events. (Previously step 1 required a separate
+    // card-body click; users who jumped straight to the checkbox
+    // were left with step 1 still un-ticked.)
+    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
     try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
 
     // Prime priceMap with a price hint for this asset so quickEstimate in
@@ -5750,6 +5755,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     }
 
                                     // === CHECK: add proposal to simulation ===
+
+                                    // Tick steps 1 + 2 of the pilot Trade Lab Get Started
+                                    // banner. The pilot's seeded "Recommendation" is
+                                    // rendered as a proposal (this code path), NOT as
+                                    // an idea — so we have to dispatch the events here
+                                    // too, otherwise step 2 never gets ticked even when
+                                    // the user is doing exactly what the hint says.
+                                    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
+                                    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
 
                                     // Per-asset exclusivity: uncheck any idea-sourced trade first
                                     proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))

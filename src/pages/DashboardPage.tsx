@@ -323,14 +323,21 @@ export function DashboardPage() {
   // Onboarding: check if new user needs profile setup
   const { onboardingStatus, isLoading: onboardingLoading } = useOnboarding()
   const [onboardingDismissed, setOnboardingDismissed] = useState(false)
-  // Setup wizard is for non-pilot users only — pilot orgs are
-  // auto-seeded with the pilot scenario and don't need the guided
-  // setup. Showing it during the pilot loop would be a distraction.
+  // Setup wizard is for non-pilot users only:
+  //   - During the pilot loop (`effectiveIsPilot`), the blocking
+  //     wizard would distract from the seeded scenario.
+  //   - After graduation (`hasGraduated`), the user has already
+  //     proven value — we replace the cold-start wizard with the
+  //     dismissible PilotWorkspaceCustomizationCard ("Make this
+  //     your workspace") rendered inside the dashboard content.
+  // Net: the blocking modal only fires for users who never went
+  // through pilot at all (e.g. a brand-new non-pilot org admin).
   const needsOnboarding =
     !onboardingLoading &&
     !onboardingStatus?.wizard_completed &&
     !onboardingDismissed &&
-    !pilotMode.effectiveIsPilot
+    !pilotMode.effectiveIsPilot &&
+    !pilotMode.hasGraduated
 
   const toast = useToast()
 
@@ -1180,7 +1187,9 @@ export function DashboardPage() {
     return (
       <div className="h-full overflow-auto">
         <div className="p-3 space-y-2.5">
-          {/* Pilot welcome banner */}
+          {/* Pilot welcome banner — Get Started checklist. The
+              "Customize your workspace" step (formerly a standalone
+              card) is now the first item in this banner. */}
           <PilotWelcomeBanner onNavigate={handleSearchResult} />
 
           {/* Filters */}

@@ -12,6 +12,7 @@ import {
   FileText, Lightbulb, Star,
   BookOpen, Sparkles, PenLine, Tag, List,
 } from 'lucide-react'
+import { SetupWizard } from '../onboarding/SetupWizard'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -49,45 +50,94 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   // trace. AssetTab fires `pilot-tutorial:asset-explored` on mount and
   // also writes a localStorage flag, so we hydrate from that and update
   // live via the event.
+  // Per-(user, org) so opening an asset in one workspace doesn't
+  // pre-tick this step in another workspace the same user joins
+  // later. AssetTab writes to the same key on mount.
+  const assetExploredKey = `pilot-tutorial-asset-explored-${user?.id || 'anon'}-${currentOrgId || 'no-org'}`
   const [hasExploredAsset, setHasExploredAsset] = useState(() => {
     if (!user?.id) return false
-    try { return localStorage.getItem(`pilot-tutorial-asset-explored-${user.id}`) === '1' } catch { return false }
+    try { return localStorage.getItem(assetExploredKey) === '1' } catch { return false }
   })
   useEffect(() => {
     if (!user?.id) return
     try {
-      if (localStorage.getItem(`pilot-tutorial-asset-explored-${user.id}`) === '1') {
+      if (localStorage.getItem(assetExploredKey) === '1') {
         setHasExploredAsset(true)
+      } else {
+        setHasExploredAsset(false)
       }
     } catch { /* ignore */ }
-    const handler = () => setHasExploredAsset(true)
+    const handler = () => {
+      try { localStorage.setItem(assetExploredKey, '1') } catch { /* ignore */ }
+      setHasExploredAsset(true)
+    }
     window.addEventListener('pilot-tutorial:asset-explored', handler)
     return () => window.removeEventListener('pilot-tutorial:asset-explored', handler)
-  }, [user?.id])
+  }, [user?.id, assetExploredKey])
 
-  // Same pattern for the ideas feed step — fired by IdeasFeedPage
-  // on mount.
-  const [hasViewedIdeasFeed, setHasViewedIdeasFeed] = useState(() => {
+  // "Customize your workspace" step — done when the user finishes
+  // the SetupWizard end-to-end. Per-(user, org) so each workspace
+  // tracks independently; the underlying user_onboarding_status row
+  // is per-user globally and reusing it would pre-tick this step on
+  // every new workspace whenever the user had completed the wizard
+  // anywhere before.
+  const customizeKey = `pilot-tutorial-customize-completed-${user?.id || 'anon'}-${currentOrgId || 'no-org'}`
+  const [hasCustomized, setHasCustomized] = useState(() => {
     if (!user?.id) return false
-    try { return localStorage.getItem(`pilot-tutorial-ideas-feed-viewed-${user.id}`) === '1' } catch { return false }
+    try { return localStorage.getItem(customizeKey) === '1' } catch { return false }
   })
   useEffect(() => {
     if (!user?.id) return
     try {
-      if (localStorage.getItem(`pilot-tutorial-ideas-feed-viewed-${user.id}`) === '1') {
-        setHasViewedIdeasFeed(true)
+      if (localStorage.getItem(customizeKey) === '1') {
+        setHasCustomized(true)
+      } else {
+        setHasCustomized(false)
       }
     } catch { /* ignore */ }
-    const handler = () => setHasViewedIdeasFeed(true)
-    window.addEventListener('pilot-tutorial:ideas-feed-viewed', handler)
-    return () => window.removeEventListener('pilot-tutorial:ideas-feed-viewed', handler)
-  }, [user?.id])
+    const handler = () => {
+      try { localStorage.setItem(customizeKey, '1') } catch { /* ignore */ }
+      setHasCustomized(true)
+    }
+    window.addEventListener('setup-wizard:completed', handler)
+    return () => window.removeEventListener('setup-wizard:completed', handler)
+  }, [user?.id, customizeKey])
 
-  // Track completion of tutorial steps
+  // Modal-open state for the inline customization wizard. Step 1
+  // ("Customize your workspace") opens this; the user can also reach
+  // the wizard from the user menu permanently.
+  const [showCustomizeWizard, setShowCustomizeWizard] = useState(false)
+
+  // Track completion of tutorial steps — STRICTLY org-scoped.
+  // The Get Started checklist is per-org: a graduated pilot landing
+  // on their own workspace shouldn't see steps marked complete from
+  // actions taken in OTHER orgs the same user belongs to (e.g. their
+  // dev account in Tesseract). Tables with `organization_id` are
+  // filtered directly; tables without it (asset_notes, quick_thoughts,
+  // analyst_ratings, etc.) use `created_at >= org.created_at` as a
+  // best-effort floor — anything done before this org existed can't
+  // belong to it.
   const { data: progress } = useQuery({
     queryKey: ['pilot-tutorial-progress', currentOrgId, user?.id],
     queryFn: async () => {
-      if (!user?.id) return null
+      if (!user?.id || !currentOrgId) return null
+
+      // Org's created_at — used as a recency floor for tables we
+      // can't directly scope by organization_id.
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('created_at')
+        .eq('id', currentOrgId)
+        .maybeSingle()
+      const orgCreatedAt = (orgRow?.created_at as string | undefined) ?? new Date(0).toISOString()
+
+      // Org's portfolio ids — used to scope asset_lists which has
+      // portfolio_id (not organization_id directly).
+      const { data: portfolioRows } = await supabase
+        .from('portfolios')
+        .select('id')
+        .eq('organization_id', currentOrgId)
+      const orgPortfolioIds = (portfolioRows || []).map((p: any) => p.id as string)
 
       const [
         assetNotesRes,
@@ -100,30 +150,67 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         themeNotesRes,
         listsRes,
       ] = await Promise.all([
-        // Has the user written a note on an asset?
-        supabase.from('asset_notes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
-        // Has the user posted a thought?
-        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
+        // Has the user written a note on an asset? (no org_id column —
+        // floor by org.created_at)
+        supabase.from('asset_notes')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .gte('created_at', orgCreatedAt),
+        // Has the user posted a thought? (no org_id column — floor by
+        // org.created_at)
+        supabase.from('quick_thoughts')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .gte('created_at', orgCreatedAt),
         // Has the user used a prompt? Two flows count:
         //   1. user_quick_prompt_history — template/saved prompt usage
         //   2. quick_thoughts with idea_type='prompt' — the "ask a colleague"
         //      flow from PromptModal (right-pane "Prompt" capture).
-        // We run both and OR the results below.
-        supabase.from('user_quick_prompt_history').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).eq('created_by', user.id).eq('idea_type', 'prompt'),
-        // Has the user rated an asset?
-        supabase.from('analyst_ratings').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        // Has the user made a contribution on an asset?
-        supabase.from('asset_contributions').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
-        // Has the user created a theme?
-        supabase.from('themes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
-        // Has the user written a note on a theme?
-        supabase.from('theme_notes').select('id', { count: 'exact', head: true }).eq('created_by', user.id),
-        // Has the user built an asset list? Exclude `is_default=true`
-        // because every user gets two system-seeded default lists
-        // ("Investment Ideas", "Work in Process") on signup, which would
-        // otherwise mark this step complete before the user has done a thing.
-        supabase.from('asset_lists').select('id', { count: 'exact', head: true }).eq('created_by', user.id).eq('is_default', false),
+        // We run both and OR the results below. Both floored by org.
+        supabase.from('user_quick_prompt_history')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('created_at', orgCreatedAt),
+        supabase.from('quick_thoughts')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .eq('idea_type', 'prompt')
+          .gte('created_at', orgCreatedAt),
+        // Has the user rated an asset? (no org_id — floor by org.created_at)
+        supabase.from('analyst_ratings')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('created_at', orgCreatedAt),
+        // Has the user made a contribution on an asset? Org-scoped
+        // directly via the organization_id column.
+        supabase.from('asset_contributions')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .eq('organization_id', currentOrgId),
+        // Has the user created a theme in this org?
+        supabase.from('themes')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .eq('organization_id', currentOrgId),
+        // Has the user written a note on a theme owned by this org?
+        // theme_notes has no org_id directly, but we floor by org
+        // created_at for the same reason as above.
+        supabase.from('theme_notes')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .gte('created_at', orgCreatedAt),
+        // Has the user built an asset list in this org? Lists are
+        // scoped via portfolio_id → portfolios.organization_id. The
+        // portfolio_id IN (...) filter handles that. Excludes the
+        // two system-seeded default lists ("Investment Ideas" /
+        // "Work in Process") that every user gets on signup.
+        orgPortfolioIds.length > 0
+          ? supabase.from('asset_lists')
+              .select('id', { count: 'exact', head: true })
+              .eq('created_by', user.id)
+              .eq('is_default', false)
+              .in('portfolio_id', orgPortfolioIds)
+          : Promise.resolve({ count: 0, error: null, data: null } as any),
       ])
 
       return {
@@ -164,7 +251,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   // after would change the hook count between loading vs loaded
   // renders and trip "Rendered fewer hooks than expected".
   const allDoneForAutoDismiss = !!progress
-    && hasViewedIdeasFeed
+    && hasCustomized
     && !!progress.hasContribution
     && !!progress.hasRating
     && !!progress.hasNote
@@ -198,6 +285,20 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   }
 
   const steps: TutorialStep[] = [
+    // Personalize first — this scopes the rest of the platform
+    // (focus, coverage, integrations) to the way the user actually
+    // works, so the Get Started flow that follows lands on a
+    // workspace already shaped to them.
+    {
+      id: 'customize-workspace',
+      label: 'Customize your workspace',
+      description: 'Confirm your profile, focus, and coverage. About 5 min.',
+      hint: 'Opens a 4-step wizard. Skip any section you don\'t care about.',
+      icon: Sparkles,
+      done: hasCustomized,
+      action: () => setShowCustomizeWizard(true),
+      category: 'research',
+    },
     // Research workflow
     {
       id: 'explore-asset',
@@ -298,22 +399,13 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       action: () => onNavigate({ type: 'lists', id: 'lists', title: 'Lists', data: {} }),
       category: 'discover',
     },
-    {
-      id: 'view-ideas-feed',
-      label: 'View the ideas feed',
-      description: 'Browse the trade ideas, prompts, and thoughts your team has captured.',
-      hint: 'Opens the Ideas tab — just visiting it counts.',
-      icon: Lightbulb,
-      done: hasViewedIdeasFeed,
-      action: () => onNavigate({ type: 'idea-generator', id: 'idea-generator', title: 'Ideas', data: {} }),
-      category: 'discover',
-    },
   ]
 
   const completedCount = steps.filter(s => s.done).length
   const allDone = completedCount === steps.length
 
   return (
+    <>
     <div className="relative bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/20 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
       {/* Header — always visible. Title + one-line "what this is" so the
           section's purpose is clear even when collapsed. */}
@@ -414,5 +506,23 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         </div>
       )}
     </div>
+
+    {/* Customization wizard modal — opened from step 1
+        ("Customize your workspace"). Uses the
+        'workspace_customization' framing so copy reads as
+        personalization, not initial setup. */}
+    {showCustomizeWizard && (
+      <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
+        <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+          <SetupWizard
+            mode="workspace_customization"
+            onComplete={() => setShowCustomizeWizard(false)}
+            onSkip={() => setShowCustomizeWizard(false)}
+            isModal
+          />
+        </div>
+      </div>
+    )}
+    </>
   )
 }

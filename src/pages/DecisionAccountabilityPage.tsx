@@ -64,6 +64,7 @@ import { usePositionLifecycle, usePositionPriceHistory, useHoldingsTimeSeries } 
 import { AnalystScorecardsView, PMScorecardsView } from '../components/outcomes/ScorecardViews'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useToast } from '../components/common/Toast'
 import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetStarted'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
@@ -1130,6 +1131,7 @@ const REFLECTION_THESIS_OPTIONS: Array<{ value: ThesisOutcome; label: string }> 
 
 function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: DecisionIntelligence }) {
   const { user } = useAuth()
+  const toast = useToast()
   const { data: review, isLoading: reviewLoading } = useDecisionReview(row.decision_id)
   const upsert = useUpsertDecisionReview()
   const { data: threadData, isLoading: threadLoading } = useDecisionReflections(row.decision_id)
@@ -1167,13 +1169,32 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
   }
 
   const handleAddThreadEntry = () => {
-    if (!threadDraft.trim() || !user?.id || !canAddThreadEntry) return
-    addReflection.mutate({
-      acceptedTradeId,
-      decisionRequestId,
-      userId: user.id,
-      content: threadDraft.trim(),
-    })
+    if (!threadDraft.trim() || !user?.id) return
+    if (!canAddThreadEntry) {
+      // Surface the gate to the user instead of silently no-op'ing.
+      toast.error(
+        'Reflections need a decision context',
+        "This decision isn't linked to an accepted trade or decision request yet — try again from a row in your Trade Book."
+      )
+      return
+    }
+    const draft = threadDraft.trim()
+    addReflection.mutate(
+      {
+        acceptedTradeId,
+        decisionRequestId,
+        userId: user.id,
+        content: draft,
+      },
+      {
+        onSuccess: () => toast.success('Reflection posted'),
+        onError: (err: any) => {
+          // Restore the draft so the user can retry without retyping.
+          setThreadDraft(draft)
+          toast.error('Could not post reflection', err?.message || 'Please try again.')
+        },
+      },
+    )
     setThreadDraft('')
   }
 
@@ -2412,20 +2433,27 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
 // expanding that section and scrolling it into view.
 
 function NextStepsSection({ row }: { row: AccountabilityRow }) {
-  const fireNextActionView = () => {
+  // Banner step 2 = "Capture a reflection" (look BACKWARD).
+  // Banner step 3 = "Start your next research thread" (look FORWARD).
+  // Each CTA fires only the event that matches its loop-half so the
+  // two steps don't both tick on the same click.
+  const fireReflectionCaptured = () => {
     try { window.dispatchEvent(new CustomEvent('pilot-outcomes:next-action-viewed')) } catch { /* ignore */ }
   }
+  const fireResearchStarted = () => {
+    try { window.dispatchEvent(new CustomEvent('pilot-outcomes:research-started')) } catch { /* ignore */ }
+  }
+
   const handleNewIdea = () => {
-    fireNextActionView()
+    // Forward-looking action — count toward step 3.
+    fireResearchStarted()
     window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
       detail: { captureType: 'trade_idea', assetId: row.asset_id, assetSymbol: row.asset_symbol },
     }))
   }
   const handleUpdateResearch = () => {
-    fireNextActionView()
-    // Counts as the "start your next research thread" milestone for the
-    // Outcomes Get Started banner (step 3).
-    try { window.dispatchEvent(new CustomEvent('pilot-outcomes:research-started')) } catch { /* ignore */ }
+    // Forward-looking action — count toward step 3.
+    fireResearchStarted()
     if (!row.asset_id) return
     window.dispatchEvent(new CustomEvent('navigate-to-asset', {
       detail: {
@@ -2437,7 +2465,8 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
     }))
   }
   const handleAddReflection = () => {
-    fireNextActionView()
+    // Backward-looking action — count toward step 2 only.
+    fireReflectionCaptured()
     window.dispatchEvent(new CustomEvent('outcomes:open-section', {
       detail: { sectionId: 'reflection' },
     }))
