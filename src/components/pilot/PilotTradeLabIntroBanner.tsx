@@ -121,8 +121,8 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
           <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
           <Step
             n={2}
-            title="Select the recommendation"
-            hint="Check the box on the recommendation card in the Trade Ideas panel on the left to import it into the holdings table."
+            title="Add the recommendation to your holdings"
+            hint="Click the checkbox on the left side of the recommendation card to import it into the holdings table."
             done={step2}
           />
           <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />

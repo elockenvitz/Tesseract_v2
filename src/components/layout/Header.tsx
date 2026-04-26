@@ -13,6 +13,7 @@ import { MorphBanner } from '../support/MorphBanner'
 import { usePilotMode } from '../../hooks/usePilotMode'
 import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
+import { SetupWizard } from '../onboarding/SetupWizard'
 import { TesseractLogo } from '../ui/TesseractLogo'
 // SetupWizard removed — org creation disabled for normal users
 
@@ -46,6 +47,7 @@ export function Header({
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showCustomization, setShowCustomization] = useState(false)
   // showOrgWizard removed — org creation disabled for normal users
   const userMenuRef = useRef<HTMLDivElement>(null)
   const appMenuRef = useRef<HTMLDivElement>(null)
@@ -756,6 +758,17 @@ export function Header({
                   <button
                     onClick={() => {
                       setShowUserMenu(false)
+                      setShowCustomization(true)
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
+                  >
+                    <Sparkles className="h-4 w-4 mr-3 text-gray-400" />
+                    Customize workspace
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false)
                       setShowSettings(true)
                     }}
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
@@ -810,6 +823,23 @@ export function Header({
                 <SettingsPage onClose={() => setShowSettings(false)} />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customize Workspace Modal — opens the SetupWizard in
+          'workspace_customization' framing. Reachable from the user
+          menu so it's always discoverable, not just from the
+          dashboard prompt card. */}
+      {showCustomization && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
+          <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+            <SetupWizard
+              mode="workspace_customization"
+              onComplete={() => setShowCustomization(false)}
+              onSkip={() => setShowCustomization(false)}
+              isModal
+            />
           </div>
         </div>
       )}

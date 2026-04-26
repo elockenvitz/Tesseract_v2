@@ -124,8 +124,8 @@ export function PilotOutcomesGetStarted({ userId, orgId, onStartResearch }: Pilo
           <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />
           <Step
             n={2}
-            title="Review the next-step actions"
-            hint={`Look under "How it's performing" in the right pane for follow-on options.`}
+            title="Capture a reflection"
+            hint={`In the right pane, scroll to "Reflections" and write what you learned from this decision.`}
             done={step2}
           />
           <ArrowRight className="h-3.5 w-3.5 text-emerald-400 dark:text-emerald-500 shrink-0 mt-[3px]" />

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAssetModels } from '../../hooks/useAssetModels'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { Card } from '../ui/Card'
@@ -173,15 +174,19 @@ function AssetTabKeyReferencesInline({
 export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
   const { user } = useAuth()
 
-  // Mark the "Explore an asset page" step in PilotWelcomeBanner complete on
-  // first visit. The DB-backed signals (hasNote/hasRating/hasContribution)
-  // only fire after the user actually does something on the page, but the
-  // step itself reads "explore" — opening the page should be enough.
+  // Mark the "Explore an asset page" step in PilotWelcomeBanner complete
+  // on first visit, keyed per (user, org) so opening an asset in one
+  // workspace doesn't pre-tick this step in another. The DB-backed
+  // signals (hasNote/hasRating/hasContribution) only fire after the
+  // user actually does something on the page, but the step itself
+  // reads "explore" — opening the page should be enough.
+  const { currentOrgId: assetExploredOrgId } = useOrganization()
   useEffect(() => {
-    if (!user?.id) return
-    try { localStorage.setItem(`pilot-tutorial-asset-explored-${user.id}`, '1') } catch { /* ignore */ }
+    if (!user?.id || !assetExploredOrgId) return
+    const key = `pilot-tutorial-asset-explored-${user.id}-${assetExploredOrgId}`
+    try { localStorage.setItem(key, '1') } catch { /* ignore */ }
     try { window.dispatchEvent(new CustomEvent('pilot-tutorial:asset-explored')) } catch { /* ignore */ }
-  }, [user?.id])
+  }, [user?.id, assetExploredOrgId])
 
   // Per-user priority system
   const {

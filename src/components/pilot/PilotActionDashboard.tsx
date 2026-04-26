@@ -221,16 +221,20 @@ export function PilotActionDashboard({
     refetchOnReconnect: 'always',
     staleTime: 0,
     queryFn: async () => {
-      let q = supabase
+      // Without a known pilot portfolio, this query has no org-scope —
+      // it would return the user's trade_queue_items from any org and
+      // make Capture light up on a fresh pilot client. Wait until the
+      // scenario resolves to its portfolio before fetching.
+      if (!pilotPortfolioId) return []
+      const { data, error } = await supabase
         .from('trade_queue_items')
         .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name)')
         .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'deciding'])
+        .eq('portfolio_id', pilotPortfolioId)
         .order('stage_changed_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .limit(60)
-      if (pilotPortfolioId) q = q.eq('portfolio_id', pilotPortfolioId)
-      const { data, error } = await q
       if (error) throw error
       return (data || []) as Array<{
         id: string
@@ -290,7 +294,7 @@ export function PilotActionDashboard({
     // `setQueriesData({ queryKey: ['trade-queue-items'] }, old =>
     // old.map(...))` which crash if matched against this shape. The
     // dedicated window event + Realtime subscription cover refresh.
-    queryKey: ['pilot-dashboard-user-captured', currentOrg?.id, user?.id],
+    queryKey: ['pilot-dashboard-user-captured', currentOrg?.id, user?.id, pilotPortfolioId],
     enabled: !!currentOrg?.id && !!user?.id,
     // Same aggressive refresh strategy as pipelineItems — see comment
     // there. The System Loop is the dashboard's most prominent state
@@ -300,26 +304,38 @@ export function PilotActionDashboard({
     refetchOnReconnect: 'always',
     staleTime: 0,
     queryFn: async () => {
-      const [tqRes, qtRes] = await Promise.all([
-        supabase
-          .from('trade_queue_items')
-          .select('id, created_at, stage, asset:assets(symbol, company_name), origin_metadata')
-          .eq('visibility_tier', 'active')
-          .eq('created_by', user!.id)
-          .order('created_at', { ascending: false })
-          .limit(10),
-        // quick_thoughts uses `created_by` as the owning user column —
-        // there's no `user_id` field. Wrong column name silently
-        // returned 0 rows, so a captured Thought never counted toward
-        // hasUserIdea even though it was saved.
-        supabase
-          .from('quick_thoughts')
-          .select('id, content, idea_type, created_at')
-          .eq('created_by', user!.id)
-          .in('idea_type', ['trade_idea', 'thesis', 'thought'])
-          .order('created_at', { ascending: false })
-          .limit(10),
-      ])
+      const tqQuery = supabase
+        .from('trade_queue_items')
+        .select('id, created_at, stage, asset:assets(symbol, company_name), origin_metadata')
+        .eq('visibility_tier', 'active')
+        .eq('created_by', user!.id)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      // Constrain trade_queue_items to the pilot org's portfolio.
+      // Mirrors what `pipelineItems` does — without it, ideas from
+      // other orgs the user belongs to leak in.
+      if (pilotPortfolioId) tqQuery.eq('portfolio_id', pilotPortfolioId)
+
+      // Only thoughts explicitly tied to the pilot's portfolio
+      // count. Thoughts without portfolio context (the user types a
+      // free-floating thought) can't be reliably attributed to any
+      // specific org, so they were leaking across pilot clients on
+      // the same user account. Strictly scoping by portfolio_id
+      // closes the leak — a user who wants a free-floating thought
+      // to count toward Capture can attach it to the pilot
+      // portfolio.
+      const qtQuery = pilotPortfolioId
+        ? supabase
+            .from('quick_thoughts')
+            .select('id, content, idea_type, created_at')
+            .eq('created_by', user!.id)
+            .in('idea_type', ['trade_idea', 'thesis', 'thought'])
+            .eq('portfolio_id', pilotPortfolioId)
+            .order('created_at', { ascending: false })
+            .limit(10)
+        : null
+
+      const [tqRes, qtRes] = await Promise.all([tqQuery, qtQuery ?? Promise.resolve({ data: [] as any[] })])
       const tqRows = (tqRes.data || []) as Array<{
         id: string
         created_at: string
@@ -353,15 +369,19 @@ export function PilotActionDashboard({
   }, [pipelineItems])
 
   // ── Stage completion (drives the active step + pulse) ──
-  // Capture: user has logged any of their own ideas/thoughts
+  // Capture: user has logged a trade idea in THIS org's pilot portfolio.
+  //   Quick thoughts are NOT counted — they often have no org context
+  //   (no portfolio_id / asset_id / visibility_org_id), so they leak
+  //   between pilot clients on a single user account. Trade ideas live
+  //   in trade_queue_items which is reliably scoped by portfolio_id.
   // Develop: any pipeline item has a stage_changed_at meaningfully after creation
   // Decide / Record: pilot scenario reached `completed`
   // Review: pilot scenario has a saved reflection
   // Improve: review captured (always-future visual)
   const hasUserIdea = useMemo(() => {
     const fromPipeline = userIdeasFromPipeline.length
-    const fromCaptured = (userCaptured?.ideas?.length ?? 0) + (userCaptured?.thoughts?.length ?? 0)
-    return (fromPipeline + fromCaptured) > 0
+    const fromCapturedIdeas = userCaptured?.ideas?.length ?? 0
+    return (fromPipeline + fromCapturedIdeas) > 0
   }, [userIdeasFromPipeline, userCaptured])
   const hasMovedIdea = useMemo(() => {
     return (pipelineItems || []).some(i => {
@@ -391,7 +411,10 @@ export function PilotActionDashboard({
   // every step as "not done" while pipelineItems is still loading,
   // then hitches into the correct state when data arrives. The cache
   // is keyed per user+org so each pilot client tracks independently.
-  const stepCacheKey = `pilot_loop_steps_${user?.id || 'anon'}_${currentOrg?.id || 'no-org'}`
+  // v4 — bumped after thoughts with no org context were strictly
+  // excluded from Capture display + signal. Old caches could still
+  // hold a stale capture=true from the previous, lossier filter.
+  const stepCacheKey = `pilot_loop_steps_v4_${user?.id || 'anon'}_${currentOrg?.id || 'no-org'}`
   const [cachedStepDone, setCachedStepDone] = useState<Record<StageKey, boolean> | null>(() => {
     try {
       const raw = localStorage.getItem(stepCacheKey)

@@ -1681,6 +1681,13 @@ export function useDecisionReflections(decisionId: string | null) {
       let acceptedTradeId: string | null = null
       let decisionRequestId: string | null = null
 
+      // Comments tables FK their user_id columns to `auth.users`, not
+      // `public.users` — PostgREST refuses to embed `commenter:user_id`
+      // because the auth schema isn't exposed. So we fetch comments
+      // bare and resolve display names from `public.users` ourselves.
+      type RawComment = { id: string; content: string; user_id: string; created_at: string }
+      const rawComments: RawComment[] = []
+
       // 1. Check accepted_trades for this trade_queue_item
       const { data: at } = await supabase
         .from('accepted_trades')
@@ -1692,21 +1699,13 @@ export function useDecisionReflections(decisionId: string | null) {
 
       if (at) {
         acceptedTradeId = at.id
-        const { data: comments } = await supabase
+        const { data: comments, error } = await supabase
           .from('accepted_trade_comments')
-          .select('id, content, user_id, created_at, commenter:user_id ( id, email, raw_user_meta_data )')
+          .select('id, content, user_id, created_at')
           .eq('accepted_trade_id', at.id)
           .order('created_at', { ascending: true })
-
-        for (const c of (comments || []) as any[]) {
-          reflections.push({
-            id: c.id,
-            content: c.content,
-            user_id: c.user_id,
-            user_name: c.commenter?.raw_user_meta_data?.full_name || c.commenter?.email?.split('@')[0] || 'Unknown',
-            created_at: c.created_at,
-          })
-        }
+        if (error) console.warn('Failed to load accepted_trade_comments:', error)
+        for (const c of (comments || []) as RawComment[]) rawComments.push(c)
       }
 
       // 2. Check decision_requests for this trade_queue_item
@@ -1719,24 +1718,41 @@ export function useDecisionReflections(decisionId: string | null) {
 
       if (dr) {
         decisionRequestId = dr.id
-        const { data: comments } = await supabase
+        const { data: comments, error } = await supabase
           .from('decision_request_comments')
-          .select('id, content, user_id, created_at, commenter:user_id ( id, email, raw_user_meta_data )')
+          .select('id, content, user_id, created_at')
           .eq('decision_request_id', dr.id)
           .order('created_at', { ascending: true })
-
-        for (const c of (comments || []) as any[]) {
-          // Avoid duplicates if both exist
-          if (!reflections.find(r => r.id === c.id)) {
-            reflections.push({
-              id: c.id,
-              content: c.content,
-              user_id: c.user_id,
-              user_name: c.commenter?.raw_user_meta_data?.full_name || c.commenter?.email?.split('@')[0] || 'Unknown',
-              created_at: c.created_at,
-            })
-          }
+        if (error) console.warn('Failed to load decision_request_comments:', error)
+        for (const c of (comments || []) as RawComment[]) {
+          if (!rawComments.find(r => r.id === c.id)) rawComments.push(c)
         }
+      }
+
+      // Resolve display names for the distinct user_ids in one pass
+      // against public.users (which mirrors auth.users by id).
+      const userIds = Array.from(new Set(rawComments.map(c => c.user_id).filter(Boolean)))
+      const usersById = new Map<string, { full_name?: string; email?: string }>()
+      if (userIds.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email')
+          .in('id', userIds)
+        for (const u of (users || []) as any[]) {
+          const full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim()
+          usersById.set(u.id, { full_name: full || undefined, email: u.email })
+        }
+      }
+
+      for (const c of rawComments) {
+        const u = usersById.get(c.user_id)
+        reflections.push({
+          id: c.id,
+          content: c.content,
+          user_id: c.user_id,
+          user_name: u?.full_name || u?.email?.split('@')[0] || 'Unknown',
+          created_at: c.created_at,
+        })
       }
 
       reflections.sort((a, b) => a.created_at.localeCompare(b.created_at))
