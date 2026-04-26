@@ -623,29 +623,11 @@ export function ThoughtsSection({
                     <XIcon className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="px-3 pb-3 space-y-2">
-                  <p className="text-[12px] font-semibold text-gray-900 dark:text-white leading-snug">
-                    Capture a potential trade — it lands in the Aware stage of your pipeline.
-                  </p>
-                  <ol className="space-y-1.5">
-                    <PilotCaptureStep
-                      n={1}
-                      title="Pick a ticker"
-                      hint="Search for the symbol you want to trade — that's the asset this idea is about."
-                      done={captureStep1Done}
-                    />
-                    <PilotCaptureStep
-                      n={2}
-                      title="Add a quick thesis and pick a portfolio"
-                      hint="A one-liner thesis is enough, and the portfolio tells Tesseract where this idea lives."
-                      done={captureStep2Done}
-                    />
-                    <PilotCaptureStep
-                      n={3}
-                      title="Submit"
-                      hint="The idea jumps into the Aware stage so the loop can pick it up."
-                      done={captureStep3Done}
-                    />
+                <div className="px-3 pb-2.5">
+                  <ol className="space-y-1">
+                    <PilotCaptureStep n={1} title="Pick a ticker" done={captureStep1Done} />
+                    <PilotCaptureStep n={2} title="Add a thesis and portfolio" done={captureStep2Done} />
+                    <PilotCaptureStep n={3} title="Submit" done={captureStep3Done} />
                   </ol>
                 </div>
               </div>
@@ -1221,35 +1203,25 @@ function PendingReviewList() {
 // Numbered step pill used in the pilot Get Started banner inside
 // the capture sidebar. Mirrors the pattern from the Trade Lab and
 // Idea Pipeline banners for visual consistency across surfaces.
-function PilotCaptureStep({ n, title, hint, done }: { n: number; title: string; hint: string; done?: boolean }) {
+function PilotCaptureStep({ n, title, done }: { n: number; title: string; done?: boolean }) {
   return (
-    <li className="flex items-start gap-2">
+    <li className="flex items-center gap-2">
       <span
         className={clsx(
-          "shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shadow-sm mt-px",
+          "shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold tabular-nums",
           done ? "bg-emerald-500 text-white" : "bg-amber-500 text-white",
         )}
       >
-        {done ? <Check className="h-3 w-3" /> : n}
+        {done ? <Check className="h-2.5 w-2.5" /> : n}
       </span>
-      <div className="min-w-0">
-        <div
-          className={clsx(
-            "text-[11px] font-semibold leading-tight",
-            done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-900 dark:text-white",
-          )}
-        >
-          {title}
-        </div>
-        <div
-          className={clsx(
-            "text-[10px] leading-snug",
-            done ? "text-emerald-600/60 dark:text-emerald-400/60" : "text-gray-600 dark:text-gray-400",
-          )}
-        >
-          {hint}
-        </div>
-      </div>
+      <span
+        className={clsx(
+          "text-[11px] font-medium leading-tight",
+          done ? "text-emerald-700 dark:text-emerald-300 line-through opacity-70" : "text-gray-800 dark:text-gray-100",
+        )}
+      >
+        {title}
+      </span>
     </li>
   )
 }

@@ -204,6 +204,15 @@ export function Header({
     }
   }, [user?.id])
 
+  // Listen for open-app-launcher event so other surfaces (e.g. the
+  // Outcomes graduation banner) can pop the launcher menu open without
+  // having to wire a prop or context through to here.
+  useEffect(() => {
+    const handler = () => setShowAppMenu(true)
+    window.addEventListener('open-app-launcher', handler)
+    return () => window.removeEventListener('open-app-launcher', handler)
+  }, [])
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

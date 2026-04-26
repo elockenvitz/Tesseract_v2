@@ -1193,6 +1193,72 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     },
   })
 
+  // Auto-heal missing trade_lab_idea_links: ideas created via paths that
+  // only set `trade_queue_items.portfolio_id` (legacy data, certain
+  // seeders, or a failed lab-link insert in QuickTradeIdeaCapture) end
+  // up with a portfolio in the trade row but no row in
+  // trade_lab_idea_links — which makes the modal render "Add portfolio"
+  // even though the idea has one. When we detect that state, find or
+  // create the lab for the trade's portfolio and create the missing
+  // link. Best-effort: any failure (RLS, network) is swallowed and the
+  // visual fallback pill still shows.
+  const healingFiredRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!isOpen || !trade || isPairTrade) return
+    if (labLinks.length > 0) return
+    const portfolioId = (trade as any).portfolio_id
+    if (!portfolioId || !user?.id) return
+
+    const key = `${tradeId}:${portfolioId}`
+    if (healingFiredRef.current.has(key)) return
+    healingFiredRef.current.add(key)
+
+    void (async () => {
+      try {
+        // Find or create the trade_lab for this portfolio.
+        let { data: lab } = await supabase
+          .from('trade_labs')
+          .select('id')
+          .eq('portfolio_id', portfolioId)
+          .maybeSingle()
+
+        if (!lab) {
+          const { data: portfolio } = await supabase
+            .from('portfolios')
+            .select('name')
+            .eq('id', portfolioId)
+            .maybeSingle()
+          const { data: created, error: createErr } = await supabase
+            .from('trade_labs')
+            .insert({
+              portfolio_id: portfolioId,
+              name: `${portfolio?.name || 'Portfolio'} Trade Lab`,
+              settings: {},
+              created_by: user.id,
+            })
+            .select('id')
+            .single()
+          if (createErr) return
+          lab = created
+        }
+        if (!lab) return
+
+        await linkIdeaToLab(lab.id, tradeId, {
+          actorId: user.id,
+          actorRole: 'user',
+          actorName: user.first_name || user.email || 'Unknown',
+          actorEmail: user.email || '',
+          uiSource: 'modal_heal',
+          requestId: crypto.randomUUID(),
+        })
+        refetchLabLinks()
+        queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] })
+      } catch {
+        /* best-effort; fallback pill still shows */
+      }
+    })()
+  }, [isOpen, trade, isPairTrade, labLinks.length, tradeId, user, refetchLabLinks, queryClient])
+
   // Mutation for portfolio-scoped decision (Accept/Defer/Reject per portfolio)
   const portfolioDecisionMutation = useMutation({
     mutationFn: async ({ portfolioId, decisionOutcome, reason }: { portfolioId: string; decisionOutcome: DecisionOutcome; reason?: string }) => {
@@ -2315,7 +2381,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     </span>
                   )}
                 </div>
-                {/* Portfolio pills — second line */}
+                {/* Portfolio pills — second line.
+                    Fallback: if no lab links exist but the trade row carries
+                    a `portfolio_id` (idea was created via a path that didn't
+                    also write to trade_lab_idea_links, or the lab insert
+                    failed), render the primary portfolio from the trade row
+                    so the user sees what they actually saved. */}
+                {(() => {
+                  const showLegacyFallback = labLinks.length === 0 && !!trade?.portfolios?.name
+                  const hasAnyPill = labLinks.length > 0 || showLegacyFallback
+                  return (
                 <div className="relative flex items-center gap-1.5 mt-1.5">
                   {labLinks.map((link: any) => {
                     const name = link.trade_lab?.portfolio?.name || link.trade_lab?.name || 'Unknown'
@@ -2335,17 +2410,23 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       </span>
                     )
                   })}
+                  {showLegacyFallback && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                      <Briefcase className="w-3 h-3 text-gray-400" />
+                      {trade.portfolios.name}
+                    </span>
+                  )}
                   <button
                     onClick={() => setIsManagingPortfolios(!isManagingPortfolios)}
                     className={clsx(
                       'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors',
-                      labLinks.length === 0
+                      !hasAnyPill
                         ? 'text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20'
                         : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700',
                     )}
                   >
                     <Plus className="w-3 h-3" />
-                    {labLinks.length === 0 ? 'Add portfolio' : 'Add'}
+                    {!hasAnyPill ? 'Add portfolio' : 'Add'}
                   </button>
                   {isManagingPortfolios && (
                     <>
@@ -2372,6 +2453,8 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                     </>
                   )}
                 </div>
+                  )
+                })()}
               </div>
             )}
             {/* Pair Trade Header */}

@@ -85,12 +85,21 @@ export function DecisionInboxPanel({
   // The parent passes an UNFILTERED count (`pendingCount`) derived straight
   // from decision_requests by status. DecisionInbox re-filters by permission
   // (classifyWaiting + portfolio role) and fires onPendingCountChange with
-  // the corrected number. Showing the parent value as a fallback caused a
-  // visible flicker on hard refresh (e.g. 8 → 7). Prefer the resolved value
-  // once known and only fall back to `pendingCount` when the inbox hasn't
-  // reported yet AND the prop looks plausible (non-zero); otherwise show
-  // nothing to avoid the wrong-number flash.
-  const displayCount = resolvedPendingCount ?? null
+  // the corrected number.
+  //
+  // Display rule: prefer resolvedPendingCount once it's a positive number
+  // (the authoritative permission-filtered count), but fall back to the
+  // unfiltered `pendingCount` prop whenever resolved is null or 0 AND the
+  // unfiltered count says there ARE pending DRs. Without the fallback, any
+  // transient refetch (a re-mount, a permission-filter blip, a stale-cache
+  // moment after opening the drawer) would briefly report 0 and hide the
+  // badge — leaving the user thinking the count vanished.
+  const displayCount =
+    resolvedPendingCount != null && resolvedPendingCount > 0
+      ? resolvedPendingCount
+      : pendingCount > 0
+        ? pendingCount
+        : resolvedPendingCount
 
   // Track the count the user has already SEEN — the moment they open the
   // drawer, every pending row currently in the inbox is marked as

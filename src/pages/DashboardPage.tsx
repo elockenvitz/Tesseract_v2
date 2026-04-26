@@ -59,6 +59,7 @@ import { PilotActionDashboard } from '../components/pilot/PilotActionDashboard'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
+import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
 import { PilotOutcomesPreview } from '../components/pilot/PilotOutcomesPreview'
 import { useOnboarding } from '../hooks/useOnboarding'
@@ -1155,6 +1156,22 @@ export function DashboardPage() {
   }, [])
 
   const renderDashboardContent = () => {
+    // First-time login window: we don't yet know whether the user
+    // is a pilot (no cached hint, real query in flight). Picking
+    // either dashboard now would flash the other once the query
+    // resolves. Render a neutral skeleton until pilot status is
+    // known (cached or fresh).
+    if (pilotMode.isInitialResolve) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-gray-400">
+            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-primary-500 animate-spin" />
+            <p className="text-xs">Loading your workspace…</p>
+          </div>
+        </div>
+      )
+    }
+
     // Pilot users see a lightweight action dashboard (3 cards —
     // Ready for Decision / In Progress / Feedback Loop) instead of
     // the full analytics surfaces. Dashboard acts as a routing
@@ -1386,6 +1403,23 @@ export function DashboardPage() {
         onGoToTradeLab={openPilotTradeLab}
       />
     )}
+    {/* Pilot graduation modal — global so it survives the tab
+        navigation that step 3 of the Outcomes Get Started checklist
+        triggers (Update Research opens the asset tab and unmounts
+        Outcomes). Reads its trigger state from localStorage so it
+        pops on the destination page, not the page being left. */}
+    <PilotGraduationModal
+      userId={user?.id}
+      orgId={currentOrgId}
+      onOpenDashboard={() => {
+        window.dispatchEvent(new CustomEvent('decision-engine-action', {
+          detail: { id: 'dashboard', title: 'Dashboard', type: 'dashboard', data: null },
+        }))
+      }}
+      onOpenAppLauncher={() => {
+        window.dispatchEvent(new CustomEvent('open-app-launcher'))
+      }}
+    />
     {/* Pilot tab picker — scoped menu shown when a pilot clicks "+".
         Only exposes the four pilot surfaces; each item reuses the
         existing handleSearchResult routing so tab-open behaviour

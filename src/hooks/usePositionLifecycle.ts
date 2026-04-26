@@ -120,22 +120,50 @@ export function usePositionPriceHistory(symbol: string | null) {
         }))
       }
 
-      // Fallback: fetch from Yahoo Finance via chartDataService
+      // Fallback: fetch from Yahoo Finance. Trimmed to 1y because the
+      // Outcomes chart only goes ~180 days back and the longer range
+      // adds proportional payload + parse time. Anything beyond a year
+      // would be padded with forward-fills anyway.
       const candles = await chartDataService.getChartData({
         symbol,
         interval: '1d',
-        range: '2y',
+        range: '1y',
       })
 
-      return candles
+      const points = candles
         .filter(c => c.close > 0)
         .map(c => ({
           date: typeof c.time === 'string' ? c.time : new Date(Number(c.time) * 1000).toISOString().slice(0, 10),
           close: c.close,
         }))
+
+      // Write the results back to price_history_cache so the next
+      // load (and useHoldingsTimeSeries, which reads the same cache
+      // for its weight overlay) hit the DB instead of round-tripping
+      // to Yahoo. Fire-and-forget — we already have the data we need
+      // for this render.
+      if (points.length > 0) {
+        void supabase
+          .from('price_history_cache')
+          .upsert(
+            points.map(p => ({
+              symbol,
+              date: p.date,
+              close: p.close,
+              source: 'yahoo_finance',
+            })),
+            { onConflict: 'symbol,date' },
+          )
+          .then(({ error: upErr }) => {
+            if (upErr) console.warn('[priceHistory] failed to cache Yahoo result:', upErr.message)
+          })
+      }
+
+      return points
     },
     enabled: !!symbol,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
   })
 }
 
@@ -149,40 +177,180 @@ export interface HoldingsTimePoint {
 }
 
 /**
- * Fetches daily holdings for a specific asset in a portfolio over time.
- * Used to overlay share count / weight on the price chart.
+ * Synthesizes a daily holdings time series for a specific asset in a
+ * portfolio. Drives the shares / weight / active-weight overlays on
+ * the position chart.
+ *
+ * Strategy: replay portfolio_trade_events backwards from current
+ * shares to reconstruct the share count at every event boundary, then
+ * pad ~180 days of leading edge so the chart looks like the portfolio
+ * has been running. This works even when no portfolio_holdings_positions
+ * snapshots exist (typical for pilot orgs and freshly-created portfolios).
+ *
+ * Weight is computed at each point as `shares * price / current_aum`,
+ * using the cached close price for that date (or carried-forward last
+ * close). AUM is approximated as today's portfolio market value — for
+ * portfolios with many other trades this drifts, but the visual story
+ * of "what does THIS trade do to my exposure?" stays accurate because
+ * the asset's own contribution moves correctly.
  */
-export function useHoldingsTimeSeries(portfolioId: string | null, symbol: string | null) {
+export function useHoldingsTimeSeries(
+  portfolioId: string | null,
+  symbol: string | null,
+  assetId: string | null,
+) {
   return useQuery({
-    queryKey: ['holdings-time-series', portfolioId, symbol],
+    queryKey: ['holdings-time-series', portfolioId, symbol, assetId],
     queryFn: async (): Promise<HoldingsTimePoint[]> => {
-      if (!portfolioId || !symbol) return []
+      if (!portfolioId || !symbol || !assetId) return []
 
-      const { data, error } = await supabase
-        .from('portfolio_holdings_positions')
-        .select(`
-          shares, market_value, weight_pct,
-          snapshot:snapshot_id(snapshot_date)
-        `)
-        .eq('portfolio_id', portfolioId)
-        .eq('symbol', symbol)
-        .order('created_at', { ascending: true })
+      // Fire all 4 reads in parallel — they're independent of each
+      // other. Sequential awaits cost 4× the wire latency (~800ms) for
+      // no reason.
+      const [currentHoldingRowsRes, eventsRes, allHoldingsRes, priceRowsRes] = await Promise.all([
+        supabase
+          .from('portfolio_holdings')
+          .select('shares, price, date')
+          .eq('portfolio_id', portfolioId)
+          .eq('asset_id', assetId)
+          .order('date', { ascending: false })
+          .limit(1),
+        supabase
+          .from('portfolio_trade_events')
+          .select('event_date, quantity_delta')
+          .eq('portfolio_id', portfolioId)
+          .eq('asset_id', assetId)
+          .order('event_date', { ascending: true }),
+        supabase
+          .from('portfolio_holdings')
+          .select('shares, price')
+          .eq('portfolio_id', portfolioId),
+        supabase
+          .from('price_history_cache')
+          .select('date, close')
+          .eq('symbol', symbol)
+          .order('date', { ascending: true }),
+      ])
 
-      if (error) throw error
-      if (!data || data.length === 0) return []
+      const currentHoldingRows = currentHoldingRowsRes.data
+      const currentShares = currentHoldingRows?.[0]?.shares != null
+        ? Number(currentHoldingRows[0].shares)
+        : 0
+      const currentPrice = currentHoldingRows?.[0]?.price != null
+        ? Number(currentHoldingRows[0].price)
+        : null
 
-      return data
-        .filter((d: any) => d.snapshot?.snapshot_date)
-        .map((d: any) => ({
-          date: d.snapshot.snapshot_date,
-          shares: Number(d.shares),
-          marketValue: d.market_value != null ? Number(d.market_value) : null,
-          weightPct: d.weight_pct != null ? Number(d.weight_pct) : null,
-        }))
-        .sort((a: HoldingsTimePoint, b: HoldingsTimePoint) => a.date.localeCompare(b.date))
+      const events = eventsRes.data
+      const eventList = (events || []).filter(e => e.event_date)
+
+      const allHoldings = allHoldingsRes.data
+      const aum = (allHoldings || []).reduce(
+        (sum, h) => sum + (Number(h.shares) || 0) * (Number(h.price) || 0),
+        0,
+      )
+
+      const priceRows = priceRowsRes.data
+      const priceByDate = new Map<string, number>()
+      for (const p of priceRows || []) {
+        priceByDate.set(String(p.date), Number(p.close))
+      }
+      // Forward-fill helper: pick the last close on or before `date`.
+      const sortedPriceDates = (priceRows || []).map(p => String(p.date)).sort()
+      const priceOnOrBefore = (date: string): number | null => {
+        // Binary search for the largest priceDate <= date.
+        let lo = 0
+        let hi = sortedPriceDates.length - 1
+        let best: string | null = null
+        while (lo <= hi) {
+          const mid = (lo + hi) >>> 1
+          if (sortedPriceDates[mid] <= date) {
+            best = sortedPriceDates[mid]
+            lo = mid + 1
+          } else {
+            hi = mid - 1
+          }
+        }
+        return best ? priceByDate.get(best) ?? null : null
+      }
+
+      // Helper to convert (shares, date) → HoldingsTimePoint with
+      // price-aware market value + weight.
+      const buildPoint = (date: string, shares: number): HoldingsTimePoint => {
+        const price = priceOnOrBefore(date) ?? currentPrice ?? 0
+        const marketValue = shares * price
+        const weightPct = aum > 0 ? (marketValue / aum) * 100 : null
+        return {
+          date,
+          shares,
+          marketValue: price > 0 ? marketValue : null,
+          weightPct,
+        }
+      }
+
+      // 5. No events → flat series at current shares for ~180 days back.
+      //    Without a leading-edge point the chart only has "today" data
+      //    and Recharts can't draw a line.
+      const today = new Date().toISOString().slice(0, 10)
+      const back180 = (() => {
+        const d = new Date()
+        d.setUTCDate(d.getUTCDate() - 180)
+        return d.toISOString().slice(0, 10)
+      })()
+
+      if (eventList.length === 0) {
+        return [
+          buildPoint(back180, currentShares),
+          buildPoint(today, currentShares),
+        ]
+      }
+
+      // 6. Replay events in reverse to reconstruct shares at each
+      //    boundary. `sharesAfterEvent[i]` is the position size
+      //    immediately after event i fired; `sharesBeforeFirstEvent`
+      //    is the position before the first event ever (typically 0
+      //    for a position opened by a buy/initiate).
+      const sharesAfterEvent: number[] = new Array(eventList.length)
+      let running = currentShares
+      for (let i = eventList.length - 1; i >= 0; i--) {
+        sharesAfterEvent[i] = running
+        running -= Number(eventList[i].quantity_delta) || 0
+      }
+      const sharesBeforeFirstEvent = running
+
+      // 7. Build the time series:
+      //    a) leading-edge point ~180 days before the first event
+      //    b) one point per event date with post-event shares
+      //    c) a "today" point with current shares so the chart anchors
+      //       cleanly on the right edge
+      const points: HoldingsTimePoint[] = []
+      const firstEventDate = new Date(String(eventList[0].event_date))
+      const leadEdge = new Date(firstEventDate)
+      leadEdge.setUTCDate(leadEdge.getUTCDate() - 180)
+      points.push(buildPoint(leadEdge.toISOString().slice(0, 10), sharesBeforeFirstEvent))
+
+      // Collapse multiple events on the same day into a single point
+      // (the latest sharesAfterEvent value for that date wins).
+      const sharesByEventDate = new Map<string, number>()
+      eventList.forEach((evt, i) => {
+        sharesByEventDate.set(String(evt.event_date), sharesAfterEvent[i])
+      })
+      for (const [date, shares] of sharesByEventDate) {
+        points.push(buildPoint(date, shares))
+      }
+
+      // Anchor today only if the latest event isn't already today —
+      // duplicate dates make Recharts angry.
+      const latestEventDate = String(eventList[eventList.length - 1].event_date)
+      if (latestEventDate < today) {
+        points.push(buildPoint(today, currentShares))
+      }
+
+      points.sort((a, b) => a.date.localeCompare(b.date))
+      return points
     },
-    enabled: !!portfolioId && !!symbol,
-    staleTime: 5 * 60 * 1000,
+    enabled: !!portfolioId && !!symbol && !!assetId,
+    staleTime: 15 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
   })
 }
 

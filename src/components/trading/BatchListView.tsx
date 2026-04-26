@@ -1352,18 +1352,42 @@ function BatchRationaleEditor({ batch }: { batch: TradeBatch }) {
   const saveM = useMutation({
     mutationFn: async (nextDescription: string) => {
       const trimmed = nextDescription.trim()
-      const { error } = await supabase
+      // .select() so we can detect a silent RLS denial — an UPDATE
+      // that touches zero rows returns no error from PostgREST, which
+      // would otherwise leave the user staring at an "I clicked save
+      // and nothing happened" UI.
+      const { data, error } = await supabase
         .from('trade_batches')
         .update({
           description: trimmed || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', batch.id)
+        .select()
       if (error) throw error
+      if (!data || data.length === 0) {
+        throw new Error("Couldn't save rationale — permission denied or batch not found.")
+      }
       return trimmed
     },
     onSuccess: (saved) => {
       setEditing(false)
+      // Surgically update the cache so the new description shows up
+      // immediately even before the refetch lands. Without this, the
+      // editor closes and reopens showing the OLD description for the
+      // tens-to-hundreds of milliseconds it takes the refetch to round-
+      // trip — which feels like "save didn't work" even though it did.
+      queryClient.setQueriesData<TradeBatch[]>(
+        { queryKey: ['trade-batches'] },
+        (old) => {
+          if (!old) return old
+          return old.map(b =>
+            b.id === batch.id
+              ? { ...b, description: saved || null, updated_at: new Date().toISOString() }
+              : b
+          )
+        },
+      )
       queryClient.invalidateQueries({ queryKey: ['trade-batches'] })
       // Tick step 2 of the pilot Trade Book Get Started banner —
       // editing the batch-level rationale counts as "capturing

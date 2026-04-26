@@ -989,12 +989,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // Check if current user is PM for this portfolio. Accept both the full
   // 'Portfolio Manager' role label and the short 'pm' alias (historically
   // mixed in portfolio_team seed data), plus portfolio_memberships.is_portfolio_manager.
+  // Org admins of the portfolio's org also count — they have full
+  // execute authority (mirrors the RLS broadening on trade_batches /
+  // accepted_trades / trade_labs / lab_variants).
   const { data: isCurrentUserPM } = useQuery({
     queryKey: ['user-is-pm', user?.id, selectedPortfolioId],
     queryFn: async () => {
       if (!user?.id || !selectedPortfolioId) return false
 
-      const [teamRes, membershipRes] = await Promise.all([
+      const [teamRes, membershipRes, orgAdminRes] = await Promise.all([
         supabase
           .from('portfolio_team')
           .select('role')
@@ -1007,12 +1010,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           .eq('user_id', user.id)
           .eq('portfolio_id', selectedPortfolioId)
           .maybeSingle(),
+        supabase.rpc('is_active_org_admin_of_current_org'),
       ])
 
       const role = (teamRes.data?.role || '').trim().toLowerCase()
       const isPMByRole = role === 'portfolio manager' || role === 'pm'
       const isPMByMembership = !!membershipRes.data?.is_portfolio_manager
-      return isPMByRole || isPMByMembership
+      const isOrgAdmin = !!orgAdminRes.data
+      return isPMByRole || isPMByMembership || isOrgAdmin
     },
     enabled: !!user?.id && !!selectedPortfolioId,
     staleTime: 60000,
@@ -1572,6 +1577,60 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         toast.error('Execute failed', result.failures.map(f => `${f.symbol}: ${f.reason}`).join('; ') || 'No trades committed')
       }
 
+      // For paper / manual_eod portfolios (which is every pilot
+      // portfolio), the trade auto-applied to portfolio_holdings
+      // server-side via finalizeTradeForHoldingsSource. The simulation
+      // row's baseline_holdings JSONB is a frozen snapshot from when
+      // the simulation was auto-created though, so it stays stale
+      // unless we re-snapshot it. Without this, executed trades show
+      // up as "stale baseline + completed pro-forma fold" → the table
+      // either keeps the pre-trade row visible or double-counts.
+      // Re-snapshotting from current portfolio_holdings makes the
+      // post-execute table look exactly like a fresh sim against the
+      // post-execute portfolio.
+      if (committed > 0 && selectedSimulationId && selectedPortfolioId) {
+        void (async () => {
+          try {
+            const { data: holdings } = await supabase
+              .from('portfolio_holdings')
+              .select('asset_id, shares, price, assets (id, symbol, company_name, sector)')
+              .eq('portfolio_id', selectedPortfolioId)
+            const totalValue = (holdings || []).reduce(
+              (s, h: any) => s + (Number(h.shares) || 0) * (Number(h.price) || 0),
+              0,
+            )
+            const newBaseline: BaselineHolding[] = (holdings || []).map((h: any) => ({
+              asset_id: h.asset_id,
+              symbol: h.assets?.symbol || '',
+              company_name: h.assets?.company_name || '',
+              sector: h.assets?.sector || null,
+              shares: Number(h.shares) || 0,
+              price: Number(h.price) || 0,
+              value: (Number(h.shares) || 0) * (Number(h.price) || 0),
+              weight: totalValue > 0
+                ? ((Number(h.shares) || 0) * (Number(h.price) || 0) / totalValue) * 100
+                : 0,
+            }))
+            await supabase
+              .from('simulations')
+              .update({
+                baseline_holdings: newBaseline,
+                baseline_total_value: totalValue,
+              })
+              .eq('id', selectedSimulationId)
+            // Patch the cache so the table re-renders with fresh baseline
+            // before the invalidate-driven refetch lands.
+            queryClient.setQueryData<any>(
+              ['simulation', selectedSimulationId],
+              (old: any) => (old ? { ...old, baseline_holdings: newBaseline, baseline_total_value: totalValue } : old),
+            )
+            queryClient.invalidateQueries({ queryKey: ['simulation', selectedSimulationId] })
+          } catch (e) {
+            console.warn('[Execute] Failed to refresh simulation baseline:', e)
+          }
+        })()
+      }
+
       // Refresh downstream queries. The variants cache was already
       // patched above — invalidating it triggers a background refetch
       // that reconciles with the server's authoritative state.
@@ -1588,6 +1647,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       // unlocks. Invalidating here makes them flip the instant the
       // first trade lands, without waiting for the 60s staleTime.
       queryClient.invalidateQueries({ queryKey: ['org-has-accepted-trade'] })
+      // Outcomes (DecisionAccountabilityPage) keys its data under
+      // 'decision-accountability'. Without this invalidate, switching
+      // to Outcomes right after Execute shows the prior cached state
+      // and the just-committed trade only appears after a hard
+      // refresh.
+      queryClient.invalidateQueries({ queryKey: ['decision-accountability'] })
     },
     onError: (err: any) => {
       // Nothing to roll back — we never removed variants optimistically.
@@ -1817,10 +1882,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const { trades: acceptedTrades, bulkPromoteM } = useAcceptedTrades(selectedPortfolioId || undefined)
 
   // Pending accepted_trades for the selected portfolio — the ones that have
-  // been committed but not yet executed (or executed and not yet reflected in
-  // baseline holdings). For paper/manual_eod portfolios Phase 1 auto-completes
-  // on accept, so this set should be empty in practice. For live_feed
-  // portfolios this is where real pending trades sit waiting for fills.
+  // been committed but not yet executed. For paper/manual_eod portfolios
+  // execute auto-completes immediately; we DON'T fold those into pro-forma
+  // here because applyTradeToHoldings already updated portfolio_holdings
+  // server-side AND the post-execute simulation.baseline_holdings refresh
+  // (see refreshSimulationBaseline below) re-snapshots the new state.
+  // Folding completes would double-count.
   const pendingAcceptedTrades = useMemo(() => {
     return (acceptedTrades || []).filter(
       t => t.execution_status !== 'complete' && t.execution_status !== 'cancelled',
@@ -3104,15 +3171,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     checkboxOverridesRef.current.set(assetId, true)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
 
-    // Tick steps 1 AND 2 of the pilot Trade Lab Get Started banner.
-    // Checking the recommendation in the LEFT pane (Trade Ideas)
-    // imports it into the holdings table — that single action
-    // implies the user has both reviewed AND selected the rec, so
-    // we fire both events. (Previously step 1 required a separate
-    // card-body click; users who jumped straight to the checkbox
-    // were left with step 1 still un-ticked.)
+    // Tick step 1 of the pilot Trade Lab Get Started banner.
+    // Step 1 is "review the recommendation and add it to the holdings
+    // table" — checking the rec in the LEFT pane fulfills that. Step 2
+    // (select the trade row in the holdings table to execute) is
+    // independent and fires from HoldingsSimulationTable's row checkbox.
     try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
-    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
 
     // Prime priceMap with a price hint for this asset so quickEstimate in
     // useSimulationRows can compute a non-zero notional immediately. Without
@@ -3136,8 +3200,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       )
     }
 
-    // Optimistic: add temp variant to cache for instant table row
-    // Include proposed sizing so quickEstimate can compute deltas + cash immediately
+    // Optimistic: add temp variant to cache for instant table row.
+    // Pre-compute sizing_spec + computed via the SAME normalizeSizing
+    // the server uses, so the temp row shows real shares / weight /
+    // notional from the first paint — the user no longer sees a brief
+    // "—" placeholder while the import roundtrip is in flight, and
+    // cash impact (which derives from sum of notionals across rows)
+    // updates immediately.
     const tempSizing = idea.proposed_weight != null
       ? String(idea.proposed_weight)
       : idea.proposed_shares != null
@@ -3147,14 +3216,53 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       const variantQueryKey = ['intent-variants', tradeLab.id, null]
       queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
         if (old?.some(v => v.asset_id === assetId)) return old
+
+        // Pre-compute via normalizeSizing so the temp row carries the
+        // same shape the real variant would.
+        let preSpec: any = null
+        let preComputed: any = null
+        if (tempSizing && simulation) {
+          const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
+          const baseline = baselineHoldings.find(h => h.asset_id === assetId)
+          const price =
+            priceMap?.[assetId] ||
+            baseline?.price ||
+            (idea as any).target_price ||
+            100
+          try {
+            const normResult = normalizeSizing({
+              action: (idea.action || 'buy') as any,
+              sizing_input: tempSizing,
+              current_position: baseline ? {
+                shares: baseline.shares,
+                weight: baseline.weight,
+                cost_basis: null,
+                active_weight: null,
+              } : null,
+              portfolio_total_value: simulation.baseline_total_value || 0,
+              price: { asset_id: assetId, price, timestamp: new Date().toISOString(), source: 'realtime' as const },
+              rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' as const },
+              active_weight_config: getActiveWeightConfig(assetId),
+              has_benchmark: hasBenchmark,
+            })
+            if (normResult.is_valid) {
+              preSpec = normResult.sizing_spec ?? null
+              preComputed = normResult.computed ?? null
+            }
+          } catch {
+            /* normalize failure → fall back to null computed; the real
+               variant create will reconcile a moment later. */
+          }
+        }
+
         const tempVariant = {
           id: `temp-${assetId}`,
           asset_id: assetId,
           trade_lab_id: tradeLab.id,
           action: idea.action || 'buy',
           sizing_input: tempSizing,
-          sizing_spec: null,
-          computed: null,
+          sizing_spec: preSpec,
+          computed: preComputed,
           direction_conflict: null,
           below_lot_warning: false,
           active_weight_config: null,
@@ -3366,6 +3474,92 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // This lets users see all available ideas and add them to the workbench
   const includedIdeasWithStatus = tradeIdeasWithStatus
 
+  // EARLY-PHASE optimistic temp variant for the pilot recommendation.
+  // The full auto-select effect below waits on tradeIdeasWithStatus +
+  // activeProposals queries before firing, which is what made the row
+  // appear "too late" after Trade Lab opened. This effect fires the
+  // moment we know enough to render a row (pilotScenario.asset_id +
+  // tradeLab.id + simulation), so the holdings table reflects the
+  // recommendation as soon as the simulation itself paints. The full
+  // effect below still runs and replaces this temp with the real DB
+  // variant via handleAddAsset.
+  const pilotEarlyOptimisticRef = useRef(false)
+  useEffect(() => {
+    if (pilotEarlyOptimisticRef.current) return
+    if (!pilotMode.effectiveIsPilot) return
+    if (!user?.id) return
+    if (!pilotScenario?.asset_id) return
+    if (!pilotScenario?.trade_queue_item_id) return
+    if (!tradeLab?.id) return
+    if (!simulation) return
+    // Already-graduated pilots have the localStorage flag set — don't
+    // re-fire optimistic on subsequent visits, the variant is already
+    // either persisted or intentionally absent.
+    try {
+      if (localStorage.getItem(`pilot_rec_autoselect_v2_${user.id}`) === '1') {
+        pilotEarlyOptimisticRef.current = true
+        return
+      }
+    } catch { /* ignore */ }
+    // Skip if a real variant already exists for this asset.
+    if (intentVariants.some(v => v.asset_id === pilotScenario.asset_id && !v.id.startsWith('temp-'))) {
+      pilotEarlyOptimisticRef.current = true
+      return
+    }
+    pilotEarlyOptimisticRef.current = true
+
+    const assetId = pilotScenario.asset_id
+    const variantQueryKey = ['intent-variants', tradeLab.id, null]
+    const baselineHolding = (simulation.baseline_holdings as BaselineHolding[])
+      ?.find(h => h.asset_id === assetId)
+    const sizingInput = pilotScenario.target_weight_pct != null
+      ? String(pilotScenario.target_weight_pct)
+      : (pilotScenario.proposed_sizing_input || null)
+
+    queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
+      if (old?.some(v => v.asset_id === assetId)) return old
+      return [...(old || []), {
+        id: `temp-${assetId}`,
+        asset_id: assetId,
+        trade_lab_id: tradeLab.id,
+        action: (pilotScenario.proposed_action || 'buy') as TradeAction,
+        sizing_input: sizingInput,
+        sizing_spec: null,
+        computed: null,
+        direction_conflict: null,
+        below_lot_warning: false,
+        active_weight_config: null,
+        asset: pilotScenario.asset
+          ? {
+              id: assetId,
+              symbol: pilotScenario.asset.symbol,
+              company_name: pilotScenario.asset.company_name,
+              sector: baselineHolding?.sector || null,
+            }
+          : {
+              id: assetId,
+              symbol: pilotScenario.symbol || baselineHolding?.symbol || '',
+              company_name: baselineHolding?.company_name || '',
+              sector: baselineHolding?.sector || null,
+            },
+      } as IntentVariant]
+    })
+
+    // Mark the row as user-checked so the convergence effect doesn't
+    // immediately try to remove it before the full auto-select fires
+    // and writes the real simulation_trade row.
+    checkboxOverridesRef.current.set(assetId, true)
+    setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+  }, [
+    pilotMode.effectiveIsPilot,
+    user?.id,
+    pilotScenario,
+    tradeLab?.id,
+    simulation,
+    intentVariants,
+    queryClient,
+  ])
+
   // First-login auto-select of the pilot recommendation. When a pilot user
   // first lands in Trade Lab, we want the seeded recommendation to already
   // be applied — they immediately see the simulation react (position added,
@@ -3423,35 +3617,35 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     pilotAutoSelectFiredRef.current = true
     try { localStorage.setItem(storageKey, '1') } catch { /* ignore */ }
 
-    // Delay a tick so any in-flight simulation/portfolio initialization
-    // completes before the add fires.
-    setTimeout(() => {
-      if (matchingProposal) {
-        // Proposal path: stamp proposal state so the UI checkbox visually
-        // flips, then fire handleAddAsset — which reuses the import
-        // pipeline and picks up `proposed_weight` from the idea (or the
-        // proposal's weight, whichever the idea row carries).
-        setAppliedProposalIds(prev => {
-          const next = new Set(prev)
-          next.add(matchingProposal.id)
-          return next
-        })
-        setProposalAddedAssetIds(prev => {
-          const next = new Set(prev)
-          if (scenarioIdea.asset_id) next.add(scenarioIdea.asset_id)
-          return next
-        })
-        // Ensure proposed_weight on the idea carries the proposal's weight
-        // so the temp-variant sizing_input matches what the PM proposed.
-        const enriched = {
-          ...scenarioIdea,
-          proposed_weight: scenarioIdea.proposed_weight ?? matchingProposal.weight ?? null,
-        } as typeof scenarioIdea
-        handleAddAsset(enriched)
-      } else {
-        handleAddAsset(scenarioIdea)
-      }
-    }, 0)
+    // All gates already passed — fire synchronously. The previous
+    // setTimeout(0) wrapper added a wasted tick of latency and was
+    // documented as "in case initialization completes" but every gate
+    // above already proves it has.
+    if (matchingProposal) {
+      // Proposal path: stamp proposal state so the UI checkbox visually
+      // flips, then fire handleAddAsset — which reuses the import
+      // pipeline and picks up `proposed_weight` from the idea (or the
+      // proposal's weight, whichever the idea row carries).
+      setAppliedProposalIds(prev => {
+        const next = new Set(prev)
+        next.add(matchingProposal.id)
+        return next
+      })
+      setProposalAddedAssetIds(prev => {
+        const next = new Set(prev)
+        if (scenarioIdea.asset_id) next.add(scenarioIdea.asset_id)
+        return next
+      })
+      // Ensure proposed_weight on the idea carries the proposal's weight
+      // so the temp-variant sizing_input matches what the PM proposed.
+      const enriched = {
+        ...scenarioIdea,
+        proposed_weight: scenarioIdea.proposed_weight ?? matchingProposal.weight ?? null,
+      } as typeof scenarioIdea
+      handleAddAsset(enriched)
+    } else {
+      handleAddAsset(scenarioIdea)
+    }
   }, [
     pilotMode.effectiveIsPilot,
     user?.id,
@@ -5759,11 +5953,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                     // Tick steps 1 + 2 of the pilot Trade Lab Get Started
                                     // banner. The pilot's seeded "Recommendation" is
                                     // rendered as a proposal (this code path), NOT as
-                                    // an idea — so we have to dispatch the events here
-                                    // too, otherwise step 2 never gets ticked even when
-                                    // the user is doing exactly what the hint says.
+                                    // an idea. Step 1 = "review the rec and add it to
+                                    // holdings"; step 2 fires later from the holdings
+                                    // table's row checkbox.
                                     try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
-                                    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
 
                                     // Per-asset exclusivity: uncheck any idea-sourced trade first
                                     proposalAssetIds.forEach((aid: string) => uncheckOtherSourcesForAsset(aid, 'proposal'))
@@ -5834,6 +6027,38 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
                                       if (tradeLab?.id) {
                                         const variantQueryKey = ['intent-variants', tradeLab.id, null]
+                                        const tempSizingForLeg = signedWeight != null ? String(signedWeight) : null
+                                        // Pre-compute sizing_spec + computed so the temp row
+                                        // shows real shares / weight / notional immediately
+                                        // (and cash impact picks it up too).
+                                        let preSpec: any = null
+                                        let preComputed: any = null
+                                        if (tempSizingForLeg && simulation) {
+                                          const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
+                                          const baseline = baselineHoldings.find(h => h.asset_id === a.assetId)
+                                          const price = priceMap?.[a.assetId] || baseline?.price || 100
+                                          try {
+                                            const normResult = normalizeSizing({
+                                              action: a.action as any,
+                                              sizing_input: tempSizingForLeg,
+                                              current_position: baseline ? {
+                                                shares: baseline.shares,
+                                                weight: baseline.weight,
+                                                cost_basis: null,
+                                                active_weight: null,
+                                              } : null,
+                                              portfolio_total_value: simulation.baseline_total_value || 0,
+                                              price: { asset_id: a.assetId, price, timestamp: new Date().toISOString(), source: 'realtime' as const },
+                                              rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' as const },
+                                              active_weight_config: getActiveWeightConfig(a.assetId),
+                                              has_benchmark: hasBenchmark,
+                                            })
+                                            if (normResult.is_valid) {
+                                              preSpec = normResult.sizing_spec ?? null
+                                              preComputed = normResult.computed ?? null
+                                            }
+                                          } catch { /* fall through to null */ }
+                                        }
                                         queryClient.setQueryData<IntentVariant[]>(variantQueryKey, (old) => {
                                           if (old?.some(v => v.asset_id === a.assetId)) return old
                                           return [...(old || []), {
@@ -5841,9 +6066,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                             asset_id: a.assetId,
                                             trade_lab_id: tradeLab.id,
                                             action: a.action,
-                                            sizing_input: signedWeight != null ? String(signedWeight) : null,
-                                            sizing_spec: null,
-                                            computed: null,
+                                            sizing_input: tempSizingForLeg,
+                                            sizing_spec: preSpec,
+                                            computed: preComputed,
                                             direction_conflict: null,
                                             below_lot_warning: false,
                                             active_weight_config: null,

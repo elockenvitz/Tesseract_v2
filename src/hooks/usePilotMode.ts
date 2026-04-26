@@ -29,6 +29,13 @@ export interface PilotModeState {
   /** True while flags/org data is still loading. Callers should generally
    *  treat "still loading" as NOT in pilot to avoid flashing restricted UI. */
   isLoading: boolean
+  /** True ONLY for first-time logins where we have no cached pilot hint
+   *  to fall back on AND the real query hasn't resolved yet. UI that
+   *  swings between pilot and non-pilot dashboards (e.g. DashboardPage)
+   *  should render a neutral skeleton in this window — both
+   *  `effectiveIsPilot=true` and `effectiveIsPilot=false` are best-guesses
+   *  with no information backing them. */
+  isInitialResolve: boolean
   /** Best-effort "is pilot" that falls back to a cached hint from the
    *  previous session while the real query is still loading. Use this for
    *  UI gates that must stay stable across a cold refresh (e.g. hiding the
@@ -62,14 +69,21 @@ export function usePilotMode(): PilotModeState {
   // consistently across a cold refresh, before the org-pilot-flags query
   // has resolved. Without it, pilot UI (hidden tabs, no "+" button) would
   // flash to the non-pilot state for ~200ms on every hard refresh.
-  const cachedIsPilot = useMemo<boolean>(() => {
-    if (!user?.id) return false
+  // Tri-state: '1' (was pilot) | '0' (was non-pilot) | null (never cached).
+  // The third state matters for first-time logins — without distinguishing
+  // it from '0' we'd render the non-pilot dashboard while loading and
+  // then snap to the pilot dashboard once the query resolved.
+  const cachedPilotRaw = useMemo<'1' | '0' | null>(() => {
+    if (!user?.id) return null
     try {
-      return localStorage.getItem(`was_pilot_${user.id}`) === '1'
+      const v = localStorage.getItem(`was_pilot_${user.id}`)
+      return v === '1' ? '1' : v === '0' ? '0' : null
     } catch {
-      return false
+      return null
     }
   }, [user?.id])
+  const cachedIsPilot = cachedPilotRaw === '1'
+  const hasCachedPilotHint = cachedPilotRaw !== null
 
   // Org pilot flag + access override — the only input to pilot-ness.
   const { data: orgFlags, isLoading: orgLoading } = useQuery({
@@ -162,9 +176,12 @@ export function usePilotMode(): PilotModeState {
     }
   }, [isLoading, isPilot, user?.id])
 
+  const isInitialResolve = isLoading && !hasCachedPilotHint && !cachedHasGraduated
+
   return {
     isPilot,
     isLoading,
+    isInitialResolve,
     effectiveIsPilot,
     hasCommittedTradeInOrg: !!hasCommittedTradeInOrg,
     /** Once true, the user has finished the pilot loop and the app

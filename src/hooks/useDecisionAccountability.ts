@@ -24,7 +24,7 @@
  * - All are directional proxies, NOT exact P&L attribution
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
@@ -316,7 +316,13 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return data || []
     },
     enabled,
-    staleTime: 30_000,
+    // Decisions list rarely changes outside of the user's own actions
+    // (accept/reject/skip), and those mutations explicitly invalidate
+    // 'decision-accountability'. Keep the cache fresh for 5 minutes so
+    // revisits to Outcomes feel instant.
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // ── Step 2: Fetch trade events for matching ──────────────────
@@ -367,7 +373,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return data || []
     },
     enabled: enabled && portfolioIdsForEvents.length > 0,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // ── Step 3: Fetch rationale status + content for matched events ─
@@ -400,7 +408,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return map
     },
     enabled: enabled && eventIds.length > 0,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // ── Step 4: Fetch current prices for assets in decisions ─────
@@ -431,7 +441,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return map
     },
     enabled: enabled && assetIdsForPrices.length > 0,
-    staleTime: 120_000,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // ── Step 5: Fetch decision-time price snapshots ─────────────
@@ -466,7 +478,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return map
     },
     enabled: enabled && decisionIds.length > 0,
-    staleTime: 120_000,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // ── Step 5a: Fetch accepted_trades + their follow-on rationale notes
@@ -555,7 +569,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return { byDecisionId }
     },
     enabled: enabled && decisionIds.length > 0,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // ── Step 5b: Fetch passed decisions (rejected/deferred) ────────
@@ -601,7 +617,9 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       return data || []
     },
     enabled: enabled && (filters?.showRejected !== false),
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 
   const passedData = passedDecisionsQuery.data || []
@@ -1579,7 +1597,9 @@ export function useCandidateTradeEvents(row: AccountabilityRow | null) {
       }))
     },
     enabled: !!row?.asset_id && !!row?.portfolio_id,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -1678,59 +1698,66 @@ export function useDecisionReflections(decisionId: string | null) {
       if (!decisionId) return { reflections: [], acceptedTradeId: null, decisionRequestId: null }
 
       const reflections: Reflection[] = []
-      let acceptedTradeId: string | null = null
-      let decisionRequestId: string | null = null
-
-      // Comments tables FK their user_id columns to `auth.users`, not
-      // `public.users` — PostgREST refuses to embed `commenter:user_id`
-      // because the auth schema isn't exposed. So we fetch comments
-      // bare and resolve display names from `public.users` ourselves.
       type RawComment = { id: string; content: string; user_id: string; created_at: string }
       const rawComments: RawComment[] = []
 
-      // 1. Check accepted_trades for this trade_queue_item
-      const { data: at } = await supabase
-        .from('accepted_trades')
-        .select('id')
-        .eq('trade_queue_item_id', decisionId)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle()
+      // Stage 1: parallel lookup for the accepted_trade and the
+      // decision_request linked to this trade_queue_item.
+      const [atRes, drRes] = await Promise.all([
+        supabase
+          .from('accepted_trades')
+          .select('id')
+          .eq('trade_queue_item_id', decisionId)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('decision_requests')
+          .select('id')
+          .eq('trade_queue_item_id', decisionId)
+          .limit(1)
+          .maybeSingle(),
+      ])
 
-      if (at) {
-        acceptedTradeId = at.id
-        const { data: comments, error } = await supabase
-          .from('accepted_trade_comments')
-          .select('id, content, user_id, created_at')
-          .eq('accepted_trade_id', at.id)
-          .order('created_at', { ascending: true })
-        if (error) console.warn('Failed to load accepted_trade_comments:', error)
-        for (const c of (comments || []) as RawComment[]) rawComments.push(c)
+      const at = atRes.data
+      const dr = drRes.data
+      const acceptedTradeId = at?.id ?? null
+      const decisionRequestId = dr?.id ?? null
+
+      // Stage 2: parallel-fetch the comments for both link targets.
+      // Skipping a query if no link target was found.
+      const commentPromises: Promise<any>[] = []
+      if (at?.id) {
+        commentPromises.push(
+          supabase
+            .from('accepted_trade_comments')
+            .select('id, content, user_id, created_at')
+            .eq('accepted_trade_id', at.id)
+            .order('created_at', { ascending: true }),
+        )
       }
-
-      // 2. Check decision_requests for this trade_queue_item
-      const { data: dr } = await supabase
-        .from('decision_requests')
-        .select('id')
-        .eq('trade_queue_item_id', decisionId)
-        .limit(1)
-        .maybeSingle()
-
-      if (dr) {
-        decisionRequestId = dr.id
-        const { data: comments, error } = await supabase
-          .from('decision_request_comments')
-          .select('id, content, user_id, created_at')
-          .eq('decision_request_id', dr.id)
-          .order('created_at', { ascending: true })
-        if (error) console.warn('Failed to load decision_request_comments:', error)
-        for (const c of (comments || []) as RawComment[]) {
+      if (dr?.id) {
+        commentPromises.push(
+          supabase
+            .from('decision_request_comments')
+            .select('id, content, user_id, created_at')
+            .eq('decision_request_id', dr.id)
+            .order('created_at', { ascending: true }),
+        )
+      }
+      const commentResults = commentPromises.length > 0
+        ? await Promise.all(commentPromises)
+        : []
+      for (const res of commentResults) {
+        if (res.error) console.warn('Failed to load reflection comments:', res.error)
+        for (const c of (res.data || []) as RawComment[]) {
           if (!rawComments.find(r => r.id === c.id)) rawComments.push(c)
         }
       }
 
-      // Resolve display names for the distinct user_ids in one pass
-      // against public.users (which mirrors auth.users by id).
+      // Stage 3: resolve display names. Comments tables FK their
+      // user_id columns to auth.users, which PostgREST won't embed —
+      // so we fetch from public.users (mirrors auth.users by id).
       const userIds = Array.from(new Set(rawComments.map(c => c.user_id).filter(Boolean)))
       const usersById = new Map<string, { full_name?: string; email?: string }>()
       if (userIds.length > 0) {
@@ -1759,7 +1786,13 @@ export function useDecisionReflections(decisionId: string | null) {
       return { reflections, acceptedTradeId, decisionRequestId }
     },
     enabled: !!decisionId,
-    staleTime: 15_000,
+    // Reflections rarely change outside of the user's own posts (which
+    // invalidate this key explicitly via useAddReflection.onSettled), so
+    // 5 minutes is plenty and avoids re-fetching on every Outcomes
+    // re-render.
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    placeholderData: keepPreviousData,
   })
 }
 

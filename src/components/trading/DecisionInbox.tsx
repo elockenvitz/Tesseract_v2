@@ -262,6 +262,61 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
     staleTime: 60_000,
   })
 
+  // Is the current user an org admin of their currently-selected org?
+  // Org admins always have authority to act on decisions in portfolios
+  // their org owns — bypasses portfolio_team membership requirements,
+  // matching the same broadening at the RLS layer.
+  const { data: isOrgAdmin = false } = useQuery({
+    queryKey: ['user-is-current-org-admin', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return false
+      const { data, error } = await supabase.rpc('is_active_org_admin_of_current_org')
+      if (error) return false
+      return !!data
+    },
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  })
+
+  // For each portfolio that appears in the inbox, does ANY PM/manager
+  // exist on the team? If not, the request would otherwise be stuck in
+  // "Awaiting PM" forever — there's nobody to act on it. We surface this
+  // so the requester (typically the org admin in a fresh pilot org with
+  // no portfolio_team rows) can act as the fallback decider.
+  const portfolioIdsInInbox = useMemo(() => {
+    const set = new Set<string>()
+    allRequests.forEach(r => { if (r.portfolio_id) set.add(r.portfolio_id) })
+    return Array.from(set)
+  }, [allRequests])
+
+  const { data: portfoliosWithPM } = useQuery({
+    queryKey: ['portfolios-with-pm', portfolioIdsInInbox.sort().join(',')],
+    queryFn: async (): Promise<Set<string>> => {
+      if (portfolioIdsInInbox.length === 0) return new Set<string>()
+      const { data, error } = await supabase
+        .from('portfolio_team')
+        .select('portfolio_id, role')
+        .in('portfolio_id', portfolioIdsInInbox)
+      if (error) return new Set<string>()
+      const set = new Set<string>()
+      data?.forEach(r => {
+        const role = (r.role || '').toLowerCase()
+        if (role.includes('manager') || role.includes('pm')) set.add(r.portfolio_id)
+      })
+      return set
+    },
+    enabled: portfolioIdsInInbox.length > 0,
+    staleTime: 60_000,
+  })
+
+  const portfolioHasPM = useCallback(
+    (portfolioId: string | undefined | null): boolean => {
+      if (!portfolioId) return false
+      return portfoliosWithPM?.has(portfolioId) ?? false
+    },
+    [portfoliosWithPM]
+  )
+
   // Apply search + filters
   const filteredRequests = useMemo(() => {
     return allRequests.filter(req => {
@@ -296,11 +351,16 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
     if (user.role === 'admin') return filteredRequests
 
     return filteredRequests.filter(req => {
+      // Always show my own recommendations first — independent of any
+      // portfolio_team role. Pilot users (and other org-admin-only users)
+      // submit decision requests on portfolios they don't have a team
+      // row for, and they should always see the status of what they
+      // submitted. Doing this check before the !myRole short-circuit is
+      // the single fix for the pilot AAPL-doesn't-appear-in-inbox bug.
+      if (req.requested_by === user.id) return true
+
       const myRole = userPortfolioRoles.get(req.portfolio_id)
       if (!myRole) return false // not on this portfolio at all
-
-      // Always show my own recommendations (so I can see their status)
-      if (req.requested_by === user.id) return true
 
       const isPM = myRole.toLowerCase().includes('manager') || myRole.toLowerCase().includes('pm')
 
@@ -338,11 +398,21 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
     if (!user?.id || !userPortfolioRoles) return 'other'
     const isMyRec = req.requested_by === user.id
     const myRole = userPortfolioRoles.get(req.portfolio_id)
-    if (!myRole) return 'other'
-    const isPM = myRole.toLowerCase().includes('manager') || myRole.toLowerCase().includes('pm')
+    const isPM = !!myRole && (myRole.toLowerCase().includes('manager') || myRole.toLowerCase().includes('pm'))
+
+    // Org admin acts as PM in their own org, regardless of portfolio_team
+    if (isOrgAdmin) return 'for_me'
 
     // PM can always act — even on own recs
     if (isPM) return 'for_me'
+
+    // Fallback decider: if I submitted this AND nobody on the portfolio
+    // is a PM/manager, there's no one else to act on it. The requester
+    // gets to act on their own request rather than being stuck in
+    // "Awaiting PM" forever.
+    if (isMyRec && !portfolioHasPM(req.portfolio_id)) return 'for_me'
+
+    if (!myRole) return 'other'
     // Not PM, but I submitted → waiting for PM
     if (isMyRec) return 'sent_by_me'
     // Not PM, not my rec, but I can see it → for me (analyst action)
@@ -790,6 +860,8 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                             legs={portfolioLegs}
                             currentUserId={user?.id}
                             userPortfolioRoles={userPortfolioRoles}
+                            portfolioHasPM={portfolioHasPM}
+                            isOrgAdmin={isOrgAdmin}
                             isPending={updateMutation.isPending || acceptMutation.isPending || rejectMutation.isPending}
                             isRevertPending={revertMutation.isPending}
                             onAcceptLeg={(leg) => {
@@ -986,6 +1058,8 @@ export function DecisionInbox({ portfolioId, onIdeaClick, panelMode, searchQuery
                           isLast={false}
                           currentUserId={user?.id}
                           userPortfolioRoles={userPortfolioRoles}
+                          portfolioHasPM={portfolioHasPM}
+                          isOrgAdmin={isOrgAdmin}
                         />
                         )
                       })}
@@ -1028,6 +1102,8 @@ interface PairPortfolioGroupRowProps {
   isRevertPending: boolean
   currentUserId?: string
   userPortfolioRoles?: Map<string, string>
+  portfolioHasPM?: (portfolioId: string | undefined | null) => boolean
+  isOrgAdmin?: boolean
 }
 
 function PairPortfolioGroupRow({
@@ -1044,6 +1120,8 @@ function PairPortfolioGroupRow({
   isRevertPending,
   currentUserId,
   userPortfolioRoles,
+  portfolioHasPM,
+  isOrgAdmin,
 }: PairPortfolioGroupRowProps) {
   const [rejectingLegId, setRejectingLegId] = useState<string | null>(null)
   const [legRejectReason, setLegRejectReason] = useState('')
@@ -1077,7 +1155,15 @@ function PairPortfolioGroupRow({
   const myRole = userPortfolioRoles?.get(anchor.portfolio_id)
   const isPM = myRole?.toLowerCase().includes('manager') || myRole?.toLowerCase().includes('pm')
   const isMyRec = !!(currentUserId && anchor.requested_by === currentUserId)
-  const canAct = isPM || !isMyRec
+  // Fallback decider: when nobody on the portfolio is a PM/manager,
+  // the requester gets to act on their own request (otherwise it
+  // would sit in "Awaiting PM" forever — common in fresh pilot orgs
+  // with no portfolio_team rows).
+  const isFallbackDecider = isMyRec && !(portfolioHasPM?.(anchor.portfolio_id) ?? false)
+  // Org admins always have authority to act on decisions in portfolios
+  // their org owns, regardless of portfolio_team membership. Mirrors
+  // the RLS broadening for accepted_trades / trade_idea_portfolios.
+  const canAct = isOrgAdmin || isPM || !isMyRec || isFallbackDecider
 
   // Partition legs by status
   const isLegResolved = (leg: DecisionRequest) =>
@@ -1444,6 +1530,8 @@ function PortfolioRow({
   isRevertPending,
   currentUserId,
   userPortfolioRoles,
+  portfolioHasPM,
+  isOrgAdmin,
 }: {
   request: DecisionRequest
   isNeedsDecision: boolean
@@ -1461,6 +1549,8 @@ function PortfolioRow({
   isLast: boolean
   currentUserId?: string
   userPortfolioRoles?: Map<string, string>
+  portfolioHasPM?: (portfolioId: string | undefined | null) => boolean
+  isOrgAdmin?: boolean
 }) {
   const [acceptMode, setAcceptMode] = useState(false)
   const [rejectMode, setRejectMode] = useState(false)
@@ -1516,8 +1606,13 @@ function PortfolioRow({
   const isMyRec = !!(currentUserId && request.requested_by === currentUserId)
   const myRole = userPortfolioRoles?.get(request.portfolio_id)
   const isPM = myRole?.toLowerCase().includes('manager') || myRole?.toLowerCase().includes('pm')
-  const showActions = isNeedsDecision && (isPM || !isMyRec)
-  const isAwaiting = isMyRec && isNeedsDecision && !isPM
+  // Fallback decider: when nobody on the portfolio is a PM/manager,
+  // the requester gets to act on their own request rather than be
+  // stuck in "Awaiting PM decision" — there's nobody to wait on.
+  const isFallbackDecider = isMyRec && !(portfolioHasPM?.(request.portfolio_id) ?? false)
+  // Org admin: full authority on decisions in portfolios their org owns.
+  const showActions = isNeedsDecision && (isOrgAdmin || isPM || !isMyRec || isFallbackDecider)
+  const isAwaiting = isMyRec && isNeedsDecision && !isPM && !isFallbackDecider && !isOrgAdmin
 
   // Status badge
   // `pendingMyDecision` is the variant rendered as a button-sized pill with

@@ -1063,12 +1063,26 @@ export function HoldingsSimulationTable({
   // Promote state (Trade Book)
   const [selectedForPromote, setSelectedForPromote] = useState<Set<string>>(new Set())
   const togglePromoteSelection = useCallback((variantId: string) => {
+    // Read the "is this a select?" intent BEFORE the setState callback,
+    // so the rec-sized dispatch is decoupled from the updater's
+    // execution timing (React 18 strict mode can run updaters twice
+    // and capture-by-closure flags get unreliable in that window).
+    const willSelect = !selectedForPromote.has(variantId)
     setSelectedForPromote(prev => {
       const next = new Set(prev)
-      next.has(variantId) ? next.delete(variantId) : next.add(variantId)
+      if (next.has(variantId)) next.delete(variantId)
+      else next.add(variantId)
       return next
     })
-  }, [])
+    // Tick step 2 of the pilot Trade Lab Get Started banner when the
+    // user FIRST checks a trade row in the holdings table. Step 2 is
+    // "select the trade you want to execute" — it should only fire on
+    // an actual selection (not deselect), and is independent of step 1
+    // (which is about adding the recommendation from the left pane).
+    if (willSelect) {
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
+    }
+  }, [selectedForPromote])
   const promotableRows = useMemo(() =>
     rows.filter(r => r.variant?.sizing_input && !r.isCash),
     [rows]
@@ -1115,9 +1129,11 @@ export function HoldingsSimulationTable({
   }, [promotableRows, selectedForPromote])
 
   const toggleSelectAll = useCallback(() => {
+    // "Select all" only when nothing is currently selected. Compute
+    // outside the updater so the rec-sized dispatch doesn't race with
+    // setState's callback timing.
+    const willSelect = selectedForPromote.size === 0 && promotableRows.length > 0
     setSelectedForPromote(prev => {
-      // If anything is currently selected, clear. Otherwise select all
-      // promotable rows. Matches the behavior of a tri-state select-all.
       if (prev.size > 0) return new Set()
       const next = new Set<string>()
       for (const r of promotableRows) {
@@ -1125,7 +1141,10 @@ export function HoldingsSimulationTable({
       }
       return next
     })
-  }, [promotableRows])
+    if (willSelect) {
+      try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-sized')) } catch { /* ignore */ }
+    }
+  }, [promotableRows, selectedForPromote])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())

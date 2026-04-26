@@ -114,22 +114,22 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
         <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
           <Step
             n={1}
-            title="Review the recommendation"
-            hint="Click or expand the recommendation card on the left to see all the details."
+            title="Review and add the recommendation"
+            hint="Check the box on the recommendation card on the left to import it into the holdings table."
             done={step1}
           />
           <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
           <Step
             n={2}
-            title="Add the recommendation to your holdings"
-            hint="Click the checkbox on the left side of the recommendation card to import it into the holdings table."
+            title="Adjust sizing and select the trade"
+            hint="Tweak Sim Wt if needed, then check the box on the trade row in the holdings table."
             done={step2}
           />
           <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
           <Step
             n={3}
-            title="Select the trade and execute"
-            hint="Check the box on the trade in the holdings table, then click Execute."
+            title="Execute"
+            hint="Click Execute Trade to commit it to the Trade Book."
             done={step3}
           />
         </div>

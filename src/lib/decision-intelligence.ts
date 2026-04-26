@@ -225,7 +225,11 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
     }
     return {
       verdict: isStalled ? 'stalled' : 'awaiting',
-      verdictLabel: isStalled ? 'Stalled' : 'Awaiting Execution',
+      // 'Awaiting Execution' overflowed the 110px State column in the
+      // Outcomes table and bled into the Age column. Shortened to
+      // 'Awaiting' — the column header + the per-row context (a row
+      // in the Outcomes table) makes the meaning unambiguous.
+      verdictLabel: isStalled ? 'Stalled' : 'Awaiting',
       primaryIssue: issue,
       actionNeeded: isStalled ? 'Execute or cancel' : null,
       urgency: isStalled ? (lagDays > 30 ? 'critical' : 'high') : 'low',

@@ -68,7 +68,8 @@ import { useToast } from '../components/common/Toast'
 import { PilotOutcomesGetStarted } from '../components/pilot/PilotOutcomesGetStarted'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { chartDataService } from '../lib/chartData'
 import { supabase } from '../lib/supabase'
 import { MultiSelectFilter } from '../components/ui/MultiSelectFilter'
 import type {
@@ -860,6 +861,18 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
     return () => window.removeEventListener('outcomes:open-section', handler as EventListener)
   }, [sectionId])
 
+  // Broadcast every open transition so listeners (e.g. the pilot
+  // Outcomes Get Started banner's step 2 = "Review why the decision
+  // was made") can mark themselves done without prop wiring.
+  React.useEffect(() => {
+    if (!sectionId || !open) return
+    try {
+      window.dispatchEvent(new CustomEvent('outcomes:section-opened', {
+        detail: { sectionId },
+      }))
+    } catch { /* ignore */ }
+  }, [open, sectionId])
+
   return (
     <div
       ref={wrapperRef}
@@ -1187,7 +1200,16 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
         content: draft,
       },
       {
-        onSuccess: () => toast.success('Reflection posted'),
+        onSuccess: () => {
+          toast.success('Reflection posted')
+          // Tick step 2 of the pilot Outcomes Get Started banner. The
+          // step is "Capture a reflection" (look backward) and is what
+          // we actually want to credit when a reflection is posted —
+          // the upstream NextStepsSection only fires this event when
+          // the user clicks the CTA, not when they actually capture
+          // a reflection via the Reflections section.
+          try { window.dispatchEvent(new CustomEvent('pilot-outcomes:next-action-viewed')) } catch { /* ignore */ }
+        },
         onError: (err: any) => {
           // Restore the draft so the user can retry without retyping.
           setThreadDraft(draft)
@@ -1705,17 +1727,11 @@ function DetailPanel({
           sectionId="thesis"
           icon={Lightbulb}
           title="Why this decision was made"
-          needsAttention={!row.rationale_text && !(story?.theses && story.theses.length > 0)}
+          needsAttention={!row.rationale_text && !(story?.theses && story.theses.length > 0) && !story?.ideaExtras?.thesis_text}
         >
-          {/* The reason — main paragraph. */}
-          {row.rationale_text ? (
-            <p className="text-[12px] text-gray-800 leading-relaxed whitespace-pre-wrap">{row.rationale_text}</p>
-          ) : (
-            <EmptyField text="No reasoning recorded yet." />
-          )}
-
           {/* Compact metadata line — owner, date, conviction, horizon
-              all on one row separated by middle dots. */}
+              all on one row separated by middle dots. Sits at the top
+              as the "stamp" before the three structured sub-sections. */}
           {(() => {
             const parts: string[] = []
             if (row.owner_name) parts.push(`by ${row.owner_name}`)
@@ -1723,48 +1739,61 @@ function DetailPanel({
             if (story?.ideaExtras?.conviction) parts.push(`${story.ideaExtras.conviction} conviction`)
             if (story?.ideaExtras?.time_horizon) parts.push(`${story.ideaExtras.time_horizon} horizon`)
             return (
-              <div className="text-[10px] text-gray-500 mt-1.5 capitalize">
+              <div className="text-[10px] text-gray-500 capitalize mb-3">
                 {parts.join(' · ')}
               </div>
             )
           })()}
 
-          {/* Thesis text — left-rail quote, no filled box. */}
-          {story?.ideaExtras?.thesis_text && (
-            <div className="mt-2.5 border-l-2 border-gray-200 pl-2.5">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Thesis</div>
+          {/* ── 1. THESIS ── the long-form view of the trade. */}
+          <div className="border-l-2 border-gray-300 pl-2.5">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-1">Thesis</div>
+            {story?.ideaExtras?.thesis_text ? (
               <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">
                 {story.ideaExtras.thesis_text}
               </p>
-            </div>
-          )}
+            ) : (story?.theses && story.theses.length > 0) ? (
+              <p className="text-[11px] text-gray-400 italic">No standalone thesis — see bull / bear cases below.</p>
+            ) : (
+              <p className="text-[11px] text-gray-400 italic">No thesis recorded.</p>
+            )}
 
-          {/* Bull/Bear theses — coloured side rails replace per-row
-              uppercase badges. The rail tells you the direction; the
-              text reads as a clean quote. */}
-          {story?.theses && story.theses.length > 0 && (
-            <div className="mt-2.5 space-y-1.5">
-              {story.theses.map(t => (
-                <div
-                  key={t.id}
-                  className={`border-l-2 pl-2.5 ${
-                    t.direction === 'bull' ? 'border-emerald-300'
-                    : t.direction === 'bear' ? 'border-red-300'
-                    : 'border-gray-300'
-                  }`}
-                >
-                  <div className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${
-                    t.direction === 'bull' ? 'text-emerald-700'
-                    : t.direction === 'bear' ? 'text-red-700'
-                    : 'text-gray-500'
-                  }`}>
-                    {t.direction === 'bull' ? 'Bull case' : t.direction === 'bear' ? 'Bear case' : 'Neutral case'}
+            {/* Bull/Bear cases sit under Thesis since they're a debate
+                view of the same idea, not a separate top-level section. */}
+            {story?.theses && story.theses.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {story.theses.map(t => (
+                  <div
+                    key={t.id}
+                    className={`border-l-2 pl-2.5 ${
+                      t.direction === 'bull' ? 'border-emerald-300'
+                      : t.direction === 'bear' ? 'border-red-300'
+                      : 'border-gray-300'
+                    }`}
+                  >
+                    <div className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${
+                      t.direction === 'bull' ? 'text-emerald-700'
+                      : t.direction === 'bear' ? 'text-red-700'
+                      : 'text-gray-500'
+                    }`}>
+                      {t.direction === 'bull' ? 'Bull case' : t.direction === 'bear' ? 'Bear case' : 'Neutral case'}
+                    </div>
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{t.rationale}</p>
                   </div>
-                  <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{t.rationale}</p>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── 2. WHY NOW ── the catalyst / what changed. */}
+          <div className="mt-3 border-l-2 border-blue-300 pl-2.5">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-blue-700 mb-1">Why now</div>
+            {row.rationale_text ? (
+              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{row.rationale_text}</p>
+            ) : (
+              <p className="text-[11px] text-gray-400 italic">No catalyst recorded.</p>
+            )}
+          </div>
 
           {/* Linked research — quiet inline footer. */}
           {story && story.linkedResearchCount > 0 && (
@@ -1774,18 +1803,12 @@ function DetailPanel({
             </div>
           )}
 
-          {/* Recommendation sub-block — same quote treatment as the
-              theses above so the section is visually consistent. */}
+          {/* ── 3. RECOMMENDATION ── analyst's submitted sizing + context. */}
           {(() => {
             const dr = story?.decisionRequest
             const snap = dr?.submission_snapshot || {}
             const snapNotes = typeof snap.notes === 'string' ? snap.notes.trim() : ''
             const contextNote = (dr?.context_note || '').trim()
-            const hasSizing =
-              snap.weight != null || snap.shares != null || !!snap.action
-            const hasRecommendationContent =
-              !!dr && (hasSizing || !!contextNote || snapNotes.length > 0)
-            if (!hasRecommendationContent || !dr) return null
 
             // Compose the sizing strip inline: "ADD · 3.5% wt · 1,200 shs"
             const sizingParts: string[] = []
@@ -1793,13 +1816,16 @@ function DetailPanel({
             if (snap.weight != null) sizingParts.push(`${Number(snap.weight).toFixed(1)}% wt`)
             if (snap.shares != null) sizingParts.push(`${Number(snap.shares).toLocaleString()} shs`)
 
-            // Pilot-seeded recommendations always read as "by Pilot"
-            // — matches the same convention used by the row's owner
-            // chip in the table and Trade Lab's author label.
-            const recommenderLabel = row.owner_name === 'Pilot' ? 'Pilot' : dr.requester_name
+            // Pilot-seeded recommendations always read as "by Pilot".
+            const recommenderLabel = dr
+              ? (row.owner_name === 'Pilot' ? 'Pilot' : dr.requester_name)
+              : null
+
+            const hasContent = !!dr && (sizingParts.length > 0 || !!contextNote || snapNotes.length > 0)
+
             return (
               <div className="mt-3 border-l-2 border-amber-300 pl-2.5">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-amber-700 mb-0.5">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-amber-700 mb-1">
                   Recommendation
                   {recommenderLabel && (
                     <span className="font-medium normal-case tracking-normal text-[10px] text-gray-500 ml-1">
@@ -1807,20 +1833,26 @@ function DetailPanel({
                     </span>
                   )}
                 </div>
-                <div className="text-[10px] text-gray-500 mb-1">
-                  {format(new Date(dr.created_at), 'MMM d, yyyy')}
-                  {dr.urgency && <span className="capitalize"> · {dr.urgency} urgency</span>}
-                </div>
-                {sizingParts.length > 0 && (
-                  <div className="text-[11px] text-gray-800 font-medium tabular-nums mb-1">
-                    {sizingParts.join(' · ')}
-                  </div>
-                )}
-                {contextNote && (
-                  <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{contextNote}</p>
-                )}
-                {snapNotes && snapNotes !== contextNote && (
-                  <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mt-1">{snapNotes}</p>
+                {hasContent && dr ? (
+                  <>
+                    <div className="text-[10px] text-gray-500 mb-1">
+                      {format(new Date(dr.created_at), 'MMM d, yyyy')}
+                      {dr.urgency && <span className="capitalize"> · {dr.urgency} urgency</span>}
+                    </div>
+                    {sizingParts.length > 0 && (
+                      <div className="text-[11px] text-gray-800 font-medium tabular-nums mb-1">
+                        {sizingParts.join(' · ')}
+                      </div>
+                    )}
+                    {contextNote && (
+                      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{contextNote}</p>
+                    )}
+                    {snapNotes && snapNotes !== contextNote && (
+                      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mt-1">{snapNotes}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-gray-400 italic">No recommendation submitted.</p>
                 )}
               </div>
             )
@@ -2537,7 +2569,7 @@ function BottomChartPanel({ row, onSelectDecision }: {
     portfolioId: row.portfolio_id,
   })
   const { data: priceHistory = [], isLoading: phLoading } = usePositionPriceHistory(row.asset_symbol)
-  const { data: holdingsHistory = [] } = useHoldingsTimeSeries(row.portfolio_id, row.asset_symbol)
+  const { data: holdingsHistory = [] } = useHoldingsTimeSeries(row.portfolio_id, row.asset_symbol, row.asset_id)
 
   // Per-asset benchmark weight, used for the active-weight overlay.
   // Missing row → null → chart treats as 0 (off-benchmark asset).
@@ -3053,6 +3085,145 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     [sortedRows, selectedId],
   )
 
+  // Prefetch chart + reflection data for the top visible rows so
+  // clicking a row paints with warm cache. Without this, the user
+  // hits a 1-2s cold-start (Yahoo Finance for price history, plus
+  // 4-5 sequential queries for lifecycle/holdings/reflections) on
+  // every first selection.
+  const prefetchClient = useQueryClient()
+  useEffect(() => {
+    const top = sortedRows.slice(0, 5)
+    if (top.length === 0) return
+
+    // Unique (symbol, asset_id, portfolio_id, decision_id) keys.
+    const uniqueSymbols = new Set<string>()
+    const uniqueAssets = new Map<string, { assetId: string; portfolioId: string | null }>()
+
+    for (const r of top) {
+      if (r.asset_symbol) uniqueSymbols.add(r.asset_symbol)
+      if (r.asset_id && r.portfolio_id) {
+        uniqueAssets.set(`${r.asset_id}:${r.portfolio_id}`, {
+          assetId: r.asset_id,
+          portfolioId: r.portfolio_id,
+        })
+      }
+    }
+
+    // Fire prefetches in parallel. Each is a no-op if the cache
+    // already has fresh data for that query key.
+    //
+    // PRICE HISTORY: full path including Yahoo fallback + write-back.
+    // The previous DB-only prefetch was a no-op when the cache was
+    // empty (which is most of the time for a fresh portfolio), so
+    // the user still hit the cold Yahoo path on their first click.
+    // By eagerly hydrating Yahoo for the top symbols on Outcomes
+    // mount, the click → render path is purely cache reads (~30ms).
+    for (const symbol of uniqueSymbols) {
+      void prefetchClient.prefetchQuery({
+        queryKey: ['position-price-history', symbol],
+        queryFn: async () => {
+          const { data } = await supabase
+            .from('price_history_cache')
+            .select('date, close')
+            .eq('symbol', symbol)
+            .order('date', { ascending: true })
+          if (data && data.length > 0) {
+            return data.map(d => ({ date: d.date, close: Number(d.close) }))
+          }
+          // Cache miss → Yahoo. Trimmed range (1y) keeps payload
+          // small. Write back to price_history_cache so the next
+          // session is instant.
+          try {
+            const candles = await chartDataService.getChartData({
+              symbol, interval: '1d', range: '1y',
+            })
+            const points = candles
+              .filter(c => c.close > 0)
+              .map(c => ({
+                date: typeof c.time === 'string' ? c.time : new Date(Number(c.time) * 1000).toISOString().slice(0, 10),
+                close: c.close,
+              }))
+            if (points.length > 0) {
+              void supabase.from('price_history_cache').upsert(
+                points.map(p => ({ symbol, date: p.date, close: p.close, source: 'yahoo_finance' })),
+                { onConflict: 'symbol,date' },
+              ).then(({ error: e }) => {
+                if (e) console.warn('[outcomes prefetch] cache upsert failed:', e.message)
+              })
+            }
+            return points
+          } catch (e) {
+            console.warn('[outcomes prefetch] Yahoo fetch failed:', e)
+            return []
+          }
+        },
+        staleTime: 15 * 60 * 1000,
+      })
+    }
+
+    // Note: deliberately NOT prefetching the position-lifecycle hook —
+    // its return shape is a heavily transformed PositionLifecycle
+    // object (computed return %, weighted entry, timeline merge),
+    // and writing a different shape into ['position-lifecycle', ...]
+    // would corrupt the cache and trip the chart's renderer. Lifecycle
+    // queries are 4 parallel postgres reads (~200ms total) — fast
+    // enough to leave on the critical path now that price history
+    // (the real bottleneck) is hot.
+
+    for (const decision of top.slice(0, 3)) {
+      // Reflections — same query useDecisionReflections fires.
+      void prefetchClient.prefetchQuery({
+        queryKey: ['decision-reflections', decision.decision_id],
+        queryFn: async () => {
+          // Mirror useDecisionReflections's fast-path: just look up
+          // the linked accepted_trade and decision_request, plus their
+          // comments. Identical structure so the real hook can reuse
+          // the cache.
+          const { data: at } = await supabase
+            .from('accepted_trades')
+            .select('id')
+            .eq('trade_queue_item_id', decision.decision_id)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle()
+          const { data: dr } = await supabase
+            .from('decision_requests')
+            .select('id')
+            .eq('trade_queue_item_id', decision.decision_id)
+            .limit(1)
+            .maybeSingle()
+          const reflections: any[] = []
+          if (at?.id) {
+            const { data: c } = await supabase
+              .from('accepted_trade_comments')
+              .select('id, content, user_id, created_at')
+              .eq('accepted_trade_id', at.id)
+              .order('created_at', { ascending: true })
+            for (const r of c || []) reflections.push({ id: r.id, content: r.content, user_id: r.user_id, created_at: r.created_at, user_name: '' })
+          }
+          if (dr?.id) {
+            const { data: c } = await supabase
+              .from('decision_request_comments')
+              .select('id, content, user_id, created_at')
+              .eq('decision_request_id', dr.id)
+              .order('created_at', { ascending: true })
+            for (const r of c || []) {
+              if (!reflections.find(x => x.id === r.id)) {
+                reflections.push({ id: r.id, content: r.content, user_id: r.user_id, created_at: r.created_at, user_name: '' })
+              }
+            }
+          }
+          return { reflections, acceptedTradeId: at?.id ?? null, decisionRequestId: dr?.id ?? null }
+        },
+        staleTime: 5 * 60_000,
+      })
+    }
+    // We intentionally don't depend on `prefetchClient` because it's
+    // stable; including it would re-prefetch on every render that
+    // touches sortedRows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortedRows])
+
   const handleSort = (col: 'date' | 'lag' | 'ticker' | 'result' | 'pnl') => {
     if (sortBy === col) {
       setSortDesc(!sortDesc)
@@ -3186,32 +3357,16 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
         })()}
       </div>
 
-      {/* Pilot Outcomes Get Started — graduation banner. Shown only
-          on first arrival; auto-retires after all 3 step events fire
-          or the user dismisses. The "Start research" CTA jumps to
-          the asset page for the most-recent committed decision. */}
+      {/* Pilot Outcomes Get Started — 3-step "Finish the loop" strip.
+          Graduation now happens entirely on Outcomes (no navigation
+          away), so the strip's step CTAs scroll the right pane to
+          the relevant section. When all 3 steps fire the strip
+          auto-retires and the global PilotGraduationModal pops in
+          place over Outcomes. */}
       {showPilotOutcomesBanner && (
         <PilotOutcomesGetStarted
           userId={pilotBannerUser?.id}
           orgId={pilotBannerOrgId}
-          onStartResearch={() => {
-            const top = displayRows[0]?.row
-            if (top?.asset_id) {
-              window.dispatchEvent(new CustomEvent('navigate-to-asset', {
-                detail: {
-                  id: top.asset_id,
-                  title: top.asset_symbol || 'Asset',
-                  type: 'asset',
-                  data: { id: top.asset_id },
-                },
-              }))
-            } else {
-              // No decisions to anchor to yet — open the assets list.
-              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                detail: { id: 'assets', title: 'Assets', type: 'assets', data: null },
-              }))
-            }
-          }}
         />
       )}
 

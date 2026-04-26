@@ -576,19 +576,27 @@ export function useSimulationRows({
       }
     }
 
-    // Show a synthetic cash row whenever the baseline has no explicit cash
-    // holding. Previously we only rendered it when there were pending trades
-    // to show cash impact, but that hides the cash position the rest of the
-    // time — the PM can't see "how much cash do I have" at rest. Always
-    // surface cash:
-    //   - With no trades: displays the baseline cash weight (100% - sum of
-    //     position weights) with zero deltas. Often this is 0% for fully
-    //     invested portfolios, which is still correct and informative.
-    //   - With trades: cash weight + delta reflect net trade impact, same
-    //     as before.
+    // `cashRow` is the BOTTOM-PINNED cash display row — the dedicated
+    // styled row at the bottom of the table that shows cash impact and
+    // turns red when staged buys take cash negative. We always render
+    // cash via this row (never inline with other holdings) so the user
+    // gets a single, consistent cash display with the red-when-negative
+    // treatment regardless of whether the portfolio has a real
+    // CASH_USD holding.
+    //
+    // Two paths:
+    //   (a) cashBaseline exists: pull the in-place-mutated cash row out
+    //       of sortedRows (it already has the trade impact applied),
+    //       then strip it from sortedRows so it's not also rendered
+    //       inline → only the bottom-pinned version shows.
+    //   (b) cashBaseline missing: build a synthetic cash row from
+    //       netTradeNotional + remaining-100% weight.
     const hasTrades = netTradeNotional !== 0
     const showSyntheticCash = !cashBaseline
-    const cashRow: SimulationRow | null = showSyntheticCash ? {
+    const inListCashRow: SimulationRow | null = cashBaseline
+      ? sortedRows.find(r => r.isCash) ?? null
+      : null
+    const cashRow: SimulationRow | null = inListCashRow ?? (showSyntheticCash ? {
       asset_id: '__cash__',
       symbol: 'CASH_USD',
       company_name: 'Cash & Equivalents',
@@ -624,7 +632,7 @@ export function useSimulationRows({
       conflict: null,
       hasIdeaDirectionConflict: false,
       isCommittedPending: false,
-    } : null
+    } : null)
 
     // Step 6: Summary
     const summary: SimulationRowSummary = {
@@ -638,8 +646,13 @@ export function useSimulationRows({
       netDeltaWeight: sortedRows.reduce((sum, r) => sum + r.deltaWeight, 0),
     }
 
+    // Strip cash from the inline row list — cashRow handles the
+    // dedicated bottom-pinned render. Without this, real-cash
+    // portfolios would render the cash row twice (inline + pinned).
+    const rowsWithoutCash = sortedRows.filter(r => !r.isCash)
+
     return {
-      rows: sortedRows,
+      rows: rowsWithoutCash,
       cashRow,
       tradedRows,
       untradedRows,
