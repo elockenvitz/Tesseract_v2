@@ -249,14 +249,19 @@ async function getEffectiveAIConfig(
 
   // BYOK is org-scoped: each firm has at most one config, only org admins
   // can write it, all members can use it. We resolve via the user's
-  // organization_id (already computed for attribution).
-  const { data: orgConfig } = organizationId
-    ? await supabase
-        .from("organization_ai_config")
-        .select("byok_provider, byok_api_key, byok_model, byok_enabled")
-        .eq("organization_id", organizationId)
-        .maybeSingle()
-    : { data: null };
+  // organization_id (already computed for attribution). The api_key is no
+  // longer SELECT-able from the table by non-admins — we go through a
+  // SECURITY DEFINER RPC that checks active membership and returns the
+  // full row including the key. This keeps the key out of any client-side
+  // network response while still letting the edge function mint provider
+  // calls on behalf of any active org member.
+  let orgConfig: { byok_provider?: string | null; byok_api_key?: string | null;
+                   byok_model?: string | null; byok_enabled?: boolean } | null = null;
+  if (organizationId) {
+    const { data: rows } = await supabase
+      .rpc("get_org_ai_config_for_resolution", { p_org_id: organizationId });
+    orgConfig = (rows && rows[0]) ? rows[0] : null;
+  }
 
   const preferences = {
     includeThesis: userConfig?.include_thesis ?? true,

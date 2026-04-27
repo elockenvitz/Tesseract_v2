@@ -36,17 +36,17 @@ export interface UserAIConfig {
   last_used_at: string | null
 }
 
-// Per-organization BYOK config. Visible to all org members; only org admins
-// can write. The api_key is sent down to the client only because we
-// historically displayed a masked indicator — the edge function is the
-// only consumer that actually uses it. Don't echo it back to the user.
+// Per-organization BYOK config — SAFE summary view. Returned by the
+// `get_org_ai_config_summary` RPC, which omits the api_key. The actual
+// key value lives only in the DB and the ai-chat edge function — never
+// shipped to the browser, even for admins (we only need to know "is it
+// configured" to render the UI).
 export interface OrgAIConfig {
-  id: string
-  organization_id: string
+  organization_id: string | null
   byok_provider: AIProvider | null
-  byok_api_key: string | null
   byok_model: string | null
   byok_enabled: boolean
+  is_configured: boolean
 }
 
 export interface EffectiveAIConfig {
@@ -135,18 +135,19 @@ export function useAIConfig() {
     enabled: !!user?.id,
   })
 
-  // Fetch org BYOK config. RLS scopes this to the user's current org and
-  // returns NULL outside it. Non-admins can SELECT but only admins can write.
+  // Fetch org BYOK config via the SECURITY DEFINER summary RPC. The RPC
+  // returns provider/model/enabled/is_configured but NEVER the api_key —
+  // only the edge function ever sees the raw key. Even admins use this
+  // path for display; the key only matters for the write mutation, which
+  // sends a new value rather than reading one.
   const { data: orgConfig, isLoading: isOrgLoading } = useQuery({
     queryKey: ['org-ai-config'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('organization_ai_config')
-        .select('*')
-        .maybeSingle()
-
+      const { data, error } = await supabase.rpc('get_org_ai_config_summary')
       if (error) throw error
-      return data as OrgAIConfig | null
+      // RPC returns SETOF — pick first row (org has 0 or 1 config)
+      const rows = (data || []) as OrgAIConfig[]
+      return rows[0] ?? null
     },
     enabled: !!user?.id,
   })
@@ -187,7 +188,7 @@ export function useAIConfig() {
     }
 
     // BYOK allowed and configured at the org level
-    if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.byok_api_key) {
+    if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.is_configured) {
       return {
         mode: 'byok' as const,
         provider: orgConfig.byok_provider,
@@ -236,30 +237,20 @@ export function useAIConfig() {
       const orgId = orgIdData as string | null
       if (!orgId) throw new Error('No active organization')
 
-      const { data: existing } = await supabase
+      // Upsert avoids the read-then-write pattern, which mattered when we
+      // tightened SELECT to admins-only — a non-admin somehow reaching this
+      // code path used to get a confusing empty SELECT then an INSERT
+      // failure. Upsert lets RLS reject in one clean step.
+      const { data, error } = await supabase
         .from('organization_ai_config')
-        .select('id')
-        .eq('organization_id', orgId)
-        .maybeSingle()
-
-      if (existing) {
-        const { data, error } = await supabase
-          .from('organization_ai_config')
-          .update(updates)
-          .eq('organization_id', orgId)
-          .select()
-          .single()
-        if (error) throw error
-        return data
-      } else {
-        const { data, error } = await supabase
-          .from('organization_ai_config')
-          .insert({ organization_id: orgId, ...updates })
-          .select()
-          .single()
-        if (error) throw error
-        return data
-      }
+        .upsert(
+          { organization_id: orgId, ...updates },
+          { onConflict: 'organization_id' }
+        )
+        .select()
+        .single()
+      if (error) throw error
+      return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org-ai-config'] })
