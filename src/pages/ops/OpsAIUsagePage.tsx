@@ -15,13 +15,15 @@
 
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Sparkles, DollarSign, Zap, Users, Database, RefreshCw } from 'lucide-react'
+import { Sparkles, DollarSign, Zap, Users, Database, RefreshCw, Building2, UsersRound } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 
 type UsageRow = {
   id: string
   user_id: string
+  organization_id: string | null
+  team_id: string | null
   created_at: string
   mode: string | null
   provider: string | null
@@ -37,6 +39,8 @@ type UsageRow = {
 }
 
 type UserRow = { id: string; email: string | null; first_name: string | null; last_name: string | null }
+type OrgRow  = { id: string; name: string | null }
+type TeamRow = { id: string; name: string | null; organization_id: string | null }
 
 function fmtUsd(n: number): string {
   if (n === 0) return '$0.00'
@@ -66,7 +70,7 @@ export function OpsAIUsagePage() {
       const sinceIso = new Date(Date.now() - 30 * 86400000).toISOString()
       const { data, error } = await supabase
         .from('ai_usage_log')
-        .select('id, user_id, created_at, mode, provider, model, purpose, context_type, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost, response_time_ms')
+        .select('id, user_id, organization_id, team_id, created_at, mode, provider, model, purpose, context_type, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost, response_time_ms')
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: false })
         .limit(10000)
@@ -76,8 +80,11 @@ export function OpsAIUsagePage() {
     staleTime: 60_000,
   })
 
-  // ─── Users (joined client-side) ────────────────────────────
+  // ─── Users / orgs / teams (joined client-side) ─────────────
   const userIds = useMemo(() => [...new Set(rows.map(r => r.user_id).filter(Boolean))], [rows])
+  const orgIds  = useMemo(() => [...new Set(rows.map(r => r.organization_id).filter((x): x is string => !!x))], [rows])
+  const teamIds = useMemo(() => [...new Set(rows.map(r => r.team_id).filter((x): x is string => !!x))], [rows])
+
   const { data: users = [] } = useQuery<UserRow[]>({
     queryKey: ['ops-ai-usage-users', userIds],
     enabled: userIds.length > 0,
@@ -90,6 +97,32 @@ export function OpsAIUsagePage() {
     },
   })
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users])
+
+  const { data: orgs = [] } = useQuery<OrgRow[]>({
+    queryKey: ['ops-ai-usage-orgs', orgIds],
+    enabled: orgIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', orgIds)
+      return (data || []) as OrgRow[]
+    },
+  })
+  const orgMap = useMemo(() => new Map(orgs.map(o => [o.id, o])), [orgs])
+
+  const { data: teams = [] } = useQuery<TeamRow[]>({
+    queryKey: ['ops-ai-usage-teams', teamIds],
+    enabled: teamIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('teams')
+        .select('id, name, organization_id')
+        .in('id', teamIds)
+      return (data || []) as TeamRow[]
+    },
+  })
+  const teamMap = useMemo(() => new Map(teams.map(t => [t.id, t])), [teams])
 
   // ─── Derived metrics ───────────────────────────────────────
   const now = Date.now()
@@ -190,6 +223,40 @@ export function OpsAIUsagePage() {
       const k = r.model || '(unknown)'
       const entry = m.get(k) || { key: k, cost: 0, requests: 0 }
       entry.cost += Number(r.estimated_cost) || 0
+      entry.requests += 1
+      m.set(k, entry)
+    }
+    return [...m.values()].sort((a, b) => b.cost - a.cost)
+  }, [rows, startOfMonth])
+
+  // ─── By organization / by team — MTD ───────────────────────
+  // org_id and team_id were added in 20260427... migration. Rows logged
+  // before that will have NULL — we bucket those under "(no org)" / "(no team)".
+  const byOrgMtd = useMemo(() => {
+    const m = new Map<string, { id: string | null; cost: number; tokens: number; requests: number; users: Set<string> }>()
+    for (const r of rows) {
+      const t = new Date(r.created_at).getTime()
+      if (t < startOfMonth) continue
+      const k = r.organization_id || '__none__'
+      const entry = m.get(k) || { id: r.organization_id, cost: 0, tokens: 0, requests: 0, users: new Set() }
+      entry.cost     += Number(r.estimated_cost) || 0
+      entry.tokens   += (r.input_tokens || 0) + (r.output_tokens || 0)
+      entry.requests += 1
+      if (r.user_id) entry.users.add(r.user_id)
+      m.set(k, entry)
+    }
+    return [...m.values()].sort((a, b) => b.cost - a.cost)
+  }, [rows, startOfMonth])
+
+  const byTeamMtd = useMemo(() => {
+    const m = new Map<string, { id: string | null; cost: number; tokens: number; requests: number }>()
+    for (const r of rows) {
+      const t = new Date(r.created_at).getTime()
+      if (t < startOfMonth) continue
+      const k = r.team_id || '__none__'
+      const entry = m.get(k) || { id: r.team_id, cost: 0, tokens: 0, requests: 0 }
+      entry.cost     += Number(r.estimated_cost) || 0
+      entry.tokens   += (r.input_tokens || 0) + (r.output_tokens || 0)
       entry.requests += 1
       m.set(k, entry)
     }
@@ -376,6 +443,82 @@ export function OpsAIUsagePage() {
                       <div className="h-full bg-sky-400 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="text-[10px] text-gray-400 mt-0.5">{p.requests.toLocaleString()} requests</div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* By organization + by team */}
+      <div className="grid grid-cols-3 gap-4">
+        {/* By organization (2 cols) */}
+        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <div className="flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-900">Cost by organization · MTD</h3>
+            </div>
+            <span className="text-xs text-gray-500">{byOrgMtd.length} {byOrgMtd.length === 1 ? 'org' : 'orgs'} with activity</span>
+          </div>
+          {byOrgMtd.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Organization</th>
+                  <th className="text-right px-4 py-2 font-medium">Cost</th>
+                  <th className="text-right px-4 py-2 font-medium">Tokens</th>
+                  <th className="text-right px-4 py-2 font-medium">Requests</th>
+                  <th className="text-right px-4 py-2 font-medium">Users</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {byOrgMtd.map((o, i) => {
+                  const org = o.id ? orgMap.get(o.id) : null
+                  const label = org?.name || (o.id ? 'Unknown org' : '(no org)')
+                  return (
+                    <tr key={o.id || '__none__'} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 text-gray-900">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 tabular-nums w-5">{i + 1}.</span>
+                          <span className={clsx('font-medium', !o.id && 'italic text-gray-500')}>{label}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-900">{fmtUsd(o.cost)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{fmtTokens(o.tokens)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{o.requests.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-500">{o.users.size}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* By team / pod (1 col) */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <div className="flex items-center gap-1.5">
+              <UsersRound className="w-4 h-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-900">By team · MTD</h3>
+            </div>
+            <span className="text-xs text-gray-500">{byTeamMtd.filter(t => t.id).length} {byTeamMtd.filter(t => t.id).length === 1 ? 'team' : 'teams'}</span>
+          </div>
+          {byTeamMtd.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {byTeamMtd.slice(0, 10).map(t => {
+                const team = t.id ? teamMap.get(t.id) : null
+                const label = team?.name || (t.id ? 'Unknown team' : '(no team)')
+                return (
+                  <li key={t.id || '__none__'} className="px-4 py-2 flex items-baseline justify-between text-sm hover:bg-gray-50">
+                    <span className={clsx('truncate mr-2', !t.id && 'italic text-gray-500')} title={label}>{label}</span>
+                    <span className="tabular-nums font-medium text-gray-900 shrink-0">{fmtUsd(t.cost)}</span>
                   </li>
                 )
               })}

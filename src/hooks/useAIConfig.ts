@@ -23,19 +23,30 @@ export interface PlatformAIConfig {
   monthly_request_limit: number
 }
 
+// Per-user AI config — context preferences and personal limit overrides.
+// BYOK fields moved to OrgAIConfig (org-scoped, admin-only).
 export interface UserAIConfig {
   id: string
   user_id: string
-  byok_provider: AIProvider
-  byok_api_key: string | null
-  byok_model: string
-  byok_enabled: boolean
   include_thesis: boolean
   include_outcomes: boolean
   include_notes: boolean
   include_discussions: boolean
   include_price_history: boolean
   last_used_at: string | null
+}
+
+// Per-organization BYOK config. Visible to all org members; only org admins
+// can write. The api_key is sent down to the client only because we
+// historically displayed a masked indicator — the edge function is the
+// only consumer that actually uses it. Don't echo it back to the user.
+export interface OrgAIConfig {
+  id: string
+  organization_id: string
+  byok_provider: AIProvider | null
+  byok_api_key: string | null
+  byok_model: string | null
+  byok_enabled: boolean
 }
 
 export interface EffectiveAIConfig {
@@ -106,7 +117,7 @@ export function useAIConfig() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  // Fetch user config
+  // Fetch user config (context preferences only now)
   const { data: userConfig, isLoading: isUserLoading } = useQuery({
     queryKey: ['user-ai-config', user?.id],
     queryFn: async () => {
@@ -122,6 +133,35 @@ export function useAIConfig() {
       return data as UserAIConfig | null
     },
     enabled: !!user?.id,
+  })
+
+  // Fetch org BYOK config. RLS scopes this to the user's current org and
+  // returns NULL outside it. Non-admins can SELECT but only admins can write.
+  const { data: orgConfig, isLoading: isOrgLoading } = useQuery({
+    queryKey: ['org-ai-config'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('organization_ai_config')
+        .select('*')
+        .maybeSingle()
+
+      if (error) throw error
+      return data as OrgAIConfig | null
+    },
+    enabled: !!user?.id,
+  })
+
+  // Whether the current user can edit the org's BYOK config. Source of
+  // truth for the write enable; the actual mutation is also RLS-gated.
+  const { data: isOrgAdmin = false } = useQuery({
+    queryKey: ['is-org-admin'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('is_active_org_admin_of_current_org')
+      if (error) throw error
+      return !!data
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
   })
 
   // Compute effective config
@@ -146,12 +186,12 @@ export function useAIConfig() {
       }
     }
 
-    // BYOK allowed and configured
-    if (platformConfig?.allow_byok && userConfig?.byok_enabled && userConfig?.byok_api_key) {
+    // BYOK allowed and configured at the org level
+    if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.byok_api_key) {
       return {
         mode: 'byok' as const,
-        provider: userConfig.byok_provider,
-        model: userConfig.byok_model,
+        provider: orgConfig.byok_provider,
+        model: orgConfig.byok_model,
         isConfigured: true,
         isPlatformEnabled: false,
         allowByok: true,
@@ -163,8 +203,8 @@ export function useAIConfig() {
     if (platformConfig?.allow_byok !== false) {
       return {
         mode: 'byok' as const,
-        provider: userConfig?.byok_provider || null,
-        model: userConfig?.byok_model || null,
+        provider: orgConfig?.byok_provider || null,
+        model: orgConfig?.byok_model || null,
         isConfigured: false,
         isPlatformEnabled: false,
         allowByok: true,
@@ -184,49 +224,45 @@ export function useAIConfig() {
     }
   })()
 
-  // Update user config mutation
+  // Update org BYOK config. RLS rejects non-admins.
   const updateConfigMutation = useMutation({
     mutationFn: async (updates: AIConfigUpdate) => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      // Check if config exists
+      // Resolve the current org. The RPC returns NULL if there's no
+      // current org, in which case there's no scope to write into.
+      const { data: orgIdData, error: orgIdErr } = await supabase.rpc('current_org_id')
+      if (orgIdErr) throw orgIdErr
+      const orgId = orgIdData as string | null
+      if (!orgId) throw new Error('No active organization')
+
       const { data: existing } = await supabase
-        .from('user_ai_config')
+        .from('organization_ai_config')
         .select('id')
-        .eq('user_id', user.id)
-        .single()
+        .eq('organization_id', orgId)
+        .maybeSingle()
 
       if (existing) {
-        // Update existing
         const { data, error } = await supabase
-          .from('user_ai_config')
-          .update({
-            ...updates,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', user.id)
+          .from('organization_ai_config')
+          .update(updates)
+          .eq('organization_id', orgId)
           .select()
           .single()
-
         if (error) throw error
         return data
       } else {
-        // Insert new
         const { data, error } = await supabase
-          .from('user_ai_config')
-          .insert({
-            user_id: user.id,
-            ...updates,
-          })
+          .from('organization_ai_config')
+          .insert({ organization_id: orgId, ...updates })
           .select()
           .single()
-
         if (error) throw error
         return data
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-ai-config'] })
+      queryClient.invalidateQueries({ queryKey: ['org-ai-config'] })
     },
   })
 
@@ -326,24 +362,28 @@ export function useAIConfig() {
     },
   })
 
-  // Clear API key
+  // Clear org API key (admins only — RLS enforces).
   const clearApiKeyMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated')
 
+      const { data: orgIdData, error: orgIdErr } = await supabase.rpc('current_org_id')
+      if (orgIdErr) throw orgIdErr
+      const orgId = orgIdData as string | null
+      if (!orgId) throw new Error('No active organization')
+
       const { error } = await supabase
-        .from('user_ai_config')
+        .from('organization_ai_config')
         .update({
           byok_api_key: null,
           byok_enabled: false,
-          updated_at: new Date().toISOString(),
         })
-        .eq('user_id', user.id)
+        .eq('organization_id', orgId)
 
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-ai-config'] })
+      queryClient.invalidateQueries({ queryKey: ['org-ai-config'] })
     },
   })
 
@@ -351,10 +391,12 @@ export function useAIConfig() {
     // Data
     platformConfig,
     userConfig,
+    orgConfig,
+    isOrgAdmin,
     effectiveConfig,
 
     // Loading states
-    isLoading: isPlatformLoading || isUserLoading,
+    isLoading: isPlatformLoading || isUserLoading || isOrgLoading,
 
     // Mutations
     updateConfig: updateConfigMutation.mutate,

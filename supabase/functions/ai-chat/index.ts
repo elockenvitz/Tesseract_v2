@@ -120,9 +120,14 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Unauthorized");
 
+    // Resolve org/team for attribution. Both may be null for users with
+    // no membership yet; that's fine — the log columns are nullable.
+    const attribution = await resolveAttribution(supabase, user.id);
+
     const { aiConfig, platformConfig, userConfig } = await getEffectiveAIConfig(
       supabase,
       user.id,
+      attribution.organizationId,
       { anthropic: platformApiKey, openai: platformOpenAIKey, google: platformGoogleKey, perplexity: platformPerplexityKey }
     );
 
@@ -143,6 +148,12 @@ Deno.serve(async (req) => {
     const usage = await getCurrentUsage(supabase, user.id);
     const breach = checkLimits(limits, usage);
     if (breach) {
+      // Persist a notification once per user per breach kind per day.
+      // Toast alone is fragile — if the breach happens during async work
+      // (column generation), the user may never see it. The bell is durable.
+      notifyRateLimitOncePerDay(supabase, user.id, attribution.organizationId, breach)
+        .catch(console.error);
+
       return new Response(
         JSON.stringify({
           error: breach.message,
@@ -169,18 +180,38 @@ Deno.serve(async (req) => {
 
     // ─── Call provider ─────────────────────────────────────────────────
     const startTime = Date.now();
-    const result = await callAIProvider(
-      aiConfig.provider as AIProvider,
-      aiConfig.apiKey!,
-      effectiveModel,
-      systemPrompt,
-      conversationHistory,
-      message,
-      limits.maxTokensPerRequest
-    );
+    let result;
+    try {
+      result = await callAIProvider(
+        aiConfig.provider as AIProvider,
+        aiConfig.apiKey!,
+        effectiveModel,
+        systemPrompt,
+        conversationHistory,
+        message,
+        limits.maxTokensPerRequest,
+        user.id
+      );
+    } catch (e) {
+      // 401/403/billing errors from the provider mean the org's BYOK key
+      // (or platform key) is dead — notify org admins so someone fixes it.
+      // Other errors (rate-limit from provider, transient) are logged but
+      // not turned into notifications.
+      const errMsg = (e as Error).message || '';
+      if (looksLikeAuthFailure(errMsg)) {
+        notifyProviderAuthFailureOncePerDay(
+          supabase,
+          attribution.organizationId,
+          aiConfig.provider as AIProvider,
+          aiConfig.mode,
+          errMsg,
+        ).catch(console.error);
+      }
+      throw e;
+    }
 
     // Async usage log — never blocks the response.
-    logUsage(supabase, user.id, { ...aiConfig, model: effectiveModel }, context, purpose, startTime, result.tokens)
+    logUsage(supabase, user.id, attribution, { ...aiConfig, model: effectiveModel }, context, purpose, startTime, result.tokens)
       .catch(console.error);
 
     return new Response(
@@ -202,6 +233,7 @@ Deno.serve(async (req) => {
 async function getEffectiveAIConfig(
   supabase: any,
   userId: string,
+  organizationId: string | null,
   platformKeys: { anthropic?: string, openai?: string, google?: string, perplexity?: string }
 ) {
   const { data: platformConfig } = await supabase
@@ -214,6 +246,17 @@ async function getEffectiveAIConfig(
     .select("*")
     .eq("user_id", userId)
     .single();
+
+  // BYOK is org-scoped: each firm has at most one config, only org admins
+  // can write it, all members can use it. We resolve via the user's
+  // organization_id (already computed for attribution).
+  const { data: orgConfig } = organizationId
+    ? await supabase
+        .from("organization_ai_config")
+        .select("byok_provider, byok_api_key, byok_model, byok_enabled")
+        .eq("organization_id", organizationId)
+        .maybeSingle()
+    : { data: null };
 
   const preferences = {
     includeThesis: userConfig?.include_thesis ?? true,
@@ -234,12 +277,12 @@ async function getEffectiveAIConfig(
       isConfigured: !!apiKey,
       ...preferences
     };
-  } else if (platformConfig?.allow_byok && userConfig?.byok_enabled && userConfig?.byok_api_key) {
+  } else if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.byok_api_key) {
     aiConfig = {
       mode: "byok",
-      provider: userConfig.byok_provider || "anthropic",
-      model: userConfig.byok_model || "claude-3-5-sonnet-20241022",
-      apiKey: userConfig.byok_api_key,
+      provider: orgConfig.byok_provider || "anthropic",
+      model: orgConfig.byok_model || "claude-3-5-sonnet-20241022",
+      apiKey: orgConfig.byok_api_key,
       isConfigured: true,
       ...preferences
     };
@@ -559,7 +602,8 @@ async function callAIProvider(
   systemPrompt: string,
   history: Array<{ role: string; content: string }>,
   message: string,
-  maxTokens: number
+  maxTokens: number,
+  userId: string
 ): Promise<CallResult> {
 
   if (provider === "anthropic") {
@@ -578,6 +622,9 @@ async function callAIProvider(
       body: JSON.stringify({
         model: model || "claude-3-5-sonnet-20241022",
         max_tokens: maxTokens,
+        // Opaque per-user identifier so Anthropic abuse detection can
+        // attribute requests without us having to dig through our logs.
+        metadata: { user_id: userId },
         system: [
           { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }
         ],
@@ -620,7 +667,9 @@ async function callAIProvider(
       body: JSON.stringify({
         model: model || "gpt-4-turbo-preview",
         messages,
-        max_tokens: maxTokens
+        max_tokens: maxTokens,
+        // Opaque per-user identifier for OpenAI abuse monitoring.
+        user: userId
       })
     });
 
@@ -732,6 +781,7 @@ async function callAIProvider(
 async function logUsage(
   supabase: any,
   userId: string,
+  attribution: Attribution,
   aiConfig: any,
   context: any,
   purpose: string | undefined,
@@ -742,6 +792,8 @@ async function logUsage(
     const cost = computeCost(aiConfig.provider, aiConfig.model, tokens);
     await supabase.from("ai_usage_log").insert({
       user_id: userId,
+      organization_id: attribution.organizationId,
+      team_id: attribution.teamId,
       mode: aiConfig.mode,
       provider: aiConfig.provider,
       model: aiConfig.model,
@@ -758,4 +810,169 @@ async function logUsage(
   } catch (e) {
     console.error("Failed to log AI usage:", e);
   }
+}
+
+// ─── Attribution ────────────────────────────────────────────────────────
+// Resolves the org and (optional) team a user belongs to, so usage can be
+// rolled up by firm and by pod/team for billing reports. Pods are modelled
+// as `teams` in Tesseract; not every user has a team, so team_id is
+// optional. If a user belongs to multiple orgs/teams we pick the most
+// recently-joined active one — the firm can refine this later (e.g. an
+// explicit "active org" picker) without changing the usage table.
+
+interface Attribution {
+  organizationId: string | null;
+  teamId:         string | null;
+}
+
+async function resolveAttribution(supabase: any, userId: string): Promise<Attribution> {
+  try {
+    const { data: orgRow } = await supabase
+      .from("organization_memberships")
+      .select("organization_id, joined_at, status")
+      .eq("user_id", userId)
+      .is("suspended_at", null)
+      .order("joined_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: teamRow } = await supabase
+      .from("team_memberships")
+      .select("team_id, joined_at")
+      .eq("user_id", userId)
+      .order("joined_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    return {
+      organizationId: orgRow?.organization_id ?? null,
+      teamId:         teamRow?.team_id        ?? null,
+    };
+  } catch (e) {
+    // Attribution failure must not block AI requests — log and degrade.
+    console.error("resolveAttribution failed:", e);
+    return { organizationId: null, teamId: null };
+  }
+}
+
+// ─── Failure notifications (rate-limit + provider auth) ──────────────────
+// Once-per-day dedup so users / admins don't get spammed when a broken key
+// or sustained limit-hit produces hundreds of failed requests in a row.
+
+function startOfTodayIso(): string {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function notifyRateLimitOncePerDay(
+  supabase: any,
+  userId: string,
+  organizationId: string | null,
+  breach: { message: string; details: Record<string, unknown> }
+): Promise<void> {
+  const kind = String((breach.details as any)?.kind || 'rate_limit');
+  // Have we already notified this user about THIS kind of breach today?
+  const { data: existing } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("type", "ai_rate_limit_hit")
+    .eq("context_data->>kind", kind)
+    .gte("created_at", startOfTodayIso())
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) return;
+
+  await supabase.from("notifications").insert({
+    user_id: userId,
+    type: "ai_rate_limit_hit",
+    title: "AI request limit reached",
+    message: breach.message,
+    context_type: "ai_usage",
+    context_id: null,
+    context_data: {
+      kind,
+      details: breach.details,
+      organization_id: organizationId,
+    },
+    is_read: false,
+  });
+}
+
+function looksLikeAuthFailure(errMsg: string): boolean {
+  const m = errMsg.toLowerCase();
+  return (
+    m.includes("invalid api key") ||
+    m.includes("unauthorized") ||
+    m.includes("authentication") ||
+    m.includes("api key") ||
+    m.includes("401") ||
+    m.includes("403") ||
+    m.includes("billing") ||
+    m.includes("quota") ||
+    m.includes("insufficient_quota")
+  );
+}
+
+async function notifyProviderAuthFailureOncePerDay(
+  supabase: any,
+  organizationId: string | null,
+  provider: AIProvider,
+  mode: string,
+  errMsg: string
+): Promise<void> {
+  if (!organizationId) return;  // no org means no admins to notify
+
+  // Find active org admins to notify.
+  const { data: admins } = await supabase
+    .from("organization_memberships")
+    .select("user_id")
+    .eq("organization_id", organizationId)
+    .eq("status", "active")
+    .eq("is_org_admin", true);
+
+  if (!admins || admins.length === 0) return;
+
+  const adminIds: string[] = admins.map((a: any) => a.user_id);
+  const sinceIso = startOfTodayIso();
+
+  // Have we already sent a provider-auth notification to ANY of these
+  // admins today? If yes, skip — once per day per org is enough.
+  const { data: existing } = await supabase
+    .from("notifications")
+    .select("id")
+    .in("user_id", adminIds)
+    .eq("type", "ai_provider_error")
+    .eq("context_data->>organization_id", organizationId)
+    .gte("created_at", sinceIso)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) return;
+
+  const title = "AI provider key issue: " + provider;
+  const msg =
+    "An AI request failed with what looks like an authentication or billing problem (" +
+    provider + ", mode: " + mode + "). " +
+    "Check the organization's API key in Settings → AI Configuration.";
+
+  const rows = adminIds.map((id) => ({
+    user_id: id,
+    type: "ai_provider_error",
+    title,
+    message: msg,
+    context_type: "ai_config",
+    context_id: null,
+    context_data: {
+      provider,
+      mode,
+      organization_id: organizationId,
+      error_excerpt: errMsg.slice(0, 200),
+    },
+    is_read: false,
+  }));
+
+  await supabase.from("notifications").insert(rows);
 }

@@ -335,13 +335,23 @@ export async function shareTradeSheetSnapshot(params: {
 
   const notificationInserts = recipientIds.map(recipientId => ({
     user_id: recipientId,
-    type: 'simulation_shared',
+    type: 'simulation_shared' as const,
     title: `${actorName} shared a snapshot with you`,
     message: `"${tradeSheet.name}"${message ? ` — ${message}` : ''}`,
-    metadata: { simulation_id: simulationId, snapshot_id: snapshot.id, share_mode: 'snapshot' },
+    context_type: 'simulation_share',
+    context_id: snapshot.id,
+    context_data: {
+      simulation_id: simulationId,
+      snapshot_id: snapshot.id,
+      snapshot_name: tradeSheet.name,
+      share_mode: 'snapshot',
+      shared_by_name: actorName,
+    },
+    is_read: false,
   }))
 
-  await supabase.from('notifications').insert(notificationInserts).catch(e => console.warn('[SimShare] Failed to create notifications:', e))
+  const { error: notifError } = await supabase.from('notifications').insert(notificationInserts)
+  if (notifError) console.warn('[SimShare] Failed to create snapshot share notifications:', notifError)
 
   // Log events
   for (const share of shares || []) {

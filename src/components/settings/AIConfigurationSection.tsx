@@ -31,7 +31,8 @@ const PROVIDER_INFO: Record<AIProvider, { url: string; urlLabel: string }> = {
 
 export function AIConfigurationSection() {
   const {
-    userConfig,
+    orgConfig,
+    isOrgAdmin,
     effectiveConfig,
     isLoading,
     updateConfig,
@@ -53,12 +54,12 @@ export function AIConfigurationSection() {
   const [platformExpanded, setPlatformExpanded] = useState(true)
   const [byokExpanded, setByokExpanded] = useState(false)
 
-  // Initialize from user config
+  // Initialize from org config (BYOK is org-scoped)
   useEffect(() => {
-    if (userConfig) {
-      setProvider(userConfig.byok_provider || 'anthropic')
+    if (orgConfig?.byok_provider) {
+      setProvider(orgConfig.byok_provider)
     }
-  }, [userConfig])
+  }, [orgConfig])
 
   const handleTestConnection = async () => {
     if (!apiKey) return
@@ -279,11 +280,18 @@ export function AIConfigurationSection() {
                     )}>
                       {isConfigured ? 'Active' : 'Inactive'}
                     </span>
+                    {!isOrgAdmin && (
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        Admin only
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     {isConfigured
-                      ? `Connected to ${AI_PROVIDERS.find(p => p.id === userConfig?.byok_provider)?.name || 'provider'}`
-                      : 'Use your own API key from any provider'}
+                      ? `Organization-wide key for ${AI_PROVIDERS.find(p => p.id === orgConfig?.byok_provider)?.name || 'provider'}`
+                      : isOrgAdmin
+                        ? 'Configure one API key for your whole organization'
+                        : 'No organization key yet — ask an org admin to add one'}
                   </p>
                 </div>
               </div>
@@ -304,20 +312,33 @@ export function AIConfigurationSection() {
                       <div className="flex items-center space-x-2">
                         <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                         <span className="text-sm font-medium text-green-700 dark:text-green-300">
-                          Connected to {AI_PROVIDERS.find(p => p.id === userConfig?.byok_provider)?.name}
+                          Connected to {AI_PROVIDERS.find(p => p.id === orgConfig?.byok_provider)?.name}
                         </span>
                       </div>
-                      <button
-                        onClick={handleDisconnect}
-                        disabled={isClearing}
-                        className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                      >
-                        {isClearing ? 'Disconnecting...' : 'Disconnect'}
-                      </button>
+                      {isOrgAdmin && (
+                        <button
+                          onClick={handleDisconnect}
+                          disabled={isClearing}
+                          className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          {isClearing ? 'Disconnecting...' : 'Disconnect'}
+                        </button>
+                      )}
                     </div>
                     <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                      Model: {userConfig?.byok_model}
+                      Model: {orgConfig?.byok_model || '—'}
                     </p>
+                  </div>
+                )}
+
+                {!isOrgAdmin && !isConfigured && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg dark:bg-amber-900/20 dark:border-amber-800">
+                    <div className="flex items-start space-x-2">
+                      <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm text-amber-800 dark:text-amber-300">
+                        Only an organization admin can add or change the BYOK key. Ask your admin to set one up so the whole team can use AI features.
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -413,42 +434,44 @@ export function AIConfigurationSection() {
                   </div>
                 )}
 
-                {/* Action Buttons */}
-                <div className="flex items-center space-x-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleTestConnection}
-                    disabled={!apiKey || isTesting}
-                  >
-                    {isTesting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Testing...
-                      </>
-                    ) : (
-                      'Test Connection'
-                    )}
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={!apiKey || isUpdating}
-                  >
-                    {isUpdating ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Key className="h-4 w-4 mr-2" />
-                        Save API Key
-                      </>
-                    )}
-                  </Button>
-                </div>
+                {/* Action Buttons — only org admins can save / test */}
+                {isOrgAdmin && (
+                  <div className="flex items-center space-x-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTestConnection}
+                      disabled={!apiKey || isTesting}
+                    >
+                      {isTesting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Testing...
+                        </>
+                      ) : (
+                        'Test Connection'
+                      )}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={!apiKey || isUpdating}
+                    >
+                      {isUpdating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Key className="h-4 w-4 mr-2" />
+                          Save API Key for Organization
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

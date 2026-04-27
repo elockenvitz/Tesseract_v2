@@ -48,7 +48,7 @@ export function AISection({
     error,
   } = useAI(context)
 
-  const { effectiveConfig, userConfig, updateConfig } = useAIConfig()
+  const { effectiveConfig, orgConfig, isOrgAdmin, updateConfig } = useAIConfig()
   const suggestions = useAISuggestions(activeContext)
 
   const [input, setInput] = useState('')
@@ -57,13 +57,17 @@ export function AISection({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const modelSelectorRef = useRef<HTMLDivElement>(null)
 
-  // Current model from user config or default
-  const currentProvider = (userConfig?.byok_provider || effectiveConfig.provider || 'anthropic') as AIProvider
-  const currentModel = userConfig?.byok_model || effectiveConfig.model || AI_MODELS[currentProvider]?.[0]?.id
+  // Current model — provider/model are org-scoped now (via effectiveConfig).
+  const currentProvider = (effectiveConfig.provider || 'anthropic') as AIProvider
+  const currentModel = effectiveConfig.model || AI_MODELS[currentProvider]?.[0]?.id
 
   // Get the display name for current model
   const currentModelInfo = AI_MODELS[currentProvider]?.find(m => m.id === currentModel)
   const currentProviderInfo = AI_PROVIDERS.find(p => p.id === currentProvider)
+
+  // Model is editable only by org admins when in BYOK mode (it's the
+  // organization's configuration, not a per-user knob anymore).
+  const canChangeModel = isOrgAdmin && effectiveConfig.mode === 'byok' && !!orgConfig
 
   // Close model selector when clicking outside
   useEffect(() => {
@@ -77,6 +81,7 @@ export function AISection({
   }, [])
 
   const handleModelChange = (model: string) => {
+    if (!canChangeModel) return
     updateConfig({ byok_model: model })
     setShowModelSelector(false)
   }
@@ -344,20 +349,25 @@ export function AISection({
         <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
           <div className="relative" ref={modelSelectorRef}>
             <button
-              onClick={() => setShowModelSelector(!showModelSelector)}
+              onClick={() => canChangeModel && setShowModelSelector(!showModelSelector)}
               className="flex items-center space-x-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-              disabled={configMode === 'platform'}
+              disabled={!canChangeModel}
+              title={
+                !canChangeModel && effectiveConfig.mode === 'byok'
+                  ? 'Model is set by your organization admin'
+                  : undefined
+              }
             >
               <div className={clsx(
                 'w-3 h-3 rounded-sm bg-gradient-to-br',
                 currentProviderInfo?.color || 'from-gray-400 to-gray-600'
               )} />
               <span className="font-medium">{currentModelInfo?.name || currentModel}</span>
-              {configMode !== 'platform' && <ChevronDown className="h-3 w-3" />}
+              {canChangeModel && <ChevronDown className="h-3 w-3" />}
             </button>
 
             {/* Model Selector Dropdown */}
-            {showModelSelector && configMode !== 'platform' && (
+            {showModelSelector && canChangeModel && (
               <div className="absolute bottom-full left-0 mb-2 w-72 max-h-80 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
                 {AI_PROVIDERS.map((provider) => (
                   <div key={provider.id}>
