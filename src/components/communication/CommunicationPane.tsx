@@ -61,7 +61,7 @@ export function CommunicationPane({
   const getViewTitle = () => {
     switch (view) {
       case 'ai':
-        return 'AI Assistant'
+        return 'Co-Analyst'
       case 'direct-messages':
         return 'Direct Messages'
       case 'notifications':
@@ -105,11 +105,17 @@ export function CommunicationPane({
             onToggle={onToggle}
             isFullscreen={isFullscreen}
             onToggleFullscreen={onToggleFullscreen}
-            context={contextType && contextId ? {
+            // Context is now a tag — opening the AI panel from AAPL pre-tags
+            // AAPL on new conversations and auto-loads the most recent
+            // existing AAPL conversation. We pass `label` so the suggestion
+            // strings render with the symbol/name on the very first paint
+            // instead of flashing "asset" → "AAPL" once the label resolver
+            // finishes a beat later.
+            initialTags={contextType && contextId ? [{
               type: contextType as 'asset' | 'theme' | 'portfolio' | 'note',
               id: contextId,
-              title: contextTitle
-            } : undefined}
+              label: contextTitle,
+            }] : []}
             onOpenSettings={onOpenSettings}
           />
         )

@@ -16,7 +16,7 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react'
-import { useAIConfig, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
+import { useAIConfig, AI_PROVIDERS, getDefaultModel, type AIProvider } from '../../hooks/useAIConfig'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
@@ -72,10 +72,14 @@ export function AIConfigurationSection() {
   }
 
   const handleSave = async () => {
+    // Always save a default model on initial save so the UI doesn't show
+    // "Model: —" and the edge function doesn't have to fall back to a
+    // hardcoded default. Existing model is preserved on subsequent saves.
     updateConfig({
       byok_provider: provider,
       byok_api_key: apiKey || undefined,
       byok_enabled: !!apiKey,
+      byok_model: orgConfig?.byok_model || getDefaultModel(provider),
     })
     setApiKey('') // Clear the input after saving
   }

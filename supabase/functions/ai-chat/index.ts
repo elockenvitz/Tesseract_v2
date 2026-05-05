@@ -140,7 +140,19 @@ Deno.serve(async (req) => {
     }
 
     // Parse request (before rate check so purpose can influence model choice).
-    const { message, conversationHistory = [], context, purpose } = await req.json();
+    // Tags is the new shape (array of {type, id}); `context` is the old
+    // single-target shape — accepted for backward compat during migration
+    // and converted to a single-element tags list.
+    const body = await req.json();
+    const message: string = body.message;
+    const conversationHistory: any[] = body.conversationHistory || [];
+    const purpose: string | undefined = body.purpose;
+    const tags: Array<{ type: string; id: string }> = Array.isArray(body.tags)
+      ? body.tags.filter((t: any) => t && t.type && t.id)
+      : (body.context && body.context.type && body.context.id
+          ? [{ type: body.context.type, id: body.context.id }]
+          : []);
+
     if (!message || typeof message !== "string") throw new Error("Message is required");
 
     // ─── Rate-limit gate ───────────────────────────────────────────────
@@ -165,9 +177,30 @@ Deno.serve(async (req) => {
     }
 
     // ─── Context + system prompt ────────────────────────────────────────
+    // Iterate every tag. For Anthropic we collect document blocks across
+    // all tags (each tag may contribute several — thesis sections + price
+    // targets + notes); for other providers we concatenate context
+    // strings into the system prompt.
     let contextPrompt = "";
-    if (context?.type && context?.id) {
-      contextPrompt = await buildContextPrompt(supabase, context, user.id, aiConfig);
+    let documents: SourceDocument[] = [];
+    const isAnthropic = aiConfig.provider === "anthropic";
+
+    for (const tag of tags) {
+      if (isAnthropic) {
+        const docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
+        if (docs.length > 0) {
+          documents.push(...docs);
+        } else {
+          // For tag types without document support (theme/portfolio so
+          // far), fall back to the embedded-string context — still gives
+          // the model something to work with, just no inline citations.
+          const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
+          if (part) contextPrompt += part + "\n";
+        }
+      } else {
+        const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
+        if (part) contextPrompt += part + "\n";
+      }
     }
     const systemPrompt = buildSystemPrompt(contextPrompt);
 
@@ -190,7 +223,12 @@ Deno.serve(async (req) => {
         conversationHistory,
         message,
         limits.maxTokensPerRequest,
-        user.id
+        user.id,
+        documents,
+        // Pass the user-authed supabase client so the model's tool calls
+        // execute under that user's RLS — they can only see what they're
+        // already entitled to. Anthropic only; other providers ignore.
+        supabase,
       );
     } catch (e) {
       // 401/403/billing errors from the provider mean the org's BYOK key
@@ -210,12 +248,22 @@ Deno.serve(async (req) => {
       throw e;
     }
 
-    // Async usage log — never blocks the response.
-    logUsage(supabase, user.id, attribution, { ...aiConfig, model: effectiveModel }, context, purpose, startTime, result.tokens)
+    // Async usage log — never blocks the response. We log the FIRST tag
+    // (if any) as the primary context for backwards-compatible usage
+    // attribution; multi-tag conversations still get one row each.
+    const primaryTag = tags[0] || null;
+    const usageContext = primaryTag ? { type: primaryTag.type, id: primaryTag.id } : null;
+    logUsage(supabase, user.id, attribution, { ...aiConfig, model: effectiveModel }, usageContext, purpose, startTime, result.tokens)
       .catch(console.error);
 
     return new Response(
-      JSON.stringify({ response: result.response, usage: result.usageRaw, model: effectiveModel }),
+      JSON.stringify({
+        response:   result.response,
+        usage:      result.usageRaw,
+        model:      effectiveModel,
+        citations:  result.citations || [],
+        tool_calls: result.tool_calls || [],
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
@@ -283,10 +331,13 @@ async function getEffectiveAIConfig(
       ...preferences
     };
   } else if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.byok_api_key) {
+    // Model resolution: user preference → org default → hardcoded fallback.
+    // Per-user override lets one user pick Opus while another picks Haiku
+    // against the same org BYOK key.
     aiConfig = {
       mode: "byok",
       provider: orgConfig.byok_provider || "anthropic",
-      model: orgConfig.byok_model || "claude-3-5-sonnet-20241022",
+      model: userConfig?.preferred_model || orgConfig.byok_model || "claude-3-5-sonnet-20241022",
       apiKey: orgConfig.byok_api_key,
       isConfigured: true,
       ...preferences
@@ -417,6 +468,13 @@ Guidelines:
 - Reference the user's own notes and thesis when relevant
 - Provide balanced analysis, not just confirmation
 
+Research tools:
+- You have access to tools that look up additional data — assets by ticker, portfolios by name, themes, team notes, asset search.
+- Use them when the user references a company / portfolio / theme you don't already have full context on, or when comparing multiple objects would benefit the answer.
+- Don't call tools for objects you already have rich context on (the user's currently-tagged objects are already provided as documents).
+- Prefer specific lookups (get_asset, get_portfolio) over broad searches when you know the name. Cap yourself to the minimum set of tool calls needed.
+- After calling tools, weave the findings into a single coherent answer rather than dumping raw tool output.
+
 ${contextPrompt ? `\n--- CURRENT CONTEXT ---\n${contextPrompt}\n--- END CONTEXT ---\n` : ""}
 
 Remember: You're helping a professional investor, so be direct, substantive, and analytical.`;
@@ -435,6 +493,114 @@ function truncate(s: string | null | undefined, n: number): string {
   if (!s) return "";
   if (s.length <= n) return s;
   return s.slice(0, n) + "…[truncated]";
+}
+
+// Returns the user's relevant context as a list of source documents — one
+// per logical section (each thesis section, the price targets, each note).
+// Only used by the Anthropic provider; documents become attachable blocks
+// with citations enabled. Other providers continue to receive context as
+// an embedded string in the system prompt (via buildContextPrompt).
+async function buildContextDocuments(
+  supabase: any,
+  context: { type: string; id: string },
+  userId: string,
+  aiConfig: any,
+): Promise<SourceDocument[]> {
+  const docs: SourceDocument[] = [];
+
+  // Currently only `asset` context has structured sub-documents worth
+  // citing. Themes/portfolios fall back to no documents — model still
+  // gets context via buildContextPrompt embedded in system prompt.
+  if (context.type !== "asset") return docs;
+
+  const { data: asset } = await supabase
+    .from("assets").select("symbol, company_name, sector, industry").eq("id", context.id).single();
+
+  const symbol = asset?.symbol || "asset";
+
+  // Asset overview as a one-pager — useful for citing "$AAPL is in tech".
+  if (asset) {
+    const overview =
+      `Asset: ${asset.symbol} - ${asset.company_name || ""}\n` +
+      `Sector: ${asset.sector || "N/A"}\n` +
+      `Industry: ${asset.industry || "N/A"}`;
+    docs.push({ title: `${symbol} overview`, text: overview });
+  }
+
+  if (aiConfig.includeThesis) {
+    const { data: contributions } = await supabase
+      .from("asset_contributions")
+      .select("section, content, supporting_detail")
+      .eq("asset_id", context.id)
+      .eq("is_archived", false)
+      .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"]);
+
+    const labelMap: Record<string, string> = {
+      thesis:           "Thesis",
+      business_model:   "Business model",
+      where_different:  "Where differentiated",
+      key_catalysts:    "Key catalysts",
+      risks_to_thesis:  "Risks to thesis",
+    };
+    const bySection = new Map<string, any>();
+    for (const c of (contributions || [])) {
+      if (!bySection.has(c.section)) bySection.set(c.section, c);
+    }
+    for (const [sec, label] of Object.entries(labelMap)) {
+      const c = bySection.get(sec);
+      if (!c?.content) continue;
+      const text = c.supporting_detail
+        ? `${truncate(c.content, MAX_THESIS_CHARS)}\n\n${truncate(c.supporting_detail, 600)}`
+        : truncate(c.content, MAX_THESIS_CHARS);
+      docs.push({ title: `${symbol} — ${label}`, text });
+    }
+  }
+
+  if (aiConfig.includeOutcomes) {
+    const { data: targets } = await supabase
+      .from("price_targets")
+      .select("type, price, timeframe, reasoning")
+      .eq("asset_id", context.id)
+      .order("type", { ascending: true })
+      .limit(MAX_OUTCOMES);
+
+    if (targets?.length) {
+      const lines = targets.map((t: any) =>
+        `${(t.type || "").toUpperCase()}: $${t.price ?? "—"}` +
+        (t.timeframe ? ` (${t.timeframe})` : "") +
+        (t.reasoning ? ` — ${truncate(t.reasoning, 200)}` : "")
+      ).join("\n");
+      docs.push({ title: `${symbol} — Price targets`, text: lines });
+    }
+  }
+
+  if (aiConfig.includeNotes) {
+    const { data: notes } = await supabase
+      .from("asset_notes")
+      .select("title, content, created_at, created_by, is_shared")
+      .eq("asset_id", context.id)
+      .eq("is_deleted", false)
+      .or(`created_by.eq.${userId},is_shared.eq.true`)
+      .order("created_at", { ascending: false })
+      .limit(MAX_NOTES);
+
+    if (notes?.length) {
+      // One document per note so citations link to a specific note rather
+      // than a giant blob — more useful in the UI footer.
+      for (const n of notes) {
+        const body = n.content || n.title || "";
+        if (!body.trim()) continue;
+        const date = new Date(n.created_at).toLocaleDateString();
+        const owner = n.created_by === userId ? "you" : "teammate";
+        const title = n.title
+          ? `${symbol} note: ${n.title} (${date})`
+          : `${symbol} note (${date}, by ${owner})`;
+        docs.push({ title, text: truncate(body, MAX_NOTE_CHARS * 4) });
+      }
+    }
+  }
+
+  return docs;
 }
 
 async function buildContextPrompt(
@@ -458,60 +624,96 @@ async function buildContextPrompt(
       if (asset.market_cap) prompt += `Market Cap: $${(asset.market_cap / 1e9).toFixed(1)}B\n`;
     }
 
+    // Thesis + supporting research sections live in `asset_contributions`,
+    // keyed by section ('thesis' | 'business_model' | 'risks_to_thesis' |
+    // 'where_different' | 'key_catalysts'). These are org-visible team
+    // research, not per-user — RLS already scopes them to the user's org.
     let thesisBlock = "";
     if (aiConfig.includeThesis) {
-      const { data: thesis } = await supabase
-        .from("asset_theses")
-        .select("*")
+      const { data: contributions } = await supabase
+        .from("asset_contributions")
+        .select("section, content, supporting_detail, created_at")
         .eq("asset_id", context.id)
-        .eq("created_by", userId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
+        .eq("is_archived", false)
+        .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"])
+        .order("section", { ascending: true });
 
-      if (thesis?.content) {
-        thesisBlock = `\nUSER'S THESIS:\n${truncate(thesis.content, MAX_THESIS_CHARS)}\n`;
+      if (contributions?.length) {
+        // Group by section — most recent wins per section. Sections render
+        // in a deliberate order (thesis first, then supporting frames).
+        const bySection = new Map<string, any>();
+        const sectionOrder = ["thesis", "business_model", "where_different", "key_catalysts", "risks_to_thesis"];
+        for (const c of contributions) {
+          if (!bySection.has(c.section)) bySection.set(c.section, c);
+        }
+        const labelMap: Record<string, string> = {
+          thesis: "THESIS",
+          business_model: "BUSINESS MODEL",
+          where_different: "WHERE DIFFERENTIATED",
+          key_catalysts: "KEY CATALYSTS",
+          risks_to_thesis: "RISKS TO THESIS",
+        };
+        const blocks: string[] = [];
+        for (const sec of sectionOrder) {
+          const c = bySection.get(sec);
+          if (!c?.content) continue;
+          let body = truncate(c.content, MAX_THESIS_CHARS);
+          if (c.supporting_detail) {
+            body += `\n  Supporting: ${truncate(c.supporting_detail, 600)}`;
+          }
+          blocks.push(`\n${labelMap[sec]}:\n${body}`);
+        }
+        if (blocks.length) {
+          thesisBlock = `\nTEAM RESEARCH FOR ${asset?.symbol || "ASSET"}:${blocks.join("\n")}\n`;
+        }
       }
     }
 
+    // Outcomes are stored as price targets keyed by type ('bull'/'base'/'bear')
+    // with price, timeframe, and reasoning. The asset_outcomes table referenced
+    // by the prior implementation never existed.
     let outcomesBlock = "";
     if (aiConfig.includeOutcomes) {
-      const { data: outcomes } = await supabase
-        .from("asset_outcomes")
-        .select("*")
+      const { data: targets } = await supabase
+        .from("price_targets")
+        .select("type, price, timeframe, reasoning, created_at")
         .eq("asset_id", context.id)
-        .eq("created_by", userId)
+        .order("type", { ascending: true })
         .limit(MAX_OUTCOMES);
 
-      if (outcomes?.length) {
-        outcomesBlock = `\nUSER'S OUTCOMES:\n`;
-        outcomes.forEach((o: any) => {
-          const emoji = o.outcome_type === "bull" ? "🟢" : o.outcome_type === "bear" ? "🔴" : "⚪";
-          outcomesBlock += `${emoji} ${(o.outcome_type || "base").toUpperCase()}: ${truncate(o.description || o.title, 300)}`;
-          if (o.probability) outcomesBlock += ` (${o.probability}% probability)`;
-          if (o.target_price) outcomesBlock += ` Target: $${o.target_price}`;
-          outcomesBlock += "\n";
+      if (targets?.length) {
+        outcomesBlock = `\nPRICE TARGETS:\n`;
+        const emoji: Record<string, string> = { bull: "🟢", base: "⚪", bear: "🔴" };
+        targets.forEach((t: any) => {
+          outcomesBlock += `${emoji[t.type] || "•"} ${(t.type || "").toUpperCase()}: ` +
+            `$${t.price ?? "—"}` +
+            (t.timeframe ? ` (${t.timeframe})` : "") +
+            (t.reasoning ? ` — ${truncate(t.reasoning, 200)}` : "") +
+            "\n";
         });
       }
     }
 
+    // Notes live in `asset_notes` (not `notes`). Pull the user's own + any
+    // shared notes on this asset, most recent first.
     let notesBlock = "";
     if (aiConfig.includeNotes) {
       const { data: notes } = await supabase
-        .from("notes")
-        .select("*")
-        .eq("context_type", "asset")
-        .eq("context_id", context.id)
-        .eq("user_id", userId)
+        .from("asset_notes")
+        .select("title, content, created_at, created_by, is_shared")
+        .eq("asset_id", context.id)
+        .eq("is_deleted", false)
+        .or(`created_by.eq.${userId},is_shared.eq.true`)
         .order("created_at", { ascending: false })
         .limit(MAX_NOTES);
 
       if (notes?.length) {
-        notesBlock = `\nUSER'S RECENT NOTES:\n`;
+        notesBlock = `\nRECENT NOTES:\n`;
         notes.forEach((n: any) => {
           const date = new Date(n.created_at).toLocaleDateString();
-          const content = n.content || n.title || "";
-          notesBlock += `• ${date}: ${truncate(content, MAX_NOTE_CHARS)}\n`;
+          const owner = n.created_by === userId ? "you" : "teammate";
+          const body = n.content || n.title || "";
+          notesBlock += `• ${date} (${owner}): ${truncate(body, MAX_NOTE_CHARS)}\n`;
         });
       }
     }
@@ -594,66 +796,442 @@ async function buildContextPrompt(
 
 // ─── Provider dispatch + token capture ──────────────────────────────────
 
-interface CallResult {
-  response: string;
-  tokens: { input: number; output: number; cache_write: number; cache_read: number };
-  usageRaw: any;
+interface MessageCitation {
+  document_title: string;
+  cited_text:     string;
 }
 
-async function callAIProvider(
-  provider: AIProvider,
-  apiKey: string,
-  model: string,
-  systemPrompt: string,
-  history: Array<{ role: string; content: string }>,
-  message: string,
-  maxTokens: number,
-  userId: string
-): Promise<CallResult> {
+interface ToolCall {
+  name:   string;
+  input:  Record<string, unknown>;
+  result_summary?: string;  // short human-readable preview
+}
 
-  if (provider === "anthropic") {
-    const messages = [
-      ...history.map(m => ({ role: m.role, content: m.content })),
-      { role: "user", content: message }
-    ];
+interface CallResult {
+  response:  string;
+  tokens:    { input: number; output: number; cache_write: number; cache_read: number };
+  usageRaw:  any;
+  citations: MessageCitation[];
+  tool_calls?: ToolCall[];
+}
+
+interface SourceDocument {
+  title: string;
+  text:  string;
+}
+
+// ─── Research tools (Anthropic tool use) ─────────────────────────────────
+// The model can call these to look up data beyond the page-context the user
+// is on. Kept small and well-described so the model can decide when to use
+// them. Each returns concise JSON the model can keep in its context window.
+
+const RESEARCH_TOOLS = [
+  {
+    name: "get_asset",
+    description:
+      "Look up an asset (stock/security) by its ticker symbol. Returns the asset's overview, " +
+      "thesis sections (thesis, business model, key catalysts, risks, where differentiated), " +
+      "price targets (bull/base/bear), and a few recent notes. Use this when the user asks about " +
+      "a specific company you don't already have context on.",
+    input_schema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Ticker symbol like AAPL or MSFT (case-insensitive)." },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "search_assets",
+    description:
+      "Find assets matching a query (symbol prefix, company name, or sector). Returns up to 10 " +
+      "matches with symbol/company/sector/industry. Use this when the user references a company " +
+      "by name without giving the ticker, or asks for assets in a sector.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search text — symbol, company name, or sector." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_portfolio",
+    description:
+      "Look up a portfolio by name or id. Returns top holdings (up to 15) with weights and " +
+      "a sector breakdown. Use this when the user asks about portfolio composition or wants " +
+      "to compare an asset to a portfolio.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name_or_id: { type: "string", description: "Portfolio name (case-insensitive) or its UUID." },
+      },
+      required: ["name_or_id"],
+    },
+  },
+  {
+    name: "get_theme",
+    description:
+      "Look up an investment theme by name or id. Returns the theme's description and constituent " +
+      "assets. Use this when the user references a theme like 'AI infrastructure' or 'energy transition'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name_or_id: { type: "string", description: "Theme name or its UUID." },
+      },
+      required: ["name_or_id"],
+    },
+  },
+  {
+    name: "search_team_notes",
+    description:
+      "Search the team's research notes for content matching a query. Optionally scope to a " +
+      "specific asset by symbol. Returns up to 10 note snippets with date and author. Use when " +
+      "the user asks 'what have we written about X' or wants to find prior research.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Free-text search across note title and body." },
+        asset_symbol: { type: "string", description: "Optional ticker to narrow the search." },
+      },
+      required: ["query"],
+    },
+  },
+] as const;
+
+async function executeResearchTool(
+  supabase: any,
+  userId: string,
+  name: string,
+  input: Record<string, any>,
+): Promise<string> {
+  try {
+    if (name === "get_asset") {
+      const sym = String(input.symbol || "").trim().toUpperCase();
+      if (!sym) return JSON.stringify({ error: "symbol is required" });
+
+      const { data: asset } = await supabase
+        .from("assets").select("id, symbol, company_name, sector, industry, current_price, market_cap")
+        .ilike("symbol", sym).maybeSingle();
+      if (!asset) return JSON.stringify({ error: `No asset found for ${sym}` });
+
+      const [contribs, targets, notes] = await Promise.all([
+        supabase.from("asset_contributions").select("section, content")
+          .eq("asset_id", asset.id).eq("is_archived", false)
+          .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"]),
+        supabase.from("price_targets").select("type, price, timeframe, reasoning")
+          .eq("asset_id", asset.id).limit(5),
+        supabase.from("asset_notes").select("title, content, created_at")
+          .eq("asset_id", asset.id).eq("is_deleted", false)
+          .or(`created_by.eq.${userId},is_shared.eq.true`)
+          .order("created_at", { ascending: false }).limit(5),
+      ]);
+
+      const sections: Record<string, string> = {};
+      for (const c of (contribs.data || [])) {
+        if (!sections[c.section]) sections[c.section] = truncate(c.content, 1500);
+      }
+      return JSON.stringify({
+        symbol: asset.symbol,
+        company: asset.company_name,
+        sector: asset.sector,
+        industry: asset.industry,
+        current_price: asset.current_price,
+        sections,
+        price_targets: (targets.data || []).map((t: any) => ({
+          type: t.type, price: t.price, timeframe: t.timeframe,
+          reasoning: truncate(t.reasoning, 200),
+        })),
+        recent_notes: (notes.data || []).map((n: any) => ({
+          date: n.created_at?.slice(0, 10), title: n.title,
+          excerpt: truncate(n.content, 200),
+        })),
+      });
+    }
+
+    if (name === "search_assets") {
+      const q = String(input.query || "").trim();
+      if (!q) return JSON.stringify({ error: "query is required" });
+      const escaped = q.replace(/%/g, "\\%").replace(/_/g, "\\_");
+      const { data } = await supabase
+        .from("assets").select("symbol, company_name, sector, industry")
+        .or(`symbol.ilike.%${escaped}%,company_name.ilike.%${escaped}%,sector.ilike.%${escaped}%`)
+        .limit(10);
+      return JSON.stringify({
+        results: (data || []).map((a: any) => ({
+          symbol: a.symbol, company: a.company_name,
+          sector: a.sector, industry: a.industry,
+        })),
+      });
+    }
+
+    if (name === "get_portfolio") {
+      const ref = String(input.name_or_id || "").trim();
+      if (!ref) return JSON.stringify({ error: "name_or_id is required" });
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+      const q = supabase.from("portfolios").select("id, name, description");
+      const { data: pf } = isUuid
+        ? await q.eq("id", ref).maybeSingle()
+        : await q.ilike("name", ref).limit(1).maybeSingle();
+      if (!pf) return JSON.stringify({ error: `No portfolio found for "${ref}"` });
+
+      const { data: holdings } = await supabase
+        .from("portfolio_holdings")
+        .select("weight, asset:assets(symbol, company_name, sector)")
+        .eq("portfolio_id", pf.id)
+        .order("weight", { ascending: false }).limit(15);
+
+      const sectorMap: Record<string, number> = {};
+      for (const h of (holdings || []) as any[]) {
+        const sec = h.asset?.sector || "Unknown";
+        sectorMap[sec] = (sectorMap[sec] || 0) + (Number(h.weight) || 0);
+      }
+      return JSON.stringify({
+        name: pf.name,
+        description: pf.description,
+        top_holdings: (holdings || []).map((h: any) => ({
+          symbol: h.asset?.symbol, company: h.asset?.company_name,
+          sector: h.asset?.sector, weight_pct: h.weight,
+        })),
+        sector_breakdown: Object.entries(sectorMap)
+          .sort((a, b) => b[1] - a[1])
+          .map(([sec, w]) => ({ sector: sec, weight_pct: Number(w.toFixed(2)) })),
+      });
+    }
+
+    if (name === "get_theme") {
+      const ref = String(input.name_or_id || "").trim();
+      if (!ref) return JSON.stringify({ error: "name_or_id is required" });
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+      const q = supabase.from("themes").select("id, name, description");
+      const { data: th } = isUuid
+        ? await q.eq("id", ref).maybeSingle()
+        : await q.ilike("name", ref).limit(1).maybeSingle();
+      if (!th) return JSON.stringify({ error: `No theme found for "${ref}"` });
+
+      const { data: constituents } = await supabase
+        .from("asset_themes").select("asset:assets(symbol, company_name, sector)")
+        .eq("theme_id", th.id).limit(25);
+
+      return JSON.stringify({
+        name: th.name,
+        description: th.description,
+        constituents: (constituents || []).map((c: any) => ({
+          symbol: c.asset?.symbol, company: c.asset?.company_name, sector: c.asset?.sector,
+        })),
+      });
+    }
+
+    if (name === "search_team_notes") {
+      const q = String(input.query || "").trim();
+      const sym = String(input.asset_symbol || "").trim().toUpperCase();
+      if (!q) return JSON.stringify({ error: "query is required" });
+      const escaped = q.replace(/%/g, "\\%").replace(/_/g, "\\_");
+
+      let assetId: string | null = null;
+      if (sym) {
+        const { data: a } = await supabase.from("assets").select("id").ilike("symbol", sym).maybeSingle();
+        assetId = a?.id ?? null;
+      }
+      let qb = supabase.from("asset_notes")
+        .select("title, content, created_at, asset:assets(symbol)")
+        .eq("is_deleted", false)
+        .or(`created_by.eq.${userId},is_shared.eq.true`)
+        .or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`)
+        .order("created_at", { ascending: false }).limit(10);
+      if (assetId) qb = qb.eq("asset_id", assetId);
+      const { data } = await qb;
+
+      return JSON.stringify({
+        results: (data || []).map((n: any) => ({
+          symbol: n.asset?.symbol, date: n.created_at?.slice(0, 10),
+          title: n.title, excerpt: truncate(n.content, 200),
+        })),
+      });
+    }
+
+    return JSON.stringify({ error: `Unknown tool: ${name}` });
+  } catch (e) {
+    return JSON.stringify({ error: (e as Error).message || "Tool execution failed" });
+  }
+}
+
+// ─── Anthropic call w/ tool-use loop ────────────────────────────────────
+// The model can call our research tools to fetch additional data while
+// answering. We loop: send → if response has tool_use → execute → send
+// back tool_results → repeat. Cap at MAX_TOOL_ITERATIONS to bound cost
+// and latency.
+//
+// Supabase Edge Functions have a ~25s execution budget. With ~3-5s per
+// Anthropic round-trip + tool exec time, 3 iterations is the safe cap.
+// Going higher (we tried 5) reliably timed out the function and the
+// user saw a "thinking" spinner that never resolved.
+const MAX_TOOL_ITERATIONS = 3;
+
+async function callAnthropicWithLoop(opts: {
+  apiKey: string; model: string; systemPrompt: string;
+  history: Array<{ role: string; content: string }>;
+  message: string; maxTokens: number; userId: string;
+  documents: SourceDocument[]; supabase?: any;
+}): Promise<CallResult> {
+  const { apiKey, model, systemPrompt, history, message, maxTokens, userId, documents, supabase } = opts;
+
+  // Build initial user message: documents (with citations enabled) + the
+  // actual question. If no documents, just a plain string.
+  const initialUserContent: any = documents.length > 0
+    ? [
+        ...documents.map((d, i) => ({
+          type: "document",
+          source: { type: "text", media_type: "text/plain", data: d.text },
+          title: d.title,
+          ...(i === 0 ? { cache_control: { type: "ephemeral" } } : {}),
+          citations: { enabled: true },
+        })),
+        { type: "text", text: message },
+      ]
+    : message;
+
+  const messages: any[] = [
+    ...history.map(m => ({ role: m.role, content: m.content })),
+    { role: "user", content: initialUserContent },
+  ];
+
+  let combinedText = "";
+  const citations: MessageCitation[] = [];
+  const citationSeen = new Set<string>();
+  const tool_calls: ToolCall[] = [];
+  let totals = { input: 0, output: 0, cache_write: 0, cache_read: 0 };
+  let lastUsageRaw: any = {};
+
+  for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+    const body: any = {
+      model: model || "claude-3-5-sonnet-20241022",
+      max_tokens: maxTokens,
+      metadata: { user_id: userId },
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      messages,
+    };
+    // Expose tools only when we have a supabase client to execute them.
+    if (supabase) body.tools = RESEARCH_TOOLS;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
+        "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model: model || "claude-3-5-sonnet-20241022",
-        max_tokens: maxTokens,
-        // Opaque per-user identifier so Anthropic abuse detection can
-        // attribute requests without us having to dig through our logs.
-        metadata: { user_id: userId },
-        system: [
-          { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }
-        ],
-        messages
-      })
+      body: JSON.stringify(body),
     });
-
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || "Anthropic API error");
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error?.error?.message || `Anthropic API error (HTTP ${response.status})`);
     }
 
     const data = await response.json();
     const u = data.usage || {};
-    return {
-      response: data.content[0]?.text || "",
-      tokens: {
-        input: u.input_tokens ?? 0,
-        output: u.output_tokens ?? 0,
-        cache_write: u.cache_creation_input_tokens ?? 0,
-        cache_read: u.cache_read_input_tokens ?? 0,
-      },
-      usageRaw: u,
-    };
+    lastUsageRaw = u;
+    totals.input       += u.input_tokens ?? 0;
+    totals.output      += u.output_tokens ?? 0;
+    totals.cache_write += u.cache_creation_input_tokens ?? 0;
+    totals.cache_read  += u.cache_read_input_tokens ?? 0;
+
+    // Walk the content blocks once: collect text + citations + tool_use.
+    const toolUseBlocks: any[] = [];
+    for (const block of (data.content || [])) {
+      if (block.type === "text") {
+        combinedText += block.text || "";
+        if (Array.isArray(block.citations)) {
+          for (const c of block.citations) {
+            const docTitle = documents[c.document_index]?.title || "Source";
+            const citedText = String(c.cited_text || "").trim();
+            if (!citedText) continue;
+            const key = docTitle + "::" + citedText.slice(0, 200);
+            if (citationSeen.has(key)) continue;
+            citationSeen.add(key);
+            citations.push({ document_title: docTitle, cited_text: citedText });
+          }
+        }
+      } else if (block.type === "tool_use") {
+        toolUseBlocks.push(block);
+      }
+    }
+
+    // No tool calls and not asking to continue — we're done.
+    if (data.stop_reason !== "tool_use" || toolUseBlocks.length === 0) {
+      break;
+    }
+
+    // If we're about to enter the LAST iteration, the model can call tools
+    // again but won't get to use the results. Skip the redundant round-trip
+    // and break with what we have plus a hint to the user.
+    if (iter === MAX_TOOL_ITERATIONS - 1) {
+      if (!combinedText) {
+        combinedText = "I started looking up additional context but ran out of time. Try a more specific question, or open the asset/portfolio directly.";
+      }
+      break;
+    }
+
+    // Execute each tool call, then push the assistant message + a user
+    // message with all tool_results back into the conversation.
+    messages.push({ role: "assistant", content: data.content });
+
+    const toolResults: any[] = [];
+    for (const tu of toolUseBlocks) {
+      const result = supabase
+        ? await executeResearchTool(supabase, userId, tu.name, tu.input || {})
+        : JSON.stringify({ error: "Tools not available in this context." });
+      // Track for client display
+      tool_calls.push({
+        name: tu.name,
+        input: tu.input || {},
+        result_summary: truncate(result, 160),
+      });
+      toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
+    }
+    messages.push({ role: "user", content: toolResults });
+    // Loop back — model gets the tool results and can answer or call more.
+  }
+
+  // Defensive: if for any reason we exited with no text (model returned
+  // only tool_use blocks every iteration, etc.), give the user something
+  // back instead of an empty bubble.
+  if (!combinedText) {
+    combinedText = "I wasn't able to put together a response. Try rephrasing the question.";
+  }
+
+  return {
+    response: combinedText,
+    tokens: totals,
+    usageRaw: lastUsageRaw,
+    citations,
+    tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
+  };
+}
+
+async function callAIProvider(
+  provider:   AIProvider,
+  apiKey:     string,
+  model:      string,
+  systemPrompt: string,
+  history:    Array<{ role: string; content: string }>,
+  message:    string,
+  maxTokens:  number,
+  userId:     string,
+  // Optional source documents — when provided AND provider is Anthropic,
+  // they're attached to the user message with citations enabled. Other
+  // providers ignore them (their context is in the system prompt instead).
+  documents:  SourceDocument[] = [],
+  // Supabase client for executing tools (Anthropic only). Optional — if
+  // omitted, tools are not exposed to the model.
+  supabase?: any,
+): Promise<CallResult> {
+
+  if (provider === "anthropic") {
+    return await callAnthropicWithLoop({
+      apiKey, model, systemPrompt, history, message, maxTokens, userId,
+      documents, supabase,
+    });
   }
 
   if (provider === "openai") {
@@ -694,6 +1272,7 @@ async function callAIProvider(
         cache_read: u.prompt_tokens_details?.cached_tokens ?? 0,
       },
       usageRaw: u,
+      citations: [],
     };
   }
 
@@ -736,6 +1315,7 @@ async function callAIProvider(
         cache_read: u.cachedContentTokenCount ?? 0,
       },
       usageRaw: u,
+      citations: [],
     };
   }
 
@@ -775,6 +1355,7 @@ async function callAIProvider(
         cache_read: 0,
       },
       usageRaw: u,
+      citations: [],
     };
   }
 

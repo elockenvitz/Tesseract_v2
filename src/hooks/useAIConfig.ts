@@ -23,8 +23,9 @@ export interface PlatformAIConfig {
   monthly_request_limit: number
 }
 
-// Per-user AI config — context preferences and personal limit overrides.
-// BYOK fields moved to OrgAIConfig (org-scoped, admin-only).
+// Per-user AI config — context preferences, personal limit overrides, and
+// per-user model preference (overrides org default at request time).
+// BYOK key/provider fields moved to OrgAIConfig (org-scoped, admin-only).
 export interface UserAIConfig {
   id: string
   user_id: string
@@ -33,6 +34,7 @@ export interface UserAIConfig {
   include_notes: boolean
   include_discussions: boolean
   include_price_history: boolean
+  preferred_model: string | null
   last_used_at: string | null
 }
 
@@ -70,32 +72,46 @@ export interface AIConfigUpdate {
   byok_enabled?: boolean
 }
 
-// Available models by provider
+// Available models by provider. Kept in sync with the edge function's
+// PRICING table (supabase/functions/ai-chat/index.ts) — adding a model
+// here without a pricing entry there will cause cost estimates to fall
+// back to the provider's default rates.
 export const AI_MODELS: Record<AIProvider, Array<{ id: string; name: string; description: string; recommended?: boolean }>> = {
   anthropic: [
-    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Latest and most capable', recommended: true },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Great balance of speed and capability' },
-    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: 'Fast and cost-effective' },
-    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Previous most capable model' },
+    { id: 'claude-sonnet-4-6',          name: 'Claude Sonnet 4.6',  description: 'Best balance of speed and capability', recommended: true },
+    { id: 'claude-opus-4-7',            name: 'Claude Opus 4.7',    description: 'Most capable model — premium pricing' },
+    { id: 'claude-haiku-4-5-20251001',  name: 'Claude Haiku 4.5',   description: 'Fast and cost-effective' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet',  description: 'Legacy — previous generation' },
+    { id: 'claude-3-5-haiku-20241022',  name: 'Claude 3.5 Haiku',   description: 'Legacy — previous generation' },
   ],
   openai: [
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'Latest multimodal model', recommended: true },
-    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Fast GPT-4 with vision' },
-    { id: 'gpt-4', name: 'GPT-4', description: 'Original GPT-4 model' },
-    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast and cost-effective' },
-    { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning model' },
-    { id: 'o1-mini', name: 'o1 Mini', description: 'Faster reasoning model' },
+    { id: 'gpt-4o',         name: 'GPT-4o',      description: 'Multimodal, fast', recommended: true },
+    { id: 'gpt-4o-mini',    name: 'GPT-4o mini', description: 'Cheap and fast' },
+    { id: 'gpt-4-turbo',    name: 'GPT-4 Turbo', description: 'High-quality, slower' },
   ],
   google: [
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Most capable Gemini', recommended: true },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and efficient' },
-    { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', description: 'Latest experimental' },
+    { id: 'gemini-1.5-pro',   name: 'Gemini 1.5 Pro',   description: 'Most capable Gemini', recommended: true },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and cheap' },
   ],
   perplexity: [
-    { id: 'llama-3.1-sonar-large-128k-online', name: 'Sonar Large Online', description: 'Best for research with search', recommended: true },
-    { id: 'llama-3.1-sonar-small-128k-online', name: 'Sonar Small Online', description: 'Faster with search' },
-    { id: 'llama-3.1-sonar-huge-128k-online', name: 'Sonar Huge Online', description: 'Most capable with search' },
+    { id: 'llama-3.1-sonar-large-128k-online', name: 'Sonar Large Online', description: 'Best for live web research', recommended: true },
+    { id: 'llama-3.1-sonar-small-128k-online', name: 'Sonar Small Online', description: 'Faster, lower cost' },
   ],
+}
+
+// Default model for a provider — first `recommended` entry, else first model.
+// Used when saving BYOK config so byok_model is never NULL on initial save.
+export function getDefaultModel(provider: AIProvider): string {
+  const list = AI_MODELS[provider] || []
+  return (list.find(m => m.recommended) || list[0])?.id || ''
+}
+
+// Strip non-ASCII characters (smart quotes, zero-width spaces, BOMs, etc.)
+// and trim whitespace. Returns the cleaned key — the caller compares to the
+// original to detect that something was changed and surface a clear error.
+function sanitizeApiKey(key: string): string {
+  // eslint-disable-next-line no-control-regex
+  return key.trim().replace(/[^\x20-\x7E]/g, '')
 }
 
 export function useAIConfig() {
@@ -187,12 +203,13 @@ export function useAIConfig() {
       }
     }
 
-    // BYOK allowed and configured at the org level
+    // BYOK allowed and configured at the org level. Model resolution:
+    // user's preferred_model overrides the org default if set.
     if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.is_configured) {
       return {
         mode: 'byok' as const,
         provider: orgConfig.byok_provider,
-        model: orgConfig.byok_model,
+        model: userConfig?.preferred_model || orgConfig.byok_model,
         isConfigured: true,
         isPlatformEnabled: false,
         allowByok: true,
@@ -230,6 +247,20 @@ export function useAIConfig() {
     mutationFn: async (updates: AIConfigUpdate) => {
       if (!user?.id) throw new Error('Not authenticated')
 
+      // Sanity-check the api_key on save too — catches the case where the
+      // user skipped Test Connection and went straight to Save with a
+      // non-ASCII paste.
+      if (updates.byok_api_key) {
+        const cleaned = sanitizeApiKey(updates.byok_api_key)
+        if (cleaned !== updates.byok_api_key.trim()) {
+          throw new Error(
+            'Your API key contains invisible or non-ASCII characters. ' +
+            'Re-copy it directly from the provider\'s console.'
+          )
+        }
+        updates = { ...updates, byok_api_key: cleaned }
+      }
+
       // Resolve the current org. The RPC returns NULL if there's no
       // current org, in which case there's no scope to write into.
       const { data: orgIdData, error: orgIdErr } = await supabase.rpc('current_org_id')
@@ -259,26 +290,44 @@ export function useAIConfig() {
 
   // Test API key
   const testApiKeyMutation = useMutation({
-    mutationFn: async ({ provider, apiKey }: { provider: AIProvider; apiKey: string }) => {
+    mutationFn: async ({ provider, apiKey: rawApiKey }: { provider: AIProvider; apiKey: string }) => {
+      // Sanitize the key — copy/paste from docs or password managers often
+      // smuggles in smart quotes, zero-width spaces, BOMs, or em-dashes.
+      // HTTP headers must be Latin-1, so any non-ASCII char makes fetch
+      // throw "String contains non ISO-8859-1 code point" before sending.
+      const apiKey = sanitizeApiKey(rawApiKey)
+      if (apiKey !== rawApiKey.trim()) {
+        throw new Error(
+          'Your API key contains invisible or non-ASCII characters. ' +
+          'Re-copy it directly from the provider\'s console (avoid pasting through chat/docs).'
+        )
+      }
+      if (!apiKey) throw new Error('API key is empty')
+
       // Simple test call to verify the key works
       if (provider === 'anthropic') {
+        // Anthropic blocks browser-origin calls by default ("failed to fetch"
+        // CORS error). The dangerous-direct-browser-access header opts in —
+        // safe here because the key being tested is the user's own (BYOK
+        // entered in this session), not a developer key being exposed.
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
           },
           body: JSON.stringify({
-            model: 'claude-3-haiku-20240307',
+            model: 'claude-haiku-4-5-20251001',
             max_tokens: 10,
             messages: [{ role: 'user', content: 'Hi' }],
           }),
         })
 
         if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error?.message || 'Invalid API key')
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.error?.message || `Invalid API key (HTTP ${response.status})`)
         }
 
         return { success: true }
@@ -353,6 +402,26 @@ export function useAIConfig() {
     },
   })
 
+  // Update per-user AI preferences (preferred_model, include_* flags).
+  // Writes to user_ai_config — RLS scoped to the user themselves. No
+  // admin gating since this is the user's own preference.
+  const updateUserPrefsMutation = useMutation({
+    mutationFn: async (updates: { preferred_model?: string | null; include_thesis?: boolean; include_outcomes?: boolean; include_notes?: boolean; include_discussions?: boolean }) => {
+      if (!user?.id) throw new Error('Not authenticated')
+
+      const { data, error } = await supabase
+        .from('user_ai_config')
+        .upsert({ user_id: user.id, ...updates }, { onConflict: 'user_id' })
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-ai-config'] })
+    },
+  })
+
   // Clear org API key (admins only — RLS enforces).
   const clearApiKeyMutation = useMutation({
     mutationFn: async () => {
@@ -403,6 +472,10 @@ export function useAIConfig() {
 
     clearApiKey: clearApiKeyMutation.mutate,
     isClearing: clearApiKeyMutation.isPending,
+
+    updateUserPrefs: updateUserPrefsMutation.mutate,
+    updateUserPrefsAsync: updateUserPrefsMutation.mutateAsync,
+    isUpdatingPrefs: updateUserPrefsMutation.isPending,
 
     // Helpers
     getModelsForProvider: (provider: AIProvider) => AI_MODELS[provider] || [],

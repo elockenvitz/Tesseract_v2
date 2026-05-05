@@ -12,7 +12,6 @@ import {
   FileText, Lightbulb, Star,
   BookOpen, Sparkles, PenLine, Tag, List,
 } from 'lucide-react'
-import { SetupWizard } from '../onboarding/SetupWizard'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -75,38 +74,31 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     return () => window.removeEventListener('pilot-tutorial:asset-explored', handler)
   }, [user?.id, assetExploredKey])
 
-  // "Customize your workspace" step — done when the user finishes
-  // the SetupWizard end-to-end. Per-(user, org) so each workspace
-  // tracks independently; the underlying user_onboarding_status row
-  // is per-user globally and reusing it would pre-tick this step on
-  // every new workspace whenever the user had completed the wizard
-  // anywhere before.
-  const customizeKey = `pilot-tutorial-customize-completed-${user?.id || 'anon'}-${currentOrgId || 'no-org'}`
-  const [hasCustomized, setHasCustomized] = useState(() => {
+  // "View idea feed" step — done when the user opens the Ideas tab.
+  // IdeaGeneratorPage writes the localStorage flag and fires the event
+  // on mount. Per-(user, org) so opening Ideas in one workspace doesn't
+  // pre-tick the step in another workspace the same user joins later.
+  const ideaFeedViewedKey = `pilot-tutorial-idea-feed-viewed-${user?.id || 'anon'}-${currentOrgId || 'no-org'}`
+  const [hasViewedIdeaFeed, setHasViewedIdeaFeed] = useState(() => {
     if (!user?.id) return false
-    try { return localStorage.getItem(customizeKey) === '1' } catch { return false }
+    try { return localStorage.getItem(ideaFeedViewedKey) === '1' } catch { return false }
   })
   useEffect(() => {
     if (!user?.id) return
     try {
-      if (localStorage.getItem(customizeKey) === '1') {
-        setHasCustomized(true)
+      if (localStorage.getItem(ideaFeedViewedKey) === '1') {
+        setHasViewedIdeaFeed(true)
       } else {
-        setHasCustomized(false)
+        setHasViewedIdeaFeed(false)
       }
     } catch { /* ignore */ }
     const handler = () => {
-      try { localStorage.setItem(customizeKey, '1') } catch { /* ignore */ }
-      setHasCustomized(true)
+      try { localStorage.setItem(ideaFeedViewedKey, '1') } catch { /* ignore */ }
+      setHasViewedIdeaFeed(true)
     }
-    window.addEventListener('setup-wizard:completed', handler)
-    return () => window.removeEventListener('setup-wizard:completed', handler)
-  }, [user?.id, customizeKey])
-
-  // Modal-open state for the inline customization wizard. Step 1
-  // ("Customize your workspace") opens this; the user can also reach
-  // the wizard from the user menu permanently.
-  const [showCustomizeWizard, setShowCustomizeWizard] = useState(false)
+    window.addEventListener('pilot-tutorial:idea-feed-viewed', handler)
+    return () => window.removeEventListener('pilot-tutorial:idea-feed-viewed', handler)
+  }, [user?.id, ideaFeedViewedKey])
 
   // Track completion of tutorial steps — STRICTLY org-scoped.
   // The Get Started checklist is per-org: a graduated pilot landing
@@ -130,14 +122,6 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         .eq('id', currentOrgId)
         .maybeSingle()
       const orgCreatedAt = (orgRow?.created_at as string | undefined) ?? new Date(0).toISOString()
-
-      // Org's portfolio ids — used to scope asset_lists which has
-      // portfolio_id (not organization_id directly).
-      const { data: portfolioRows } = await supabase
-        .from('portfolios')
-        .select('id')
-        .eq('organization_id', currentOrgId)
-      const orgPortfolioIds = (portfolioRows || []).map((p: any) => p.id as string)
 
       const [
         assetNotesRes,
@@ -199,18 +183,18 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
           .select('id', { count: 'exact', head: true })
           .eq('created_by', user.id)
           .gte('created_at', orgCreatedAt),
-        // Has the user built an asset list in this org? Lists are
-        // scoped via portfolio_id → portfolios.organization_id. The
-        // portfolio_id IN (...) filter handles that. Excludes the
-        // two system-seeded default lists ("Investment Ideas" /
-        // "Work in Process") that every user gets on signup.
-        orgPortfolioIds.length > 0
-          ? supabase.from('asset_lists')
-              .select('id', { count: 'exact', head: true })
-              .eq('created_by', user.id)
-              .eq('is_default', false)
-              .in('portfolio_id', orgPortfolioIds)
-          : Promise.resolve({ count: 0, error: null, data: null } as any),
+        // Has the user built an asset list in this org? asset_lists has
+        // no organization_id, and portfolio_id is nullable (most lists are
+        // user-personal with no portfolio attached), so portfolio scoping
+        // would miss them. Floor by org.created_at like the other
+        // org-less tables. Excludes the two system-seeded default lists
+        // ("Investment Ideas" / "Work in Process") that every user gets
+        // on signup.
+        supabase.from('asset_lists')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .eq('is_default', false)
+          .gte('created_at', orgCreatedAt),
       ])
 
       return {
@@ -251,7 +235,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   // after would change the hook count between loading vs loaded
   // renders and trip "Rendered fewer hooks than expected".
   const allDoneForAutoDismiss = !!progress
-    && hasCustomized
+    && hasViewedIdeaFeed
     && !!progress.hasContribution
     && !!progress.hasRating
     && !!progress.hasNote
@@ -285,19 +269,18 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   }
 
   const steps: TutorialStep[] = [
-    // Personalize first — this scopes the rest of the platform
-    // (focus, coverage, integrations) to the way the user actually
-    // works, so the Get Started flow that follows lands on a
-    // workspace already shaped to them.
+    // Open the idea feed first — it's the team's running stream of
+    // thoughts/notes/trade ideas. Seeing what's already in motion
+    // grounds the rest of the Get Started flow.
     {
-      id: 'customize-workspace',
-      label: 'Customize your workspace',
-      description: 'Confirm your profile, focus, and coverage. About 5 min.',
-      hint: 'Opens a 4-step wizard. Skip any section you don\'t care about.',
-      icon: Sparkles,
-      done: hasCustomized,
-      action: () => setShowCustomizeWizard(true),
-      category: 'research',
+      id: 'view-idea-feed',
+      label: 'View idea feed',
+      description: 'Browse the team\'s thoughts, notes, and trade ideas in one feed.',
+      hint: 'Opens the Ideas tab.',
+      icon: Lightbulb,
+      done: hasViewedIdeaFeed,
+      action: () => onNavigate({ type: 'idea-generator', id: 'idea-generator', title: 'Ideas', data: {} }),
+      category: 'discover',
     },
     // Research workflow
     {
@@ -405,7 +388,6 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   const allDone = completedCount === steps.length
 
   return (
-    <>
     <div className="relative bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/20 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
       {/* Header — always visible. Title + one-line "what this is" so the
           section's purpose is clear even when collapsed. */}
@@ -506,23 +488,5 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         </div>
       )}
     </div>
-
-    {/* Customization wizard modal — opened from step 1
-        ("Customize your workspace"). Uses the
-        'workspace_customization' framing so copy reads as
-        personalization, not initial setup. */}
-    {showCustomizeWizard && (
-      <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
-        <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
-          <SetupWizard
-            mode="workspace_customization"
-            onComplete={() => setShowCustomizeWizard(false)}
-            onSkip={() => setShowCustomizeWizard(false)}
-            isModal
-          />
-        </div>
-      </div>
-    )}
-    </>
   )
 }

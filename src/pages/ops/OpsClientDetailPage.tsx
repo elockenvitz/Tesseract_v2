@@ -12,6 +12,7 @@ import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { useToast } from '../../components/common/Toast'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 
 type Tab = 'members' | 'portfolios' | 'holdings' | 'engagement' | 'onboarding' | 'pilot'
 
@@ -25,28 +26,46 @@ export function OpsClientDetailPage() {
   const [morphTargetId, setMorphTargetId] = useState<string | null>(null)
   const [morphReason, setMorphReason] = useState('')
 
-  // Member access mutations
+  // Member access mutations.
+  // We don't delete the membership row — that would cascade and lose audit
+  // links to the user's content (notes, theses, conversations, comments).
+  // Instead we suspend access by flipping status → 'inactive' and stamping
+  // suspended_at. The DB trigger `enforce_org_membership_status_transition`
+  // only allows 'active' → 'inactive' (not the bogus 'removed' the prior
+  // code used), and `notify_org_membership_changed` will tell the user.
   const removeMemberM = useMutation({
     mutationFn: async (userId: string) => {
       const { error } = await supabase
         .from('organization_memberships')
-        .update({ status: 'removed' })
+        .update({
+          status:            'inactive',
+          suspended_at:      new Date().toISOString(),
+          suspension_reason: 'Access removed by ops admin',
+        })
         .eq('user_id', userId)
         .eq('organization_id', orgId!)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ops-client-members', orgId] })
-      success('Access removed')
+      success('Access suspended — content preserved')
     },
-    onError: (err: any) => showError(err.message),
+    onError: (err: any) => showError(err.message || 'Failed to suspend access'),
   })
 
+  // Restore: flip status back to 'active' and clear the suspension stamp.
+  // The transition trigger requires the caller to be an active org admin
+  // of THIS org; ops users morph in to satisfy that when needed.
   const restoreMemberM = useMutation({
     mutationFn: async (userId: string) => {
       const { error } = await supabase
         .from('organization_memberships')
-        .update({ status: 'active' })
+        .update({
+          status:            'active',
+          suspended_at:      null,
+          suspended_by:      null,
+          suspension_reason: null,
+        })
         .eq('user_id', userId)
         .eq('organization_id', orgId!)
       if (error) throw error
@@ -55,8 +74,11 @@ export function OpsClientDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['ops-client-members', orgId] })
       success('Access restored')
     },
-    onError: (err: any) => showError(err.message),
+    onError: (err: any) => showError(err.message || 'Failed to restore access'),
   })
+
+  // App-native confirm modal state — replaces window.confirm.
+  const [removePrompt, setRemovePrompt] = useState<{ userId: string; email: string } | null>(null)
 
   // Org details
   const { data: org } = useQuery({
@@ -189,40 +211,119 @@ export function OpsClientDetailPage() {
     enabled: !!orgId && members.length > 0,
   })
 
-  // Onboarding checklist
+  // Onboarding (user engagement) — mirrors the user-facing Getting Started
+  // checklist in PilotWelcomeBanner so ops can see how far the org's pilot
+  // has actually engaged with the product. We aggregate "any member did X"
+  // across the org's members; for single-admin pilots that's just the admin.
+  // Two banner steps are intentionally omitted because they only have
+  // localStorage signals (customize-workspace, explore-asset) — the
+  // remaining seven all have server-side evidence.
   const { data: onboarding } = useQuery({
-    queryKey: ['ops-client-onboarding', orgId],
+    queryKey: ['ops-client-onboarding', orgId, members.length],
     queryFn: async () => {
-      const [orgChartRes, portfolioRes, coverageRes, holdingsRes, sessionsRes] = await Promise.all([
-        supabase.from('org_chart_nodes').select('id', { count: 'exact', head: true }).eq('organization_id', orgId!),
-        supabase.from('portfolios').select('id', { count: 'exact', head: true }).eq('organization_id', orgId!).eq('is_active', true),
-        supabase.from('coverage').select('id', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('portfolio_holdings_snapshots').select('id', { count: 'exact', head: true }).eq('organization_id', orgId!),
-        supabase.from('user_sessions').select('id', { count: 'exact', head: true }).eq('organization_id', orgId!),
+      const memberIds = (members as any[]).map((m) => m.user_id as string)
+      const empty = {
+        hasContribution: false, contributionCount: 0,
+        hasRating: false, ratingCount: 0,
+        hasNote: false, noteCount: 0,
+        hasTheme: false, themeCount: 0,
+        hasThought: false, thoughtCount: 0,
+        hasPrompt: false, promptCount: 0,
+        hasList: false, listCount: 0,
+      }
+      if (memberIds.length === 0) return empty
+
+      // Recency floor for tables that lack organization_id — mirrors the
+      // PilotWelcomeBanner approach so anything done before this org
+      // existed can't pre-tick a step.
+      const orgCreatedAt = (org?.created_at as string | undefined) ?? new Date(0).toISOString()
+
+      const [
+        contribRes, ratingRes, noteRes,
+        themeRes, themeNoteRes,
+        thoughtRes,
+        promptHistoryRes, promptThoughtRes,
+        listRes,
+      ] = await Promise.all([
+        supabase.from('asset_contributions')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .eq('organization_id', orgId!),
+        supabase.from('analyst_ratings')
+          .select('id', { count: 'exact', head: true })
+          .in('user_id', memberIds)
+          .gte('created_at', orgCreatedAt),
+        supabase.from('asset_notes')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .gte('created_at', orgCreatedAt),
+        supabase.from('themes')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .eq('organization_id', orgId!),
+        supabase.from('theme_notes')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .gte('created_at', orgCreatedAt),
+        // Thoughts: matches the banner exactly — no idea_type filter, so a
+        // prompt-type thought also ticks this step (same as the user sees).
+        supabase.from('quick_thoughts')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .gte('created_at', orgCreatedAt),
+        // Prompts: template/saved-prompt usage OR prompt-type quick_thoughts.
+        supabase.from('user_quick_prompt_history')
+          .select('id', { count: 'exact', head: true })
+          .in('user_id', memberIds)
+          .gte('created_at', orgCreatedAt),
+        supabase.from('quick_thoughts')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .eq('idea_type', 'prompt')
+          .gte('created_at', orgCreatedAt),
+        // Lists: asset_lists has no organization_id, and portfolio_id is
+        // nullable (most lists are user-personal with no portfolio). Floor
+        // by org.created_at instead, matching what the banner now does.
+        // Excludes the two system-seeded defaults every user gets on signup.
+        supabase.from('asset_lists')
+          .select('id', { count: 'exact', head: true })
+          .in('created_by', memberIds)
+          .eq('is_default', false)
+          .gte('created_at', orgCreatedAt),
       ])
 
+      const themeCount = (themeRes.count ?? 0) + (themeNoteRes.count ?? 0)
+      const promptCount = (promptHistoryRes.count ?? 0) + (promptThoughtRes.count ?? 0)
+      const thoughtCount = thoughtRes.count ?? 0
+
       return {
-        hasMultipleMembers: members.length > 1,
-        memberCount: members.length,
-        hasOrgChart: (orgChartRes.count || 0) > 0,
-        orgChartNodes: orgChartRes.count || 0,
-        hasPortfolios: (portfolioRes.count || 0) > 0,
-        portfolioCount: portfolioRes.count || 0,
-        hasHoldings: (holdingsRes.count || 0) > 0,
-        holdingsSnapshots: holdingsRes.count || 0,
-        hasLoggedIn: (sessionsRes.count || 0) > 0,
-        sessionCount: sessionsRes.count || 0,
+        hasContribution: (contribRes.count ?? 0) > 0,
+        contributionCount: contribRes.count ?? 0,
+        hasRating: (ratingRes.count ?? 0) > 0,
+        ratingCount: ratingRes.count ?? 0,
+        hasNote: (noteRes.count ?? 0) > 0,
+        noteCount: noteRes.count ?? 0,
+        hasTheme: themeCount > 0,
+        themeCount,
+        hasThought: thoughtCount > 0,
+        thoughtCount,
+        hasPrompt: promptCount > 0,
+        promptCount,
+        hasList: (listRes.count ?? 0) > 0,
+        listCount: listRes.count ?? 0,
       }
     },
-    enabled: !!orgId && members.length >= 0,
+    enabled: !!orgId && !!org && members.length > 0,
   })
 
   const onboardingItems = onboarding ? [
-    { label: 'Users invited', done: onboarding.hasMultipleMembers, detail: `${onboarding.memberCount} member${onboarding.memberCount !== 1 ? 's' : ''}` },
-    { label: 'Org chart created', done: onboarding.hasOrgChart, detail: `${onboarding.orgChartNodes} node${onboarding.orgChartNodes !== 1 ? 's' : ''}` },
-    { label: 'Portfolios set up', done: onboarding.hasPortfolios, detail: `${onboarding.portfolioCount} portfolio${onboarding.portfolioCount !== 1 ? 's' : ''}` },
-    { label: 'Holdings uploaded', done: onboarding.hasHoldings, detail: `${onboarding.holdingsSnapshots} snapshot${onboarding.holdingsSnapshots !== 1 ? 's' : ''}` },
-    { label: 'Users have logged in', done: onboarding.hasLoggedIn, detail: `${onboarding.sessionCount} session${onboarding.sessionCount !== 1 ? 's' : ''}` },
+    { label: 'Filled out a research field', done: onboarding.hasContribution, detail: `${onboarding.contributionCount} contribution${onboarding.contributionCount !== 1 ? 's' : ''}` },
+    { label: 'Rated an asset',              done: onboarding.hasRating,       detail: `${onboarding.ratingCount} rating${onboarding.ratingCount !== 1 ? 's' : ''}` },
+    { label: 'Wrote a note',                done: onboarding.hasNote,         detail: `${onboarding.noteCount} note${onboarding.noteCount !== 1 ? 's' : ''}` },
+    { label: 'Explored a theme',            done: onboarding.hasTheme,        detail: `${onboarding.themeCount} theme/note${onboarding.themeCount !== 1 ? 's' : ''}` },
+    { label: 'Posted a thought',            done: onboarding.hasThought,      detail: `${onboarding.thoughtCount} thought${onboarding.thoughtCount !== 1 ? 's' : ''}` },
+    { label: 'Used a prompt',               done: onboarding.hasPrompt,       detail: `${onboarding.promptCount} prompt${onboarding.promptCount !== 1 ? 's' : ''}` },
+    { label: 'Built a list',                done: onboarding.hasList,         detail: `${onboarding.listCount} list${onboarding.listCount !== 1 ? 's' : ''}` },
   ] : []
   const onboardingDone = onboardingItems.filter(i => i.done).length
 
@@ -388,16 +489,13 @@ export function OpsClientDetailPage() {
                           Morph
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm(`Remove ${m.user_email} from ${org?.name}?`)) {
-                              removeMemberM.mutate(m.user_id)
-                            }
-                          }}
+                          onClick={() => setRemovePrompt({ userId: m.user_id, email: m.user_email })}
                           disabled={removeMemberM.isPending}
                           className="px-2 py-1 text-[10px] font-medium rounded border border-red-200 text-red-500 hover:bg-red-50 transition-colors flex items-center gap-1"
+                          title="Suspend the user's access without deleting their content"
                         >
                           <Ban className="w-3 h-3" />
-                          Remove
+                          Suspend
                         </button>
                       </>
                     )}
@@ -504,7 +602,10 @@ export function OpsClientDetailPage() {
       {activeTab === 'onboarding' && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-800">Onboarding Progress</h3>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Getting Started Progress</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">Mirrors the user-facing checklist — any member counts.</p>
+            </div>
             <span className="text-xs text-gray-400">{onboardingDone} of {onboardingItems.length} complete</span>
           </div>
           <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -545,6 +646,25 @@ export function OpsClientDetailPage() {
           })}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={!!removePrompt}
+        onClose={() => setRemovePrompt(null)}
+        onConfirm={() => {
+          if (removePrompt) removeMemberM.mutate(removePrompt.userId)
+          setRemovePrompt(null)
+        }}
+        title="Suspend access"
+        message={
+          removePrompt
+            ? `${removePrompt.email} will lose access to ${org?.name || 'this org'}. Their notes, theses, and other content stay intact and visible to remaining members. You can restore access at any time.`
+            : ''
+        }
+        confirmText="Suspend"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={removeMemberM.isPending}
+      />
     </div>
   )
 }

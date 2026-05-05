@@ -32,7 +32,8 @@ interface BlankTabProps {
   onSearchResult: (result: any) => void
 }
 
-// Section configuration
+// Section configuration. Order here drives the order shown in the
+// "Go to" grid on every new tab — keep it intentional.
 const PRIMARY_SURFACES = [
   {
     id: 'priorities',
@@ -42,6 +43,15 @@ const PRIMARY_SURFACES = [
     icon: Flag,
     gradient: 'from-rose-100 to-red-100',
     iconColor: 'text-rose-600'
+  },
+  {
+    id: 'idea-generator',
+    title: 'Ideas',
+    type: 'idea-generator',
+    description: 'Discover insights',
+    icon: Lightbulb,
+    gradient: 'from-purple-100 to-pink-100',
+    iconColor: 'text-purple-600'
   },
   {
     id: 'trade-queue',
@@ -78,15 +88,6 @@ const PRIMARY_SURFACES = [
     icon: Target,
     gradient: 'from-teal-100 to-emerald-100',
     iconColor: 'text-teal-600'
-  },
-  {
-    id: 'idea-generator',
-    title: 'Ideas',
-    type: 'idea-generator',
-    description: 'Discover insights',
-    icon: Lightbulb,
-    gradient: 'from-purple-100 to-pink-100',
-    iconColor: 'text-purple-600'
   },
 ]
 

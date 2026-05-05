@@ -23,6 +23,7 @@ import {
   type IdeasInitialFilters,
 } from '../hooks/useIdeasRouting'
 import { IdeasFeedPage } from '../components/ideas/feed'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 // ============================================================================
 // IDEAS GENERATOR PAGE
@@ -40,6 +41,20 @@ interface IdeaGeneratorPageProps {
  * Primary export: renders the new feed-first Ideas experience.
  */
 export function IdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGeneratorPageProps) {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+
+  // Mark the "View idea feed" step in PilotWelcomeBanner complete on
+  // first visit, keyed per (user, org) to mirror how AssetTab signals
+  // its own "explored an asset" step. localStorage write + custom event
+  // so the banner picks it up live without a refetch.
+  useEffect(() => {
+    if (!user?.id || !currentOrgId) return
+    const key = `pilot-tutorial-idea-feed-viewed-${user.id}-${currentOrgId}`
+    try { localStorage.setItem(key, '1') } catch { /* ignore */ }
+    try { window.dispatchEvent(new CustomEvent('pilot-tutorial:idea-feed-viewed')) } catch { /* ignore */ }
+  }, [user?.id, currentOrgId])
+
   return <IdeasFeedPage onItemSelect={onItemSelect} />
 }
 
