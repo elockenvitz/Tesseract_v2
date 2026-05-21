@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { List, Plus, Search, X, Users, Share2, MoreVertical, Edit3, Trash2, Star, UserPlus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -10,6 +11,12 @@ import { Input } from '../ui/Input'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ListTypeSelector, ListType } from './ListTypeSelector'
 import { Filter as FilterIcon, List as ListIconForMode } from 'lucide-react'
+
+interface OrgMember {
+  id: string
+  email: string
+  name: string
+}
 
 type ContentMode = 'manual' | 'screen'
 import { formatDistanceToNow } from 'date-fns'
@@ -65,13 +72,17 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const [newListType, setNewListType] = useState<ListType>('mutual')
   const [newContentMode, setNewContentMode] = useState<ContentMode>('manual')
   // Pending collaborator invites entered during create-list flow.
-  // Resolved server-side when the list is actually inserted.
+  // Each pending invite captures the full org-member record so the list
+  // create mutation can insert collaboration rows directly by user_id —
+  // no email lookup, no "user not found" failure path.
   const [pendingInvites, setPendingInvites] = useState<
-    Array<{ email: string; permission: 'read' | 'write' }>
+    Array<{ user: OrgMember; permission: 'read' | 'write' }>
   >([])
-  const [inviteEmailDraft, setInviteEmailDraft] = useState('')
+  const [inviteSearchTerm, setInviteSearchTerm] = useState('')
+  const [showInviteDropdown, setShowInviteDropdown] = useState(false)
   const [invitePermissionDraft, setInvitePermissionDraft] = useState<'read' | 'write'>('read')
-  const [inviteFailures, setInviteFailures] = useState<string[]>([])
+  const inviteContainerRef = useRef<HTMLDivElement>(null)
+  const inviteInputRef = useRef<HTMLInputElement>(null)
   const [showListMenu, setShowListMenu] = useState<string | null>(null)
   const [editingListId, setEditingListId] = useState<string | null>(null)
   const [addedToLists, setAddedToLists] = useState<Set<string>>(new Set())
@@ -87,6 +98,50 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
   const menuRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+
+  // Close the invite-picker dropdown when clicking outside the picker.
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (inviteContainerRef.current && !inviteContainerRef.current.contains(e.target as Node)) {
+        setShowInviteDropdown(false)
+      }
+    }
+    if (showInviteDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showInviteDropdown])
+
+  // Org members for the collaborator picker. Scoped to the active org
+  // via organization_memberships so the dropdown shows the actual people
+  // the user can collaborate with (no cross-org leak, no inviting
+  // outsiders by email). Excludes self — you can't be a collaborator on
+  // a list you own.
+  const { data: orgMembers = [] } = useQuery<OrgMember[]>({
+    queryKey: ['asset-list-org-members', currentOrgId, user?.id],
+    enabled: isOpen && !!currentOrgId && !!user?.id,
+    queryFn: async () => {
+      const { data: rows, error } = await supabase
+        .from('organization_memberships')
+        .select('user_id')
+        .eq('organization_id', currentOrgId!)
+        .eq('status', 'active')
+      if (error) throw error
+      const userIds = (rows ?? []).map(r => r.user_id as string).filter(id => id !== user!.id)
+      if (userIds.length === 0) return []
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name')
+        .in('id', userIds)
+      if (usersError) throw usersError
+      return (users ?? []).map((u: any) => ({
+        id: u.id as string,
+        email: (u.email ?? '') as string,
+        name: `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email || 'Unknown',
+      })).sort((a, b) => a.name.localeCompare(b.name))
+    },
+  })
 
   const colorOptions = [
     { value: '#3b82f6', label: 'Blue' },
@@ -165,8 +220,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
     enabled: isOpen
   })
 
-  // Create list mutation. Returns the new list + any failed invite
-  // messages so the form can surface them inline.
+  // Create list mutation. Picks resolved user records (from the org
+  // member picker) so there's no email lookup step — each pending
+  // invite already carries a user_id.
   const createListMutation = useMutation({
     mutationFn: async ({
       name, description, color, list_type, content_mode, invites,
@@ -176,7 +232,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       color: string
       list_type: ListType
       content_mode: ContentMode
-      invites: Array<{ email: string; permission: 'read' | 'write' }>
+      invites: Array<{ user: OrgMember; permission: 'read' | 'write' }>
     }) => {
       const { data: created, error } = await supabase
         .from('asset_lists')
@@ -198,38 +254,22 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       if (error) throw error
       if (!created) throw new Error('List creation returned no row')
 
-      // Resolve invites → user lookups → collaboration rows.
-      // Failed lookups are returned (not thrown) so the list itself
-      // still creates and the user sees per-invite errors inline.
-      const failures: string[] = []
-      for (const invite of invites) {
-        const email = invite.email.trim().toLowerCase()
-        if (!email) continue
-        const { data: u, error: lookupErr } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle()
-        if (lookupErr || !u) {
-          failures.push(`${invite.email} — not found in your org`)
-          continue
-        }
+      if (invites.length > 0) {
+        const rows = invites.map(inv => ({
+          list_id: created.id,
+          user_id: inv.user.id,
+          permission: inv.permission,
+          created_at: new Date().toISOString(),
+        }))
         const { error: collabErr } = await supabase
           .from('asset_list_collaborations')
-          .insert({
-            list_id: created.id,
-            user_id: u.id,
-            permission: invite.permission,
-            created_at: new Date().toISOString(),
-          })
-        if (collabErr) {
-          failures.push(`${invite.email} — ${collabErr.message}`)
-        }
+          .insert(rows)
+        if (collabErr) throw collabErr
       }
 
-      return { list: created, failures }
+      return { list: created }
     },
-    onSuccess: ({ failures }) => {
+    onSuccess: () => {
       // Refresh BOTH the underlying lists query AND the surface query
       // that the Lists page reads from. Without invalidating
       // 'list-surfaces' the new list wouldn't appear until a hard
@@ -237,18 +277,6 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
       queryClient.invalidateQueries({ queryKey: ['list-surfaces'] })
 
-      if (failures.length > 0) {
-        // Keep the form open so the user can see / fix the failures.
-        setInviteFailures(failures)
-        // Clear only the parts that succeeded — the failed invites
-        // stay so the user can retry/edit them.
-        setPendingInvites(prev => prev.filter(p =>
-          failures.some(f => f.startsWith(`${p.email} —`))
-        ))
-        return
-      }
-
-      setInviteFailures([])
       setShowCreateForm(false)
       setNewListName('')
       setNewListDescription('')
@@ -256,8 +284,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       setNewListType('mutual')
       setNewContentMode('manual')
       setPendingInvites([])
-      setInviteEmailDraft('')
+      setInviteSearchTerm('')
       setInvitePermissionDraft('read')
+      setShowInviteDropdown(false)
     }
   })
 
@@ -364,11 +393,6 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
     if (!newListName.trim()) return
 
     const resolvedListType = newContentMode === 'screen' ? 'mutual' : newListType
-    // Capture any draft email the user typed but hasn't pressed "Add" on.
-    const trailing = inviteEmailDraft.trim()
-    const allInvites = trailing
-      ? [...pendingInvites, { email: trailing, permission: invitePermissionDraft }]
-      : pendingInvites
 
     createListMutation.mutate({
       name: newListName.trim(),
@@ -378,7 +402,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       // Screens ignore the mutual/collaborative distinction (no per-row ownership).
       list_type: resolvedListType,
       content_mode: newContentMode,
-      invites: allInvites,
+      invites: pendingInvites,
     })
   }
 
@@ -606,82 +630,112 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       />
                     )}
 
-                    {/* Invite collaborators */}
+                    {/* Invite collaborators — picks people from the
+                        current org rather than asking the user to type
+                        email addresses. The permission dropdown sets
+                        the access level for the NEXT pick (each chip
+                        carries its own permission once added). */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Invite collaborators (optional)
                       </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="email"
-                          value={inviteEmailDraft}
-                          onChange={(e) => setInviteEmailDraft(e.target.value)}
-                          placeholder="email@yourorg.com"
-                          autoComplete="off"
-                          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              const v = inviteEmailDraft.trim()
-                              if (!v) return
-                              setPendingInvites(prev => [...prev, { email: v, permission: invitePermissionDraft }])
-                              setInviteEmailDraft('')
-                            }
-                          }}
-                        />
-                        <select
-                          value={invitePermissionDraft}
-                          onChange={(e) => setInvitePermissionDraft(e.target.value as 'read' | 'write')}
-                          className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        >
-                          <option value="read">Read</option>
-                          <option value="write">Write</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const v = inviteEmailDraft.trim()
-                            if (!v) return
-                            setPendingInvites(prev => [...prev, { email: v, permission: invitePermissionDraft }])
-                            setInviteEmailDraft('')
-                          }}
-                          disabled={!inviteEmailDraft.trim()}
-                          className="px-3 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Add
-                        </button>
-                      </div>
-                      {pendingInvites.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {pendingInvites.map((inv, idx) => (
-                            <span
-                              key={`${inv.email}-${idx}`}
-                              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs bg-primary-50 text-primary-700 border border-primary-200 rounded-md"
-                            >
-                              {inv.email}
-                              <span className="px-1 py-0.5 text-[10px] font-medium bg-white text-primary-700 border border-primary-200 rounded">
-                                {inv.permission}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setPendingInvites(prev => prev.filter((_, i) => i !== idx))}
-                                className="text-primary-500 hover:text-primary-700"
-                                title="Remove"
+                      {(() => {
+                        const pickedIds = new Set(pendingInvites.map(p => p.user.id))
+                        const term = inviteSearchTerm.trim().toLowerCase()
+                        const filtered = orgMembers.filter(m =>
+                          !pickedIds.has(m.id) && (
+                            term === '' ||
+                            m.name.toLowerCase().includes(term) ||
+                            m.email.toLowerCase().includes(term)
+                          )
+                        )
+                        return (
+                          <div className="flex gap-2">
+                            <div ref={inviteContainerRef} className="relative flex-1">
+                              <div
+                                className="flex flex-wrap gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 min-h-[38px] cursor-text bg-white"
+                                onClick={() => { setShowInviteDropdown(true); inviteInputRef.current?.focus() }}
                               >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {inviteFailures.length > 0 && (
-                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                          <p className="text-xs font-medium text-red-800 mb-1">Some invites couldn't be sent:</p>
-                          <ul className="text-xs text-red-700 space-y-0.5 list-disc list-inside">
-                            {inviteFailures.map((f, i) => <li key={i}>{f}</li>)}
-                          </ul>
-                        </div>
-                      )}
+                                {pendingInvites.map((inv, idx) => (
+                                  <span
+                                    key={`${inv.user.id}-${idx}`}
+                                    className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-700 border border-primary-200"
+                                  >
+                                    {inv.user.name}
+                                    <span className="px-1 py-0.5 text-[10px] font-medium bg-white text-primary-700 border border-primary-200 rounded">
+                                      {inv.permission}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setPendingInvites(prev => prev.filter((_, i) => i !== idx))
+                                      }}
+                                      className="p-0.5 rounded-full hover:bg-primary-100 transition-colors text-primary-500 hover:text-primary-700"
+                                      title="Remove"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))}
+                                <input
+                                  ref={inviteInputRef}
+                                  type="text"
+                                  value={inviteSearchTerm}
+                                  onChange={(e) => { setInviteSearchTerm(e.target.value); setShowInviteDropdown(true) }}
+                                  onFocus={() => setShowInviteDropdown(true)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Backspace' && inviteSearchTerm === '' && pendingInvites.length > 0) {
+                                      setPendingInvites(prev => prev.slice(0, -1))
+                                    }
+                                  }}
+                                  placeholder={pendingInvites.length === 0 ? 'Search by name or email…' : 'Add another…'}
+                                  autoComplete="off"
+                                  className="flex-1 min-w-[120px] py-0.5 text-sm outline-none bg-transparent"
+                                />
+                              </div>
+                              {showInviteDropdown && (
+                                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                  {filtered.length === 0 ? (
+                                    <div className="px-3 py-2 text-xs text-gray-500">
+                                      {orgMembers.length === 0
+                                        ? 'No other members in this organization.'
+                                        : 'No matches'}
+                                    </div>
+                                  ) : (
+                                    filtered.slice(0, 10).map((m) => (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setPendingInvites(prev => [...prev, { user: m, permission: invitePermissionDraft }])
+                                          setInviteSearchTerm('')
+                                          inviteInputRef.current?.focus()
+                                        }}
+                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                      >
+                                        <div className="text-sm font-medium text-gray-900">{m.name}</div>
+                                        {m.email && m.email !== m.name && (
+                                          <div className="text-xs text-gray-500">{m.email}</div>
+                                        )}
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <select
+                              value={invitePermissionDraft}
+                              onChange={(e) => setInvitePermissionDraft(e.target.value as 'read' | 'write')}
+                              className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              title="Default permission for new invites"
+                            >
+                              <option value="read">Read</option>
+                              <option value="write">Write</option>
+                            </select>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     <div className="flex space-x-3">
@@ -695,9 +749,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                           setNewListType('mutual')
                           setNewContentMode('manual')
                           setPendingInvites([])
-                          setInviteEmailDraft('')
+                          setInviteSearchTerm('')
                           setInvitePermissionDraft('read')
-                          setInviteFailures([])
+                          setShowInviteDropdown(false)
                         }}
                         className="flex-1"
                       >

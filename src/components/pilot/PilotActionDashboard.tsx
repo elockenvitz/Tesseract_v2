@@ -159,9 +159,16 @@ export function PilotActionDashboard({
   // trade idea in the right-hand capture sidebar). Without this, the
   // System Loop's "stage 1 done?" check would lag behind the database
   // until the next manual refresh.
+  //
+  // We invalidate BOTH `trade-queue-items` (which covers pipelineItems
+  // via the shared key prefix) AND `pilot-dashboard-user-captured`,
+  // because the latter sits on its own key — without explicit
+  // invalidation it would stay stale until a hard refresh, leaving the
+  // Capture stage unchecked even after the user logged an idea.
   useEffect(() => {
     const handler = () => {
       queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.refetchQueries({ queryKey: ['pilot-dashboard-user-captured'] })
       queryClient.refetchQueries({ queryKey: ['pilot-dashboard-recorded'] })
     }
     window.addEventListener('pilot-loop:refresh', handler)
@@ -184,6 +191,9 @@ export function PilotActionDashboard({
           // we refetch (avoids race against postgres replica lag).
           setTimeout(() => {
             queryClient.refetchQueries({ queryKey: ['trade-queue-items'] })
+            // userCaptured lives on its own key — must invalidate
+            // explicitly or Capture won't tick after a real-time insert.
+            queryClient.refetchQueries({ queryKey: ['pilot-dashboard-user-captured'] })
           }, 300)
         }
       )
@@ -221,17 +231,28 @@ export function PilotActionDashboard({
     refetchOnReconnect: 'always',
     staleTime: 0,
     queryFn: async () => {
-      // Without a known pilot portfolio, this query has no org-scope —
-      // it would return the user's trade_queue_items from any org and
-      // make Capture light up on a fresh pilot client. Wait until the
-      // scenario resolves to its portfolio before fetching.
-      if (!pilotPortfolioId) return []
-      const { data, error } = await supabase
+      // Two scoping modes:
+      //   1. Pilot scenario portfolio known → strict portfolio filter.
+      //   2. No scenario portfolio yet → fall back to all portfolios in
+      //      the current org via a portfolios!inner join. Previously this
+      //      branch early-returned [], which left Develop showing an
+      //      empty pipeline whenever the scenario hadn't been seeded yet
+      //      (or seeded without a portfolio). With the org-scoped
+      //      fallback, ideas the user creates in any org portfolio still
+      //      show up — and we don't leak cross-org because the join
+      //      ties results to `currentOrg.id`.
+      if (!currentOrg?.id) return []
+      let q = supabase
         .from('trade_queue_items')
-        .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name)')
+        .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name), portfolio:portfolios!inner(id, organization_id)')
         .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'deciding'])
-        .eq('portfolio_id', pilotPortfolioId)
+      if (pilotPortfolioId) {
+        q = q.eq('portfolio_id', pilotPortfolioId)
+      } else {
+        q = q.eq('portfolio.organization_id', currentOrg.id)
+      }
+      const { data, error } = await q
         .order('stage_changed_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .limit(60)
@@ -304,17 +325,25 @@ export function PilotActionDashboard({
     refetchOnReconnect: 'always',
     staleTime: 0,
     queryFn: async () => {
-      const tqQuery = supabase
+      // Same two-mode scoping as `pipelineItems` above. When the pilot
+      // scenario hasn't pinned a portfolio yet, fall back to org-scope
+      // via the portfolios!inner join so freshly captured ideas show up
+      // in Capture without waiting on the seed (and without leaking
+      // cross-org).
+      const tqSelect = pilotPortfolioId
+        ? 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata'
+        : 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata, portfolio:portfolios!inner(id, organization_id)'
+      let tqQuery = supabase
         .from('trade_queue_items')
-        .select('id, created_at, stage, asset:assets(symbol, company_name), origin_metadata')
+        .select(tqSelect)
         .eq('visibility_tier', 'active')
         .eq('created_by', user!.id)
-        .order('created_at', { ascending: false })
-        .limit(10)
-      // Constrain trade_queue_items to the pilot org's portfolio.
-      // Mirrors what `pipelineItems` does — without it, ideas from
-      // other orgs the user belongs to leak in.
-      if (pilotPortfolioId) tqQuery.eq('portfolio_id', pilotPortfolioId)
+      if (pilotPortfolioId) {
+        tqQuery = tqQuery.eq('portfolio_id', pilotPortfolioId)
+      } else if (currentOrg?.id) {
+        tqQuery = tqQuery.eq('portfolio.organization_id', currentOrg.id)
+      }
+      tqQuery = tqQuery.order('created_at', { ascending: false }).limit(10)
 
       // Only thoughts explicitly tied to the pilot's portfolio
       // count. Thoughts without portfolio context (the user types a
@@ -392,16 +421,22 @@ export function PilotActionDashboard({
     })
   }, [pipelineItems])
   const completed = state === 'completed'
+  // Sequential getting-started enforcement: each stage closes on a
+  // SPECIFIC user action, not just on "an accepted_trade exists for the
+  // scenario". The previous logic marked decide/review done the moment
+  // the user accepted the pilot recommendation from the Decision Inbox —
+  // which let pilots skip the Trade Lab and Trade Book onboarding
+  // entirely and click straight through Reflect to graduate. The
+  // unlock flags here only flip when the user actually completes the
+  // relevant Get Started checklist:
+  //   - decide: `hasUnlockedTradeBook` fires on `pilot-tradelab:executed`
+  //   - review: `hasUnlockedOutcomes` fires on `pilot-tradebook:opened-outcomes`
+  //   - analyze: a captured reflection (decision_reviews row)
   const liveStepDone: Record<StageKey, boolean> = {
     capture: hasUserIdea,
     develop: hasMovedIdea,
-    decide:  completed,
-    // Review closes the moment the trade lands on the Trade Book —
-    // that happens at commit, so it tracks `completed`.
-    review:  completed,
-    // Analyze closes once the user has captured a reflection — that's
-    // the signal Tesseract has the data it needs to feed back into
-    // future ideas. Until then it's the open work.
+    decide:  hasUnlockedTradeBook,
+    review:  hasUnlockedOutcomes,
     analyze: completed && hasReview,
   }
 

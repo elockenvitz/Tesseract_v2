@@ -231,17 +231,24 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
   // brief "No batches yet" / "No trades" flash.
   const isLoading = portfoliosLoading || !portfolioId || tradesLoading || batchesLoading
 
-  // Pilot unlock for Outcomes: once the pilot user has opened Trade Book at
-  // least once with a real committed trade visible, promote outcomes
-  // 'preview' → 'full'. Idempotent — markPilotStage no-ops if already set.
+  // Pilot sequential unlock: Outcomes only unlocks when the user
+  // actively clicks "Open Outcomes" from the Trade Book Get Started
+  // banner (step 3). Previously this fired the moment the user landed
+  // on Trade Book with any committed trade visible — but that meant a
+  // pilot who accepted a trade from the Decision Inbox and casually
+  // navigated to Trade Book would auto-unlock Outcomes without ever
+  // going through the Trade Lab / Trade Book onboarding flow, and
+  // then could click Reflect on the dashboard to skip straight to
+  // graduation. Tying the unlock to the explicit banner click keeps
+  // the getting-started checklist sequential.
   const pilotMode = usePilotMode()
-  const { mark: markPilotStage, hasUnlockedOutcomes } = usePilotProgress()
+  const { mark: markPilotStage, hasUnlockedOutcomes, hasUnlockedTradeBook } = usePilotProgress()
   useEffect(() => {
-    if (!pilotMode.isPilot || pilotMode.isLoading) return
-    if (hasUnlockedOutcomes) return
-    if (!trades || trades.length === 0) return
-    markPilotStage('outcomes_unlocked')
-  }, [pilotMode.isPilot, pilotMode.isLoading, hasUnlockedOutcomes, trades, markPilotStage])
+    if (!pilotMode.isPilot) return
+    const handler = () => markPilotStage('outcomes_unlocked')
+    window.addEventListener('pilot-tradebook:opened-outcomes', handler)
+    return () => window.removeEventListener('pilot-tradebook:opened-outcomes', handler)
+  }, [pilotMode.isPilot, markPilotStage])
 
   // Highlight newly-committed rows: when the PM clicks "View in Trade Book"
   // from the Decision Recorded modal, we receive their accepted_trade ids
@@ -549,10 +556,20 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         {/* Right side: shortcut to Outcomes — the natural next step
             after looking at committed trades. Reuses the existing
             `decision-engine-action` event the dashboard listens on
-            for tab routing. */}
+            for tab routing. For pilots, also fires the
+            `pilot-tradebook:opened-outcomes` event so this button is
+            an equivalent unlock path to the Get Started banner's
+            "Open Outcomes" step. Without this, clicking View Outcomes
+            opened the Outcomes tab but Outcomes was still 'preview'
+            (since only the banner button marked the unlock), so the
+            pilot saw the "Go to Trade Lab" teaser instead of the real
+            page. */}
         <button
           onClick={() => {
             try {
+              if (pilotMode.effectiveIsPilot) {
+                window.dispatchEvent(new CustomEvent('pilot-tradebook:opened-outcomes'))
+              }
               window.dispatchEvent(new CustomEvent('decision-engine-action', {
                 detail: { id: 'outcomes', title: 'Outcomes', type: 'outcomes', data: null },
               }))
@@ -567,11 +584,14 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         </button>
       </div>
 
-      {/* Pilot next-step nudge: once outcomes has unlocked (user has at
-          least one committed trade visible on this page), prompt them to
-          move on to Outcomes. Gated on pilot mode so non-pilots never see
-          it. Dismissible per-user. */}
-      {pilotMode.effectiveIsPilot && hasUnlockedOutcomes && trades && trades.length > 0 && (
+      {/* Pilot next-step nudge: shown once the pilot has completed the
+          Trade Lab onboarding (executed a trade — `hasUnlockedTradeBook`)
+          AND has trades visible here. Step 3 of THIS banner ("Open
+          Outcomes") is what fires `outcomes_unlocked`, so we deliberately
+          do NOT gate showing the banner on `hasUnlockedOutcomes` — the
+          banner is the path that unlocks outcomes, not its consequence.
+          Dismissible per-user. */}
+      {pilotMode.effectiveIsPilot && hasUnlockedTradeBook && trades && trades.length > 0 && (
         <PilotTradeBookGetStarted
           userId={user?.id}
           orgId={currentOrgId}

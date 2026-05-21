@@ -1271,7 +1271,7 @@ export function HoldingsSimulationTable({
   }, [stableRows, filters, sortCol, sortDir])
 
   // Display rows: apply grouping/collapse to processedRows
-  const displayRows = useMemo(() => {
+  const displayRowsLive = useMemo(() => {
     if (groupBy === 'none') return processedRows
     const result: SimulationRow[] = []
     const groups: Record<string, SimulationRow[]> = {}
@@ -1281,6 +1281,52 @@ export function HoldingsSimulationTable({
       .forEach(([n, items]) => { if (!collapsedGroups.has(n)) result.push(...items) })
     return result
   }, [processedRows, groupBy, collapsedGroups])
+
+  // Pin row order while the user is editing a cell. Without this, a
+  // background refetch (realtime lab_variants invalidation, another
+  // asset's import landing, etc.) can reshuffle displayRows mid-keystroke.
+  // Since focusRow is an INDEX into displayRows, a reshuffle makes
+  // focusRow point at a different row — the editor on the original row
+  // unmounts (isEditing flips false), its local editValue is destroyed,
+  // and any cleanupEmptyVariant call now targets the wrong row, which
+  // can wipe the user's just-committed value or delete a sibling variant
+  // (i.e. the symptoms reported: "Sim Wt reverts to original" and "the
+  // idea is being deselected from the left pane"). Freezing the order
+  // for the duration of an edit makes focusRow stable; once editing
+  // ends the table immediately switches back to live ordering.
+  const [editLockedOrder, setEditLockedOrder] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (editing) {
+      // Snapshot the order at the moment the edit starts. We only set
+      // this once per edit session so subsequent re-renders while the
+      // user is typing don't churn the order again.
+      setEditLockedOrder(prev => prev ?? displayRowsLive.map(r => r.asset_id))
+    } else {
+      setEditLockedOrder(null)
+    }
+    // displayRowsLive intentionally omitted — we want the snapshot taken
+    // exactly when editing flips true, not every time the live order
+    // recomputes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing])
+
+  const displayRows = useMemo(() => {
+    if (!editLockedOrder) return displayRowsLive
+    const byId = new Map(displayRowsLive.map(r => [r.asset_id, r]))
+    const ordered: SimulationRow[] = []
+    for (const id of editLockedOrder) {
+      const r = byId.get(id)
+      if (r) ordered.push(r)
+    }
+    // Append any rows that arrived after the freeze (e.g. a fresh
+    // import landing) so they're still visible — they just go to the
+    // end instead of being interleaved.
+    const locked = new Set(editLockedOrder)
+    for (const r of displayRowsLive) {
+      if (!locked.has(r.asset_id)) ordered.push(r)
+    }
+    return ordered
+  }, [displayRowsLive, editLockedOrder])
 
   const groupedRows = useMemo(() => {
     if (groupBy === 'none') return null

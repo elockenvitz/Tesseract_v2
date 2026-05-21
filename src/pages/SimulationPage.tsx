@@ -363,6 +363,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const queryClient = useQueryClient()
   const toast = useToast()
 
+  // Pilot sequential unlock: Trade Book unlocks only when the pilot
+  // actually executes a trade THROUGH Trade Lab (the step-3 event in
+  // the Trade Lab Get Started banner). Previously this also fired from
+  // the "View in Trade Book" button on the commit nudge / decision
+  // modal — but those only show after execution anyway, so the listener
+  // covers them. Critically, accepting a recommendation from the
+  // Decision Inbox does NOT fire this event, so it no longer bypasses
+  // the Trade Lab onboarding into the next stage.
+  useEffect(() => {
+    if (!pilotMode.isPilot) return
+    const handler = () => markPilotStage('trade_book_unlocked')
+    window.addEventListener('pilot-tradelab:executed', handler)
+    return () => window.removeEventListener('pilot-tradelab:executed', handler)
+  }, [pilotMode.isPilot, markPilotStage])
+
   // Share context — when viewing a shared simulation
   const [activeShareId, setActiveShareId] = useState<string | null>(propShareId || null)
   const { data: sharedSimData, isLoading: sharedSimLoading } = useSharedSimulation(activeShareId || undefined)
@@ -5318,14 +5333,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       )}
 
       {/* Pilot onboarding banner — slim single-row hint above the header.
-          Occupies existing top whitespace rather than stealing vertical
-          space from the simulation pane. Hides automatically once the
-          user has committed any trade in this org (first-execute moment
-          graduates them past the intro); also dismissible via the X. */}
+          Stays visible until the user completes all three in-banner steps
+          (review, size, execute) or manually dismisses via the X. The
+          banner manages its own per-(user, org) step state and auto-
+          dismisses internally once step 3 fires. We deliberately do NOT
+          hide based on `hasCommittedTradeInOrg`: a pilot may have
+          committed a trade via the Decision Inbox without ever using
+          Trade Lab, and the intro needs to keep coaching them through
+          the Trade Lab execute path until they actually do it here. */}
       {pilotMode.effectiveIsPilot
         && !!pilotScenario
         && user?.id
-        && !pilotMode.hasCommittedTradeInOrg
         && (
           <PilotTradeLabIntroBanner userId={user.id} orgId={currentOrgId} />
         )}

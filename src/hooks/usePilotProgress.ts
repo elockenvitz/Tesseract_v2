@@ -5,16 +5,26 @@
  *
  * Stage keys are plain strings so we can evolve without migrations.
  * Known stages today:
- *   - trade_book_unlocked      — first "View in Trade Book" click from the
- *                                Decision Recorded modal
- *   - outcomes_unlocked        — first real visit to Trade Book after
- *                                unlocking (proxies "reviewed")
+ *   - trade_book_unlocked      — first time the pilot ACTUALLY executes a
+ *                                trade via Trade Lab in this org
+ *                                (`pilot-tradelab:executed` event).
+ *                                Stored per-org as
+ *                                `trade_book_unlocked_at_<orgId>`.
+ *   - outcomes_unlocked        — first time the pilot clicks "Open
+ *                                Outcomes" on the Trade Book Get Started
+ *                                banner (or the parallel View Outcomes
+ *                                CTA). Stored per-org as
+ *                                `outcomes_unlocked_at_<orgId>`.
  *   - graduated                — first time the user reaches Outcomes
- *                                in a given org. Tracked per-org via
- *                                `graduated_at_<orgId>` keys so an
- *                                analyst running multiple pilot clients
- *                                stays "not yet graduated" in each new
- *                                client until they walk the loop there.
+ *                                in a given org. Stored per-org as
+ *                                `graduated_at_<orgId>`.
+ *
+ * All three flags are per-org so an analyst testing across multiple
+ * pilot clients (or restarting a single client's onboarding) doesn't
+ * carry unlock state between orgs. Legacy global keys
+ * (`trade_book_unlocked_at`, `outcomes_unlocked_at`, `graduated_at` with
+ * no org suffix) are deliberately NOT read — old test state must be
+ * cleared via the Reset Progress button on OpsPilotPanel.
  */
 
 import { useCallback, useEffect, useMemo } from 'react'
@@ -30,17 +40,31 @@ export type PilotStage =
   | 'graduated'
 
 export interface PilotProgress {
+  /** @deprecated user-level legacy keys, no longer read or written.
+   *  Kept on the type so leftover values in pilot_progress JSONB don't
+   *  trip up TypeScript. Clear via OpsPilotPanel Reset Progress button. */
   trade_book_unlocked_at?: string | null
+  /** @deprecated user-level legacy key — see above. */
   outcomes_unlocked_at?: string | null
-  /** @deprecated retained for compatibility — new code reads
-   *  `graduated_at_<orgId>` instead, since graduation is per-org. */
+  /** @deprecated user-level legacy key — see above. */
   graduated_at?: string | null
-  /** Per-org graduation timestamps live as `graduated_at_<orgId>`
-   *  inside this same JSONB. Index signature below covers them. */
+  /** Per-org timestamps for each stage live as
+   *  `<stage>_at_<orgId>` keys inside this same JSONB. The index
+   *  signature below covers them. */
   [key: string]: string | null | undefined
 }
 
-const graduatedKey = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
+const tradeBookUnlockedKey = (orgId: string | null) => `trade_book_unlocked_at_${orgId || 'no-org'}`
+const outcomesUnlockedKey  = (orgId: string | null) => `outcomes_unlocked_at_${orgId || 'no-org'}`
+const graduatedKey         = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
+
+const stageToKey = (stage: PilotStage, orgId: string | null): string => {
+  switch (stage) {
+    case 'trade_book_unlocked': return tradeBookUnlockedKey(orgId)
+    case 'outcomes_unlocked':   return outcomesUnlockedKey(orgId)
+    case 'graduated':           return graduatedKey(orgId)
+  }
+}
 
 /** localStorage hint key — read synchronously on mount so a hard refresh
  *  doesn't flash the pilot dashboard for ~200ms before the real
@@ -48,11 +72,6 @@ const graduatedKey = (orgId: string | null) => `graduated_at_${orgId || 'no-org'
  *  in usePilotMode. */
 const cachedGraduatedKey = (userId: string, orgId: string | null) =>
   `pilot_graduated_${userId}_${orgId || 'no-org'}`
-
-const STAGE_TO_KEY: Record<Exclude<PilotStage, 'graduated'>, keyof PilotProgress> = {
-  trade_book_unlocked: 'trade_book_unlocked_at',
-  outcomes_unlocked: 'outcomes_unlocked_at',
-}
 
 const STAGE_TO_EVENT: Record<PilotStage, string> = {
   trade_book_unlocked: 'pilot_trade_book_unlocked',
@@ -85,10 +104,8 @@ export function usePilotProgress() {
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return
-      // Graduation is per-org; everything else is user-level.
-      const key: keyof PilotProgress = stage === 'graduated'
-        ? graduatedKey(currentOrgId)
-        : STAGE_TO_KEY[stage]
+      // All three stages are per-org (see file header).
+      const key = stageToKey(stage, currentOrgId)
       // Already marked? Don't re-write.
       if (progress[key]) return
 
@@ -100,6 +117,37 @@ export function usePilotProgress() {
       if (error) throw error
       logPilotEvent({ eventType: STAGE_TO_EVENT[stage] })
       return nextProgress
+    },
+    // Optimistic update: flip the unlock flag in cache immediately so
+    // dependent gates (pilot access map → Outcomes 'preview' vs 'full',
+    // dashboard CTA `locked: !hasUnlockedOutcomes`, etc.) reflect the
+    // new state synchronously inside the same dispatchEvent tick that
+    // fires the mutation. Without this, clicking "View Outcomes" from
+    // Trade Book navigated to the Outcomes tab before the cache had
+    // flipped — pilot access was still 'preview' for the first render,
+    // so the user briefly saw the PilotOutcomesPreview "go to Trade
+    // Lab" teaser before the DB write resolved and re-rendered the
+    // full page. Note that this onMutate is SYNCHRONOUS by design (no
+    // `await`) — an async onMutate yields a microtask, which is enough
+    // time for a sibling dispatchEvent listener to render against the
+    // pre-flip cache. Skipping cancelQueries is safe here because the
+    // query has staleTime: 60_000, so a stale background fetch wiping
+    // the optimistic flag is highly unlikely; the onSuccess setQueryData
+    // is the authoritative reconcile.
+    onMutate: (stage: PilotStage) => {
+      if (!user?.id) return
+      const key = stageToKey(stage, currentOrgId)
+      if (progress[key]) return  // No-op — already marked
+      const previous = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id])
+      const optimistic: PilotProgress = { ...(previous ?? progress), [key]: new Date().toISOString() }
+      queryClient.setQueryData(['pilot-progress', user.id], optimistic)
+      return { previous }
+    },
+    onError: (_error, _stage, context) => {
+      // Roll back the optimistic flip if the DB write fails.
+      if (context?.previous !== undefined && user?.id) {
+        queryClient.setQueryData(['pilot-progress', user.id], context.previous)
+      }
     },
     onSuccess: (next) => {
       if (next) {
@@ -145,8 +193,8 @@ export function usePilotProgress() {
   return {
     progress,
     isLoading: query.isLoading,
-    hasUnlockedTradeBook: !!progress.trade_book_unlocked_at,
-    hasUnlockedOutcomes: !!progress.outcomes_unlocked_at,
+    hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
+    hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
      *  CURRENT org. Each new pilot client starts as not-yet-graduated
      *  even for an analyst who's graduated in prior clients. */

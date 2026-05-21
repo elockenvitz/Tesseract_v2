@@ -3009,17 +3009,25 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   // Mark once, then `usePilotMode.effectiveIsPilot` flips to false on
   // the next render and the rest of the app reconfigures itself.
   const pilotMode = usePilotMode()
-  const { mark: markPilotStage, hasGraduated } = usePilotProgress()
+  const { mark: markPilotStage, hasGraduated, hasUnlockedOutcomes } = usePilotProgress()
   // True only on the very first time the user lands here (before
   // graduation has been marked). After graduation, the org-pilot
   // gate flips off and `pilotMode.isPilot` may still be true (org
   // flag) but we no longer want to show this banner.
   const showPilotOutcomesBanner = pilotMode.isPilot && !pilotMode.isLoading
+  // Graduation requires the user to have walked the full Get Started
+  // chain — `hasUnlockedOutcomes` flips only after the explicit
+  // "Open Outcomes" click on the Trade Book Get Started banner, which
+  // itself only appears once Trade Lab was actually executed (which
+  // sets `hasUnlockedTradeBook`). Without this guard a pilot who lands
+  // on Outcomes via a teaser or direct URL — but never completed the
+  // Trade Lab/Trade Book onboarding — would auto-graduate on mount.
   useEffect(() => {
     if (hasGraduated) return
     if (!pilotMode.isPilot || pilotMode.isLoading) return
+    if (!hasUnlockedOutcomes) return
     markPilotStage('graduated')
-  }, [pilotMode.isPilot, pilotMode.isLoading, hasGraduated, markPilotStage])
+  }, [pilotMode.isPilot, pilotMode.isLoading, hasGraduated, hasUnlockedOutcomes, markPilotStage])
 
   // Merge portfolio selection into filters
   const effectiveFilters = useMemo(() => ({

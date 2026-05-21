@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Plus, Trash2, Search, Eye, Edit3, Crown, Loader2 } from 'lucide-react'
+import { X, Plus, Trash2, Search, Eye, Edit3, Crown } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { clsx } from 'clsx'
 
 interface ShareListDialogProps {
@@ -36,18 +37,6 @@ interface PendingUser {
   permission: 'read' | 'write'
 }
 
-// Debounce hook
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value)
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay)
-    return () => clearTimeout(timer)
-  }, [value, delay])
-
-  return debouncedValue
-}
-
 export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [invitePermission, setInvitePermission] = useState<'read' | 'write'>('read')
@@ -58,9 +47,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
 
   const queryClient = useQueryClient()
   const { user } = useAuth()
-
-  // Debounce search query
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const { currentOrgId } = useOrganization()
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -109,30 +96,54 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
     enabled: isOpen
   })
 
-  // Search for users to invite (using debounced query)
-  const { data: searchResults, isFetching: isSearching } = useQuery({
-    queryKey: ['user-search', debouncedSearchQuery],
+  // Org members for the picker — loaded once when the dialog opens,
+  // filtered client-side as the user types. Sourced from
+  // organization_memberships so the picker only surfaces people in the
+  // CURRENT org (no cross-org leak via a global users search). Self,
+  // the owner, existing collaborators, and pending additions are
+  // excluded — those rows are listed separately below.
+  const { data: orgMembers = [] } = useQuery({
+    queryKey: ['share-list-org-members', currentOrgId, user?.id],
+    enabled: isOpen && !!currentOrgId && !!user?.id,
     queryFn: async () => {
-      if (!debouncedSearchQuery.trim() || debouncedSearchQuery.length < 2) return []
-
-      const { data, error } = await supabase
+      const { data: rows, error: memErr } = await supabase
+        .from('organization_memberships')
+        .select('user_id')
+        .eq('organization_id', currentOrgId!)
+        .eq('status', 'active')
+      if (memErr) throw memErr
+      const ids = (rows ?? []).map(r => r.user_id as string).filter(id => id !== user!.id)
+      if (ids.length === 0) return [] as Array<{ id: string; email: string; first_name: string | null; last_name: string | null }>
+      const { data: users, error: usersErr } = await supabase
         .from('users')
         .select('id, email, first_name, last_name')
-        .or(`email.ilike.%${debouncedSearchQuery.toLowerCase()}%,first_name.ilike.%${debouncedSearchQuery.toLowerCase()}%,last_name.ilike.%${debouncedSearchQuery.toLowerCase()}%`)
-        .neq('id', user?.id)
-        .limit(10)
-
-      if (error) throw error
-
-      // Filter out existing collaborators, owner, and pending additions
-      const existingUserIds = new Set(collaborators?.map(c => c.user_id) || [])
-      existingUserIds.add(list.created_by)
-      pendingAdditions.forEach(p => existingUserIds.add(p.id))
-
-      return data?.filter(u => !existingUserIds.has(u.id)) || []
+        .in('id', ids)
+      if (usersErr) throw usersErr
+      return (users ?? []) as Array<{ id: string; email: string; first_name: string | null; last_name: string | null }>
     },
-    enabled: isOpen && debouncedSearchQuery.length >= 2
   })
+
+  // Client-side filtered list — owner, existing collaborators, and
+  // already-pending picks are excluded so the search never offers
+  // someone you've already added.
+  const filteredResults = useMemo(() => {
+    const excluded = new Set(collaborators?.map(c => c.user_id) || [])
+    if (list?.created_by) excluded.add(list.created_by)
+    pendingAdditions.forEach(p => excluded.add(p.id))
+    const term = searchQuery.trim().toLowerCase()
+    return orgMembers
+      .filter(m => !excluded.has(m.id))
+      .filter(m => {
+        if (!term) return true
+        const name = `${m.first_name || ''} ${m.last_name || ''}`.trim().toLowerCase()
+        return name.includes(term) || (m.email || '').toLowerCase().includes(term)
+      })
+      .sort((a, b) => {
+        const an = `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || ''
+        const bn = `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.email || ''
+        return an.localeCompare(bn)
+      })
+  }, [orgMembers, collaborators, list?.created_by, pendingAdditions, searchQuery])
 
   const getUserDisplayName = (userData: any) => {
     if (!userData) return 'Unknown User'
@@ -359,14 +370,11 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search by name..."
+                    placeholder="Filter org members by name or email…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  {isSearching && (
-                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin" />
-                  )}
                 </div>
                 <PermissionToggle
                   permission={invitePermission}
@@ -374,66 +382,52 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                 />
               </div>
 
-              {/* Search Results - Fixed height */}
+              {/* Org member picker — shows the full list of teammates
+                  available to invite (filtered by the search input
+                  above). No server round-trip per keystroke; the
+                  member set is loaded once when the dialog opens. */}
               <div className="mt-2 h-28 border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50">
-                {(() => {
-                  // Determine what to show based on debounced state
-                  const isTyping = searchQuery !== debouncedSearchQuery && searchQuery.length >= 2
-                  const hasQuery = debouncedSearchQuery.length >= 2
-
-                  if (!hasQuery && !isTyping) {
-                    return (
-                      <div className="h-full flex items-center justify-center text-sm text-gray-400">
-                        Type to search for users
-                      </div>
-                    )
-                  }
-
-                  if (isTyping || isSearching) {
-                    return (
-                      <div className="h-full flex items-center justify-center">
-                        <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
-                      </div>
-                    )
-                  }
-
-                  if (searchResults && searchResults.length > 0) {
-                    return (
-                      <div className="h-full overflow-y-auto">
-                        {searchResults.map((searchUser) => (
-                          <div
-                            key={searchUser.id}
-                            className="flex items-center justify-between px-3 py-2 hover:bg-white border-b border-gray-100 last:border-b-0"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-                                <span className="text-white text-[10px] font-medium">
-                                  {getUserInitials(searchUser)}
-                                </span>
-                              </div>
-                              <span className="text-sm font-medium text-gray-900">
-                                {getUserDisplayName(searchUser)}
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => handleAddUser(searchUser)}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                              Add
-                            </button>
+                {filteredResults.length > 0 ? (
+                  <div className="h-full overflow-y-auto">
+                    {filteredResults.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between px-3 py-2 hover:bg-white border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span className="text-white text-[10px] font-medium">
+                              {getUserInitials(member)}
+                            </span>
                           </div>
-                        ))}
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate">
+                              {getUserDisplayName(member)}
+                            </div>
+                            {member.email && (
+                              <div className="text-[11px] text-gray-500 truncate">{member.email}</div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleAddUser(member)}
+                          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors flex-shrink-0"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add
+                        </button>
                       </div>
-                    )
-                  }
-
-                  return (
-                    <div className="h-full flex items-center justify-center text-sm text-gray-500">
-                      No users found
-                    </div>
-                  )
-                })()}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-gray-500 px-3 text-center">
+                    {orgMembers.length === 0
+                      ? 'No other members in this organization to invite.'
+                      : searchQuery.trim()
+                        ? 'No matches.'
+                        : 'Everyone in your org is already on this list.'}
+                  </div>
+                )}
               </div>
             </div>
 
