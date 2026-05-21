@@ -13,12 +13,13 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Sparkles, Plus, Check, Trash2, Archive, ArchiveRestore, Star, X,
-  AlertTriangle, RefreshCw,
+  AlertTriangle, RefreshCw, RotateCcw,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../components/common/Toast'
+import { useAuth } from '../../hooks/useAuth'
 import {
   usePilotScenariosForOrg,
   usePilotScenarioMutations,
@@ -26,6 +27,35 @@ import {
   type PilotScenario,
 } from '../../hooks/usePilotScenario'
 import { PILOT_ACCESS_DEFAULTS, mergePilotAccess, type PilotAccessConfig, type PilotAccessLevel } from '../../lib/pilot/pilot-access'
+
+/** Per-(user, org) localStorage keys written by the Get Started
+ *  banners. Centralized here so the Reset button below can wipe
+ *  them in one place when an ops user resets themselves. Kept in
+ *  sync with the keys defined in TradeQueuePage / PilotTradeLabIntroBanner
+ *  / PilotTradeBookGetStarted. */
+function pilotBannerLocalStorageKeys(userId: string, orgId: string): string[] {
+  return [
+    // Idea Pipeline banner (TradeQueuePage)
+    `pilot_pipeline_banner_dismissed_${userId}_${orgId}`,
+    `pilot_pipeline_step_moved_${userId}_${orgId}`,
+    `pilot_pipeline_step_inbox_${userId}_${orgId}`,
+    `pilot_pipeline_step_tradelab_${userId}_${orgId}`,
+    // Trade Lab intro banner
+    `pilot_tradelab_intro_dismissed_${userId}_${orgId}`,
+    `pilot_tradelab_intro_rec_reviewed_${userId}_${orgId}`,
+    `pilot_tradelab_intro_rec_sized_${userId}_${orgId}`,
+    `pilot_tradelab_intro_executed_${userId}_${orgId}`,
+    // Trade Book Get Started banner
+    `pilot_tradebook_intro_dismissed_${userId}_${orgId}`,
+    `pilot_tradebook_intro_reviewed_${userId}_${orgId}`,
+    `pilot_tradebook_intro_rationale_${userId}_${orgId}`,
+    `pilot_tradebook_intro_outcomes_${userId}_${orgId}`,
+    // PilotWelcomeBanner / cached pilot hints
+    `pilot-banner-dismissed-${orgId}`,
+    `pilot-banner-expanded-${orgId}`,
+    `pilot_graduated_${userId}_${orgId}`,
+  ]
+}
 
 interface OpsPilotPanelProps {
   orgId: string
@@ -35,6 +65,7 @@ interface OpsPilotPanelProps {
 export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
   const { success, error: showError } = useToast()
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuth()
 
   // ─── Org settings (pilot_mode + pilot_access) ──────────────────────
   const { data: org } = useQuery({
@@ -90,6 +121,57 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
     },
   })
   const progressMap = new Map(progressRows.map(r => [r.id, r.pilot_progress ?? {}]))
+
+  // Reset pilot progress for a member — clears the unlock flags from
+  // `users.pilot_progress` (trade_book_unlocked_at, outcomes_unlocked_at,
+  // and the per-org graduated_at_<orgId>) so the Get Started flow can
+  // be re-tested without dropping into SQL. If the ops user is resetting
+  // themselves, the localStorage banner step flags are also cleared so
+  // the in-page Get Started banners reappear from step 1 on next mount.
+  // (We can't reach another user's browser storage, so resetting someone
+  // else only clears server-side progress; they'll still need to clear
+  // their own banner state if they want a fresh in-page experience.)
+  const resetProgress = useMutation({
+    mutationFn: async (params: { userId: string }) => {
+      const { data: row, error: readErr } = await supabase
+        .from('users')
+        .select('pilot_progress')
+        .eq('id', params.userId)
+        .maybeSingle()
+      if (readErr) throw readErr
+      const progress = { ...((row?.pilot_progress ?? {}) as Record<string, any>) }
+      // Per-org unlock keys (the values usePilotProgress actually reads).
+      delete progress[`trade_book_unlocked_at_${orgId}`]
+      delete progress[`outcomes_unlocked_at_${orgId}`]
+      delete progress[`graduated_at_${orgId}`]
+      // Legacy user-level keys — no longer read by app code, but wipe
+      // defensively so stale data doesn't linger on the row.
+      delete progress.trade_book_unlocked_at
+      delete progress.outcomes_unlocked_at
+      delete progress.graduated_at
+      const { error: writeErr } = await supabase
+        .from('users')
+        .update({ pilot_progress: progress })
+        .eq('id', params.userId)
+      if (writeErr) throw writeErr
+      return { userId: params.userId }
+    },
+    onSuccess: ({ userId }) => {
+      if (currentUser?.id === userId) {
+        try {
+          for (const key of pilotBannerLocalStorageKeys(userId, orgId)) {
+            localStorage.removeItem(key)
+          }
+          // Force the user-facing pilot-mode hook to re-evaluate from scratch.
+          localStorage.removeItem(`was_pilot_${userId}`)
+        } catch { /* ignore */ }
+      }
+      queryClient.invalidateQueries({ queryKey: ['ops-pilot-user-progress', orgId] })
+      queryClient.invalidateQueries({ queryKey: ['pilot-progress'] })
+      success('Pilot progress reset')
+    },
+    onError: (e: any) => showError(e.message || 'Reset failed'),
+  })
 
   return (
     <div className="space-y-5">
@@ -166,8 +248,12 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
               const name = [m.first_name, m.last_name].filter(Boolean).join(' ').trim() || m.email?.split('@')[0] || 'Unknown'
               const scenario = userScenarioMap[m.user_id]
               const progress = progressMap.get(m.user_id) ?? {}
-              const tradeBookUnlocked = !!progress.trade_book_unlocked
-              const outcomesUnlocked = !!progress.outcomes_unlocked
+              // Per-org keys — match what usePilotProgress reads in the
+              // app. The previous code looked at user-level fields
+              // (`progress.trade_book_unlocked`) that don't exist on
+              // the JSONB shape, so the chips always read "preview".
+              const tradeBookUnlocked = !!progress[`trade_book_unlocked_at_${orgId}`]
+              const outcomesUnlocked = !!progress[`outcomes_unlocked_at_${orgId}`]
 
               return (
                 <li key={m.user_id} className="px-4 py-3 space-y-2">
@@ -241,6 +327,23 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
                     >
                       <RefreshCw className="w-3 h-3 mr-1" />
                       Reset &amp; seed
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={resetProgress.isPending}
+                      onClick={() => {
+                        const isSelf = currentUser?.id === m.user_id
+                        const msg = isSelf
+                          ? `Reset ${name}'s pilot progress? Clears Trade Book / Outcomes unlocks, graduation for this org, AND your local Get Started banner state so the full onboarding flow reappears.`
+                          : `Reset ${name}'s pilot progress? Clears Trade Book / Outcomes unlocks and graduation for this org. They'll still need to clear their own browser's banner state if they want banners to reappear from step 1.`
+                        if (!confirm(msg)) return
+                        resetProgress.mutate({ userId: m.user_id })
+                      }}
+                      title="Clear trade_book_unlocked_at, outcomes_unlocked_at, and graduated_at_<org> so the Get Started flow can be re-tested"
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Reset progress
                     </Button>
                   </div>
                 </li>

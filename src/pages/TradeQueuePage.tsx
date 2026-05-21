@@ -205,22 +205,36 @@ export function TradeQueuePage() {
     writeFlag(STEP3_KEY)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [STEP3_KEY])
-  const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed
+  // The banner is hidden the moment all three steps are done — derived
+  // directly from state rather than driven by a useEffect that flips
+  // `pilotBannerDismissed` on the NEXT render. Previously the auto-
+  // dismiss effect caused a visible flash when navigating back to the
+  // Idea Pipeline after completing Trade Lab: the page mounted with
+  // all three step flags read from localStorage, rendered the banner
+  // for one frame, then the effect set `dismissed=true` and unmounted
+  // it. Folding the "all done?" check straight into `showPilotBanner`
+  // means the first render already excludes the banner — no flash.
+  const allStepsDone = pilotStep1Done && pilotStep2Done && pilotStep3Done
+  const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && !allStepsDone
   const dismissPilotBanner = () => {
     setPilotBannerDismissed(true)
     writeFlag(BANNER_KEY)
   }
-  // Auto-dismiss once all three onboarding actions are complete.
+  // Persist the dismissed flag the first time all three steps are
+  // complete so the BANNER_KEY localStorage entry reflects reality
+  // (useful if anything else inspects it). This effect doesn't gate
+  // rendering — `showPilotBanner` already does — so it can't cause
+  // a flash; it's just bookkeeping.
   useEffect(() => {
     if (
       pilotMode.effectiveIsPilot &&
       !pilotBannerDismissed &&
-      pilotStep1Done && pilotStep2Done && pilotStep3Done
+      allStepsDone
     ) {
       dismissPilotBanner()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pilotMode.effectiveIsPilot, pilotBannerDismissed, pilotStep1Done, pilotStep2Done, pilotStep3Done])
+  }, [pilotMode.effectiveIsPilot, pilotBannerDismissed, allStepsDone])
 
   // Trade service for audited mutations
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
