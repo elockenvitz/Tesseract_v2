@@ -1,8 +1,17 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "tesseract",
+  "description": "Research, decision, and outcomes platform for investment teams.",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elockenvitz/Tesseract_v2.git"
+  },
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "vite",
     "start": "vite",
