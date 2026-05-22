@@ -162,13 +162,15 @@ describe('computeAttentionScore', () => {
 
 describe('formatStackSubtitle', () => {
   it('DECIDE with stalling age shows stalling label', () => {
+    // Product label changed from "blocking decision" to "N signals" so the
+    // subtitle matches the other stages and surfaces the actual item count.
     const result = formatStackSubtitle(13, 3, 'DECIDE', 5)
-    expect(result).toBe('13d stalling \u00B7 3 portfolios \u00B7 blocking decision')
+    expect(result).toBe('13d stalling \u00B7 3 portfolios \u00B7 5 signals')
   })
 
   it('DECIDE below threshold omits age', () => {
     const result = formatStackSubtitle(5, 2, 'DECIDE', 3)
-    expect(result).toBe('2 portfolios \u00B7 blocking decision')
+    expect(result).toBe('2 portfolios \u00B7 3 signals')
   })
 
   it('no age omits age part', () => {
@@ -211,16 +213,19 @@ describe('getStackCTA', () => {
     }))
   })
 
-  it('multi simulation → "Open Trade Lab"', () => {
+  it('multi simulation → "Open Idea Pipeline"', () => {
+    // Product moved the multi-simulation CTA from Trade Lab to Idea Pipeline
+    // — the pipeline is where unsimulated ideas live before they reach the
+    // lab, so this routes the PM to the right surface.
     const items = [
       makeItem({ id: 'a3-unsimulated-a' }),
       makeItem({ id: 'a3-unsimulated-b' }),
     ]
     const cta = getStackCTA('simulation', items, navigate)
-    expect(cta.label).toBe('Open Trade Lab')
+    expect(cta.label).toBe('Open Idea Pipeline')
     cta.onClick()
     expect(navigate).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'trade-lab',
+      type: 'trade-queue',
     }))
   })
 

@@ -223,9 +223,12 @@ describe('Primary action labels', () => {
     expect(item.primaryAction.label).toBe('Confirm')
   })
 
-  it('simulation → Simulate', () => {
+  it('simulation → Open', () => {
+    // Product label changed from "Simulate" to "Open" — the action opens
+    // the trade idea detail modal where the user can route into Trade Lab
+    // from there, rather than the label promising a direct simulate action.
     const item = mapDecisionItem(makeEngineItem({ id: 'a3-unsimulated-x' }), navigate, onSnooze, NOW)
-    expect(item.primaryAction.label).toBe('Simulate')
+    expect(item.primaryAction.label).toBe('Open')
   })
 
   it('thesis → Update', () => {
