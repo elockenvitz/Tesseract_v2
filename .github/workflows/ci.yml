@@ -25,7 +25,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # `npm install` instead of `npm ci` because the lockfile carries a
+      # legacy peer-dep mismatch (vitest@4 wants vite@6/7, but we pin to
+      # vite@5). `npm install` is lenient about that; `npm ci` refuses.
+      # Locks aren't mutated in CI because we don't commit anything back.
+      # TODO(tech-debt): reconcile vitest/vite versions, then switch
+      # this back to `npm ci --legacy-peer-deps=false` for stricter CI.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
       - run: npx tsc --noEmit
 
   test:
@@ -37,7 +43,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # `npm install` instead of `npm ci` because the lockfile carries a
+      # legacy peer-dep mismatch (vitest@4 wants vite@6/7, but we pin to
+      # vite@5). `npm install` is lenient about that; `npm ci` refuses.
+      # Locks aren't mutated in CI because we don't commit anything back.
+      # TODO(tech-debt): reconcile vitest/vite versions, then switch
+      # this back to `npm ci --legacy-peer-deps=false` for stricter CI.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
       # Vitest reads vitest.config.ts. CI=true makes Vitest exit instead of
       # watching, which would hang the runner forever.
       - run: npm test -- --run
