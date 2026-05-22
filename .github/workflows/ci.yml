@@ -37,22 +37,28 @@ jobs:
   test:
     name: Unit tests
     runs-on: ubuntu-latest
+    env:
+      # supabase.ts throws on import if these aren't set. CI doesn't need to
+      # actually reach Supabase — these dummy values just satisfy the
+      # module-level guard so test files that transitively import it can
+      # load. Any test that needs real Supabase access should mock the
+      # client (e.g. with vi.mock).
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      # `npm install` instead of `npm ci` because the lockfile carries a
-      # legacy peer-dep mismatch (vitest@4 wants vite@6/7, but we pin to
-      # vite@5). `npm install` is lenient about that; `npm ci` refuses.
-      # Locks aren't mutated in CI because we don't commit anything back.
-      # TODO(tech-debt): reconcile vitest/vite versions, then switch
-      # this back to `npm ci --legacy-peer-deps=false` for stricter CI.
       - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
-      # Vitest reads vitest.config.ts. CI=true makes Vitest exit instead of
-      # watching, which would hang the runner forever.
-      - run: npm test -- --run
+      # --project unit runs only the unit-test project from vitest.config.ts.
+      # The "storybook" project runs in browser mode via Playwright/Chromium,
+      # which requires `npx playwright install` to download the browser
+      # binaries (~150MB). Skipped here to keep CI fast; visual-regression
+      # tests can move to a separate workflow with that install step.
+      # CI=true makes Vitest exit instead of watching forever.
+      - run: npm test -- --run --project unit
         env:
           CI: true
 
