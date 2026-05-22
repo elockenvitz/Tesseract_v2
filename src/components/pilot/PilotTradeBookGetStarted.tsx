@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
 import { clsx } from 'clsx'
+import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotTradeBookGetStartedProps {
   userId: string | undefined
@@ -34,6 +35,12 @@ const DISMISS = 'dismissed'
 const STEP1 = 'reviewed'
 const STEP2 = 'rationale'
 const STEP3 = 'outcomes'
+
+const STEP_TO_EVENT: Record<string, PilotEventType> = {
+  [STEP1]: 'pilot_tradebook_step_trade_reviewed',
+  [STEP2]: 'pilot_tradebook_step_rationale_added',
+  [STEP3]: 'pilot_tradebook_step_opened_outcomes',
+}
 
 function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
   return `pilot_tradebook_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
@@ -59,9 +66,17 @@ export function PilotTradeBookGetStarted({ userId, orgId, onOpenOutcomes }: Pilo
     setStep3(readFlag(userId, orgId, STEP3))
   }, [userId, orgId])
 
+  // First-time-only — see PilotTradeLabIntroBanner.markStep for the
+  // same idempotency pattern. Without the readFlag gate, every Trade
+  // Book button click that fires the matching window event would log
+  // a duplicate step-completion row in pilot_telemetry_events.
   const markStep = useCallback((suffix: string, setter: (v: boolean) => void) => {
-    if (userId) writeFlag(userId, orgId, suffix)
+    if (!userId) return
+    if (readFlag(userId, orgId, suffix)) return
+    writeFlag(userId, orgId, suffix)
     setter(true)
+    const eventType = STEP_TO_EVENT[suffix]
+    if (eventType) logPilotEvent({ eventType, organizationId: orgId ?? null })
   }, [userId, orgId])
 
   useEffect(() => {

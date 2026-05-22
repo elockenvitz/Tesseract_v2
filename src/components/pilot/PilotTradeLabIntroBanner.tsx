@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Sparkles, X, ArrowRight, Check } from 'lucide-react'
 import { clsx } from 'clsx'
+import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotTradeLabIntroBannerProps {
   userId: string
@@ -31,6 +32,15 @@ const STEP1 = 'rec_reviewed'
 const STEP2 = 'rec_sized'
 const STEP3 = 'executed'
 const DISMISS = 'dismissed'
+
+// Map each step suffix to its telemetry event so we can fire one event
+// per first-time completion. The mapping is colocated with the suffix
+// constants so adding a new step doesn't drift across files.
+const STEP_TO_EVENT: Record<string, PilotEventType> = {
+  [STEP1]: 'pilot_tradelab_step_rec_reviewed',
+  [STEP2]: 'pilot_tradelab_step_rec_sized',
+  [STEP3]: 'pilot_tradelab_step_executed',
+}
 
 function flagKey(userId: string, orgId: string | null | undefined, suffix: string) {
   return `pilot_tradelab_intro_${suffix}_${userId || 'anon'}_${orgId || 'no-org'}`
@@ -57,9 +67,15 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
     setStep3(readFlag(userId, orgId, STEP3))
   }, [userId, orgId])
 
+  // First-time-only — `readFlag` gate makes the telemetry event fire
+  // once per (user, org) even when the underlying source event
+  // (rec-reviewed, rec-sized, executed) repeats across renders.
   const markStep = useCallback((suffix: string, setter: (v: boolean) => void) => {
+    if (readFlag(userId, orgId, suffix)) return
     writeFlag(userId, orgId, suffix)
     setter(true)
+    const eventType = STEP_TO_EVENT[suffix]
+    if (eventType) logPilotEvent({ eventType, organizationId: orgId ?? null })
   }, [userId, orgId])
 
   // Listen for the three step events. Each only fires when this

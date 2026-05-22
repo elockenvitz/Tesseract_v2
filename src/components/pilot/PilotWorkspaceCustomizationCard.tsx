@@ -16,6 +16,19 @@ import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { SetupWizard } from '../onboarding/SetupWizard'
+import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
+
+// Each wizard step → its server telemetry event. Fires exactly once
+// per (user, org) the first time the step is marked done — the
+// `prev.has(stepId)` guard in the handler below is the idempotency
+// check. Without it, replaying the SetupWizard would log duplicate
+// rows for the same step.
+const STEP_TO_EVENT: Record<string, PilotEventType> = {
+  profile:         'pilot_customization_profile_completed',
+  'role-specific': 'pilot_customization_role_completed',
+  integrations:    'pilot_customization_integrations_completed',
+  teams:           'pilot_customization_teams_completed',
+}
 
 interface PilotWorkspaceCustomizationCardProps {
   /** Hide the card if true (e.g. user already finished the wizard via another entry point). */
@@ -75,13 +88,20 @@ export function PilotWorkspaceCustomizationCard({ forceHide }: PilotWorkspaceCus
   }, [readDoneSet])
 
   // Listen for wizard step-complete events so the checklist ticks
-  // live without requiring a page refresh.
+  // live without requiring a page refresh. Also fires a one-shot
+  // pilot_telemetry_events row the first time each step flips
+  // un-done → done so ops can see customization-stage progress.
   useEffect(() => {
     if (!user?.id) return
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail || {}
       const stepId = detail.stepId as StepId | undefined
       if (!stepId || !stepIds.includes(stepId as StepId)) return
+      // Read the on-disk flag to decide whether this is the first
+      // completion. We can't use `completedSet` here because the
+      // closure may be stale across renders.
+      let wasAlreadyMarked = false
+      try { wasAlreadyMarked = localStorage.getItem(STEP_KEY(user.id, currentOrgId, stepId)) === '1' } catch { /* ignore */ }
       try { localStorage.setItem(STEP_KEY(user.id, currentOrgId, stepId), '1') } catch { /* ignore */ }
       setCompletedSet(prev => {
         if (prev.has(stepId)) return prev
@@ -89,6 +109,10 @@ export function PilotWorkspaceCustomizationCard({ forceHide }: PilotWorkspaceCus
         next.add(stepId)
         return next
       })
+      if (!wasAlreadyMarked) {
+        const eventType = STEP_TO_EVENT[stepId]
+        if (eventType) logPilotEvent({ eventType, organizationId: currentOrgId })
+      }
     }
     window.addEventListener('setup-wizard:step-completed', handler as EventListener)
     return () => window.removeEventListener('setup-wizard:step-completed', handler as EventListener)

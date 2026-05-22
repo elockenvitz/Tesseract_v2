@@ -20,29 +20,86 @@ import { supabase } from '../../lib/supabase'
 // ─── Types ────────────────────────────────────────────────────
 
 interface ClientHealth {
-  org: { id: string; name: string; slug: string; created_at: string }
+  org: { id: string; name: string; slug: string; created_at: string; isPilot: boolean }
   activeUsersNow: number
   totalMembers: number
   lastLoginAt: string | null
   holdingsLastDate: string | null
   holdingsHealth: 'good' | 'stale' | 'none'
-  onboardingPct: number
+  /** Pilot Get Started funnel % — distinct funnel steps any member of
+   *  this org has completed, out of the 10-step flow. `null` for
+   *  non-pilot orgs since the flow doesn't apply there. */
+  onboardingPct: number | null
+  /** Raw "steps completed / total" for the tooltip on the progress bar. */
+  onboardingStepsCompleted: number
+  onboardingStepsTotal: number
   engagementScore: number // 0-100 based on recent activity
   openBugReports: number
 }
+
+// Every Get Started step event we count toward the per-org Onboarding %.
+// 1 Capture (DB-derived) + 9 in-banner pilot-flow steps + 3 Outcomes
+// banner steps + 9 post-graduation steps (7 DB + 2 telemetry) + 4
+// customization wizard steps = 26 items total.
+const PILOT_FUNNEL_STEP_EVENTS = [
+  // Idea Pipeline (3)
+  'pilot_pipeline_step_idea_dragged',
+  'pilot_pipeline_step_inbox_opened',
+  'pilot_pipeline_step_tradelab_opened',
+  // Trade Lab (3)
+  'pilot_tradelab_step_rec_reviewed',
+  'pilot_tradelab_step_rec_sized',
+  'pilot_tradelab_step_executed',
+  // Trade Book (3)
+  'pilot_tradebook_step_trade_reviewed',
+  'pilot_tradebook_step_rationale_added',
+  'pilot_tradebook_step_opened_outcomes',
+  // Outcomes — Finish the Loop (3)
+  'pilot_outcomes_step_result_inspected',
+  'pilot_outcomes_step_thesis_reviewed',
+  'pilot_outcomes_step_performance_checked',
+  // PilotWelcomeBanner localStorage-only items (2) — now telemetry-backed
+  'pilot_postgrad_idea_feed_viewed',
+  'pilot_postgrad_asset_explored',
+  // Customization wizard (4)
+  'pilot_customization_profile_completed',
+  'pilot_customization_role_completed',
+  'pilot_customization_integrations_completed',
+  'pilot_customization_teams_completed',
+] as const
+// Total funnel size:
+//   1 (capture, derived from trade_queue_items)
+// + STEP_EVENTS.length (in-banner + outcomes + LS post-grad + wizard)
+// + 7 (post-grad DB-backed items: research field, rating, note, theme,
+//      thought, prompt, list)
+// = 26
+const PILOT_FUNNEL_CAPTURE_STEPS = 1
+const PILOT_FUNNEL_POSTGRAD_DB_STEPS = 7
+const PILOT_FUNNEL_TOTAL_STEPS =
+  PILOT_FUNNEL_CAPTURE_STEPS + PILOT_FUNNEL_STEP_EVENTS.length + PILOT_FUNNEL_POSTGRAD_DB_STEPS
 
 // ─── Component ────────────────────────────────────────────────
 
 export function OpsDashboardPage() {
   const navigate = useNavigate()
 
-  // All orgs
+  // All orgs (include settings so we can flag pilot orgs — the Get
+  // Started funnel only applies when settings.pilot_mode is on).
   const { data: orgs = [] } = useQuery({
     queryKey: ['ops-dash-orgs'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('organizations').select('id, name, slug, created_at').order('name')
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('id, name, slug, created_at, settings')
+        .order('name')
       if (error) throw error
-      return data || []
+      return (data || []).map((o: any) => ({
+        id: o.id as string,
+        name: o.name as string,
+        slug: o.slug as string,
+        created_at: o.created_at as string,
+        isPilot: !!o.settings?.pilot_mode,
+      }))
     },
   })
 
@@ -103,23 +160,181 @@ export function OpsDashboardPage() {
     },
   })
 
-  // Onboarding signals: org chart nodes, portfolios, coverage
-  const { data: onboardingData } = useQuery({
-    queryKey: ['ops-dash-onboarding'],
+  // Pilot Get Started funnel signals — drives the per-org Onboarding %.
+  // Two sources combined per (org, step):
+  //   1. pilot_telemetry_events: distinct step events fired by any
+  //      active member of the org (covers the 9 in-banner steps).
+  //   2. users.pilot_progress per-org keys
+  //      (trade_book_unlocked_at_<orgId>, outcomes_unlocked_at_<orgId>,
+  //       graduated_at_<orgId>): fallback for pilots whose unlock
+  //      pre-dated step-level telemetry, plus the terminal graduation
+  //      milestone. The Trade Lab "executed" and Trade Book
+  //      "opened outcomes" steps union both sources so older pilots
+  //      still register progress on those.
+  const { data: funnelData } = useQuery({
+    queryKey: ['ops-dash-pilot-funnel'],
+    enabled: orgs.length > 0 && memberships.length > 0,
     queryFn: async () => {
-      const [orgChartRes, portfoliosRes, coverageRes] = await Promise.all([
-        supabase.from('org_chart_nodes').select('organization_id').not('organization_id', 'is', null),
-        supabase.from('portfolios').select('organization_id').eq('is_active', true).not('organization_id', 'is', null),
-        supabase.from('coverage').select('id').eq('is_active', true),
-      ])
-      return {
-        orgChartByOrg: new Set((orgChartRes.data || []).map(r => r.organization_id)),
-        portfoliosByOrg: (portfoliosRes.data || []).reduce((m: Map<string, number>, r: any) => {
-          m.set(r.organization_id, (m.get(r.organization_id) || 0) + 1)
-          return m
-        }, new Map<string, number>()),
-        hasCoverage: (coverageRes.data?.length || 0) > 0,
+      const pilotOrgIds = orgs.filter(o => o.isPilot).map(o => o.id)
+      if (pilotOrgIds.length === 0) return { stepsByOrg: new Map<string, Set<string>>() }
+
+      const pilotMemberUserIds = Array.from(new Set(
+        memberships
+          .filter(m => pilotOrgIds.includes(m.organization_id))
+          .map(m => m.user_id),
+      ))
+      const userToOrgs = new Map<string, Set<string>>()
+      for (const m of memberships) {
+        if (!pilotOrgIds.includes(m.organization_id)) continue
+        const s = userToOrgs.get(m.user_id) ?? new Set<string>()
+        s.add(m.organization_id)
+        userToOrgs.set(m.user_id, s)
       }
+
+      // Earliest org created_at across the pilot orgs — used as a
+      // best-effort recency floor for post-grad tables that don't have
+      // an organization_id column. Per-org filtering happens below by
+      // mapping back from created_by → user → org.
+      const earliestOrgCreatedAt = orgs
+        .filter(o => pilotOrgIds.includes(o.id))
+        .map(o => o.created_at)
+        .sort()[0] ?? new Date(0).toISOString()
+
+      const [eventsRes, progressRes,
+             contribRes, ratingRes, noteRes,
+             themeRes, themeNoteRes,
+             thoughtRes,
+             promptHistoryRes, promptThoughtRes,
+             listRes,
+             capturedRes,
+      ] = await Promise.all([
+        pilotMemberUserIds.length > 0
+          ? supabase
+              .from('pilot_telemetry_events')
+              .select('event_type, user_id, organization_id')
+              .in('user_id', pilotMemberUserIds)
+              .in('organization_id', pilotOrgIds)
+              .in('event_type', PILOT_FUNNEL_STEP_EVENTS as unknown as string[])
+          : Promise.resolve({ data: [] as any[] }),
+        pilotMemberUserIds.length > 0
+          ? supabase
+              .from('users')
+              .select('id, pilot_progress')
+              .in('id', pilotMemberUserIds)
+          : Promise.resolve({ data: [] as any[] }),
+        // ── Post-graduation Get Started signals (PilotWelcomeBanner) ──
+        // 7 server-trackable items. We fetch all rows authored by pilot
+        // members and map them to orgs in-memory so we can attribute
+        // each member's activity to the org that owns them (via the
+        // `userToOrgs` map). Tables without org_id are floored by the
+        // earliest pilot org created_at to keep stale pre-org data out.
+        supabase.from('asset_contributions').select('created_by, organization_id').in('created_by', pilotMemberUserIds).in('organization_id', pilotOrgIds),
+        supabase.from('analyst_ratings').select('user_id').in('user_id', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
+        supabase.from('asset_notes').select('created_by').in('created_by', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
+        supabase.from('themes').select('created_by, organization_id').in('created_by', pilotMemberUserIds).in('organization_id', pilotOrgIds),
+        supabase.from('theme_notes').select('created_by').in('created_by', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
+        supabase.from('quick_thoughts').select('created_by').in('created_by', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
+        supabase.from('user_quick_prompt_history').select('user_id').in('user_id', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
+        supabase.from('quick_thoughts').select('created_by').in('created_by', pilotMemberUserIds).eq('idea_type', 'prompt').gte('created_at', earliestOrgCreatedAt),
+        supabase.from('asset_lists').select('created_by').in('created_by', pilotMemberUserIds).eq('is_default', false).gte('created_at', earliestOrgCreatedAt),
+        // Capture stage — any non-seeded trade idea created by a
+        // pilot member, scoped to a pilot org's portfolio. The inner
+        // join lets us attribute the idea to the pilot org it lives in.
+        supabase
+          .from('trade_queue_items')
+          .select('created_by, origin_metadata, portfolio:portfolios!inner(organization_id)')
+          .in('created_by', pilotMemberUserIds)
+          .in('portfolio.organization_id', pilotOrgIds),
+      ])
+
+      // For each org, accumulate the set of step ids that ANY member
+      // of that org has touched (in-banner step event OR macro unlock).
+      // Step ids are arbitrary keys — we just need 10 distinct ones
+      // matching the funnel's 10 items.
+      const stepsByOrg = new Map<string, Set<string>>()
+      const recordStep = (orgId: string, stepId: string) => {
+        const s = stepsByOrg.get(orgId) ?? new Set<string>()
+        s.add(stepId)
+        stepsByOrg.set(orgId, s)
+      }
+
+      // 1. In-banner step events (need both user_id AND organization_id
+      //    to match — confirms the event was fired in the right context).
+      for (const e of (eventsRes.data ?? []) as Array<{ event_type: string; organization_id: string }>) {
+        if (e.organization_id && e.event_type) recordStep(e.organization_id, e.event_type)
+      }
+
+      // 2. Macro unlock keys → infer step coverage for the user's pilot
+      //    orgs. For "executed" and "opened outcomes" the macro unlock
+      //    is the canonical source; for "graduated" the macro IS the
+      //    step. We synthesize the same string ids as the step events
+      //    so the funnel "OR" semantics fall out naturally.
+      for (const row of (progressRes.data ?? []) as Array<{ id: string; pilot_progress: Record<string, any> | null }>) {
+        const p = (row.pilot_progress ?? {}) as Record<string, any>
+        const userOrgs = userToOrgs.get(row.id) ?? new Set<string>()
+        for (const orgId of userOrgs) {
+          if (p[`trade_book_unlocked_at_${orgId}`]) recordStep(orgId, 'pilot_tradelab_step_executed')
+          if (p[`outcomes_unlocked_at_${orgId}`])   recordStep(orgId, 'pilot_tradebook_step_opened_outcomes')
+          if (p[`graduated_at_${orgId}`])           recordStep(orgId, 'pilot_graduated')
+        }
+      }
+
+      // 3. Post-graduation Get Started steps — each fans across the
+      //    actor's pilot orgs (their activity counts for every pilot
+      //    org they belong to, just like the per-client view does).
+      //    Tables WITH organization_id (asset_contributions, themes)
+      //    attribute directly; the rest fan via userToOrgs.
+      const recordForUserOrgs = (userId: string, stepId: string) => {
+        const set = userToOrgs.get(userId)
+        if (!set) return
+        for (const orgId of set) recordStep(orgId, stepId)
+      }
+      for (const r of (contribRes.data ?? []) as Array<{ created_by: string; organization_id: string }>) {
+        if (r.organization_id) recordStep(r.organization_id, 'postgrad_filled_research')
+      }
+      for (const r of (ratingRes.data ?? []) as Array<{ user_id: string }>) {
+        recordForUserOrgs(r.user_id, 'postgrad_rated')
+      }
+      for (const r of (noteRes.data ?? []) as Array<{ created_by: string }>) {
+        recordForUserOrgs(r.created_by, 'postgrad_wrote_note')
+      }
+      for (const r of (themeRes.data ?? []) as Array<{ created_by: string; organization_id: string }>) {
+        if (r.organization_id) recordStep(r.organization_id, 'postgrad_explored_theme')
+      }
+      for (const r of (themeNoteRes.data ?? []) as Array<{ created_by: string }>) {
+        recordForUserOrgs(r.created_by, 'postgrad_explored_theme')
+      }
+      for (const r of (thoughtRes.data ?? []) as Array<{ created_by: string }>) {
+        recordForUserOrgs(r.created_by, 'postgrad_posted_thought')
+      }
+      for (const r of (promptHistoryRes.data ?? []) as Array<{ user_id: string }>) {
+        recordForUserOrgs(r.user_id, 'postgrad_used_prompt')
+      }
+      for (const r of (promptThoughtRes.data ?? []) as Array<{ created_by: string }>) {
+        recordForUserOrgs(r.created_by, 'postgrad_used_prompt')
+      }
+      for (const r of (listRes.data ?? []) as Array<{ created_by: string }>) {
+        recordForUserOrgs(r.created_by, 'postgrad_built_list')
+      }
+
+      // 4. Capture stage — any non-seeded trade_queue_items row by an
+      //    org member, attributed directly to the portfolio's org.
+      //    Embed shape from supabase-js: portfolio can be returned as
+      //    `{ organization_id }` or `[{ organization_id }]` depending
+      //    on the relationship cardinality the planner picks. Handle
+      //    both defensively.
+      for (const r of (capturedRes.data ?? []) as Array<{
+        created_by: string
+        origin_metadata: Record<string, unknown> | null
+        portfolio: { organization_id?: string } | { organization_id?: string }[] | null
+      }>) {
+        if ((r.origin_metadata as any)?.pilot_seed) continue
+        const p = Array.isArray(r.portfolio) ? r.portfolio[0] : r.portfolio
+        const orgId = p?.organization_id
+        if (orgId) recordStep(orgId, 'capture_idea_created')
+      }
+
+      return { stepsByOrg }
     },
   })
 
@@ -186,14 +401,15 @@ export function OpsDashboardPage() {
         holdingsHealth = daysSince > 3 ? 'stale' : 'good'
       }
 
-      // Onboarding (5 checkpoints)
-      let onboardingScore = 0
-      if (orgMembers.length > 1) onboardingScore++ // Has invited users
-      if (onboardingData?.orgChartByOrg.has(org.id)) onboardingScore++ // Has org chart
-      if ((onboardingData?.portfoliosByOrg.get(org.id) || 0) > 0) onboardingScore++ // Has portfolios
-      if (holdingsLastDate) onboardingScore++ // Has holdings
-      if (orgSessions.length > 0) onboardingScore++ // Has logged in
-      const onboardingPct = Math.round((onboardingScore / 5) * 100)
+      // Onboarding (pilot Get Started funnel) — distinct funnel steps
+      // any member of this org has completed, out of the 10-step flow.
+      // Non-pilot orgs get `null` (the Get Started flow doesn't apply
+      // there); the table renders that as "—".
+      let onboardingPct: number | null = null
+      const stepsCompleted = funnelData?.stepsByOrg.get(org.id)?.size ?? 0
+      if (org.isPilot) {
+        onboardingPct = Math.round((stepsCompleted / PILOT_FUNNEL_TOTAL_STEPS) * 100)
+      }
 
       // Engagement score (0-100, based on activity count in last 30 days)
       const activityCount = engagementData?.get(org.id) || 0
@@ -207,11 +423,13 @@ export function OpsDashboardPage() {
         holdingsLastDate,
         holdingsHealth,
         onboardingPct,
+        onboardingStepsCompleted: stepsCompleted,
+        onboardingStepsTotal: PILOT_FUNNEL_TOTAL_STEPS,
         engagementScore,
         openBugReports: bugCounts?.get(org.id) || 0,
       }
     })
-  }, [orgs, memberships, activeSessions, recentSessions, holdingsSnapshots, onboardingData, engagementData, bugCounts])
+  }, [orgs, memberships, activeSessions, recentSessions, holdingsSnapshots, funnelData, engagementData, bugCounts])
 
   // ─── Top Users by activity ──────────────────────────────────
 
@@ -369,7 +587,19 @@ export function OpsDashboardPage() {
                   <HealthPill health={client.holdingsHealth} date={client.holdingsLastDate} />
                 </td>
                 <td className="px-5 py-3 text-center">
-                  <ProgressBar pct={client.onboardingPct} />
+                  {client.onboardingPct === null ? (
+                    <span
+                      className="text-gray-300 text-xs"
+                      title="Get Started flow only applies to pilot orgs"
+                    >
+                      —
+                    </span>
+                  ) : (
+                    <ProgressBar
+                      pct={client.onboardingPct}
+                      tooltip={`${client.onboardingStepsCompleted} of ${client.onboardingStepsTotal} Get Started steps`}
+                    />
+                  )}
                 </td>
                 <td className="px-5 py-3 text-center">
                   <EngagementDot score={client.engagementScore} />
@@ -489,9 +719,9 @@ function HealthPill({ health, date }: { health: 'good' | 'stale' | 'none'; date:
   )
 }
 
-function ProgressBar({ pct }: { pct: number }) {
+function ProgressBar({ pct, tooltip }: { pct: number; tooltip?: string }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5" title={tooltip}>
       <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
         <div
           className={clsx('h-full rounded-full transition-all', pct >= 80 ? 'bg-green-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-400')}

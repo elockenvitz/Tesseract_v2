@@ -52,6 +52,26 @@ export function OpsMetricsPage() {
   const { data: funnelData } = useQuery({
     queryKey: ['ops-metrics-funnel'],
     queryFn: async () => {
+      // ── Column references audited against information_schema ───
+      //   asset_contributions  → created_by   (NOT user_id — schema
+      //                          has no user_id column, prior query
+      //                          returned empty and undercounted
+      //                          "Did Research")
+      //   asset_notes          → created_by
+      //   analyst_ratings      → user_id
+      //   quick_thoughts       → created_by   (NOT user_id — same
+      //                          bug; "Shared Thought" returned 0)
+      //   trade_queue_items    → created_by
+      //   simulations          → created_by
+      //   accepted_trades      → accepted_by, filter is_active=true
+      //                          AND reverted_at IS NULL so reverted
+      //                          commits don't inflate the bottom of
+      //                          the funnel
+      //   user_sessions        → user_id
+      //
+      // The is_archived filter on tables that have it (contributions,
+      // thoughts) keeps soft-deleted rows from counting toward
+      // engagement — same intent as the rest of the app reads.
       const [
         sessionsRes,
         contributionsRes,
@@ -63,13 +83,13 @@ export function OpsMetricsPage() {
         acceptedRes,
       ] = await Promise.all([
         supabase.from('user_sessions').select('user_id').then(r => new Set((r.data || []).map(d => d.user_id))),
-        supabase.from('asset_contributions').select('user_id').then(r => new Set((r.data || []).map(d => d.user_id))),
+        supabase.from('asset_contributions').select('created_by').eq('is_archived', false).then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('asset_notes').select('created_by').then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('analyst_ratings').select('user_id').then(r => new Set((r.data || []).map(d => d.user_id))),
-        supabase.from('quick_thoughts').select('user_id').then(r => new Set((r.data || []).map(d => d.user_id))),
+        supabase.from('quick_thoughts').select('created_by').eq('is_archived', false).then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('trade_queue_items').select('created_by').then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('simulations').select('created_by').then(r => new Set((r.data || []).map(d => d.created_by))),
-        supabase.from('accepted_trades').select('accepted_by').then(r => new Set((r.data || []).map(d => d.accepted_by))),
+        supabase.from('accepted_trades').select('accepted_by').eq('is_active', true).is('reverted_at', null).then(r => new Set((r.data || []).map(d => d.accepted_by))),
       ])
 
       return {
@@ -99,13 +119,17 @@ export function OpsMetricsPage() {
         if (!firstSession.has(s.user_id)) firstSession.set(s.user_id, s.started_at)
       }
 
-      // Get first meaningful action per user (contribution, note, rating, idea, thought)
+      // Get first meaningful action per user (contribution, note, rating, idea, thought).
+      // Same column corrections as the funnel query above —
+      // asset_contributions and quick_thoughts both use `created_by`,
+      // not `user_id`, so the earlier defaults returned nothing for
+      // those tables and the activation-rate denominator was off.
       const actionTables = [
-        { table: 'asset_contributions', userCol: 'user_id', dateCol: 'created_at' },
+        { table: 'asset_contributions', userCol: 'created_by', dateCol: 'created_at' },
         { table: 'asset_notes', userCol: 'created_by', dateCol: 'created_at' },
         { table: 'analyst_ratings', userCol: 'user_id', dateCol: 'created_at' },
         { table: 'trade_queue_items', userCol: 'created_by', dateCol: 'created_at' },
-        { table: 'quick_thoughts', userCol: 'user_id', dateCol: 'created_at' },
+        { table: 'quick_thoughts', userCol: 'created_by', dateCol: 'created_at' },
       ]
 
       const firstAction = new Map<string, string>()
@@ -212,17 +236,28 @@ export function OpsMetricsPage() {
 
   const funnel = useMemo(() => {
     if (!funnelData) return null
-    const totalUsers = allUsers.length
-    const steps = [
-      { label: 'Signed Up', count: totalUsers, icon: Users },
-      { label: 'Logged In', count: funnelData.loggedIn.size, icon: Zap },
-      { label: 'Did Research', count: funnelData.researched.size, icon: BarChart3 },
-      { label: 'Shared Thought', count: funnelData.communicated.size, icon: Target },
-      { label: 'Created Idea', count: funnelData.createdIdea.size, icon: Target },
-      { label: 'Ran Simulation', count: funnelData.ranSimulation.size, icon: TrendingUp },
-      { label: 'Committed Trade', count: funnelData.committedTrade.size, icon: CheckCircle2 },
+    // Strict-subset funnel: each stage counts users who hit THIS stage
+    // AND every prior stage. The naive "users who ever did X" form
+    // produced non-monotone funnels — e.g. "Created Idea" (14) used to
+    // exceed "Logged In" (9) because session tracking started after
+    // some ideas had already been logged. With intersect-as-you-go,
+    // dropoff between adjacent stages is always ≥ 0 and "% of signed
+    // up users who reached stage X" reads as a real conversion rate.
+    const allUserIds = new Set(allUsers.map(u => u.id))
+    const stages: { label: string; users: Set<string>; icon: typeof Users }[] = [
+      { label: 'Signed Up',       users: allUserIds,                icon: Users },
+      { label: 'Logged In',       users: funnelData.loggedIn,       icon: Zap },
+      { label: 'Did Research',    users: funnelData.researched,     icon: BarChart3 },
+      { label: 'Shared Thought',  users: funnelData.communicated,   icon: Target },
+      { label: 'Created Idea',    users: funnelData.createdIdea,    icon: Target },
+      { label: 'Ran Simulation',  users: funnelData.ranSimulation,  icon: TrendingUp },
+      { label: 'Committed Trade', users: funnelData.committedTrade, icon: CheckCircle2 },
     ]
-    return steps
+    let cohort = allUserIds
+    return stages.map(stage => {
+      cohort = new Set(Array.from(cohort).filter(u => stage.users.has(u)))
+      return { label: stage.label, count: cohort.size, icon: stage.icon }
+    })
   }, [funnelData, allUsers])
 
   // ─── Time-to-value stats ───────────────────────────────────

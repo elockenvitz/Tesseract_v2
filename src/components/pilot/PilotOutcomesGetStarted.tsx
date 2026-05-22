@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { X, ArrowRight, Check, Trophy } from 'lucide-react'
 import { clsx } from 'clsx'
+import { logPilotEvent, type PilotEventType } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotOutcomesGetStartedProps {
   userId: string | undefined
@@ -39,6 +40,16 @@ const DISMISS = 'dismissed'
 const STEP1 = 'inspected'
 const STEP2 = 'next_action'
 const STEP3 = 'research'
+
+// Each step → its server telemetry event. Logging is gated through
+// `setFlagWithTelemetry` below so the row lands exactly once per
+// (user, org) — the readFlag check before each write is the
+// idempotency guard.
+const STEP_TO_EVENT: Record<string, PilotEventType> = {
+  [STEP1]: 'pilot_outcomes_step_result_inspected',
+  [STEP2]: 'pilot_outcomes_step_thesis_reviewed',
+  [STEP3]: 'pilot_outcomes_step_performance_checked',
+}
 // Pending flag the global PilotGraduationModal reads. Setting this
 // when graduation occurs lets the modal pop wherever the user lands
 // after the step-3 navigation (since Outcomes itself unmounts when
@@ -61,9 +72,20 @@ function writeFlag(userId: string, orgId: string | null | undefined, suffix: str
 // from the same call site that writes the flag, eliminating the prior
 // race where a setState in a listener could be missed during a busy
 // render flush.
+//
+// Also fires a one-shot telemetry row the FIRST time a step flag
+// flips false→true. The readFlag check makes this idempotent per
+// (user, org) — repeating the underlying action (e.g. re-opening the
+// thesis section) won't log a duplicate. Telemetry is fire-and-forget
+// so it can't block the UI update.
 function setFlag(userId: string, orgId: string | null | undefined, suffix: string) {
+  const wasAlreadySet = readFlag(userId, orgId, suffix)
   writeFlag(userId, orgId, suffix)
   try { window.dispatchEvent(new CustomEvent('pilot-outcomes:state-changed')) } catch { /* ignore */ }
+  if (!wasAlreadySet) {
+    const eventType = STEP_TO_EVENT[suffix]
+    if (eventType) logPilotEvent({ eventType, organizationId: orgId ?? null })
+  }
 }
 
 // Subscribe to localStorage flag changes from any source — same-tab

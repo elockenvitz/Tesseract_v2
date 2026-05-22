@@ -54,6 +54,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from '../hooks/usePilotMode'
+import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -190,21 +191,32 @@ export function TradeQueuePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, currentOrgId])
 
+  // Each step marker guards on localStorage so the telemetry event
+  // fires exactly once per (user, org) — even if the underlying user
+  // action (drag, inbox open, openTradeLab dispatch) repeats. Without
+  // this, the global openTradeLab listener in particular would log a
+  // step event on every Trade Lab button click.
   const markPilotStep1 = useCallback(() => {
+    if (readFlag(STEP1_KEY)) return
     setPilotStep1Done(true)
     writeFlag(STEP1_KEY)
+    logPilotEvent({ eventType: 'pilot_pipeline_step_idea_dragged', organizationId: currentOrgId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [STEP1_KEY])
+  }, [STEP1_KEY, currentOrgId])
   const markPilotStep2 = useCallback(() => {
+    if (readFlag(STEP2_KEY)) return
     setPilotStep2Done(true)
     writeFlag(STEP2_KEY)
+    logPilotEvent({ eventType: 'pilot_pipeline_step_inbox_opened', organizationId: currentOrgId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [STEP2_KEY])
+  }, [STEP2_KEY, currentOrgId])
   const markPilotStep3 = useCallback(() => {
+    if (readFlag(STEP3_KEY)) return
     setPilotStep3Done(true)
     writeFlag(STEP3_KEY)
+    logPilotEvent({ eventType: 'pilot_pipeline_step_tradelab_opened', organizationId: currentOrgId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [STEP3_KEY])
+  }, [STEP3_KEY, currentOrgId])
   // The banner is hidden the moment all three steps are done — derived
   // directly from state rather than driven by a useEffect that flips
   // `pilotBannerDismissed` on the NEXT render. Previously the auto-

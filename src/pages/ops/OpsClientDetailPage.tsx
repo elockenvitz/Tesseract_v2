@@ -211,33 +211,128 @@ export function OpsClientDetailPage() {
     enabled: !!orgId && members.length > 0,
   })
 
-  // Onboarding (user engagement) — mirrors the user-facing Getting Started
-  // checklist in PilotWelcomeBanner so ops can see how far the org's pilot
-  // has actually engaged with the product. We aggregate "any member did X"
-  // across the org's members; for single-admin pilots that's just the admin.
-  // Two banner steps are intentionally omitted because they only have
-  // localStorage signals (customize-workspace, explore-asset) — the
-  // remaining seven all have server-side evidence.
+  // Pilot Get Started funnel — mirrors the user-facing 3-banner sequential
+  // journey (Idea Pipeline → Trade Lab → Trade Book → Outcomes). For each
+  // step we count distinct members who completed it, sourced from:
+  //   1. `pilot_telemetry_events` for the 9 in-banner steps
+  //   2. `users.pilot_progress` per-org keys for the macro unlocks
+  // The last step of Trade Lab and Trade Book have BOTH sources (the
+  // step event AND the macro unlock key). We union them so older pilots
+  // who hit the unlock before step-level telemetry existed still count.
+  //
+  // Replaced the legacy 7-item PilotWelcomeBanner checklist, which only
+  // showed for NON-pilot users — a pilot could fully graduate while the
+  // ops bar showed 0/7 because pilots never touch those surfaces.
   const { data: onboarding } = useQuery({
-    queryKey: ['ops-client-onboarding', orgId, members.length],
+    queryKey: ['ops-client-pilot-funnel', orgId, members.length],
+    enabled: !!orgId && !!org && members.length > 0,
     queryFn: async () => {
       const memberIds = (members as any[]).map((m) => m.user_id as string)
-      const empty = {
-        hasContribution: false, contributionCount: 0,
-        hasRating: false, ratingCount: 0,
-        hasNote: false, noteCount: 0,
-        hasTheme: false, themeCount: 0,
-        hasThought: false, thoughtCount: 0,
-        hasPrompt: false, promptCount: 0,
-        hasList: false, listCount: 0,
+      if (memberIds.length === 0 || !orgId) return null
+
+      const STEP_EVENTS = [
+        // Idea Pipeline (3)
+        'pilot_pipeline_step_idea_dragged',
+        'pilot_pipeline_step_inbox_opened',
+        'pilot_pipeline_step_tradelab_opened',
+        // Trade Lab (3)
+        'pilot_tradelab_step_rec_reviewed',
+        'pilot_tradelab_step_rec_sized',
+        'pilot_tradelab_step_executed',
+        // Trade Book (3)
+        'pilot_tradebook_step_trade_reviewed',
+        'pilot_tradebook_step_rationale_added',
+        'pilot_tradebook_step_opened_outcomes',
+        // Outcomes — Finish the Loop (3)
+        'pilot_outcomes_step_result_inspected',
+        'pilot_outcomes_step_thesis_reviewed',
+        'pilot_outcomes_step_performance_checked',
+        // PilotWelcomeBanner localStorage-only items (2) — now server-tracked
+        'pilot_postgrad_idea_feed_viewed',
+        'pilot_postgrad_asset_explored',
+        // Customization wizard (4)
+        'pilot_customization_profile_completed',
+        'pilot_customization_role_completed',
+        'pilot_customization_integrations_completed',
+        'pilot_customization_teams_completed',
+      ] as const
+
+      // Three reads in parallel:
+      //   1. Telemetry events (distinct users per step event)
+      //   2. pilot_progress per-org macro unlock keys
+      //   3. trade_queue_items created by org members (drives the
+      //      Capture stage "Created a trade idea" item — System Loop's
+      //      Capture milestone, separate from the in-banner steps).
+      //      Excludes seeded pilot_seed rows so the demo idea doesn't
+      //      pre-tick the step.
+      const [eventsRes, progressRes, capturedRes] = await Promise.all([
+        supabase
+          .from('pilot_telemetry_events')
+          .select('event_type, user_id')
+          .in('user_id', memberIds)
+          .eq('organization_id', orgId)
+          .in('event_type', STEP_EVENTS as unknown as string[]),
+        supabase
+          .from('users')
+          .select('id, pilot_progress')
+          .in('id', memberIds),
+        supabase
+          .from('trade_queue_items')
+          .select('created_by, origin_metadata, portfolio:portfolios!inner(organization_id)')
+          .in('created_by', memberIds)
+          .eq('portfolio.organization_id', orgId),
+      ])
+
+      // Bucket telemetry rows into a "step → set-of-user-ids" map so
+      // each step's count is distinct members, not raw event volume.
+      const usersByStep = new Map<string, Set<string>>()
+      for (const row of (eventsRes.data ?? []) as Array<{ event_type: string; user_id: string }>) {
+        const set = usersByStep.get(row.event_type) ?? new Set<string>()
+        set.add(row.user_id)
+        usersByStep.set(row.event_type, set)
       }
-      if (memberIds.length === 0) return empty
 
-      // Recency floor for tables that lack organization_id — mirrors the
-      // PilotWelcomeBanner approach so anything done before this org
-      // existed can't pre-tick a step.
+      // Macro unlock keys live in users.pilot_progress under per-org
+      // suffixed keys (see usePilotProgress refactor). Pulling these
+      // covers older pilots whose unlock pre-dated step-level events.
+      const tradeBookKey = `trade_book_unlocked_at_${orgId}`
+      const outcomesKey = `outcomes_unlocked_at_${orgId}`
+      const graduatedKey = `graduated_at_${orgId}`
+      const tradeBookSet = new Set<string>()
+      const outcomesSet = new Set<string>()
+      const graduatedSet = new Set<string>()
+      for (const row of (progressRes.data ?? []) as Array<{ id: string; pilot_progress: Record<string, any> | null }>) {
+        const p = (row.pilot_progress ?? {}) as Record<string, any>
+        if (p[tradeBookKey]) tradeBookSet.add(row.id)
+        if (p[outcomesKey]) outcomesSet.add(row.id)
+        if (p[graduatedKey]) graduatedSet.add(row.id)
+      }
+
+      const stepUsers = (key: typeof STEP_EVENTS[number]) =>
+        usersByStep.get(key) ?? new Set<string>()
+      const unionSize = (a: Set<string>, b: Set<string>) => {
+        const u = new Set(a)
+        b.forEach(x => u.add(x))
+        return u.size
+      }
+
+      // Post-graduation Get Started — PilotWelcomeBanner's 7 server-
+      // trackable items. These ALSO ran in the previous ops page and
+      // were dropped when the tab was rebuilt; restoring them here
+      // means the ops view now reflects the full pilot journey (10
+      // pilot-flow items + 7 post-graduation items).
+      //
+      // Mirrors the same scoping the user-facing banner uses:
+      //   - `created_at >= org.created_at` for tables without an
+      //     organization_id column (analyst_ratings, asset_notes,
+      //     theme_notes, quick_thoughts, user_quick_prompt_history,
+      //     asset_lists), preventing pre-org activity from pre-ticking.
+      //   - Direct `organization_id = orgId` for the two tables that
+      //     have it (asset_contributions, themes).
+      //   - asset_lists excludes `is_default = true` (every user gets
+      //     two system-seeded defaults on signup; we don't want them
+      //     to pre-tick the "Built a list" step).
       const orgCreatedAt = (org?.created_at as string | undefined) ?? new Date(0).toISOString()
-
       const [
         contribRes, ratingRes, noteRes,
         themeRes, themeNoteRes,
@@ -245,87 +340,140 @@ export function OpsClientDetailPage() {
         promptHistoryRes, promptThoughtRes,
         listRes,
       ] = await Promise.all([
-        supabase.from('asset_contributions')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .eq('organization_id', orgId!),
-        supabase.from('analyst_ratings')
-          .select('id', { count: 'exact', head: true })
-          .in('user_id', memberIds)
-          .gte('created_at', orgCreatedAt),
-        supabase.from('asset_notes')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .gte('created_at', orgCreatedAt),
-        supabase.from('themes')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .eq('organization_id', orgId!),
-        supabase.from('theme_notes')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .gte('created_at', orgCreatedAt),
-        // Thoughts: matches the banner exactly — no idea_type filter, so a
-        // prompt-type thought also ticks this step (same as the user sees).
-        supabase.from('quick_thoughts')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .gte('created_at', orgCreatedAt),
-        // Prompts: template/saved-prompt usage OR prompt-type quick_thoughts.
-        supabase.from('user_quick_prompt_history')
-          .select('id', { count: 'exact', head: true })
-          .in('user_id', memberIds)
-          .gte('created_at', orgCreatedAt),
-        supabase.from('quick_thoughts')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .eq('idea_type', 'prompt')
-          .gte('created_at', orgCreatedAt),
-        // Lists: asset_lists has no organization_id, and portfolio_id is
-        // nullable (most lists are user-personal with no portfolio). Floor
-        // by org.created_at instead, matching what the banner now does.
-        // Excludes the two system-seeded defaults every user gets on signup.
-        supabase.from('asset_lists')
-          .select('id', { count: 'exact', head: true })
-          .in('created_by', memberIds)
-          .eq('is_default', false)
-          .gte('created_at', orgCreatedAt),
+        supabase.from('asset_contributions').select('created_by').in('created_by', memberIds).eq('organization_id', orgId),
+        supabase.from('analyst_ratings').select('user_id').in('user_id', memberIds).gte('created_at', orgCreatedAt),
+        supabase.from('asset_notes').select('created_by').in('created_by', memberIds).gte('created_at', orgCreatedAt),
+        supabase.from('themes').select('created_by').in('created_by', memberIds).eq('organization_id', orgId),
+        supabase.from('theme_notes').select('created_by').in('created_by', memberIds).gte('created_at', orgCreatedAt),
+        supabase.from('quick_thoughts').select('created_by').in('created_by', memberIds).gte('created_at', orgCreatedAt),
+        supabase.from('user_quick_prompt_history').select('user_id').in('user_id', memberIds).gte('created_at', orgCreatedAt),
+        supabase.from('quick_thoughts').select('created_by').in('created_by', memberIds).eq('idea_type', 'prompt').gte('created_at', orgCreatedAt),
+        supabase.from('asset_lists').select('created_by').in('created_by', memberIds).eq('is_default', false).gte('created_at', orgCreatedAt),
       ])
 
-      const themeCount = (themeRes.count ?? 0) + (themeNoteRes.count ?? 0)
-      const promptCount = (promptHistoryRes.count ?? 0) + (promptThoughtRes.count ?? 0)
-      const thoughtCount = thoughtRes.count ?? 0
+      // Count distinct members per post-grad step.
+      const distinctUsers = (rows: any[] | null | undefined, key: string) =>
+        new Set((rows ?? []).map(r => r[key] as string)).size
+      const contributionUsers   = distinctUsers(contribRes.data, 'created_by')
+      const ratingUsers         = distinctUsers(ratingRes.data, 'user_id')
+      const noteUsers           = distinctUsers(noteRes.data, 'created_by')
+      // Theme step = theme created OR theme note written (union).
+      const themeUserSet = new Set<string>([
+        ...((themeRes.data ?? []).map((r: any) => r.created_by)),
+        ...((themeNoteRes.data ?? []).map((r: any) => r.created_by)),
+      ])
+      // Prompt step = template/saved prompt used OR a prompt-type quick_thought (union).
+      const promptUserSet = new Set<string>([
+        ...((promptHistoryRes.data ?? []).map((r: any) => r.user_id)),
+        ...((promptThoughtRes.data ?? []).map((r: any) => r.created_by)),
+      ])
+      const thoughtUsers        = distinctUsers(thoughtRes.data, 'created_by')
+      const listUsers           = distinctUsers(listRes.data, 'created_by')
+
+      // Capture stage — anyone in the org logged a non-seed idea?
+      // Drops the pilot_seed rows so the auto-seeded demo doesn't
+      // pre-tick the step.
+      const capturedUsers = new Set<string>()
+      for (const r of (capturedRes.data ?? []) as Array<{ created_by: string; origin_metadata: Record<string, unknown> | null }>) {
+        if (!(r.origin_metadata as any)?.pilot_seed) capturedUsers.add(r.created_by)
+      }
 
       return {
-        hasContribution: (contribRes.count ?? 0) > 0,
-        contributionCount: contribRes.count ?? 0,
-        hasRating: (ratingRes.count ?? 0) > 0,
-        ratingCount: ratingRes.count ?? 0,
-        hasNote: (noteRes.count ?? 0) > 0,
-        noteCount: noteRes.count ?? 0,
-        hasTheme: themeCount > 0,
-        themeCount,
-        hasThought: thoughtCount > 0,
-        thoughtCount,
-        hasPrompt: promptCount > 0,
-        promptCount,
-        hasList: (listRes.count ?? 0) > 0,
-        listCount: listRes.count ?? 0,
+        totalMembers: memberIds.length,
+        counts: {
+          // Capture stage (1) — System Loop's first stage
+          capturedIdea:    capturedUsers.size,
+          // Idea Pipeline (3)
+          ideaDragged:     stepUsers('pilot_pipeline_step_idea_dragged').size,
+          inboxOpened:     stepUsers('pilot_pipeline_step_inbox_opened').size,
+          tradelabOpened:  stepUsers('pilot_pipeline_step_tradelab_opened').size,
+          // Trade Lab (3)
+          recReviewed:     stepUsers('pilot_tradelab_step_rec_reviewed').size,
+          recSized:        stepUsers('pilot_tradelab_step_rec_sized').size,
+          // Executed = telemetry step OR macro pilot_progress unlock.
+          executed:        unionSize(stepUsers('pilot_tradelab_step_executed'), tradeBookSet),
+          // Trade Book (3)
+          tradeReviewed:   stepUsers('pilot_tradebook_step_trade_reviewed').size,
+          rationaleAdded:  stepUsers('pilot_tradebook_step_rationale_added').size,
+          // Opened Outcomes = telemetry step OR macro pilot_progress unlock.
+          openedOutcomes:  unionSize(stepUsers('pilot_tradebook_step_opened_outcomes'), outcomesSet),
+          // Outcomes — Finish the Loop (3). Falls back to the graduated_at
+          // macro for the LAST step so pre-telemetry pilots still register
+          // a Finish-the-Loop completion.
+          inspectedResult:    stepUsers('pilot_outcomes_step_result_inspected').size,
+          reviewedThesis:     stepUsers('pilot_outcomes_step_thesis_reviewed').size,
+          checkedPerformance: unionSize(stepUsers('pilot_outcomes_step_performance_checked'), graduatedSet),
+          // Graduated (headline metric, derived from pilot_progress) —
+          // kept separate from the 3 Outcomes step items so the
+          // top-of-tab "% graduated" bar still has a single source.
+          graduated:          graduatedSet.size,
+          // Post-graduation Get Started (9 = 7 DB-backed + 2 LS items
+          // now exposed via telemetry events)
+          filledResearch:    contributionUsers,
+          rated:             ratingUsers,
+          wroteNote:         noteUsers,
+          exploredTheme:     themeUserSet.size,
+          postedThought:     thoughtUsers,
+          usedPrompt:        promptUserSet.size,
+          builtList:         listUsers,
+          ideaFeedViewed:    stepUsers('pilot_postgrad_idea_feed_viewed').size,
+          assetExplored:     stepUsers('pilot_postgrad_asset_explored').size,
+          // Customization wizard (4)
+          profileConfirmed:    stepUsers('pilot_customization_profile_completed').size,
+          roleDefined:         stepUsers('pilot_customization_role_completed').size,
+          integrationsHooked:  stepUsers('pilot_customization_integrations_completed').size,
+          teamsInvited:        stepUsers('pilot_customization_teams_completed').size,
+        },
       }
     },
-    enabled: !!orgId && !!org && members.length > 0,
   })
 
-  const onboardingItems = onboarding ? [
-    { label: 'Filled out a research field', done: onboarding.hasContribution, detail: `${onboarding.contributionCount} contribution${onboarding.contributionCount !== 1 ? 's' : ''}` },
-    { label: 'Rated an asset',              done: onboarding.hasRating,       detail: `${onboarding.ratingCount} rating${onboarding.ratingCount !== 1 ? 's' : ''}` },
-    { label: 'Wrote a note',                done: onboarding.hasNote,         detail: `${onboarding.noteCount} note${onboarding.noteCount !== 1 ? 's' : ''}` },
-    { label: 'Explored a theme',            done: onboarding.hasTheme,        detail: `${onboarding.themeCount} theme/note${onboarding.themeCount !== 1 ? 's' : ''}` },
-    { label: 'Posted a thought',            done: onboarding.hasThought,      detail: `${onboarding.thoughtCount} thought${onboarding.thoughtCount !== 1 ? 's' : ''}` },
-    { label: 'Used a prompt',               done: onboarding.hasPrompt,       detail: `${onboarding.promptCount} prompt${onboarding.promptCount !== 1 ? 's' : ''}` },
-    { label: 'Built a list',                done: onboarding.hasList,         detail: `${onboarding.listCount} list${onboarding.listCount !== 1 ? 's' : ''}` },
+  // 10-item pilot funnel — three banners' worth of steps plus the
+  // terminal graduation milestone. `count` is distinct members who
+  // completed the step; `total` is total active members. Item ordering
+  // matches the user-facing sequential flow so the ops view reads as a
+  // drop-off chart from top to bottom.
+  type OnboardingItem = {
+    stage: 'Capture' | 'Idea Pipeline' | 'Trade Lab' | 'Trade Book' | 'Outcomes' | 'Post-graduation' | 'Customization'
+    label: string
+    count: number
+    total: number
+  }
+  const onboardingItems: OnboardingItem[] = onboarding ? [
+    // ── Capture (1) — System Loop's first stage ────────────────────
+    { stage: 'Capture',         label: 'Create a trade idea',               count: onboarding.counts.capturedIdea,     total: onboarding.totalMembers },
+    // ── Initial pilot Get Started flow (9) ─────────────────────────
+    { stage: 'Idea Pipeline',   label: 'Drag an idea through the pipeline', count: onboarding.counts.ideaDragged,      total: onboarding.totalMembers },
+    { stage: 'Idea Pipeline',   label: 'Open the Decision Inbox',           count: onboarding.counts.inboxOpened,      total: onboarding.totalMembers },
+    { stage: 'Idea Pipeline',   label: 'Open Trade Lab',                    count: onboarding.counts.tradelabOpened,   total: onboarding.totalMembers },
+    { stage: 'Trade Lab',       label: 'Review and add the recommendation', count: onboarding.counts.recReviewed,      total: onboarding.totalMembers },
+    { stage: 'Trade Lab',       label: 'Adjust sizing and select the trade',count: onboarding.counts.recSized,         total: onboarding.totalMembers },
+    { stage: 'Trade Lab',       label: 'Execute the trade',                 count: onboarding.counts.executed,         total: onboarding.totalMembers },
+    { stage: 'Trade Book',      label: 'Review the recorded decision',      count: onboarding.counts.tradeReviewed,    total: onboarding.totalMembers },
+    { stage: 'Trade Book',      label: 'Capture rationale',                 count: onboarding.counts.rationaleAdded,   total: onboarding.totalMembers },
+    { stage: 'Trade Book',      label: 'Open Outcomes',                     count: onboarding.counts.openedOutcomes,   total: onboarding.totalMembers },
+    // ── Outcomes — Finish the Loop (3, replaces the prior single
+    //     "graduate" item; graduation is implicit when step 3 fires) ──
+    { stage: 'Outcomes',        label: 'Inspect the result',                count: onboarding.counts.inspectedResult,   total: onboarding.totalMembers },
+    { stage: 'Outcomes',        label: 'Review the thesis',                 count: onboarding.counts.reviewedThesis,    total: onboarding.totalMembers },
+    { stage: 'Outcomes',        label: 'Check how the trade is performing', count: onboarding.counts.checkedPerformance,total: onboarding.totalMembers },
+    // ── Post-graduation Get Started (9 — PilotWelcomeBanner) ───────
+    { stage: 'Post-graduation', label: 'View the idea feed',                count: onboarding.counts.ideaFeedViewed,    total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Explore an asset page',             count: onboarding.counts.assetExplored,     total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Fill out a research field',         count: onboarding.counts.filledResearch,    total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Rate an asset',                     count: onboarding.counts.rated,             total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Write a note',                      count: onboarding.counts.wroteNote,         total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Explore a theme',                   count: onboarding.counts.exploredTheme,     total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Post a thought',                    count: onboarding.counts.postedThought,     total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Use a prompt',                      count: onboarding.counts.usedPrompt,        total: onboarding.totalMembers },
+    { stage: 'Post-graduation', label: 'Build a list',                      count: onboarding.counts.builtList,         total: onboarding.totalMembers },
+    // ── Customization wizard (4) ───────────────────────────────────
+    { stage: 'Customization',   label: 'Confirm your profile',              count: onboarding.counts.profileConfirmed,  total: onboarding.totalMembers },
+    { stage: 'Customization',   label: 'Define your focus / coverage',      count: onboarding.counts.roleDefined,       total: onboarding.totalMembers },
+    { stage: 'Customization',   label: 'Connect your data sources',         count: onboarding.counts.integrationsHooked,total: onboarding.totalMembers },
+    { stage: 'Customization',   label: 'Invite teammates / set access',     count: onboarding.counts.teamsInvited,      total: onboarding.totalMembers },
   ] : []
-  const onboardingDone = onboardingItems.filter(i => i.done).length
+  const onboardingDone = onboardingItems.filter(i => i.count > 0).length
 
   const TABS: { key: Tab; label: string; icon: typeof Users; count?: number }[] = [
     { key: 'members', label: 'Members', icon: Users, count: members.length },
@@ -598,35 +746,109 @@ export function OpsClientDetailPage() {
         </div>
       )}
 
-      {/* Onboarding */}
+      {/* Onboarding — Pilot Get Started funnel.
+          Each row is a step in the sequential Get Started flow; the
+          mini-bar shows distinct members who completed it (out of
+          totalMembers). Reading top-to-bottom is a drop-off chart —
+          where the bars get short is where pilots stalled. */}
       {activeTab === 'onboarding' && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-800">Getting Started Progress</h3>
-              <p className="text-[11px] text-gray-400 mt-0.5">Mirrors the user-facing checklist — any member counts.</p>
+              <h3 className="text-sm font-semibold text-gray-800">Pilot Get Started funnel</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Distinct members who completed each step. Step-level signals come from
+                <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">pilot_telemetry_events</code>
+                with a fallback to <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">users.pilot_progress</code>
+                macro keys.
+              </p>
             </div>
-            <span className="text-xs text-gray-400">{onboardingDone} of {onboardingItems.length} complete</span>
+            <span className="text-xs text-gray-400">
+              {onboardingDone} of {onboardingItems.length} steps started
+            </span>
           </div>
-          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className={clsx('h-full rounded-full transition-all', onboardingDone === onboardingItems.length ? 'bg-green-500' : 'bg-indigo-500')}
-              style={{ width: `${onboardingItems.length > 0 ? (onboardingDone / onboardingItems.length) * 100 : 0}%` }}
-            />
-          </div>
-          <div className="space-y-2">
-            {onboardingItems.map((item, i) => (
-              <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                <div className={clsx('w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0', item.done ? 'bg-green-100' : 'bg-gray-100')}>
-                  {item.done ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> : <span className="w-2 h-2 rounded-full bg-gray-300" />}
-                </div>
-                <div className="flex-1">
-                  <p className={clsx('text-sm font-medium', item.done ? 'text-gray-900' : 'text-gray-500')}>{item.label}</p>
-                  <p className="text-xs text-gray-400">{item.detail}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          {onboardingItems.length === 0 ? (
+            <div className="text-sm text-gray-400 py-6 text-center">No pilot members yet.</div>
+          ) : (
+            (() => {
+              const total = onboarding?.totalMembers ?? 0
+              const graduated = onboarding?.counts.graduated ?? 0
+              const overallPct = total > 0 ? Math.round((graduated / total) * 100) : 0
+              const stages = ['Capture', 'Idea Pipeline', 'Trade Lab', 'Trade Book', 'Outcomes', 'Post-graduation', 'Customization'] as const
+              const stageAccent: Record<typeof stages[number], string> = {
+                'Capture':         'bg-sky-500',
+                'Idea Pipeline':   'bg-amber-500',
+                'Trade Lab':       'bg-primary-500',
+                'Trade Book':      'bg-violet-500',
+                'Outcomes':        'bg-emerald-500',
+                'Post-graduation': 'bg-teal-500',
+                'Customization':   'bg-indigo-500',
+              }
+              return (
+                <>
+                  {/* Headline — % of members who walked the full loop */}
+                  <div>
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="text-xs font-medium text-gray-700">Graduated</span>
+                      <span className="text-xs text-gray-500 tabular-nums">{graduated} of {total} member{total === 1 ? '' : 's'} · {overallPct}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={clsx('h-full rounded-full transition-all', graduated === total && total > 0 ? 'bg-green-500' : 'bg-indigo-500')}
+                        style={{ width: `${overallPct}%` }}
+                      />
+                    </div>
+                  </div>
+                  {/* Per-stage funnel */}
+                  {stages.map(stage => {
+                    const items = onboardingItems.filter(i => i.stage === stage)
+                    if (items.length === 0) return null
+                    return (
+                      <div key={stage} className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className={clsx('w-1.5 h-1.5 rounded-full', stageAccent[stage])} />
+                          <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">{stage}</span>
+                        </div>
+                        {items.map((item, i) => {
+                          const pct = item.total > 0 ? (item.count / item.total) * 100 : 0
+                          const allDone = item.count === item.total && item.total > 0
+                          return (
+                            <div key={`${stage}-${i}`} className="flex items-center gap-3 py-1.5 pl-3 border-l-2 border-gray-100">
+                              <div className={clsx(
+                                'w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0',
+                                allDone ? 'bg-green-100' : item.count > 0 ? 'bg-indigo-50' : 'bg-gray-100',
+                              )}>
+                                {allDone
+                                  ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                                  : <span className={clsx('w-2 h-2 rounded-full', item.count > 0 ? 'bg-indigo-400' : 'bg-gray-300')} />
+                                }
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <p className={clsx('text-sm font-medium truncate', item.count > 0 ? 'text-gray-900' : 'text-gray-500')}>
+                                    {item.label}
+                                  </p>
+                                  <span className="text-[11px] text-gray-500 tabular-nums shrink-0">
+                                    {item.count}/{item.total}
+                                  </span>
+                                </div>
+                                <div className="mt-1 w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={clsx('h-full rounded-full', allDone ? 'bg-green-500' : item.count > 0 ? stageAccent[stage] : 'bg-gray-200')}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </>
+              )
+            })()
+          )}
         </div>
       )}
 
