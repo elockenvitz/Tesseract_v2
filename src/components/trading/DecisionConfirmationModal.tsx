@@ -23,6 +23,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { Button } from '../ui/Button'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
+import { useOrganization } from '../../contexts/OrganizationContext'
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -214,6 +215,12 @@ function computeAggregate(decisions: RecordedDecision[]): AggregateImpact {
 export function DecisionConfirmationModal({
   record, onClose, onViewTradeBook,
 }: DecisionConfirmationModalProps) {
+  // Plumbed into every logPilotEvent below so the resulting rows in
+  // pilot_telemetry_events have organization_id set — without this,
+  // every decision_recorded_* row landed with org=NULL and dropped out
+  // of per-org analytics queries.
+  const { currentOrgId } = useOrganization()
+
   // Close on Escape — but not on backdrop click (too easy to dismiss
   // accidentally; we want the user to take an explicit action).
   useEffect(() => {
@@ -234,13 +241,14 @@ export function DecisionConfirmationModal({
     loggedRecordKey.current = key
     logPilotEvent({
       eventType: 'decision_recorded_modal_opened',
+      organizationId: currentOrgId,
       metadata: {
         tradeCount: record.decisions.length,
         portfolioId: record.portfolioId,
         tradeIds: record.decisions.map(d => d.tradeId),
       },
     })
-  }, [record])
+  }, [record, currentOrgId])
 
   const ids = useMemo(() => (record?.decisions ?? []).map(d => d.tradeId), [record])
 
@@ -284,6 +292,7 @@ export function DecisionConfirmationModal({
   const handleStay = () => {
     logPilotEvent({
       eventType: 'decision_recorded_stay_in_trade_lab_clicked',
+      organizationId: currentOrgId,
       metadata: { tradeIds: ids, tradeCount: ids.length },
     })
     onClose()
@@ -292,6 +301,7 @@ export function DecisionConfirmationModal({
   const handleViewTradeBook = () => {
     logPilotEvent({
       eventType: 'decision_recorded_view_trade_book_clicked',
+      organizationId: currentOrgId,
       metadata: { tradeIds: ids, tradeCount: ids.length },
     })
     onViewTradeBook({ tradeIds: ids, batchId: record?.batchId ?? null })

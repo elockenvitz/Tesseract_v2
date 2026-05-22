@@ -16,6 +16,7 @@ import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotWelcomeBannerProps {
   onNavigate: (result: any) => void
@@ -67,12 +68,20 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       }
     } catch { /* ignore */ }
     const handler = () => {
+      // Log the server-side telemetry row exactly once per (user, org)
+      // — readFlag-equivalent check is "was it already '1'?". Without
+      // this guard, every AssetTab mount would fire a duplicate row.
+      let wasAlreadyMarked = false
+      try { wasAlreadyMarked = localStorage.getItem(assetExploredKey) === '1' } catch { /* ignore */ }
       try { localStorage.setItem(assetExploredKey, '1') } catch { /* ignore */ }
       setHasExploredAsset(true)
+      if (!wasAlreadyMarked) {
+        logPilotEvent({ eventType: 'pilot_postgrad_asset_explored', organizationId: currentOrgId })
+      }
     }
     window.addEventListener('pilot-tutorial:asset-explored', handler)
     return () => window.removeEventListener('pilot-tutorial:asset-explored', handler)
-  }, [user?.id, assetExploredKey])
+  }, [user?.id, assetExploredKey, currentOrgId])
 
   // "View idea feed" step — done when the user opens the Ideas tab.
   // IdeaGeneratorPage writes the localStorage flag and fires the event
@@ -93,12 +102,18 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       }
     } catch { /* ignore */ }
     const handler = () => {
+      // Same idempotency pattern as the asset-explored handler above.
+      let wasAlreadyMarked = false
+      try { wasAlreadyMarked = localStorage.getItem(ideaFeedViewedKey) === '1' } catch { /* ignore */ }
       try { localStorage.setItem(ideaFeedViewedKey, '1') } catch { /* ignore */ }
       setHasViewedIdeaFeed(true)
+      if (!wasAlreadyMarked) {
+        logPilotEvent({ eventType: 'pilot_postgrad_idea_feed_viewed', organizationId: currentOrgId })
+      }
     }
     window.addEventListener('pilot-tutorial:idea-feed-viewed', handler)
     return () => window.removeEventListener('pilot-tutorial:idea-feed-viewed', handler)
-  }, [user?.id, ideaFeedViewedKey])
+  }, [user?.id, ideaFeedViewedKey, currentOrgId])
 
   // Track completion of tutorial steps — STRICTLY org-scoped.
   // The Get Started checklist is per-org: a graduated pilot landing

@@ -106,17 +106,30 @@ export function usePilotProgress() {
       if (!user?.id) return
       // All three stages are per-org (see file header).
       const key = stageToKey(stage, currentOrgId)
-      // Already marked? Don't re-write.
-      if (progress[key]) return
+      // Re-read the LATEST cached progress at mutate time rather than
+      // closing over the render-time `progress` const. Without this,
+      // a burst of useEffect re-fires (DecisionAccountabilityPage's
+      // graduation effect, the sequential-gate listeners) all see an
+      // empty `progress` closure from the same render and each one
+      // independently writes + logs, producing the 10K-row pileup we
+      // saw in pilot_telemetry_events. Pulling from the cache means
+      // the second call in the burst sees the just-written timestamp
+      // and bails before doing a DB write.
+      const latest = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id]) ?? progress
+      if (latest[key]) return
 
-      const nextProgress: PilotProgress = { ...progress, [key]: new Date().toISOString() }
+      const nextProgress: PilotProgress = { ...latest, [key]: new Date().toISOString() }
       const { error } = await supabase
         .from('users')
         .update({ pilot_progress: nextProgress })
         .eq('id', user.id)
       if (error) throw error
-      logPilotEvent({ eventType: STAGE_TO_EVENT[stage] })
-      return nextProgress
+      // Return the writer's stage so onSuccess can log telemetry exactly
+      // once per real first-time unlock. (mutationFn used to call
+      // logPilotEvent directly, which fired for every duplicate burst
+      // call because the idempotency guard above was bypassed by stale
+      // closures — see the dup-burst comment.)
+      return { nextProgress, stage }
     },
     // Optimistic update: flip the unlock flag in cache immediately so
     // dependent gates (pilot access map → Outcomes 'preview' vs 'full',
@@ -149,9 +162,20 @@ export function usePilotProgress() {
         queryClient.setQueryData(['pilot-progress', user.id], context.previous)
       }
     },
-    onSuccess: (next) => {
-      if (next) {
-        queryClient.setQueryData(['pilot-progress', user?.id], next)
+    onSuccess: (result) => {
+      if (result?.nextProgress) {
+        queryClient.setQueryData(['pilot-progress', user?.id], result.nextProgress)
+      }
+      if (result?.stage) {
+        // Telemetry is logged here (not in mutationFn) so it only fires
+        // when mutationFn actually wrote to the DB — duplicate-burst
+        // calls return early from mutationFn with `undefined` and skip
+        // this. Also passes `organizationId` so per-org segmentation
+        // works (every row was previously NULL on this column).
+        logPilotEvent({
+          eventType: STAGE_TO_EVENT[result.stage],
+          organizationId: currentOrgId,
+        })
       }
       // Force usePilotMode to re-resolve access
       queryClient.invalidateQueries({ queryKey: ['pilot-progress', user?.id] })
