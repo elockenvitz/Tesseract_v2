@@ -1,0 +1,70 @@
+name: CI
+
+# Runs on every PR targeting main or staging, and on direct pushes to those
+# branches. The jobs gate merges via branch-protection rules — see
+# docs/CONTRIBUTING.md for the contributor workflow that depends on them.
+on:
+  pull_request:
+    branches: [main, staging]
+  push:
+    branches: [main, staging]
+
+# Cancel in-flight runs when a new commit is pushed to the same PR — keeps the
+# Actions billing minutes low and avoids confusing "stale check passed" badges.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # `npm install` instead of `npm ci` because the lockfile carries a
+      # legacy peer-dep mismatch (vitest@4 wants vite@6/7, but we pin to
+      # vite@5). `npm install` is lenient about that; `npm ci` refuses.
+      # Locks aren't mutated in CI because we don't commit anything back.
+      # TODO(tech-debt): reconcile vitest/vite versions, then switch
+      # this back to `npm ci --legacy-peer-deps=false` for stricter CI.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      - run: npx tsc --noEmit
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    env:
+      # supabase.ts throws on import if these aren't set. CI doesn't need to
+      # actually reach Supabase — these dummy values just satisfy the
+      # module-level guard so test files that transitively import it can
+      # load. Any test that needs real Supabase access should mock the
+      # client (e.g. with vi.mock).
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      # --project unit runs only the unit-test project from vitest.config.ts.
+      # The "storybook" project runs in browser mode via Playwright/Chromium,
+      # which requires `npx playwright install` to download the browser
+      # binaries (~150MB). Skipped here to keep CI fast; visual-regression
+      # tests can move to a separate workflow with that install step.
+      # CI=true makes Vitest exit instead of watching forever.
+      - run: npm test -- --run --project unit
+        env:
+          CI: true
+
+  # TODO: add a tenant-boundary lint job once SUPABASE_URL and
+  # SUPABASE_SERVICE_KEY are wired up as repository secrets. The script
+  # in scripts/tenant-boundary-lint.mjs queries the DB to detect unsafe
+  # cross-org access patterns, so it needs the service-role key. Until
+  # then, run it manually via `npm run tenant:lint:all` with the env
+  # vars set in .env.local.
