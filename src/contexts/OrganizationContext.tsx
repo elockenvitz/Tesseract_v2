@@ -236,3 +236,14 @@ export function useOrganization() {
   }
   return context
 }
+
+/**
+ * Like `useOrganization` but returns null when no provider is in scope
+ * instead of throwing. Use this from components that can legitimately
+ * render outside the org provider tree (modals via portal, capture
+ * overlays, login screens with mention pickers, etc.) — they should
+ * degrade gracefully rather than crash.
+ */
+export function useOrganizationOptional() {
+  return useContext(OrganizationContext) ?? null
+}

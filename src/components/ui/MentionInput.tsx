@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
-import { useOrganization } from '../../contexts/OrganizationContext'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { AtSign, Hash, X } from 'lucide-react'
 
 interface User {
@@ -43,7 +43,13 @@ export function MentionInput({ value, onChange, placeholder, className, disabled
   const [mentions, setMentions] = useState<string[]>([])
   const [references, setReferences] = useState<Array<{ type: string; id: string; text: string }>>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { currentOrgId } = useOrganization()
+  // Optional context: this component is also rendered in places that
+  // sit outside the OrganizationProvider tree (portal-rendered modals,
+  // overlays). Falling back to null currentOrgId disables the user
+  // suggestion query — that's the correct behavior when we don't know
+  // which org's members to surface.
+  const orgCtx = useOrganizationOptional()
+  const currentOrgId = orgCtx?.currentOrgId ?? null
 
   // Fetch users for @mentions, scoped to the current org's active members
   // only. We don't rely on RLS alone here — platform admins legitimately
