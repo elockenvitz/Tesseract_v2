@@ -3,6 +3,7 @@ import { X, Search, Users, Building2, ChevronDown, ChevronRight, Check, Filter, 
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { clsx } from 'clsx'
@@ -46,25 +47,18 @@ export function CreateTeamModal({ isOpen, onClose, editingTeam }: CreateTeamModa
   const [viewingUserOrgs, setViewingUserOrgs] = useState<string | null>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
 
-  // Fetch all users
-  const { data: allUsers } = useQuery({
-    queryKey: ['users-list'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email')
-        .eq('is_active', true)
-        .order('first_name')
-
-      if (error) throw error
-      return (data || []).map(u => ({
+  // Fetch all users (org-scoped, active members only)
+  const { data: orgMembers = [] } = useOrgMembers()
+  const allUsers = useMemo(
+    () =>
+      orgMembers.map(u => ({
         ...u,
         full_name: u.first_name && u.last_name
           ? `${u.first_name} ${u.last_name}`.trim()
           : u.first_name || u.last_name || null
-      }))
-    }
-  })
+      })),
+    [orgMembers]
+  )
 
   // Fetch all org nodes
   const { data: rawOrgNodes } = useQuery({

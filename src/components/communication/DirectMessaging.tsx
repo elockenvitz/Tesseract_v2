@@ -11,6 +11,7 @@ import { clsx } from 'clsx'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import { useEntityOrgResolver } from '../../hooks/useEntityOrgResolver'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { OrgSwitchBanner } from '../common/OrgSwitchBanner'
 
 interface DirectMessagingProps {
@@ -310,20 +311,12 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     refetchInterval: 2000, // Real-time updates
   })
 
-  // Fetch all users for creating conversations
-  const { data: allUsers } = useQuery({
-    queryKey: ['all-users-messaging'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .neq('id', user?.id)
-        .order('first_name', { ascending: true })
-
-      if (error) throw error
-      return data || []
-    },
+  // Fetch users in the current org for creating conversations. Scoped
+  // via useOrgMembers — explicit org filter, not just RLS — so the
+  // picker shows only org-mates even for platform admins.
+  const { data: allUsers = [] } = useOrgMembers({
     enabled: showNewConversation || showGroupCreation,
+    excludeUserId: user?.id,
   })
 
   // Auto-scroll to bottom when new messages arrive (but not on initial load)
@@ -578,19 +571,11 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     },
   })
 
-  // Fetch users for add-member picker (reuse allUsers query but also enable when adding)
-  const { data: addMemberUsers } = useQuery({
-    queryKey: ['all-users-messaging'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .neq('id', user?.id)
-        .order('first_name', { ascending: true })
-      if (error) throw error
-      return data || []
-    },
+  // Fetch users for add-member picker, scoped to current org (same hook
+  // as the new-conversation picker — see comment above).
+  const { data: addMemberUsers = [] } = useOrgMembers({
     enabled: showAddMember,
+    excludeUserId: user?.id,
   })
 
   const handleSendMessage = () => {

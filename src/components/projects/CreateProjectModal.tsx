@@ -3,6 +3,7 @@ import { X, Plus, Search, Users, Building2, ChevronDown, ChevronRight, Check } f
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
@@ -89,17 +90,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess, initialContext 
   }, [orgDropdownOpen])
 
   // Fetch all users
-  const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('email')
-      if (error) throw error
-      return data as User[]
-    }
-  })
+  const { data: users } = useOrgMembers()
 
   // Fetch org groups with parent info and settings (portfolio nodes have settings.portfolio_id)
   const { data: orgGroups } = useQuery({

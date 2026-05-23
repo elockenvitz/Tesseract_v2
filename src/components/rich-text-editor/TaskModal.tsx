@@ -3,6 +3,7 @@ import { X, Calendar, Clock, User, Flag, Bell, AlignLeft } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 export interface TaskData {
@@ -65,19 +66,8 @@ export function TaskModal({
     initialData?.priority || 'medium'
   )
 
-  // Fetch users for assignment dropdown
-  const { data: users = [] } = useQuery({
-    queryKey: ['users-for-assignment'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email')
-        .order('first_name')
-      if (error) throw error
-      return data || []
-    },
-    staleTime: 5 * 60 * 1000
-  })
+  // Fetch users for assignment dropdown (org-scoped)
+  const { data: users = [] } = useOrgMembers()
 
   // Create task mutation
   const createTaskMutation = useMutation({

@@ -19,6 +19,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { logOrgActivity } from '../../lib/org-activity-log'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
@@ -106,19 +107,10 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
     enabled: isOpen && !!currentOrgId,
   })
 
-  // Fetch all users for step 3 (same pattern as AddTeamMemberModal)
-  const { data: orgUsers = [], isLoading: usersLoading } = useQuery({
-    queryKey: ['all-users'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name', { ascending: true })
-      if (error) throw error
-      return data || []
-    },
+  // Step 3 user picker: scoped to current-org members via useOrgMembers.
+  // Explicit scope, not RLS-only.
+  const { data: orgUsers = [], isLoading: usersLoading } = useOrgMembers({
     enabled: isOpen,
-    staleTime: 0,
   })
 
   // Duplicate name check

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Search, Send, Check, User, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { clsx } from 'clsx'
 import type { ScoredFeedItem } from '../../hooks/ideas/types'
 
@@ -30,20 +31,12 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
     }
   }, [isOpen])
 
-  // Fetch all users
-  const { data: allUsers, isLoading: usersLoading } = useQuery({
-    queryKey: ['all-users-share'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .neq('id', user?.id)
-        .order('first_name', { ascending: true })
-
-      if (error) throw error
-      return data || []
-    },
-    enabled: isOpen
+  // Fetch users in the current org. Scoped via useOrgMembers — explicit
+  // org filter, not just RLS — so the share dialog shows only org-mates
+  // even for platform admins.
+  const { data: allUsers = [], isLoading: usersLoading } = useOrgMembers({
+    enabled: isOpen,
+    excludeUserId: user?.id,
   })
 
   // Filter users based on search
