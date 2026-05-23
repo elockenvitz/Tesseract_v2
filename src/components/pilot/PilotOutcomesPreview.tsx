@@ -1,16 +1,50 @@
 /**
  * PilotOutcomesPreview — read-only teaser rendered when a pilot user opens
  * the Outcomes tab. Shows what the real surface will do once enabled.
+ *
+ * Self-heal: if the user lands here having already completed Trade Book
+ * (committed a trade + Trade Book unlocked), they've earned Outcomes —
+ * mark outcomes_unlocked so the next render swaps in the real surface.
+ * Catches the case where the event-based unlock from Trade Book's
+ * "Open Outcomes" button missed silently (pilot tester hit this).
  */
 
+import { useEffect } from 'react'
 import { Target, CheckCircle2, Sparkles, ArrowRight, Lock } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
 
 interface PilotOutcomesPreviewProps {
   onGoToTradeLab?: () => void
 }
 
 export function PilotOutcomesPreview({ onGoToTradeLab }: PilotOutcomesPreviewProps) {
+  const pilotMode = usePilotMode()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, mark } = usePilotProgress()
+
+  useEffect(() => {
+    // If we're rendering this preview but the user has already
+    // completed everything required to unlock Outcomes, mark it
+    // now. The mutation is idempotent so re-firing is a no-op.
+    if (
+      !pilotMode.isLoading &&
+      pilotMode.isPilot &&
+      pilotMode.hasCommittedTradeInOrg &&
+      hasUnlockedTradeBook &&
+      !hasUnlockedOutcomes
+    ) {
+      mark('outcomes_unlocked')
+    }
+  }, [
+    pilotMode.isLoading,
+    pilotMode.isPilot,
+    pilotMode.hasCommittedTradeInOrg,
+    hasUnlockedTradeBook,
+    hasUnlockedOutcomes,
+    mark,
+  ])
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-6">
       <div>
