@@ -6,6 +6,7 @@
  */
 
 import React, { Component, ErrorInfo, ReactNode } from 'react'
+import * as Sentry from '@sentry/react'
 import { AlertCircle, RefreshCw, Home } from 'lucide-react'
 import { Button } from '../ui/Button'
 
@@ -48,8 +49,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       errorInfo,
     })
 
-    // TODO: Send to error reporting service (e.g., Sentry)
-    // logErrorToService(error, errorInfo)
+    // Report to Sentry with React's component stack attached so we can
+    // see which component crashed (not just the JS stack). No-op when
+    // Sentry isn't initialized (local dev without a DSN).
+    Sentry.withScope((scope) => {
+      scope.setContext('react', { componentStack: errorInfo.componentStack })
+      Sentry.captureException(error)
+    })
   }
 
   handleReset = () => {
