@@ -9,6 +9,7 @@ import { Select } from '../ui/Select'
 import { SearchableSelect } from '../ui/SearchableSelect'
 import { ROLE_OPTIONS, getFocusOptionsForRole } from '../../lib/roles-config'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { logOrgActivity } from '../../lib/org-activity-log'
 
 interface AddTeamMemberModalProps {
@@ -74,18 +75,12 @@ export function AddTeamMemberModal({
     return 'Unknown User'
   }
 
-  const { data: allUsers, isLoading: usersLoading } = useQuery<UserOption[]>({
-    queryKey: ['all-users'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name', { ascending: true })
-      if (error) throw error
-      return data || []
-    },
+  // Scope the user picker to current-org members. The team-add modal
+  // is for adding org-mates to a portfolio team, so cross-org users
+  // would never be valid candidates anyway. Explicit scope via
+  // useOrgMembers — defense in depth, not RLS-only.
+  const { data: allUsers = [], isLoading: usersLoading } = useOrgMembers({
     enabled: isOpen,
-    staleTime: 0,
   })
 
   const { data: existingTeamMembers, isLoading: existingTeamLoading } = useQuery<

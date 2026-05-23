@@ -5,6 +5,7 @@ import { Calendar, Clock, Flag, User, Bell, X, Check, ChevronDown, ChevronUp, Re
 import { clsx } from 'clsx'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../hooks/useAuth'
+import { useOrgMembers } from '../../../hooks/useOrgMembers'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 const PRIORITY_OPTIONS = [
@@ -126,19 +127,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
     setShowQuickDueMenu(false)
   }
 
-  // Fetch users for assignment
-  const { data: users = [] } = useQuery({
-    queryKey: ['users-for-task-assignment'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email')
-        .order('first_name')
-      if (error) throw error
-      return data || []
-    },
-    staleTime: 5 * 60 * 1000
-  })
+  // Fetch users for assignment (org-scoped)
+  const { data: users = [] } = useOrgMembers()
 
   // Get assigned user name
   const assignedUser = users.find(u => u.id === node.attrs.assignedTo)

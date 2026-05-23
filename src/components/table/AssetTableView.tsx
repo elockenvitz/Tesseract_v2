@@ -23,6 +23,7 @@ import {
 import { PriorityBadge } from '../ui/PriorityBadge'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -660,18 +661,8 @@ export function AssetTableView({
   } | null>(null)
   const [prioritySourceSearch, setPrioritySourceSearch] = useState('')
 
-  // Fetch team members for priority column picker
-  const { data: teamMembers = [] } = useQuery({
-    queryKey: ['team-members'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-      if (error) throw error
-      return data || []
-    }
-  })
+  // Fetch team members for priority column picker (org-scoped)
+  const { data: teamMembers = [] } = useOrgMembers()
 
   // Get unique user IDs from columns that have priority source set to 'user'
   const specificPriorityUserIds = useMemo(() => {
