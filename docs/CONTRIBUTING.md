@@ -4,6 +4,32 @@ This is how we ship code. Read it once, follow it for every change.
 
 ---
 
+## Environments
+
+Three environments. The point of three is to catch each kind of bug at
+the cheapest possible place.
+
+| Env | What it is | Database | Who uses it | Cost of breaking |
+|---|---|---|---|---|
+| **localhost** | `npm run dev` on your laptop | **staging** (via `.env.local`) | Just you | Free — restart |
+| **staging** | https://tesseract-platform-staging.netlify.app | staging Supabase | You as a test user | Free — wipe and redeploy |
+| **production** | https://tesseract2025.netlify.app | prod Supabase | Real pilot users | Real — a pilot has a bad day |
+
+Key rules:
+
+- **`.env.local` points at staging by default.** Local dev cannot touch
+  prod data. To temporarily point at prod (e.g. to reproduce a real
+  pilot bug), comment out the staging block in `.env.local` and
+  uncomment the prod block. Switch back when you're done.
+- **Staging is empty by design.** It has the same schema as prod but
+  no real data. To preview pilot flows, run `node scripts/seed-staging.mjs`
+  (see [Seeding staging](#seeding-staging) below).
+- **Never test risky changes in prod.** Run them through staging first
+  — the [staging branch](#5-test-on-staging-for-anything-risky) flow
+  exists for exactly that.
+
+---
+
 ## The flow
 
 ```
@@ -151,14 +177,62 @@ change ahead of the code that uses it).
 
 ## Migrations & database changes
 
-- Migrations live in `supabase/migrations/` and are timestamped.
-- Apply migrations against **staging first**, verify, then apply to
-  production.
-- Migrations are tracked by Supabase — never edit a migration file
-  that has already been applied. If you need to change something,
-  write a *new* migration that alters the prior change.
-- Service-role keys never leave Bitwarden or `.env.local` — never
+`supabase/migrations/` is the source of truth for schema. Every change
+to the database goes through a migration file, even if you initially
+made it via the dashboard. The flow:
+
+1. **Make the change locally** — easiest path is to use the Supabase
+   dashboard for the staging project to draft the SQL, since localhost
+   points at staging anyway.
+2. **Capture as a migration file** in `supabase/migrations/` with a
+   timestamped name: `20260523120000_short_description.sql`. The file
+   should contain the full DDL (`CREATE TABLE …`, `ALTER TABLE …`),
+   not a description.
+3. **Apply to staging** via the apply script:
+   ```
+   SUPABASE_PROJECT_REF=pdajkwtrrjcqnjsyvyqt \
+     node scripts/apply-migrations-to-staging.mjs
+   ```
+   The script is idempotent — re-applying a migration that already
+   ran is a no-op.
+4. **Verify on staging** — sign up, click through the affected flow,
+   confirm the schema is what you expected.
+5. **Apply to prod** the same way, with the prod project ref:
+   ```
+   SUPABASE_PROJECT_REF=wfcebeagznzgeuyysbnt \
+     node scripts/apply-migrations-to-staging.mjs
+   ```
+   (Yes, the script is named "staging" but works against any project
+   ref. Confusing name, will rename.)
+6. **Commit and PR** the migration file. The merged PR is the
+   permanent record of the change.
+
+Rules:
+
+- **Never edit a migration file that has already been applied** to
+  prod. If you need to change something, write a *new* migration.
+- **Migrations should be backwards-compatible** when possible. Ship
+  the schema change first, then the code that uses it. That way a
+  rollback of the code doesn't strand prod with a broken schema.
+- **Prefer additive changes** (`ADD COLUMN nullable`, `CREATE TABLE`)
+  over destructive ones (`DROP COLUMN`, `DROP TABLE`). Destructive
+  migrations are hard to undo.
+- **Service-role keys never leave Bitwarden or `.env.local`** — never
   paste them into chat, GitHub, Slack, or anywhere else.
+
+### Seeding staging
+
+Staging is empty by design. To get useful test data:
+
+```
+SUPABASE_PROJECT_REF=pdajkwtrrjcqnjsyvyqt \
+  node scripts/seed-staging.mjs
+```
+
+This creates a test org, sample assets, and a few trade ideas so the
+dashboard renders something interesting when you log in. Run it any
+time staging feels too empty to test against. Safe to re-run — it's
+idempotent (uses upserts).
 
 ---
 
