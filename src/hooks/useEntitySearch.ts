@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 export type EntityType = 'user' | 'asset' | 'theme' | 'portfolio' | 'note' | 'workflow' | 'list' | 'trade_idea' | 'project' | 'trade' | 'trade_sheet' | 'meeting'
 
@@ -28,21 +29,35 @@ export function useEntitySearch({
   limit = 5,
   enabled = true
 }: UseEntitySearchOptions) {
+  const { currentOrgId } = useOrganization()
   const { data: results = [], isLoading, error } = useQuery({
-    queryKey: ['entity-search', query, types.join(','), limit],
+    queryKey: ['entity-search', query, types.join(','), limit, currentOrgId],
     queryFn: async () => {
       const searchResults: EntitySearchResult[] = []
       const searchPromises: Promise<void>[] = []
 
-      // Search users
-      if (types.includes('user')) {
+      // Search users — scoped to current-org members only. Platform
+      // admins legitimately have read access to all users (for ops
+      // dashboards), but any user-facing picker should only surface
+      // members of the org the caller is currently working in.
+      // Defense in depth: explicit scope at the query level, not just RLS.
+      if (types.includes('user') && currentOrgId) {
         searchPromises.push(
           (async () => {
+            const { data: members } = await supabase
+              .from('organization_memberships')
+              .select('user_id')
+              .eq('organization_id', currentOrgId)
+              .eq('status', 'active')
+
+            const memberIds = (members ?? []).map((m: any) => m.user_id).filter(Boolean)
+            if (memberIds.length === 0) return
+
             let usersQuery = supabase
               .from('users')
               .select('id, email, first_name, last_name')
+              .in('id', memberIds)
 
-            // If query is provided, filter by it; otherwise return all users
             if (query.trim()) {
               usersQuery = usersQuery.or(`email.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
             }
