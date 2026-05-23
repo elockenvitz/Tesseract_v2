@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import * as Sentry from '@sentry/react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { routeOrgByEmail, autoAcceptPendingInvites, titleCase } from '../lib/org-domain-routing'
@@ -216,6 +217,23 @@ export function useAuth() {
       window.removeEventListener('org-switched', handleOrgSwitched)
     }
   }, [])
+
+  // Mirror the React user into Sentry's user context so every captured
+  // event is attributed to a specific pilot. Cleared on sign-out so a
+  // shared browser doesn't leak the previous user into the next session.
+  useEffect(() => {
+    if (user) {
+      Sentry.setUser({
+        id: user.id,
+        email: user.email ?? undefined,
+      })
+      const orgId = (user as any).current_organization_id
+      Sentry.setTag('organization_id', orgId ?? 'none')
+    } else {
+      Sentry.setUser(null)
+      Sentry.setTag('organization_id', undefined)
+    }
+  }, [user])
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
