@@ -62,7 +62,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, mark: markPilotStage } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -131,6 +131,30 @@ export function usePilotMode(): PilotModeState {
   })
 
   const isPilot = !!orgFlags?.pilotMode
+
+  // Self-heal trade_book_unlocked. The event-based unlock fires from
+  // SimulationPage's listener on `pilot-tradelab:executed`, but if that
+  // listener missed (race condition, mutation errored silently, page
+  // navigated away mid-mutation), the user can land in a stuck state
+  // where they've committed a trade but Trade Book is still locked.
+  // Both `hasCommittedTradeInOrg` and `hasUnlockedTradeBook` are
+  // required to unlock; the existence of an accepted_trade is proof
+  // enough that execute happened, so we can safely backfill the flag.
+  // The mutation is idempotent so re-runs are no-ops.
+  //
+  // Note: outcomes_unlocked is NOT self-healed — that one represents
+  // intent ("user navigated to Outcomes"), not just trade activity.
+  useEffect(() => {
+    if (
+      isPilot &&
+      !progressLoading &&
+      !orgLoading &&
+      hasCommittedTradeInOrg &&
+      !hasUnlockedTradeBook
+    ) {
+      markPilotStage('trade_book_unlocked')
+    }
+  }, [isPilot, progressLoading, orgLoading, hasCommittedTradeInOrg, hasUnlockedTradeBook, markPilotStage])
   const access = useMemo(() => {
     // Once the user has graduated, all pilot gating drops away —
     // they get the same access as a non-pilot user even though the
