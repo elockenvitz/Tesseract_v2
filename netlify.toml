@@ -1,6 +1,6 @@
 [build.environment]
-  # Vite's source-map generation balloons memory for our bundle size,
-  # and Netlify's default Node heap (2GB) OOMs partway through the
-  # build. 4GB is plenty of headroom — Netlify's build VMs have 8GB+
-  # available so this isn't a risky bump.
-  NODE_OPTIONS = "--max-old-space-size=4096"
+  # Vite's source-map generation balloons memory for our 8MB bundle —
+  # default 2GB heap and our first 4GB bump both OOM during chunk
+  # rendering. 8GB is what Netlify's build VMs provide; we sit just
+  # under it and leave a bit of headroom for the OS.
+  NODE_OPTIONS = "--max-old-space-size=7168"
