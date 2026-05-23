@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { useOrganization } from '../contexts/OrganizationContext'
+import { useOrganizationOptional } from '../contexts/OrganizationContext'
 
 export type EntityType = 'user' | 'asset' | 'theme' | 'portfolio' | 'note' | 'workflow' | 'list' | 'trade_idea' | 'project' | 'trade' | 'trade_sheet' | 'meeting'
 
@@ -29,7 +29,12 @@ export function useEntitySearch({
   limit = 5,
   enabled = true
 }: UseEntitySearchOptions) {
-  const { currentOrgId } = useOrganization()
+  // Optional context: this hook is also called from components rendered
+  // outside the OrganizationProvider tree (capture overlay, portal modals).
+  // Without an org we can't scope user searches; the user branch below
+  // gates on `currentOrgId` and returns empty results in that case.
+  const orgCtx = useOrganizationOptional()
+  const currentOrgId = orgCtx?.currentOrgId ?? null
   const { data: results = [], isLoading, error } = useQuery({
     queryKey: ['entity-search', query, types.join(','), limit, currentOrgId],
     queryFn: async () => {
