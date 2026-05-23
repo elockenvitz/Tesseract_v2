@@ -84,8 +84,9 @@ reach pilots in production. See
 - **Hosting**: Netlify (frontend), Supabase (backend)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`)
 - **Testing**: Vitest, Testing Library, Playwright (Storybook visual tests)
-- **Observability**: planned — see open items in
-  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Observability**: Sentry (error tracking + session replay), gated by
+  `VITE_SENTRY_DSN` so local dev stays quiet. Product analytics still
+  planned — see open items in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 

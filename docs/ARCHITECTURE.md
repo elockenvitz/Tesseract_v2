@@ -141,9 +141,10 @@ See [docs/CONTRIBUTING.md](CONTRIBUTING.md) for the full PR + deploy flow.
 
 These are known gaps. Listing them so the absence isn't a surprise.
 
-- **No production error tracking** (Sentry / PostHog). Planned when
-  pilot count crosses ~25. Currently, prod bugs are surfaced via direct
-  pilot communication.
+- **No product analytics** (PostHog / Mixpanel). Errors *are* tracked
+  in Sentry (`src/main.tsx`), but we don't yet collect funnel/feature
+  usage. The Ops portal's pilot funnel covers the most important
+  conversion path.
 - **No bundle-size budget**. Some pages are large (Simulation, Org
   page). To be sliced + lazy-loaded as part of the file-breakup
   refactor.
