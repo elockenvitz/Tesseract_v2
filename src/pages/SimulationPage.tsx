@@ -3661,6 +3661,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     } else {
       handleAddAsset(scenarioIdea)
     }
+
+    // Mark step 1 of the Get Started banner ("Review and add the
+    // recommendation") as done — the auto-select above did exactly
+    // what the user would have done by clicking the checkbox, so the
+    // banner should reflect reality. Without this, the user lands
+    // with the checkbox already visually checked but the banner still
+    // asking them to "Check the box on the recommendation card",
+    // which is confusing.
+    try { window.dispatchEvent(new CustomEvent('pilot-tradelab:rec-reviewed')) } catch { /* ignore */ }
   }, [
     pilotMode.effectiveIsPilot,
     user?.id,
