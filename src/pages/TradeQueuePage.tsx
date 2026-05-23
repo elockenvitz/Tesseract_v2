@@ -1607,21 +1607,28 @@ export function TradeQueuePage() {
               <Sparkles className="h-4 w-4" />
               <span className="text-[12px] uppercase tracking-wider">Get started</span>
             </div>
-            <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
+            {/*
+              Stack steps vertically on narrow screens, horizontal on wider
+              ones. flex-wrap (the previous approach) produced confusing
+              orderings when steps overflowed — pilot tester saw step 3
+              wrap to a new row below step 1 instead of below step 2. Same
+              fix is applied in PilotTradeLabIntroBanner.
+            */}
+            <div className="flex flex-col md:flex-row md:items-start gap-y-2 md:gap-x-4 text-gray-700 dark:text-gray-300 min-w-0">
               <PilotPipelineStep
                 n={1}
                 title="Drag ideas through the pipeline"
                 hint="Click and drag ideas left to right through stages as they mature."
                 done={pilotStep1Done}
               />
-              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+              <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
               <PilotPipelineStep
                 n={2}
                 title="Open the Decision Inbox"
                 hint="The bottom drawer is where recommendations wait for your decision — click it."
                 done={pilotStep2Done}
               />
-              <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+              <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
               <PilotPipelineStep
                 n={3}
                 title="Open Trade Lab"
