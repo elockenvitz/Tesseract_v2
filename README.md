@@ -119,6 +119,7 @@ scripts/
 docs/
   ARCHITECTURE.md
   CONTRIBUTING.md
+  adr/                         Architecture Decision Records — why things are the way they are
   archive/                     Historical planning / refactoring notes
 ```
 
@@ -128,7 +129,9 @@ docs/
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — system overview,
   multi-tenancy model, data flow
-- **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** — branch / PR / review flow
+- **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** — environments, branch / PR / review flow, migrations
+- **[docs/adr/](docs/adr/)** — Architecture Decision Records explaining
+  load-bearing choices (RLS, pilot keys, trade-commit canonicalization)
 - **[docs/archive/](docs/archive/)** — historical refactoring and feature plans
 
 ---

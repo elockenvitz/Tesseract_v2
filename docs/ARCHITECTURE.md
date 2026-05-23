@@ -153,9 +153,11 @@ These are known gaps. Listing them so the absence isn't a surprise.
 - **Storybook visual-regression tests don't run in CI**. They need
   Playwright + Chromium in the runner. Will be added as a separate
   workflow when more stories exist (we have ~3 today).
-- **ADRs (architecture decision records)**. Planned next sprint —
-  one-page docs for the load-bearing choices (Supabase RLS, per-org
-  pilot keys, decision engine design, etc.).
+- **ADRs are partial.** [docs/adr/](adr/) has the first three
+  load-bearing decisions (RLS multi-tenancy, per-org pilot keys,
+  `accepted_trades` as canonical commit record). More to come for
+  the decision engine, AI / BYOK design, snapshot-based sharing,
+  and others.
 
 ---
 
