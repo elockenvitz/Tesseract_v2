@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import * as Sentry from '@sentry/react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -156,11 +157,23 @@ export function usePilotProgress() {
       queryClient.setQueryData(['pilot-progress', user.id], optimistic)
       return { previous }
     },
-    onError: (_error, _stage, context) => {
+    onError: (error, stage, context) => {
       // Roll back the optimistic flip if the DB write fails.
       if (context?.previous !== undefined && user?.id) {
         queryClient.setQueryData(['pilot-progress', user.id], context.previous)
       }
+      // Surface the failure to Sentry — Daniel hit a case where his
+      // accepted_trade landed but trade_book_unlocked never marked,
+      // and we had no record of *why* (silent rollback). Future
+      // failures land in Sentry tagged with the stage + org so we can
+      // tell whether it was a network blip, RLS rejection, or a real
+      // mutation bug.
+      Sentry.withScope((scope) => {
+        scope.setTag('pilot_stage', stage)
+        scope.setTag('organization_id', currentOrgId ?? 'none')
+        scope.setContext('pilot_progress', { stage, currentOrgId, userId: user?.id })
+        Sentry.captureException(error)
+      })
     },
     onSuccess: (result) => {
       if (result?.nextProgress) {
