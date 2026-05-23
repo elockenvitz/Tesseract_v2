@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { AtSign, Hash, X } from 'lucide-react'
 
 interface User {
@@ -42,19 +43,34 @@ export function MentionInput({ value, onChange, placeholder, className, disabled
   const [mentions, setMentions] = useState<string[]>([])
   const [references, setReferences] = useState<Array<{ type: string; id: string; text: string }>>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { currentOrgId } = useOrganization()
 
-  // Fetch users for @mentions
+  // Fetch users for @mentions, scoped to the current org's active members
+  // only. We don't rely on RLS alone here — platform admins legitimately
+  // *can* read all users (for ops dashboards) but the mention dropdown
+  // should never show anyone outside the current org regardless of role.
+  // Defense in depth: explicit org scope at the query level.
   const { data: users } = useQuery({
-    queryKey: ['users'],
+    queryKey: ['mention-users', currentOrgId],
     queryFn: async () => {
+      if (!currentOrgId) return []
+      const { data: members, error: memErr } = await supabase
+        .from('organization_memberships')
+        .select('user_id')
+        .eq('organization_id', currentOrgId)
+        .eq('status', 'active')
+      if (memErr) throw memErr
+      const userIds = (members ?? []).map((m: any) => m.user_id).filter(Boolean)
+      if (userIds.length === 0) return []
       const { data, error } = await supabase
         .from('users')
         .select('id, email, first_name, last_name')
+        .in('id', userIds)
         .order('email')
       if (error) throw error
       return data as User[]
     },
-    enabled: suggestionType === 'mention'
+    enabled: suggestionType === 'mention' && !!currentOrgId,
   })
 
   // Fetch assets for #hashtags
