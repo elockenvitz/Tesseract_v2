@@ -127,21 +127,29 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
           <Sparkles className="h-4 w-4" />
           <span className="text-[12px] uppercase tracking-wider">Get started</span>
         </div>
-        <div className="flex items-start gap-x-4 text-gray-700 dark:text-gray-300 min-w-0 flex-wrap">
+        {/*
+          Stack steps vertically on narrow screens (mobile/laptop side-panel
+          widths) and lay them out horizontally on wider screens. The
+          previous `flex-wrap` approach put steps in the wrong visual order
+          when the row ran out of space — pilot tester saw step 3 appear
+          below step 1 instead of below step 2. The inter-step arrows are
+          decorative; we hide them in the stacked layout.
+        */}
+        <div className="flex flex-col md:flex-row md:items-start gap-y-2 md:gap-x-4 text-gray-700 dark:text-gray-300 min-w-0">
           <Step
             n={1}
             title="Review and add the recommendation"
             hint="Check the box on the recommendation card on the left to import it into the holdings table."
             done={step1}
           />
-          <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+          <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
           <Step
             n={2}
-            title="Adjust sizing and select the trade"
-            hint="Tweak Sim Wt if needed, then check the box on the trade row in the holdings table."
+            title="Pick your trade"
+            hint="Check the box on the trade row in the table below."
             done={step2}
           />
-          <ArrowRight className="h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
+          <ArrowRight className="hidden md:block h-3.5 w-3.5 text-amber-400 dark:text-amber-500 shrink-0 mt-[3px]" />
           <Step
             n={3}
             title="Execute"
