@@ -526,6 +526,25 @@ export function PilotActionDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pipelineLoading, liveStepDone.capture, liveStepDone.develop, liveStepDone.decide, liveStepDone.review, liveStepDone.analyze, stepCacheKey])
 
+  // TEMP DEBUG — pair with the [pilot-debug] log in usePilotProgress.
+  // Shows what stepDone/activeKey/openKey resolve to on each render
+  // so we can spot which input is producing the wrong stage.
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.log('[pilot-debug] dashboard render', {
+      pipelineLoading,
+      hasReadyProgress,
+      stepCacheKey,
+      cachedStepDone,
+      liveStepDone,
+      stepDone,
+      hasUserIdea,
+      hasMovedIdea,
+      hasUnlockedTradeBook,
+      hasUnlockedOutcomes,
+    })
+  }
+
   // First incomplete step is the active one. The pilot lands on
   // Capture by default — if NOTHING is done yet, that's where the
   // pulse lives. (Previously we jumped to Decide for new pilots,
@@ -543,6 +562,17 @@ export function PilotActionDashboard({
   // Open stage = whatever the user clicked (defaults to active).
   const [openKey, setOpenKey] = useState<StageKey>(activeKey)
   const openStage = STAGES.find(s => s.key === openKey) ?? STAGES[0]
+
+  // TEMP DEBUG — log the derived active/open keys so we can confirm
+  // what's actually driving the visible stage highlight.
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.log('[pilot-debug] dashboard keys', {
+      activeKey,
+      openKey,
+      openStageLabel: openStage.label,
+    })
+  }
 
   // Auto-advance: only fire on the *actual* transition from undone
   // → done for whichever stage is currently open. Track the previous
