@@ -110,14 +110,18 @@ export function usePilotProgress() {
     },
   })
 
-  // Effective progress: real query data when we have it, otherwise
-  // the synchronous snapshot from the auth cache. `query.data` is
-  // the server's view; `userPilotProgress` is the snapshot taken
-  // at last useAuth refetch. Falling back to it means every derived
-  // flag below (hasUnlockedTradeBook, hasUnlockedOutcomes,
-  // hasGraduated) returns the right value from the very first paint
-  // for any authenticated user — no separate cache write needed.
-  const progress: PilotProgress = query.data ?? userPilotProgress ?? {}
+  // Effective progress: merge the auth cache snapshot UNDER the live
+  // query result, so the query takes precedence per-key but anything
+  // it's missing falls back to the cache. We deliberately spread
+  // rather than `query.data ?? userPilotProgress`, because the
+  // queryFn returns `{}` on any error/RLS hiccup — and `{}` is
+  // truthy, which would shadow the auth-cache value entirely and
+  // drop us back into the same flicker. Spreading means even a
+  // briefly-empty query response doesn't wipe known unlock flags.
+  const progress: PilotProgress = {
+    ...(userPilotProgress ?? {}),
+    ...(query.data ?? {}),
+  }
 
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {

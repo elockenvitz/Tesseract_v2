@@ -484,25 +484,37 @@ export function PilotActionDashboard({
   })
 
   // While the pipeline query is still loading after a hard refresh,
-  // prefer the cached state for stages whose inputs are still loading
-  // (capture / develop / analyze depend on pipelineItems / userCaptured
-  // / pilot_scenario_status, which aren't cached at the hook level).
+  // build stepDone from whichever signals we actually have
+  // synchronously.
   //
-  // decide and review come from `usePilotProgress.hasUnlockedTradeBook`
-  // / `hasUnlockedOutcomes`, which ARE cached synchronously in
-  // localStorage at the hook level. Always use the live values for
-  // those two — the dashboard's own `cachedStepDone` is only updated
-  // when the dashboard is mounted with resolved queries, so a user who
-  // unlocks Decide or Review on another page (Trade Lab, Trade Book,
-  // Outcomes) before returning to the dashboard would otherwise see
-  // the System Loop highlight a stale earlier stage on the next hard
-  // refresh, then snap forward once the queries land.
-  const stepDone: Record<StageKey, boolean> = pipelineLoading && cachedStepDone
-    ? {
-        ...cachedStepDone,
-        decide: liveStepDone.decide,
-        review: liveStepDone.review,
-      }
+  // decide / review come from usePilotProgress which now hydrates
+  // from user.pilot_progress in the auth cache, so they're always
+  // correct from frame one.
+  //
+  // capture / develop normally come from pipelineItems / userCaptured,
+  // which ARE async. If we have a cachedStepDone snapshot from a
+  // prior dashboard mount, use those values. If we don't, derive
+  // them by IMPLICATION from the unlock flags: a user can only
+  // unlock decide (trade book) by completing capture + develop +
+  // executing a trade, so if decide is unlocked those earlier
+  // stages must be complete too. Same for review implying capture
+  // / develop / decide. This keeps the loop on the correct active
+  // stage even when no prior dashboard cache exists, instead of
+  // briefly highlighting capture/develop as incomplete.
+  const stepDone: Record<StageKey, boolean> = pipelineLoading
+    ? (cachedStepDone
+        ? {
+            ...cachedStepDone,
+            decide: liveStepDone.decide,
+            review: liveStepDone.review,
+          }
+        : {
+            capture: liveStepDone.capture || liveStepDone.decide || liveStepDone.review,
+            develop: liveStepDone.develop || liveStepDone.decide || liveStepDone.review,
+            decide:  liveStepDone.decide,
+            review:  liveStepDone.review,
+            analyze: liveStepDone.analyze,
+          })
     : liveStepDone
 
   useEffect(() => {
