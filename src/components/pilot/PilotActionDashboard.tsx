@@ -474,11 +474,25 @@ export function PilotActionDashboard({
   })
 
   // While the pipeline query is still loading after a hard refresh,
-  // prefer the cached state so the visuals don't flicker. Once the
-  // real data arrives, swap in liveStepDone and persist it for the
-  // next refresh.
+  // prefer the cached state for stages whose inputs are still loading
+  // (capture / develop / analyze depend on pipelineItems / userCaptured
+  // / pilot_scenario_status, which aren't cached at the hook level).
+  //
+  // decide and review come from `usePilotProgress.hasUnlockedTradeBook`
+  // / `hasUnlockedOutcomes`, which ARE cached synchronously in
+  // localStorage at the hook level. Always use the live values for
+  // those two — the dashboard's own `cachedStepDone` is only updated
+  // when the dashboard is mounted with resolved queries, so a user who
+  // unlocks Decide or Review on another page (Trade Lab, Trade Book,
+  // Outcomes) before returning to the dashboard would otherwise see
+  // the System Loop highlight a stale earlier stage on the next hard
+  // refresh, then snap forward once the queries land.
   const stepDone: Record<StageKey, boolean> = pipelineLoading && cachedStepDone
-    ? cachedStepDone
+    ? {
+        ...cachedStepDone,
+        decide: liveStepDone.decide,
+        review: liveStepDone.review,
+      }
     : liveStepDone
 
   useEffect(() => {
