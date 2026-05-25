@@ -123,31 +123,6 @@ export function usePilotProgress() {
     ...(query.data ?? {}),
   }
 
-  // TEMP DEBUG — diagnosing the cold-load stage flicker. Logs each
-  // render of usePilotProgress so we can see whether user.pilot_progress
-  // is actually present on first paint, what currentOrgId resolves to,
-  // and whether the per-org unlock lookup actually finds its key.
-  // Remove after the bug is understood.
-  if (typeof window !== 'undefined') {
-    const tbKey = `trade_book_unlocked_at_${currentOrgId || 'no-org'}`
-    const ocKey = `outcomes_unlocked_at_${currentOrgId || 'no-org'}`
-    // eslint-disable-next-line no-console
-    console.log('[pilot-debug] usePilotProgress render', {
-      userId: user?.id ?? null,
-      currentOrgId: currentOrgId ?? null,
-      hasUserPilotProgressOnUser: userPilotProgress !== undefined,
-      userPilotProgressKeys: userPilotProgress ? Object.keys(userPilotProgress) : null,
-      queryStatus: { isLoading: query.isLoading, isFetching: query.isFetching, hasData: query.data !== undefined },
-      progressKeys: Object.keys(progress),
-      tbKey,
-      ocKey,
-      tradeBookValue: progress[tbKey] ?? null,
-      outcomesValue: progress[ocKey] ?? null,
-      hasUnlockedTradeBook: !!progress[tbKey],
-      hasUnlockedOutcomes: !!progress[ocKey],
-    })
-  }
-
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return

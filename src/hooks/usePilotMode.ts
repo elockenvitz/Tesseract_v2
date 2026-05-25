@@ -10,7 +10,7 @@
  * override at organizations.settings.pilot_access.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -70,7 +70,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, hasReadyProgress } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, hasReadyProgress, mark: markPilotStage } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -182,13 +182,43 @@ export function usePilotMode(): PilotModeState {
 
   const isPilot = !!orgFlags?.pilotMode
 
-  // (The trade_book_unlocked self-heal previously lived here as an
-  // unbounded useEffect. It now lives inside PilotTradeBookPreview so
-  // it can only fire while the locked preview is mounted — the moment
-  // access flips to 'full', the preview unmounts and the heal stops,
-  // which prevents the visible flicker we were seeing right after
-  // execute when this effect re-fired against the brief stale-cache
-  // window created by usePilotProgress's invalidateQueries call.)
+  // Self-heal trade_book_unlocked at the hook level so the dashboard
+  // (and any other pilot surface that isn't the locked Trade Book
+  // preview) recovers when `pilot_progress.trade_book_unlocked_at_<orgId>`
+  // is missing for the current org despite the user having committed
+  // a trade in it. Symptom we saw repeatedly: the System Loop stayed
+  // stuck on Decide because hasUnlockedTradeBook resolved false, and
+  // only flipped to the correct stage after the user opened the Trade
+  // Book tab (whose own self-heal in PilotTradeBookPreview wrote the
+  // missing per-org key). With the heal here too, the dashboard
+  // recovers on its own.
+  //
+  // Bounded by a ref so we mark at most once per session — the
+  // mark mutation is idempotent server-side, but firing it on every
+  // matching render still produces unnecessary cache churn. The
+  // earlier flicker that drove us to remove this effect was caused
+  // by usePilotProgress.markStage.onSuccess re-invalidating the
+  // query right after writing it; that invalidate is now gone (see
+  // commit history on usePilotProgress), so the heal can live here
+  // safely again.
+  const tradeBookHealFiredRef = useRef(false)
+  useEffect(() => {
+    if (tradeBookHealFiredRef.current) return
+    if (!isPilot || progressLoading || orgLoading) return
+    if (!hasReadyProgress) return
+    if (!hasCommittedTradeInOrg) return
+    if (hasUnlockedTradeBook) return
+    tradeBookHealFiredRef.current = true
+    markPilotStage('trade_book_unlocked')
+  }, [
+    isPilot,
+    progressLoading,
+    orgLoading,
+    hasReadyProgress,
+    hasCommittedTradeInOrg,
+    hasUnlockedTradeBook,
+    markPilotStage,
+  ])
   const access = useMemo(() => {
     // Once the user has graduated, all pilot gating drops away —
     // they get the same access as a non-pilot user even though the
