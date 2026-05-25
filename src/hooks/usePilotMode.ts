@@ -245,7 +245,9 @@ export function usePilotMode(): PilotModeState {
   // wrong-state preview (Trade Book locked) or wrong-stage strip
   // (Decide instead of Review).
   const accessIsReady =
-    hasReadyProgress && (typeof hasCommittedTradeInOrgQuery === 'boolean' || cachedHasCommittedTrade != null)
+    hasReadyProgress
+    && !!currentOrgId
+    && (typeof hasCommittedTradeInOrgQuery === 'boolean' || cachedHasCommittedTrade != null)
 
   return {
     isPilot,

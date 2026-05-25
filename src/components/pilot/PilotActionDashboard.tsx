@@ -624,28 +624,45 @@ export function PilotActionDashboard({
             Bold description + colored CTA + stage-specific
             attention items. Stays inside the same visual block as
             the loop header so the dashboard reads as one focused
-            surface, not a stack of panels. */}
-        <StagePanel
-          stage={openStage}
-          cta={ctaForStage(openStage.key)}
-          state={state}
-          scenario={scenario}
-          acceptedTrade={acceptedTrade}
-          committedAt={committedAt}
-          hasReview={hasReview}
-          pipelineItems={pipelineItems || []}
-          pipelineLoading={pipelineLoading}
-          recorded={recordedDecisions ?? null}
-          userCaptured={userCaptured ?? null}
-          userIdeasFromPipeline={userIdeasFromPipeline}
-          onOpenTradeLab={() => onOpenTradeLab(scenarioContext)}
-          onOpenIdeaPipeline={onOpenIdeaPipeline}
-          onOpenTradeBook={onOpenTradeBook}
-          onOpenOutcomes={onOpenOutcomes}
-          onCapture={openCapture}
-          hasUnlockedTradeBook={hasUnlockedTradeBook}
-          hasUnlockedOutcomes={hasUnlockedOutcomes}
-        />
+            surface, not a stack of panels.
+
+            While `hasReadyProgress` is false (cold-load window: no
+            cache and queries still pending) the `openKey` driving
+            this panel is computed from undefined unlock flags, so it
+            defaults to the first incomplete stage — which during
+            loading is whichever stage we haven't proven complete yet,
+            i.e. NOT the user's actual stage. Rendering the real panel
+            here would flash that wrong stage's content. A min-height
+            placeholder preserves layout without showing wrong data;
+            once readiness flips, the real panel takes over. */}
+        {hasReadyProgress ? (
+          <StagePanel
+            stage={openStage}
+            cta={ctaForStage(openStage.key)}
+            state={state}
+            scenario={scenario}
+            acceptedTrade={acceptedTrade}
+            committedAt={committedAt}
+            hasReview={hasReview}
+            pipelineItems={pipelineItems || []}
+            pipelineLoading={pipelineLoading}
+            recorded={recordedDecisions ?? null}
+            userCaptured={userCaptured ?? null}
+            userIdeasFromPipeline={userIdeasFromPipeline}
+            onOpenTradeLab={() => onOpenTradeLab(scenarioContext)}
+            onOpenIdeaPipeline={onOpenIdeaPipeline}
+            onOpenTradeBook={onOpenTradeBook}
+            onOpenOutcomes={onOpenOutcomes}
+            onCapture={openCapture}
+            hasUnlockedTradeBook={hasUnlockedTradeBook}
+            hasUnlockedOutcomes={hasUnlockedOutcomes}
+          />
+        ) : (
+          <section
+            className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm min-h-[320px]"
+            aria-busy="true"
+          />
+        )}
       </div>
     </div>
   )

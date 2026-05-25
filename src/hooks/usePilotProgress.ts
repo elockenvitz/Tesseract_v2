@@ -288,14 +288,15 @@ export function usePilotProgress() {
      *  which is when consumers should hold rendering rather than flash
      *  a wrong gate decision.
      *
-     *  Implementation note: we check `query.data !== undefined` rather
-     *  than `!query.isLoading` because React Query reports
-     *  `isLoading: false` whenever the query is disabled (`enabled:
-     *  false`), including the transient render where `user?.id` hasn't
-     *  hydrated yet. Inverting isLoading made the flag spuriously
-     *  truthy in that window, which collapsed every defense on this
-     *  branch back to the same flicker the user was seeing. */
-    hasReadyProgress: query.data !== undefined || cachedProgress != null,
+     *  Requires user.id to be set. Without that gate, the very first
+     *  render after a fresh login/hard-refresh evaluates as "ready"
+     *  even though both the query is disabled AND the cache useMemo
+     *  short-circuits on the null user.id — leaving downstream code
+     *  to render against empty data, which is exactly the case where
+     *  the user kept seeing the strip flash step 1 / step 3 before
+     *  snapping to step 4. */
+    hasReadyProgress:
+      !!user?.id && (query.data !== undefined || cachedProgress != null),
     hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
     hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
