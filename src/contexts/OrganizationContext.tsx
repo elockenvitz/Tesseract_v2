@@ -40,7 +40,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const { user } = useAuth()
 
   // Read current_organization_id from the user profile (set by useAuth)
-  const currentOrgId: string | null = (user as any)?.current_organization_id ?? null
+  const rawCurrentOrgId: string | null = (user as any)?.current_organization_id ?? null
 
   // Fetch all orgs the user is an active member of
   const { data: userOrgs = [], isLoading } = useQuery({
@@ -82,7 +82,67 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
     staleTime: 10 * 60 * 1000, // 10 min — org list rarely changes
   })
 
-  const currentOrg = userOrgs.find((o) => o.id === currentOrgId) ?? null
+  // Self-heal a stale current_organization_id. If the cached value points
+  // to an org the user is no longer an active member of (e.g., membership
+  // was revoked without resetting users.current_organization_id), fall
+  // back to the first active membership so the header selector and every
+  // org-scoped query keep working instead of resolving to a phantom org.
+  // The set_current_org() RPC validates membership, so the only way to
+  // land in this state is direct DB writes or a membership-cleanup path
+  // that forgot to reset the user row.
+  const lookedUpOrg = rawCurrentOrgId
+    ? userOrgs.find((o) => o.id === rawCurrentOrgId) ?? null
+    : null
+  const needsHeal =
+    !isLoading && lookedUpOrg == null && userOrgs.length > 0
+  const currentOrg: OrgSummary | null =
+    lookedUpOrg ?? (needsHeal ? userOrgs[0] : null)
+  // Once memberships have loaded, only expose an id the user actually
+  // belongs to. While loading we keep the raw cached id so the first
+  // paint doesn't flicker to "no org" before the membership query
+  // resolves.
+  const currentOrgId: string | null = isLoading ? rawCurrentOrgId : currentOrg?.id ?? null
+
+  // Persist the heal so it sticks across reloads. We do not reload here —
+  // the in-memory fallback already gives the user a usable session, and a
+  // forced reload at sign-in time would be jarring.
+  const healPersistedRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (!needsHeal) return
+    const target = userOrgs[0]?.id
+    if (!target) return
+    const key = `${user?.id ?? ''}:${target}`
+    if (healPersistedRef.current === key) return
+    healPersistedRef.current = key
+    void (async () => {
+      try {
+        const { error } = await supabase.rpc('set_current_org', { p_org_id: target })
+        if (error) {
+          // Don't latch the ref so a future render can retry.
+          healPersistedRef.current = null
+          console.error('Failed to self-heal current_organization_id:', error)
+          return
+        }
+        // Keep the auth cache in sync so a hard reload picks up the new org
+        // on the first paint instead of flashing the stale id.
+        const cachedRaw = localStorage.getItem('auth-user-cache')
+        if (cachedRaw) {
+          try {
+            const cached = JSON.parse(cachedRaw)
+            localStorage.setItem(
+              'auth-user-cache',
+              JSON.stringify({ ...cached, current_organization_id: target })
+            )
+          } catch {
+            // ignore
+          }
+        }
+      } catch (err) {
+        healPersistedRef.current = null
+        console.error('Failed to self-heal current_organization_id:', err)
+      }
+    })()
+  }, [needsHeal, userOrgs, user?.id])
 
   // Check if current org is archived
   const { data: isOrgArchived = false } = useQuery({
