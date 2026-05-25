@@ -2,16 +2,58 @@
  * PilotTradeBookPreview — read-only teaser rendered when a pilot user opens
  * the Trade Book tab. Shows what the real surface will do once enabled,
  * without exposing the operational workflow.
+ *
+ * Self-heal: if the user lands here having already committed a trade in
+ * this org, they've earned Trade Book — mark trade_book_unlocked so the
+ * next render swaps in the real surface. Catches the case where the
+ * event-based unlock from SimulationPage's `pilot-tradelab:executed`
+ * listener missed (e.g., SimulationPage unmounted mid-dispatch on the
+ * post-execute navigation). Mirrors the same pattern used by
+ * PilotOutcomesPreview.
+ *
+ * This replaces the older unbounded self-heal that lived in
+ * usePilotMode — that one fired on every render where the conditions
+ * matched, which combined with usePilotProgress's invalidateQueries to
+ * create a visible flicker between locked and unlocked right after
+ * execute. Living inside the preview means the heal can only fire
+ * while the locked preview is mounted; the moment access flips to
+ * 'full', the preview unmounts and the heal stops, so no oscillation.
  */
 
+import { useEffect } from 'react'
 import { BookOpen, CheckCircle2, Sparkles, ArrowRight, Lock } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { usePilotMode } from '../../hooks/usePilotMode'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
 
 interface PilotTradeBookPreviewProps {
   onGoToTradeLab?: () => void
 }
 
 export function PilotTradeBookPreview({ onGoToTradeLab }: PilotTradeBookPreviewProps) {
+  const pilotMode = usePilotMode()
+  const { hasUnlockedTradeBook, mark } = usePilotProgress()
+
+  useEffect(() => {
+    // If we're rendering this preview but the user has already
+    // committed a trade in this org, mark trade_book_unlocked now.
+    // The mutation is idempotent so re-firing is a no-op.
+    if (
+      !pilotMode.isLoading &&
+      pilotMode.isPilot &&
+      pilotMode.hasCommittedTradeInOrg &&
+      !hasUnlockedTradeBook
+    ) {
+      mark('trade_book_unlocked')
+    }
+  }, [
+    pilotMode.isLoading,
+    pilotMode.isPilot,
+    pilotMode.hasCommittedTradeInOrg,
+    hasUnlockedTradeBook,
+    mark,
+  ])
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
