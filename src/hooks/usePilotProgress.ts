@@ -85,14 +85,18 @@ export function usePilotProgress() {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
-  // Synchronous cache of the user's pilot_progress JSONB. Without this,
-  // a hard refresh leaves `hasUnlockedTradeBook` / `hasUnlockedOutcomes`
-  // undefined for the ~100-300ms it takes the query to resolve. During
-  // that window the System Loop computes its active stage from the
-  // missing data — so a user who's actually on Review briefly sees the
-  // strip highlight Decide, and the Trade Book tab briefly renders the
-  // locked preview before swapping to the unlocked page. Hydrating
-  // from localStorage on the first render closes the gap.
+  // Synchronous cache of the user's pilot_progress JSONB, mirroring the
+  // `cachedHasGraduated` pattern below. Used as a render-time fallback
+  // when the query hasn't resolved (or for the brief window before
+  // user.id is even available to the query). Without this, a hard
+  // refresh leaves `hasUnlockedTradeBook` / `hasUnlockedOutcomes`
+  // undefined → falsy for the ~100-300ms it takes the query to
+  // resolve; during that window the System Loop highlights the wrong
+  // active stage and the Trade Book tab briefly renders the locked
+  // preview. Render-time fallback (not React Query `initialData`) is
+  // used because the latter is captured at first useQuery call time
+  // and doesn't reliably re-apply when user.id transitions from null
+  // to set on the second render.
   const cachedProgress = useMemo<PilotProgress | null>(() => {
     if (!user?.id) return null
     try {
@@ -109,13 +113,6 @@ export function usePilotProgress() {
     queryKey: ['pilot-progress', user?.id],
     enabled: !!user?.id,
     staleTime: 60_000,
-    // initialData hydrates the first render synchronously from the
-    // localStorage snapshot. `initialDataUpdatedAt: 0` marks it as
-    // already stale so React Query still fires a background refetch
-    // on mount to reconcile with the server — but the UI doesn't flash
-    // through "undefined → real" during that fetch.
-    initialData: cachedProgress ?? undefined,
-    initialDataUpdatedAt: 0,
     queryFn: async (): Promise<PilotProgress> => {
       const { data, error } = await supabase
         .from('users')
@@ -127,7 +124,12 @@ export function usePilotProgress() {
     },
   })
 
-  const progress: PilotProgress = query.data ?? {}
+  // Effective progress: real query data when we have it, otherwise the
+  // localStorage cache. `query.data` is the server's view, `cachedProgress`
+  // is the previous session's snapshot. Falling back to the cache means
+  // every derived flag below (hasUnlockedTradeBook, hasUnlockedOutcomes,
+  // hasGraduated) returns the right value from the first paint.
+  const progress: PilotProgress = query.data ?? cachedProgress ?? {}
 
   // Persist the freshest progress JSONB to localStorage so the next
   // hard refresh hydrates with the same state instead of waiting on

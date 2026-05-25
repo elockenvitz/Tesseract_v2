@@ -112,11 +112,12 @@ export function usePilotMode(): PilotModeState {
   // "locked until you complete a trade here" UX. Requiring at least one
   // committed trade in the current org gates unlocks per-org.
   //
-  // Cached in localStorage per-(user, org) for synchronous hydration.
-  // The access useMemo below ANDs this with hasUnlockedTradeBook —
+  // Cached in localStorage per-(user, org) for synchronous render-time
+  // fallback. The access useMemo below ANDs this with hasUnlockedTradeBook —
   // both have to be true for Trade Book to render unlocked, so caching
   // pilot_progress alone wasn't enough to kill the cold-load locked
-  // preview flash. Now both come back synchronously on first paint.
+  // preview flash. Tri-state ('1' / '0' / null) so first-time users
+  // (no cache) are distinguishable from a cached `false`.
   const cachedHasCommittedTrade = useMemo<boolean | null>(() => {
     if (!user?.id || !currentOrgId) return null
     try {
@@ -127,12 +128,10 @@ export function usePilotMode(): PilotModeState {
     }
   }, [user?.id, currentOrgId])
 
-  const { data: hasCommittedTradeInOrg } = useQuery({
+  const { data: hasCommittedTradeInOrgQuery } = useQuery({
     queryKey: ['org-has-accepted-trade', currentOrgId, user?.id],
     enabled: !!currentOrgId && !!user?.id,
     staleTime: 60_000,
-    initialData: cachedHasCommittedTrade ?? undefined,
-    initialDataUpdatedAt: 0,
     queryFn: async () => {
       // accepted_trades is scoped through portfolio_id (no direct org_id
       // column), so we use an embedded filter on portfolios.organization_id.
@@ -148,22 +147,30 @@ export function usePilotMode(): PilotModeState {
     }
   })
 
-  // Mirror the cached pilot_progress write — store '1' / '0' so the
-  // tri-state read above can distinguish "never cached" (null) from
-  // "cached false" (0). Without that distinction, a first-time user
-  // would have the cache evaluated as `false` and we'd miss the case
-  // where the cache simply doesn't exist yet.
+  // Effective value: real query result if we have one, otherwise the
+  // localStorage cache. Same render-time fallback pattern as
+  // `usePilotProgress.cachedProgress`. Avoids the cold-load window
+  // where `hasCommittedTradeInOrgQuery` is undefined → access drops
+  // to 'preview' → Trade Book tab flashes the locked teaser.
+  const hasCommittedTradeInOrg =
+    typeof hasCommittedTradeInOrgQuery === 'boolean'
+      ? hasCommittedTradeInOrgQuery
+      : (cachedHasCommittedTrade ?? false)
+
+  // Persist on each successful refetch so the next cold load starts
+  // from the right value. Only write when the query has actually
+  // resolved (boolean), not when we're showing the cached fallback.
   useEffect(() => {
-    if (!user?.id || !currentOrgId || typeof hasCommittedTradeInOrg !== 'boolean') return
+    if (!user?.id || !currentOrgId || typeof hasCommittedTradeInOrgQuery !== 'boolean') return
     try {
       localStorage.setItem(
         `has_committed_trade_${user.id}_${currentOrgId}`,
-        hasCommittedTradeInOrg ? '1' : '0'
+        hasCommittedTradeInOrgQuery ? '1' : '0'
       )
     } catch {
       /* ignore */
     }
-  }, [user?.id, currentOrgId, hasCommittedTradeInOrg])
+  }, [user?.id, currentOrgId, hasCommittedTradeInOrgQuery])
 
   const isPilot = !!orgFlags?.pilotMode
 
