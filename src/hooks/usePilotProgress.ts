@@ -85,10 +85,37 @@ export function usePilotProgress() {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
+  // Synchronous cache of the user's pilot_progress JSONB. Without this,
+  // a hard refresh leaves `hasUnlockedTradeBook` / `hasUnlockedOutcomes`
+  // undefined for the ~100-300ms it takes the query to resolve. During
+  // that window the System Loop computes its active stage from the
+  // missing data — so a user who's actually on Review briefly sees the
+  // strip highlight Decide, and the Trade Book tab briefly renders the
+  // locked preview before swapping to the unlocked page. Hydrating
+  // from localStorage on the first render closes the gap.
+  const cachedProgress = useMemo<PilotProgress | null>(() => {
+    if (!user?.id) return null
+    try {
+      const raw = localStorage.getItem(`pilot_progress_${user.id}`)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      return (typeof parsed === 'object' && parsed !== null) ? (parsed as PilotProgress) : null
+    } catch {
+      return null
+    }
+  }, [user?.id])
+
   const query = useQuery({
     queryKey: ['pilot-progress', user?.id],
     enabled: !!user?.id,
     staleTime: 60_000,
+    // initialData hydrates the first render synchronously from the
+    // localStorage snapshot. `initialDataUpdatedAt: 0` marks it as
+    // already stale so React Query still fires a background refetch
+    // on mount to reconcile with the server — but the UI doesn't flash
+    // through "undefined → real" during that fetch.
+    initialData: cachedProgress ?? undefined,
+    initialDataUpdatedAt: 0,
     queryFn: async (): Promise<PilotProgress> => {
       const { data, error } = await supabase
         .from('users')
@@ -101,6 +128,19 @@ export function usePilotProgress() {
   })
 
   const progress: PilotProgress = query.data ?? {}
+
+  // Persist the freshest progress JSONB to localStorage so the next
+  // hard refresh hydrates with the same state instead of waiting on
+  // the network round-trip. Keyed per-user; the JSONB itself already
+  // encodes the per-org stage keys, so no extra org dimension needed.
+  useEffect(() => {
+    if (!user?.id || !query.data) return
+    try {
+      localStorage.setItem(`pilot_progress_${user.id}`, JSON.stringify(query.data))
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id, query.data])
 
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
