@@ -36,6 +36,14 @@ export interface PilotModeState {
    *  `effectiveIsPilot=true` and `effectiveIsPilot=false` are best-guesses
    *  with no information backing them. */
   isInitialResolve: boolean
+  /** True once the per-feature access decision is trustworthy on this
+   *  paint. False during the cold-load window where the unlock queries
+   *  haven't returned AND we have no localStorage cache to fall back on.
+   *  Pilot-aware surfaces (Trade Book / Outcomes preview gating, System
+   *  Loop active stage) should hold a neutral render until this flips
+   *  true; otherwise they flash the wrong gate state for ~200ms before
+   *  snapping to the right one. */
+  accessIsReady: boolean
   /** Best-effort "is pilot" that falls back to a cached hint from the
    *  previous session while the real query is still loading. Use this for
    *  UI gates that must stay stable across a cold refresh (e.g. hiding the
@@ -62,7 +70,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, hasReadyProgress } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -228,10 +236,23 @@ export function usePilotMode(): PilotModeState {
 
   const isInitialResolve = isLoading && !hasCachedPilotHint && !cachedHasGraduated
 
+  // True when the access decision is trustworthy on first paint —
+  // either both unlock signals have actually resolved (we have real
+  // server data) or the localStorage cache fallback has both pieces
+  // (we know what to render without waiting). False during the
+  // cold-load window where queries are pending AND we have no cache,
+  // which is when callers should hold rendering rather than flash a
+  // wrong-state preview (Trade Book locked) or wrong-stage strip
+  // (Decide instead of Review).
+  const accessIsReady =
+    hasReadyProgress && (typeof hasCommittedTradeInOrgQuery === 'boolean' || cachedHasCommittedTrade != null)
+
   return {
     isPilot,
     isLoading,
     isInitialResolve,
+    /** See comment on `accessIsReady` above. */
+    accessIsReady,
     effectiveIsPilot,
     hasCommittedTradeInOrg: !!hasCommittedTradeInOrg,
     /** Once true, the user has finished the pilot loop and the app

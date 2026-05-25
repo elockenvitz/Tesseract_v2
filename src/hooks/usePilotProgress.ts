@@ -281,6 +281,12 @@ export function usePilotProgress() {
   return {
     progress,
     isLoading: query.isLoading,
+    /** True when we have any source of truth for the unlock flags —
+     *  either the query resolved, or the localStorage cache had a
+     *  snapshot to fall back on. False during the brief cold-load
+     *  window where neither exists, which is when consumers should
+     *  hold rendering rather than flash a wrong gate decision. */
+    hasReadyProgress: !query.isLoading || cachedProgress != null,
     hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
     hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the

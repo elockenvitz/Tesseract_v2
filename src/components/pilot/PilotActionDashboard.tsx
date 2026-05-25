@@ -153,7 +153,7 @@ export function PilotActionDashboard({
   const { currentOrg } = useOrganization()
   const queryClient = useQueryClient()
   const { scenario, state, acceptedTrade, committedAt, hasReview } = usePilotScenarioStatus()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasReadyProgress } = usePilotProgress()
 
   // Listen for cross-component refresh signals (e.g., user submitted a
   // trade idea in the right-hand capture sidebar). Without this, the
@@ -609,6 +609,15 @@ export function PilotActionDashboard({
           activeKey={activeKey}
           openKey={openKey}
           onSelect={setOpenKey}
+          // While the unlock-flag queries haven't resolved AND we have
+          // no localStorage cache to fall back on, the computed
+          // activeKey can briefly point at a stage the user is actually
+          // past (e.g. Decide instead of Review on hard refresh,
+          // because hasUnlockedTradeBook reads as false until the
+          // query lands). Pass `loading` so the strip renders neutral
+          // — no active pulse, no checkmarks — for that brief window
+          // and snaps to the correct state once the data arrives.
+          loading={!hasReadyProgress}
         />
 
         {/* ── Selected-stage panel ───────────────────────────────
@@ -650,12 +659,16 @@ function SystemLoopCard({
   activeKey,
   openKey,
   onSelect,
+  loading = false,
 }: {
   stages: StageMeta[]
   stepDone: Record<StageKey, boolean>
   activeKey: StageKey
   openKey: StageKey
   onSelect: (key: StageKey) => void
+  /** Render neutral cards (no active pulse, no checkmarks) while the
+   *  unlock-flag data isn't trustworthy yet — see PilotActionDashboard. */
+  loading?: boolean
 }) {
   return (
     <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
@@ -678,9 +691,13 @@ function SystemLoopCard({
         <div className="grid grid-cols-5 gap-1.5 items-stretch">
           {stages.map((s, i) => {
             const Icon = s.icon
-            const done = stepDone[s.key]
-            const isActive = s.key === activeKey && !done
-            const isOpen = s.key === openKey
+            // During the cold-load window, force every stage to render
+            // as the neutral "not done / not active" variant so the
+            // user doesn't see the wrong stage briefly pulsed before
+            // the queries land and snap the strip forward.
+            const done = loading ? false : stepDone[s.key]
+            const isActive = !loading && s.key === activeKey && !done
+            const isOpen = !loading && s.key === openKey
             // Visual state precedence: open > active (pulse) > done > neutral.
             // Note: every state keeps `border` at 1px width — the active
             // state uses `ring-2` (which paints outside the border box,
