@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // We only emit source maps when we're going to upload them (i.e. when
 // the Sentry auth token is present). Local `npm run build` without
@@ -9,7 +10,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin'
 const shouldEmitSourceMaps = !!process.env.SENTRY_AUTH_TOKEN
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   build: {
     sourcemap: shouldEmitSourceMaps,
   },
@@ -33,9 +34,20 @@ export default defineConfig({
         filesToDeleteAfterUpload: ['./dist/**/*.map'],
       },
     }),
+    // Bundle size visualizer. Only runs under `npm run analyze`
+    // (vite build --mode analyze) so normal dev/build is unaffected.
+    // Opens dist/stats.html in the browser after build.
+    mode === 'analyze' &&
+      visualizer({
+        filename: 'dist/stats.html',
+        open: true,
+        gzipSize: true,
+        brotliSize: true,
+        template: 'treemap',
+      }),
   ],
   server: {
     host: true,
     port: 5173,
   },
-})
+}))
