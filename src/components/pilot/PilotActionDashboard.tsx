@@ -224,12 +224,16 @@ export function PilotActionDashboard({
     // key and only refetched when explicitly nudged.
     queryKey: ['trade-queue-items', 'pilot-dashboard-pipeline', currentOrg?.id, pilotPortfolioId],
     enabled: !!currentOrg?.id,
-    // Aggressive refresh strategy — the System Loop relies on this
-    // data being current, and the cost of an extra fetch is trivial.
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: 'always',
-    refetchOnReconnect: 'always',
-    staleTime: 0,
+    // Default refetch behavior with a modest staleTime. The "instant
+    // green checkmark when the user submits an idea" UX is driven by
+    // mutation invalidations on the shared `trade-queue-items` key
+    // prefix — not by refetch-on-mount — so dropping the aggressive
+    // refetch settings doesn't break that. What it DOES fix: the
+    // visible hitch on every navigation back to the dashboard, where
+    // a forced background refetch would land slightly-different data
+    // a few hundred ms after paint and snap the stage strip to the
+    // new state.
+    staleTime: 30_000,
     queryFn: async () => {
       // Two scoping modes:
       //   1. Pilot scenario portfolio known → strict portfolio filter.
@@ -317,13 +321,14 @@ export function PilotActionDashboard({
     // dedicated window event + Realtime subscription cover refresh.
     queryKey: ['pilot-dashboard-user-captured', currentOrg?.id, user?.id, pilotPortfolioId],
     enabled: !!currentOrg?.id && !!user?.id,
-    // Same aggressive refresh strategy as pipelineItems — see comment
-    // there. The System Loop is the dashboard's most prominent state
-    // and pilots must see step 1 turn green the instant they submit.
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: 'always',
-    refetchOnReconnect: 'always',
-    staleTime: 0,
+    // Default refetch behavior with a modest staleTime — see the
+    // matching comment on `pipelineItems`. The dedicated window event
+    // + Realtime subscription noted above still drive instant
+    // refreshes when the user takes an action; removing the aggressive
+    // refetch settings just kills the silent background refetch on
+    // every dashboard navigation that was causing the System Loop's
+    // stage strip to hitch after paint.
+    staleTime: 30_000,
     queryFn: async () => {
       // Same two-mode scoping as `pipelineItems` above. When the pilot
       // scenario hasn't pinned a portfolio yet, fall back to org-scope
@@ -663,11 +668,15 @@ function SystemLoopCard({
             const isActive = s.key === activeKey && !done
             const isOpen = s.key === openKey
             // Visual state precedence: open > active (pulse) > done > neutral.
-            const baseClass = 'group relative rounded-lg border px-2 py-2.5 text-center transition-all duration-150 cursor-pointer'
+            // Note: every state keeps `border` at 1px width — the active
+            // state uses `ring-2` (which paints outside the border box,
+            // not in place of it) so transitioning between states no
+            // longer reshuffles the inner content by 1px.
+            const baseClass = 'group relative rounded-lg border px-2 py-2.5 text-center transition-all duration-200 cursor-pointer'
             const stateClass = isOpen
               ? `${ACCENT_OPEN[s.accent]} shadow-sm`
               : isActive
-                ? `border-2 ring-2 ring-offset-1 ${ACCENT_RING[s.accent]} animate-pulse hover:animate-none`
+                ? `ring-2 ring-offset-1 ${ACCENT_RING[s.accent]} animate-pulse hover:animate-none`
                 : done
                   ? 'border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800/60'
                   : 'border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700'
@@ -805,7 +814,12 @@ function StagePanel({
   const CtaIcon = cta.icon
 
   return (
-    <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+    // min-height pins the panel so the page below doesn't reflow when
+    // the user switches between stages with different attention list
+    // sizes. Picked to comfortably accommodate the tallest stage's
+    // header + a few rows of attention items without over-reserving
+    // when the list is empty.
+    <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm min-h-[320px]">
       {/* Stage header — bold, prominent, single-sentence
           description with the stage's accent icon. Reads as the
           pilot's instruction for "what this step is about." */}
