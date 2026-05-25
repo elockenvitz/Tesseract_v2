@@ -33,6 +33,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotScenarioStatus, type PilotScenarioState } from '../../hooks/usePilotScenarioStatus'
 
 interface PilotActionDashboardProps {
@@ -154,6 +155,16 @@ export function PilotActionDashboard({
   const queryClient = useQueryClient()
   const { scenario, state, acceptedTrade, committedAt, hasReview } = usePilotScenarioStatus()
   const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasReadyProgress } = usePilotProgress()
+  // `hasCommittedTradeInOrg` comes from a separate accepted_trades
+  // query AND is cached in localStorage synchronously. We use it as an
+  // immediate fallback for `hasUnlockedTradeBook` in the System Loop
+  // below — a user who's committed a trade in this org HAS earned the
+  // decide stage even when `pilot_progress.trade_book_unlocked_at_<orgId>`
+  // is briefly missing (the self-heal in usePilotMode writes it, but
+  // not before the first paint). Without this, the loop briefly
+  // highlights decide as the active (incomplete) stage on every
+  // cold load before the heal lands.
+  const { hasCommittedTradeInOrg } = usePilotMode()
 
   // Listen for cross-component refresh signals (e.g., user submitted a
   // trade idea in the right-hand capture sidebar). Without this, the
@@ -440,7 +451,15 @@ export function PilotActionDashboard({
   const liveStepDone: Record<StageKey, boolean> = {
     capture: hasUserIdea,
     develop: hasMovedIdea,
-    decide:  hasUnlockedTradeBook,
+    // Either a marked pilot_progress flag OR a real committed trade
+    // in this org is sufficient evidence that decide is complete. The
+    // committed-trade signal is cached synchronously and available on
+    // first paint, while the per-org pilot_progress key sometimes lags
+    // behind reality and gets re-written by the self-heal in
+    // usePilotMode. Reading both means the loop reflects the truth
+    // immediately on cold load instead of flickering through decide
+    // first while waiting for the heal.
+    decide:  hasUnlockedTradeBook || hasCommittedTradeInOrg,
     review:  hasUnlockedOutcomes,
     analyze: completed && hasReview,
   }
