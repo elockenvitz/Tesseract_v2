@@ -190,8 +190,17 @@ export function usePilotProgress() {
           organizationId: currentOrgId,
         })
       }
-      // Force usePilotMode to re-resolve access
-      queryClient.invalidateQueries({ queryKey: ['pilot-progress', user?.id] })
+      // No invalidate here. The setQueryData above already writes the
+      // authoritative server response into the cache, so a refetch
+      // would just round-trip the same data. The invalidate that used
+      // to live here forced a refetch that briefly contradicted the
+      // just-applied optimistic flip, and the resulting state churn
+      // re-fired the trade_book_unlocked self-heal effect — producing
+      // the visible locked⇄unlocked flicker on the Trade Book tab
+      // right after execute. The self-heal now lives inside the
+      // preview components (PilotTradeBookPreview /
+      // PilotOutcomesPreview) so it can't fire after access has
+      // already flipped to 'full'.
     },
   })
 
