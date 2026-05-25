@@ -150,7 +150,7 @@ export function PilotActionDashboard({
   onOpenOutcomes,
 }: PilotActionDashboardProps) {
   const { user } = useAuth()
-  const { currentOrg } = useOrganization()
+  const { currentOrg, currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
   const { scenario, state, acceptedTrade, committedAt, hasReview } = usePilotScenarioStatus()
   const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasReadyProgress } = usePilotProgress()
@@ -454,7 +454,17 @@ export function PilotActionDashboard({
   // v4 — bumped after thoughts with no org context were strictly
   // excluded from Capture display + signal. Old caches could still
   // hold a stale capture=true from the previous, lossier filter.
-  const stepCacheKey = `pilot_loop_steps_v4_${user?.id || 'anon'}_${currentOrg?.id || 'no-org'}`
+  //
+  // Note: we key off `currentOrgId` (synchronously derived from
+  // `user.current_organization_id` in OrganizationContext) rather
+  // than `currentOrg?.id` (which is the userOrgs-query lookup and
+  // is null on the very first render until that query resolves).
+  // The earlier version used the async value, so the useState init
+  // below baked `no-org` into the key on first paint, loaded an
+  // all-false cache, and got locked there — which is what the user
+  // observed as the System Loop briefly highlighting step 1 before
+  // the queries landed.
+  const stepCacheKey = `pilot_loop_steps_v4_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
   const [cachedStepDone, setCachedStepDone] = useState<Record<StageKey, boolean> | null>(() => {
     try {
       const raw = localStorage.getItem(stepCacheKey)

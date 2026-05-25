@@ -85,29 +85,15 @@ export function usePilotProgress() {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
-  // Synchronous cache of the user's pilot_progress JSONB, mirroring the
-  // `cachedHasGraduated` pattern below. Used as a render-time fallback
-  // when the query hasn't resolved (or for the brief window before
-  // user.id is even available to the query). Without this, a hard
-  // refresh leaves `hasUnlockedTradeBook` / `hasUnlockedOutcomes`
-  // undefined → falsy for the ~100-300ms it takes the query to
-  // resolve; during that window the System Loop highlights the wrong
-  // active stage and the Trade Book tab briefly renders the locked
-  // preview. Render-time fallback (not React Query `initialData`) is
-  // used because the latter is captured at first useQuery call time
-  // and doesn't reliably re-apply when user.id transitions from null
-  // to set on the second render.
-  const cachedProgress = useMemo<PilotProgress | null>(() => {
-    if (!user?.id) return null
-    try {
-      const raw = localStorage.getItem(`pilot_progress_${user.id}`)
-      if (!raw) return null
-      const parsed = JSON.parse(raw)
-      return (typeof parsed === 'object' && parsed !== null) ? (parsed as PilotProgress) : null
-    } catch {
-      return null
-    }
-  }, [user?.id])
+  // The auth-user-cache (populated synchronously by useAuth via
+  // getCachedUser()) already embeds the full users row, including the
+  // pilot_progress JSONB column. Earlier commits on this branch built
+  // a parallel `pilot_progress_<userId>` localStorage cache for the
+  // same data — a redundant layer that frequently sat empty on the
+  // first session under a new build, defeating every readiness gate
+  // downstream. Read pilot_progress straight off `user` instead:
+  // it's always there as long as the user is authenticated.
+  const userPilotProgress = (user as any)?.pilot_progress as PilotProgress | undefined
 
   const query = useQuery({
     queryKey: ['pilot-progress', user?.id],
@@ -124,25 +110,14 @@ export function usePilotProgress() {
     },
   })
 
-  // Effective progress: real query data when we have it, otherwise the
-  // localStorage cache. `query.data` is the server's view, `cachedProgress`
-  // is the previous session's snapshot. Falling back to the cache means
-  // every derived flag below (hasUnlockedTradeBook, hasUnlockedOutcomes,
-  // hasGraduated) returns the right value from the first paint.
-  const progress: PilotProgress = query.data ?? cachedProgress ?? {}
-
-  // Persist the freshest progress JSONB to localStorage so the next
-  // hard refresh hydrates with the same state instead of waiting on
-  // the network round-trip. Keyed per-user; the JSONB itself already
-  // encodes the per-org stage keys, so no extra org dimension needed.
-  useEffect(() => {
-    if (!user?.id || !query.data) return
-    try {
-      localStorage.setItem(`pilot_progress_${user.id}`, JSON.stringify(query.data))
-    } catch {
-      /* ignore */
-    }
-  }, [user?.id, query.data])
+  // Effective progress: real query data when we have it, otherwise
+  // the synchronous snapshot from the auth cache. `query.data` is
+  // the server's view; `userPilotProgress` is the snapshot taken
+  // at last useAuth refetch. Falling back to it means every derived
+  // flag below (hasUnlockedTradeBook, hasUnlockedOutcomes,
+  // hasGraduated) returns the right value from the very first paint
+  // for any authenticated user — no separate cache write needed.
+  const progress: PilotProgress = query.data ?? userPilotProgress ?? {}
 
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
@@ -283,20 +258,13 @@ export function usePilotProgress() {
     isLoading: query.isLoading,
     /** True when we have any source of truth for the unlock flags —
      *  either the query has resolved (query.data is defined, even as
-     *  {}), or the localStorage cache had a snapshot to fall back on.
-     *  False during the brief cold-load window where neither exists,
-     *  which is when consumers should hold rendering rather than flash
-     *  a wrong gate decision.
-     *
-     *  Requires user.id to be set. Without that gate, the very first
-     *  render after a fresh login/hard-refresh evaluates as "ready"
-     *  even though both the query is disabled AND the cache useMemo
-     *  short-circuits on the null user.id — leaving downstream code
-     *  to render against empty data, which is exactly the case where
-     *  the user kept seeing the strip flash step 1 / step 3 before
-     *  snapping to step 4. */
+     *  {}), or the synchronous snapshot from the auth user cache is
+     *  present. The latter is the common case for any authenticated
+     *  user: useAuth hydrates `user.pilot_progress` from
+     *  localStorage on the very first render, so we have data to
+     *  read from before the React Query fetch even starts. */
     hasReadyProgress:
-      !!user?.id && (query.data !== undefined || cachedProgress != null),
+      !!user?.id && (query.data !== undefined || userPilotProgress !== undefined),
     hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
     hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
