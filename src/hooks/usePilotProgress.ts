@@ -282,11 +282,20 @@ export function usePilotProgress() {
     progress,
     isLoading: query.isLoading,
     /** True when we have any source of truth for the unlock flags —
-     *  either the query resolved, or the localStorage cache had a
-     *  snapshot to fall back on. False during the brief cold-load
-     *  window where neither exists, which is when consumers should
-     *  hold rendering rather than flash a wrong gate decision. */
-    hasReadyProgress: !query.isLoading || cachedProgress != null,
+     *  either the query has resolved (query.data is defined, even as
+     *  {}), or the localStorage cache had a snapshot to fall back on.
+     *  False during the brief cold-load window where neither exists,
+     *  which is when consumers should hold rendering rather than flash
+     *  a wrong gate decision.
+     *
+     *  Implementation note: we check `query.data !== undefined` rather
+     *  than `!query.isLoading` because React Query reports
+     *  `isLoading: false` whenever the query is disabled (`enabled:
+     *  false`), including the transient render where `user?.id` hasn't
+     *  hydrated yet. Inverting isLoading made the flag spuriously
+     *  truthy in that window, which collapsed every defense on this
+     *  branch back to the same flicker the user was seeing. */
+    hasReadyProgress: query.data !== undefined || cachedProgress != null,
     hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
     hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
