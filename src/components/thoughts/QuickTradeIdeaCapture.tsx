@@ -245,6 +245,40 @@ export function QuickTradeIdeaCapture({
     enabled: assetSearch.length >= 1,
   })
 
+  // Which of the currently-visible dropdown assets already have an
+  // active pipeline idea. Used to badge the row so the user can spot a
+  // duplicate before selecting. Keyed off the sorted id list so we
+  // don't refetch on re-renders that produce the same set.
+  const visibleAssetIdsKey = useMemo(
+    () => (assets ?? []).map(a => a.id).sort().join(','),
+    [assets]
+  )
+  const { data: assetIdsInPipeline } = useQuery({
+    queryKey: ['quick-capture-pipeline-asset-ids', visibleAssetIdsKey],
+    queryFn: async () => {
+      const ids = (assets ?? []).map(a => a.id)
+      if (ids.length === 0) return new Set<string>()
+      const { data, error } = await supabase
+        .from('trade_queue_items')
+        .select('asset_id')
+        .in('asset_id', ids)
+        .eq('visibility_tier', 'active')
+      if (error) throw error
+      return new Set((data ?? []).map(r => r.asset_id as string))
+    },
+    enabled: (assets ?? []).length > 0,
+    staleTime: 30_000,
+  })
+
+  // Keyboard navigation through the dropdown — highlight cycles with
+  // ArrowUp/Down, Enter commits the highlighted row. Reset to 0
+  // whenever the result set changes so a fresh search doesn't keep
+  // pointing at a now-out-of-range index.
+  const [highlightedAssetIndex, setHighlightedAssetIndex] = useState(0)
+  useEffect(() => {
+    setHighlightedAssetIndex(0)
+  }, [visibleAssetIdsKey])
+
   // Search assets - long side for pairs
   const { data: longSearchResults } = useQuery({
     queryKey: ['assets-search-long', longSearch],
@@ -276,6 +310,73 @@ export function QuickTradeIdeaCapture({
     },
     enabled: shortSearch.length >= 1,
   })
+
+  // Visible long/short dropdown rows. Filtering already-added chips out
+  // of the result set is what the user actually sees, so we compute it
+  // once and feed the same list to the keyboard nav + pipeline-status
+  // query + render. Otherwise the highlight could land on a row the
+  // user never sees.
+  const visibleLongResults = useMemo(
+    () => (longSearchResults ?? []).filter(a => !longAssets.find(la => la.id === a.id)),
+    [longSearchResults, longAssets]
+  )
+  const visibleShortResults = useMemo(
+    () => (shortSearchResults ?? []).filter(a => !shortAssets.find(sa => sa.id === a.id)),
+    [shortSearchResults, shortAssets]
+  )
+  const visibleLongIdsKey = useMemo(
+    () => visibleLongResults.map(a => a.id).sort().join(','),
+    [visibleLongResults]
+  )
+  const visibleShortIdsKey = useMemo(
+    () => visibleShortResults.map(a => a.id).sort().join(','),
+    [visibleShortResults]
+  )
+
+  // Pipeline-status queries for the long/short dropdowns — same shape
+  // as the single-trade `assetIdsInPipeline` above, scoped to whichever
+  // tickers are currently visible in that side's dropdown.
+  const { data: assetIdsInPipelineLong } = useQuery({
+    queryKey: ['quick-capture-pipeline-asset-ids-long', visibleLongIdsKey],
+    queryFn: async () => {
+      const ids = visibleLongResults.map(a => a.id)
+      if (ids.length === 0) return new Set<string>()
+      const { data, error } = await supabase
+        .from('trade_queue_items')
+        .select('asset_id')
+        .in('asset_id', ids)
+        .eq('visibility_tier', 'active')
+      if (error) throw error
+      return new Set((data ?? []).map(r => r.asset_id as string))
+    },
+    enabled: visibleLongResults.length > 0,
+    staleTime: 30_000,
+  })
+  const { data: assetIdsInPipelineShort } = useQuery({
+    queryKey: ['quick-capture-pipeline-asset-ids-short', visibleShortIdsKey],
+    queryFn: async () => {
+      const ids = visibleShortResults.map(a => a.id)
+      if (ids.length === 0) return new Set<string>()
+      const { data, error } = await supabase
+        .from('trade_queue_items')
+        .select('asset_id')
+        .in('asset_id', ids)
+        .eq('visibility_tier', 'active')
+      if (error) throw error
+      return new Set((data ?? []).map(r => r.asset_id as string))
+    },
+    enabled: visibleShortResults.length > 0,
+    staleTime: 30_000,
+  })
+
+  // Highlighted-row state for the long/short dropdowns. Same reset
+  // pattern as the single-trade dropdown — when the visible set
+  // changes, snap back to the top so the highlight can't point past
+  // the end of the list.
+  const [highlightedLongIndex, setHighlightedLongIndex] = useState(0)
+  const [highlightedShortIndex, setHighlightedShortIndex] = useState(0)
+  useEffect(() => { setHighlightedLongIndex(0) }, [visibleLongIdsKey])
+  useEffect(() => { setHighlightedShortIndex(0) }, [visibleShortIdsKey])
 
   // Fetch portfolios
   const { data: portfolios } = useQuery({
@@ -831,6 +932,99 @@ export function QuickTradeIdeaCapture({
     }
   }
 
+  // Search-input-specific handler. When the dropdown is open we hijack
+  // ArrowUp/Down/Enter/Escape to drive the highlighted row instead of
+  // falling through to the form-wide handler — Esc here only closes
+  // the dropdown rather than aborting the whole capture, and Enter
+  // commits the highlighted ticker rather than waiting on Cmd+Enter.
+  const handleAssetSearchKeyDown = (e: React.KeyboardEvent) => {
+    const list = assets ?? []
+    if (showAssetDropdown && list.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedAssetIndex(i => (i + 1) % list.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedAssetIndex(i => (i - 1 + list.length) % list.length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const idx = Math.min(highlightedAssetIndex, list.length - 1)
+        const target = list[idx]
+        if (target) selectAsset(target)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowAssetDropdown(false)
+        return
+      }
+    }
+    handleKeyDown(e)
+  }
+
+  // Same dropdown-nav behavior for the pair long/short search inputs.
+  // Enter adds the highlighted ticker to that side's chip list (rather
+  // than committing the form), Esc closes the dropdown without
+  // aborting.
+  const handleLongSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (showLongDropdown && visibleLongResults.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedLongIndex(i => (i + 1) % visibleLongResults.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedLongIndex(i => (i - 1 + visibleLongResults.length) % visibleLongResults.length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const idx = Math.min(highlightedLongIndex, visibleLongResults.length - 1)
+        const target = visibleLongResults[idx]
+        if (target) addLongAsset(target)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowLongDropdown(false)
+        return
+      }
+    }
+    handleKeyDown(e)
+  }
+  const handleShortSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (showShortDropdown && visibleShortResults.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedShortIndex(i => (i + 1) % visibleShortResults.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedShortIndex(i => (i - 1 + visibleShortResults.length) % visibleShortResults.length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const idx = Math.min(highlightedShortIndex, visibleShortResults.length - 1)
+        const target = visibleShortResults[idx]
+        if (target) addShortAsset(target)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowShortDropdown(false)
+        return
+      }
+    }
+    handleKeyDown(e)
+  }
+
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     setSelectedAsset(asset)
     setAssetSearch('')
@@ -986,22 +1180,40 @@ export function QuickTradeIdeaCapture({
                     setShowAssetDropdown(true)
                   }}
                   onFocus={() => setShowAssetDropdown(true)}
-                  onKeyDown={handleKeyDown}
+                  onKeyDown={handleAssetSearchKeyDown}
                   className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 />
                 {showAssetDropdown && assets && assets.length > 0 && (
                   <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {assets.map(asset => (
-                      <button
-                        key={asset.id}
-                        type="button"
-                        onClick={() => selectAsset(asset)}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
-                      >
-                        <span className="font-medium text-gray-900">{asset.symbol}</span>
-                        <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
-                      </button>
-                    ))}
+                    {assets.map((asset, idx) => {
+                      const inPipeline = assetIdsInPipeline?.has(asset.id) ?? false
+                      const isHighlighted = idx === highlightedAssetIndex
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onClick={() => selectAsset(asset)}
+                          onMouseEnter={() => setHighlightedAssetIndex(idx)}
+                          className={clsx(
+                            "w-full text-left px-3 py-2 flex items-center justify-between gap-2",
+                            isHighlighted ? "bg-primary-50" : "hover:bg-gray-50"
+                          )}
+                        >
+                          <span className="min-w-0 truncate">
+                            <span className="font-medium text-gray-900">{asset.symbol}</span>
+                            <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                          </span>
+                          {inPipeline && (
+                            <span
+                              className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                              title="This ticker already has an active idea in the pipeline"
+                            >
+                              In pipeline
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </>
@@ -1125,24 +1337,40 @@ export function QuickTradeIdeaCapture({
                   setShowLongDropdown(true)
                 }}
                 onFocus={() => setShowLongDropdown(true)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={handleLongSearchKeyDown}
                 className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
-              {showLongDropdown && longSearchResults && longSearchResults.length > 0 && (
+              {showLongDropdown && visibleLongResults.length > 0 && (
                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {longSearchResults
-                    .filter(asset => !longAssets.find(a => a.id === asset.id))
-                    .map(asset => (
+                  {visibleLongResults.map((asset, idx) => {
+                    const inPipeline = assetIdsInPipelineLong?.has(asset.id) ?? false
+                    const isHighlighted = idx === highlightedLongIndex
+                    return (
                       <button
                         key={asset.id}
                         type="button"
                         onClick={() => addLongAsset(asset)}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                        onMouseEnter={() => setHighlightedLongIndex(idx)}
+                        className={clsx(
+                          "w-full text-left px-3 py-2 flex items-center justify-between gap-2",
+                          isHighlighted ? "bg-green-50" : "hover:bg-gray-50"
+                        )}
                       >
-                        <span className="font-medium text-gray-900">{asset.symbol}</span>
-                        <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                        <span className="min-w-0 truncate">
+                          <span className="font-medium text-gray-900">{asset.symbol}</span>
+                          <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                        </span>
+                        {inPipeline && (
+                          <span
+                            className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                            title="This ticker already has an active idea in the pipeline"
+                          >
+                            In pipeline
+                          </span>
+                        )}
                       </button>
-                    ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1201,24 +1429,40 @@ export function QuickTradeIdeaCapture({
                   setShowShortDropdown(true)
                 }}
                 onFocus={() => setShowShortDropdown(true)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={handleShortSearchKeyDown}
                 className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
               />
-              {showShortDropdown && shortSearchResults && shortSearchResults.length > 0 && (
+              {showShortDropdown && visibleShortResults.length > 0 && (
                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {shortSearchResults
-                    .filter(asset => !shortAssets.find(a => a.id === asset.id))
-                    .map(asset => (
+                  {visibleShortResults.map((asset, idx) => {
+                    const inPipeline = assetIdsInPipelineShort?.has(asset.id) ?? false
+                    const isHighlighted = idx === highlightedShortIndex
+                    return (
                       <button
                         key={asset.id}
                         type="button"
                         onClick={() => addShortAsset(asset)}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                        onMouseEnter={() => setHighlightedShortIndex(idx)}
+                        className={clsx(
+                          "w-full text-left px-3 py-2 flex items-center justify-between gap-2",
+                          isHighlighted ? "bg-red-50" : "hover:bg-gray-50"
+                        )}
                       >
-                        <span className="font-medium text-gray-900">{asset.symbol}</span>
-                        <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                        <span className="min-w-0 truncate">
+                          <span className="font-medium text-gray-900">{asset.symbol}</span>
+                          <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                        </span>
+                        {inPipeline && (
+                          <span
+                            className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                            title="This ticker already has an active idea in the pipeline"
+                          >
+                            In pipeline
+                          </span>
+                        )}
                       </button>
-                    ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
