@@ -27,7 +27,7 @@
  * cleared via the Reset Progress button on OpsPilotPanel.
  */
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
 import { supabase } from '../lib/supabase'
@@ -123,29 +123,50 @@ export function usePilotProgress() {
     ...(query.data ?? {}),
   }
 
+  // Per-stage write tracker. Once we've kicked off a DB write for a
+  // (stage, org) pair in this session, every subsequent mutate() for
+  // the same key bails before issuing another network request — this
+  // is what dedupes a burst of useEffect re-fires (the original cause
+  // of the 10K-row pileup in pilot_telemetry_events). The set is
+  // checked synchronously, so even concurrent in-flight calls in the
+  // same microtask coordinate correctly.
+  //
+  // We can't dedupe by reading the cache anymore, because `onMutate`
+  // below sets the cache optimistically BEFORE this mutationFn runs.
+  // The previous version checked `queryClient.getQueryData(...)` here
+  // and so always bailed — onMutate flipped the cache, mutationFn saw
+  // the key, returned without writing, and the DB never got the
+  // unlock timestamp. That manifested downstream as per-org pilot
+  // flags vanishing on the next hard refresh (graduated_at_<orgId>,
+  // trade_book_unlocked_at_<orgId>, etc.).
+  const writeInFlightRef = useRef<Set<string>>(new Set())
+
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return
       // All three stages are per-org (see file header).
       const key = stageToKey(stage, currentOrgId)
-      // Re-read the LATEST cached progress at mutate time rather than
-      // closing over the render-time `progress` const. Without this,
-      // a burst of useEffect re-fires (DecisionAccountabilityPage's
-      // graduation effect, the sequential-gate listeners) all see an
-      // empty `progress` closure from the same render and each one
-      // independently writes + logs, producing the 10K-row pileup we
-      // saw in pilot_telemetry_events. Pulling from the cache means
-      // the second call in the burst sees the just-written timestamp
-      // and bails before doing a DB write.
-      const latest = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id]) ?? progress
-      if (latest[key]) return
+      // Burst dedup — see writeInFlightRef comment above.
+      if (writeInFlightRef.current.has(key)) return
+      // Closure-captured `progress` is the snapshot at this render,
+      // BEFORE onMutate ran. If the key was already set then, this
+      // call is a re-fire of an already-completed mark — skip.
+      if (progress[key]) return
+      writeInFlightRef.current.add(key)
 
-      const nextProgress: PilotProgress = { ...latest, [key]: new Date().toISOString() }
-      const { error } = await supabase
-        .from('users')
-        .update({ pilot_progress: nextProgress })
-        .eq('id', user.id)
-      if (error) throw error
+      const nextProgress: PilotProgress = { ...progress, [key]: new Date().toISOString() }
+      try {
+        const { error } = await supabase
+          .from('users')
+          .update({ pilot_progress: nextProgress })
+          .eq('id', user.id)
+        if (error) throw error
+      } catch (err) {
+        // Allow retry on failure — keeping the ref locked here would
+        // leave the user stuck if the first attempt errored.
+        writeInFlightRef.current.delete(key)
+        throw err
+      }
       // Return the writer's stage so onSuccess can log telemetry exactly
       // once per real first-time unlock. (mutationFn used to call
       // logPilotEvent directly, which fired for every duplicate burst
