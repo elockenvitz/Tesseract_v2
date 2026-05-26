@@ -62,7 +62,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, mark: markPilotStage } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -111,7 +111,24 @@ export function usePilotMode(): PilotModeState {
   // unlock into every subsequent pilot org they land in — defeating the
   // "locked until you complete a trade here" UX. Requiring at least one
   // committed trade in the current org gates unlocks per-org.
-  const { data: hasCommittedTradeInOrg } = useQuery({
+  //
+  // Cached in localStorage per-(user, org) for synchronous render-time
+  // fallback. The access useMemo below ANDs this with hasUnlockedTradeBook —
+  // both have to be true for Trade Book to render unlocked, so caching
+  // pilot_progress alone wasn't enough to kill the cold-load locked
+  // preview flash. Tri-state ('1' / '0' / null) so first-time users
+  // (no cache) are distinguishable from a cached `false`.
+  const cachedHasCommittedTrade = useMemo<boolean | null>(() => {
+    if (!user?.id || !currentOrgId) return null
+    try {
+      const raw = localStorage.getItem(`has_committed_trade_${user.id}_${currentOrgId}`)
+      return raw === '1' ? true : raw === '0' ? false : null
+    } catch {
+      return null
+    }
+  }, [user?.id, currentOrgId])
+
+  const { data: hasCommittedTradeInOrgQuery } = useQuery({
     queryKey: ['org-has-accepted-trade', currentOrgId, user?.id],
     enabled: !!currentOrgId && !!user?.id,
     staleTime: 60_000,
@@ -130,31 +147,40 @@ export function usePilotMode(): PilotModeState {
     }
   })
 
+  // Effective value: real query result if we have one, otherwise the
+  // localStorage cache. Same render-time fallback pattern as
+  // `usePilotProgress.cachedProgress`. Avoids the cold-load window
+  // where `hasCommittedTradeInOrgQuery` is undefined → access drops
+  // to 'preview' → Trade Book tab flashes the locked teaser.
+  const hasCommittedTradeInOrg =
+    typeof hasCommittedTradeInOrgQuery === 'boolean'
+      ? hasCommittedTradeInOrgQuery
+      : (cachedHasCommittedTrade ?? false)
+
+  // Persist on each successful refetch so the next cold load starts
+  // from the right value. Only write when the query has actually
+  // resolved (boolean), not when we're showing the cached fallback.
+  useEffect(() => {
+    if (!user?.id || !currentOrgId || typeof hasCommittedTradeInOrgQuery !== 'boolean') return
+    try {
+      localStorage.setItem(
+        `has_committed_trade_${user.id}_${currentOrgId}`,
+        hasCommittedTradeInOrgQuery ? '1' : '0'
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id, currentOrgId, hasCommittedTradeInOrgQuery])
+
   const isPilot = !!orgFlags?.pilotMode
 
-  // Self-heal trade_book_unlocked. The event-based unlock fires from
-  // SimulationPage's listener on `pilot-tradelab:executed`, but if that
-  // listener missed (race condition, mutation errored silently, page
-  // navigated away mid-mutation), the user can land in a stuck state
-  // where they've committed a trade but Trade Book is still locked.
-  // Both `hasCommittedTradeInOrg` and `hasUnlockedTradeBook` are
-  // required to unlock; the existence of an accepted_trade is proof
-  // enough that execute happened, so we can safely backfill the flag.
-  // The mutation is idempotent so re-runs are no-ops.
-  //
-  // Note: outcomes_unlocked is NOT self-healed — that one represents
-  // intent ("user navigated to Outcomes"), not just trade activity.
-  useEffect(() => {
-    if (
-      isPilot &&
-      !progressLoading &&
-      !orgLoading &&
-      hasCommittedTradeInOrg &&
-      !hasUnlockedTradeBook
-    ) {
-      markPilotStage('trade_book_unlocked')
-    }
-  }, [isPilot, progressLoading, orgLoading, hasCommittedTradeInOrg, hasUnlockedTradeBook, markPilotStage])
+  // (The trade_book_unlocked self-heal previously lived here as an
+  // unbounded useEffect. It now lives inside PilotTradeBookPreview so
+  // it can only fire while the locked preview is mounted — the moment
+  // access flips to 'full', the preview unmounts and the heal stops,
+  // which prevents the visible flicker we were seeing right after
+  // execute when this effect re-fired against the brief stale-cache
+  // window created by usePilotProgress's invalidateQueries call.)
   const access = useMemo(() => {
     // Once the user has graduated, all pilot gating drops away —
     // they get the same access as a non-pilot user even though the

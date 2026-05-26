@@ -85,6 +85,30 @@ export function usePilotProgress() {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
+  // Synchronous cache of the user's pilot_progress JSONB, mirroring the
+  // `cachedHasGraduated` pattern below. Used as a render-time fallback
+  // when the query hasn't resolved (or for the brief window before
+  // user.id is even available to the query). Without this, a hard
+  // refresh leaves `hasUnlockedTradeBook` / `hasUnlockedOutcomes`
+  // undefined → falsy for the ~100-300ms it takes the query to
+  // resolve; during that window the System Loop highlights the wrong
+  // active stage and the Trade Book tab briefly renders the locked
+  // preview. Render-time fallback (not React Query `initialData`) is
+  // used because the latter is captured at first useQuery call time
+  // and doesn't reliably re-apply when user.id transitions from null
+  // to set on the second render.
+  const cachedProgress = useMemo<PilotProgress | null>(() => {
+    if (!user?.id) return null
+    try {
+      const raw = localStorage.getItem(`pilot_progress_${user.id}`)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      return (typeof parsed === 'object' && parsed !== null) ? (parsed as PilotProgress) : null
+    } catch {
+      return null
+    }
+  }, [user?.id])
+
   const query = useQuery({
     queryKey: ['pilot-progress', user?.id],
     enabled: !!user?.id,
@@ -100,7 +124,25 @@ export function usePilotProgress() {
     },
   })
 
-  const progress: PilotProgress = query.data ?? {}
+  // Effective progress: real query data when we have it, otherwise the
+  // localStorage cache. `query.data` is the server's view, `cachedProgress`
+  // is the previous session's snapshot. Falling back to the cache means
+  // every derived flag below (hasUnlockedTradeBook, hasUnlockedOutcomes,
+  // hasGraduated) returns the right value from the first paint.
+  const progress: PilotProgress = query.data ?? cachedProgress ?? {}
+
+  // Persist the freshest progress JSONB to localStorage so the next
+  // hard refresh hydrates with the same state instead of waiting on
+  // the network round-trip. Keyed per-user; the JSONB itself already
+  // encodes the per-org stage keys, so no extra org dimension needed.
+  useEffect(() => {
+    if (!user?.id || !query.data) return
+    try {
+      localStorage.setItem(`pilot_progress_${user.id}`, JSON.stringify(query.data))
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id, query.data])
 
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
@@ -190,8 +232,17 @@ export function usePilotProgress() {
           organizationId: currentOrgId,
         })
       }
-      // Force usePilotMode to re-resolve access
-      queryClient.invalidateQueries({ queryKey: ['pilot-progress', user?.id] })
+      // No invalidate here. The setQueryData above already writes the
+      // authoritative server response into the cache, so a refetch
+      // would just round-trip the same data. The invalidate that used
+      // to live here forced a refetch that briefly contradicted the
+      // just-applied optimistic flip, and the resulting state churn
+      // re-fired the trade_book_unlocked self-heal effect — producing
+      // the visible locked⇄unlocked flicker on the Trade Book tab
+      // right after execute. The self-heal now lives inside the
+      // preview components (PilotTradeBookPreview /
+      // PilotOutcomesPreview) so it can't fire after access has
+      // already flipped to 'full'.
     },
   })
 
