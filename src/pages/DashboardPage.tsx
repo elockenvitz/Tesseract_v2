@@ -916,6 +916,16 @@ export function DashboardPage() {
     if (pilotMode.effectiveIsPilot) {
       const feature = TAB_TYPE_TO_PILOT_FEATURE[activeTab.type]
       if (feature && pilotMode.accessFor(feature) === 'preview') {
+        // Cold-load guard: when the access decision isn't trustworthy
+        // yet (queries pending, no localStorage cache to fall back on)
+        // we'd otherwise default to 'preview' and flash the locked
+        // teaser before the queries land and reveal the user actually
+        // has full access. Render an empty container until the decision
+        // resolves — a brief blank is less jarring than the locked-then-
+        // unlocked flicker.
+        if (!pilotMode.accessIsReady) {
+          return <div className="h-full w-full" aria-busy="true" />
+        }
         if (activeTab.type === 'trade-book') return <PilotTradeBookPreview onGoToTradeLab={openPilotTradeLab} />
         if (activeTab.type === 'outcomes')   return <PilotOutcomesPreview onGoToTradeLab={openPilotTradeLab} />
       }

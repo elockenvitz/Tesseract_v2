@@ -10,7 +10,7 @@
  * override at organizations.settings.pilot_access.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -36,6 +36,14 @@ export interface PilotModeState {
    *  `effectiveIsPilot=true` and `effectiveIsPilot=false` are best-guesses
    *  with no information backing them. */
   isInitialResolve: boolean
+  /** True once the per-feature access decision is trustworthy on this
+   *  paint. False during the cold-load window where the unlock queries
+   *  haven't returned AND we have no localStorage cache to fall back on.
+   *  Pilot-aware surfaces (Trade Book / Outcomes preview gating, System
+   *  Loop active stage) should hold a neutral render until this flips
+   *  true; otherwise they flash the wrong gate state for ~200ms before
+   *  snapping to the right one. */
+  accessIsReady: boolean
   /** Best-effort "is pilot" that falls back to a cached hint from the
    *  previous session while the real query is still loading. Use this for
    *  UI gates that must stay stable across a cold refresh (e.g. hiding the
@@ -62,7 +70,7 @@ export interface PilotModeState {
 export function usePilotMode(): PilotModeState {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasGraduated, cachedHasGraduated, isLoading: progressLoading, hasReadyProgress, mark: markPilotStage } = usePilotProgress()
 
   // Cached hint from the previous session: was this user a pilot? Read
   // synchronously on mount so we can answer "is this a pilot session?"
@@ -174,13 +182,43 @@ export function usePilotMode(): PilotModeState {
 
   const isPilot = !!orgFlags?.pilotMode
 
-  // (The trade_book_unlocked self-heal previously lived here as an
-  // unbounded useEffect. It now lives inside PilotTradeBookPreview so
-  // it can only fire while the locked preview is mounted — the moment
-  // access flips to 'full', the preview unmounts and the heal stops,
-  // which prevents the visible flicker we were seeing right after
-  // execute when this effect re-fired against the brief stale-cache
-  // window created by usePilotProgress's invalidateQueries call.)
+  // Self-heal trade_book_unlocked at the hook level so the dashboard
+  // (and any other pilot surface that isn't the locked Trade Book
+  // preview) recovers when `pilot_progress.trade_book_unlocked_at_<orgId>`
+  // is missing for the current org despite the user having committed
+  // a trade in it. Symptom we saw repeatedly: the System Loop stayed
+  // stuck on Decide because hasUnlockedTradeBook resolved false, and
+  // only flipped to the correct stage after the user opened the Trade
+  // Book tab (whose own self-heal in PilotTradeBookPreview wrote the
+  // missing per-org key). With the heal here too, the dashboard
+  // recovers on its own.
+  //
+  // Bounded by a ref so we mark at most once per session — the
+  // mark mutation is idempotent server-side, but firing it on every
+  // matching render still produces unnecessary cache churn. The
+  // earlier flicker that drove us to remove this effect was caused
+  // by usePilotProgress.markStage.onSuccess re-invalidating the
+  // query right after writing it; that invalidate is now gone (see
+  // commit history on usePilotProgress), so the heal can live here
+  // safely again.
+  const tradeBookHealFiredRef = useRef(false)
+  useEffect(() => {
+    if (tradeBookHealFiredRef.current) return
+    if (!isPilot || progressLoading || orgLoading) return
+    if (!hasReadyProgress) return
+    if (!hasCommittedTradeInOrg) return
+    if (hasUnlockedTradeBook) return
+    tradeBookHealFiredRef.current = true
+    markPilotStage('trade_book_unlocked')
+  }, [
+    isPilot,
+    progressLoading,
+    orgLoading,
+    hasReadyProgress,
+    hasCommittedTradeInOrg,
+    hasUnlockedTradeBook,
+    markPilotStage,
+  ])
   const access = useMemo(() => {
     // Once the user has graduated, all pilot gating drops away —
     // they get the same access as a non-pilot user even though the
@@ -228,10 +266,25 @@ export function usePilotMode(): PilotModeState {
 
   const isInitialResolve = isLoading && !hasCachedPilotHint && !cachedHasGraduated
 
+  // True when the access decision is trustworthy on first paint —
+  // either both unlock signals have actually resolved (we have real
+  // server data) or the localStorage cache fallback has both pieces
+  // (we know what to render without waiting). False during the
+  // cold-load window where queries are pending AND we have no cache,
+  // which is when callers should hold rendering rather than flash a
+  // wrong-state preview (Trade Book locked) or wrong-stage strip
+  // (Decide instead of Review).
+  const accessIsReady =
+    hasReadyProgress
+    && !!currentOrgId
+    && (typeof hasCommittedTradeInOrgQuery === 'boolean' || cachedHasCommittedTrade != null)
+
   return {
     isPilot,
     isLoading,
     isInitialResolve,
+    /** See comment on `accessIsReady` above. */
+    accessIsReady,
     effectiveIsPilot,
     hasCommittedTradeInOrg: !!hasCommittedTradeInOrg,
     /** Once true, the user has finished the pilot loop and the app

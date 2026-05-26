@@ -33,6 +33,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
+import { usePilotMode } from '../../hooks/usePilotMode'
 import { usePilotScenarioStatus, type PilotScenarioState } from '../../hooks/usePilotScenarioStatus'
 
 interface PilotActionDashboardProps {
@@ -150,10 +151,20 @@ export function PilotActionDashboard({
   onOpenOutcomes,
 }: PilotActionDashboardProps) {
   const { user } = useAuth()
-  const { currentOrg } = useOrganization()
+  const { currentOrg, currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
   const { scenario, state, acceptedTrade, committedAt, hasReview } = usePilotScenarioStatus()
-  const { hasUnlockedTradeBook, hasUnlockedOutcomes } = usePilotProgress()
+  const { hasUnlockedTradeBook, hasUnlockedOutcomes, hasReadyProgress } = usePilotProgress()
+  // `hasCommittedTradeInOrg` comes from a separate accepted_trades
+  // query AND is cached in localStorage synchronously. We use it as an
+  // immediate fallback for `hasUnlockedTradeBook` in the System Loop
+  // below — a user who's committed a trade in this org HAS earned the
+  // decide stage even when `pilot_progress.trade_book_unlocked_at_<orgId>`
+  // is briefly missing (the self-heal in usePilotMode writes it, but
+  // not before the first paint). Without this, the loop briefly
+  // highlights decide as the active (incomplete) stage on every
+  // cold load before the heal lands.
+  const { hasCommittedTradeInOrg } = usePilotMode()
 
   // Listen for cross-component refresh signals (e.g., user submitted a
   // trade idea in the right-hand capture sidebar). Without this, the
@@ -440,7 +451,15 @@ export function PilotActionDashboard({
   const liveStepDone: Record<StageKey, boolean> = {
     capture: hasUserIdea,
     develop: hasMovedIdea,
-    decide:  hasUnlockedTradeBook,
+    // Either a marked pilot_progress flag OR a real committed trade
+    // in this org is sufficient evidence that decide is complete. The
+    // committed-trade signal is cached synchronously and available on
+    // first paint, while the per-org pilot_progress key sometimes lags
+    // behind reality and gets re-written by the self-heal in
+    // usePilotMode. Reading both means the loop reflects the truth
+    // immediately on cold load instead of flickering through decide
+    // first while waiting for the heal.
+    decide:  hasUnlockedTradeBook || hasCommittedTradeInOrg,
     review:  hasUnlockedOutcomes,
     analyze: completed && hasReview,
   }
@@ -454,7 +473,17 @@ export function PilotActionDashboard({
   // v4 — bumped after thoughts with no org context were strictly
   // excluded from Capture display + signal. Old caches could still
   // hold a stale capture=true from the previous, lossier filter.
-  const stepCacheKey = `pilot_loop_steps_v4_${user?.id || 'anon'}_${currentOrg?.id || 'no-org'}`
+  //
+  // Note: we key off `currentOrgId` (synchronously derived from
+  // `user.current_organization_id` in OrganizationContext) rather
+  // than `currentOrg?.id` (which is the userOrgs-query lookup and
+  // is null on the very first render until that query resolves).
+  // The earlier version used the async value, so the useState init
+  // below baked `no-org` into the key on first paint, loaded an
+  // all-false cache, and got locked there — which is what the user
+  // observed as the System Loop briefly highlighting step 1 before
+  // the queries landed.
+  const stepCacheKey = `pilot_loop_steps_v4_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
   const [cachedStepDone, setCachedStepDone] = useState<Record<StageKey, boolean> | null>(() => {
     try {
       const raw = localStorage.getItem(stepCacheKey)
@@ -474,25 +503,37 @@ export function PilotActionDashboard({
   })
 
   // While the pipeline query is still loading after a hard refresh,
-  // prefer the cached state for stages whose inputs are still loading
-  // (capture / develop / analyze depend on pipelineItems / userCaptured
-  // / pilot_scenario_status, which aren't cached at the hook level).
+  // build stepDone from whichever signals we actually have
+  // synchronously.
   //
-  // decide and review come from `usePilotProgress.hasUnlockedTradeBook`
-  // / `hasUnlockedOutcomes`, which ARE cached synchronously in
-  // localStorage at the hook level. Always use the live values for
-  // those two — the dashboard's own `cachedStepDone` is only updated
-  // when the dashboard is mounted with resolved queries, so a user who
-  // unlocks Decide or Review on another page (Trade Lab, Trade Book,
-  // Outcomes) before returning to the dashboard would otherwise see
-  // the System Loop highlight a stale earlier stage on the next hard
-  // refresh, then snap forward once the queries land.
-  const stepDone: Record<StageKey, boolean> = pipelineLoading && cachedStepDone
-    ? {
-        ...cachedStepDone,
-        decide: liveStepDone.decide,
-        review: liveStepDone.review,
-      }
+  // decide / review come from usePilotProgress which now hydrates
+  // from user.pilot_progress in the auth cache, so they're always
+  // correct from frame one.
+  //
+  // capture / develop normally come from pipelineItems / userCaptured,
+  // which ARE async. If we have a cachedStepDone snapshot from a
+  // prior dashboard mount, use those values. If we don't, derive
+  // them by IMPLICATION from the unlock flags: a user can only
+  // unlock decide (trade book) by completing capture + develop +
+  // executing a trade, so if decide is unlocked those earlier
+  // stages must be complete too. Same for review implying capture
+  // / develop / decide. This keeps the loop on the correct active
+  // stage even when no prior dashboard cache exists, instead of
+  // briefly highlighting capture/develop as incomplete.
+  const stepDone: Record<StageKey, boolean> = pipelineLoading
+    ? (cachedStepDone
+        ? {
+            ...cachedStepDone,
+            decide: liveStepDone.decide,
+            review: liveStepDone.review,
+          }
+        : {
+            capture: liveStepDone.capture || liveStepDone.decide || liveStepDone.review,
+            develop: liveStepDone.develop || liveStepDone.decide || liveStepDone.review,
+            decide:  liveStepDone.decide,
+            review:  liveStepDone.review,
+            analyze: liveStepDone.analyze,
+          })
     : liveStepDone
 
   useEffect(() => {
@@ -609,34 +650,60 @@ export function PilotActionDashboard({
           activeKey={activeKey}
           openKey={openKey}
           onSelect={setOpenKey}
+          // While the unlock-flag queries haven't resolved AND we have
+          // no localStorage cache to fall back on, the computed
+          // activeKey can briefly point at a stage the user is actually
+          // past (e.g. Decide instead of Review on hard refresh,
+          // because hasUnlockedTradeBook reads as false until the
+          // query lands). Pass `loading` so the strip renders neutral
+          // — no active pulse, no checkmarks — for that brief window
+          // and snaps to the correct state once the data arrives.
+          loading={!hasReadyProgress}
         />
 
         {/* ── Selected-stage panel ───────────────────────────────
             Bold description + colored CTA + stage-specific
             attention items. Stays inside the same visual block as
             the loop header so the dashboard reads as one focused
-            surface, not a stack of panels. */}
-        <StagePanel
-          stage={openStage}
-          cta={ctaForStage(openStage.key)}
-          state={state}
-          scenario={scenario}
-          acceptedTrade={acceptedTrade}
-          committedAt={committedAt}
-          hasReview={hasReview}
-          pipelineItems={pipelineItems || []}
-          pipelineLoading={pipelineLoading}
-          recorded={recordedDecisions ?? null}
-          userCaptured={userCaptured ?? null}
-          userIdeasFromPipeline={userIdeasFromPipeline}
-          onOpenTradeLab={() => onOpenTradeLab(scenarioContext)}
-          onOpenIdeaPipeline={onOpenIdeaPipeline}
-          onOpenTradeBook={onOpenTradeBook}
-          onOpenOutcomes={onOpenOutcomes}
-          onCapture={openCapture}
-          hasUnlockedTradeBook={hasUnlockedTradeBook}
-          hasUnlockedOutcomes={hasUnlockedOutcomes}
-        />
+            surface, not a stack of panels.
+
+            While `hasReadyProgress` is false (cold-load window: no
+            cache and queries still pending) the `openKey` driving
+            this panel is computed from undefined unlock flags, so it
+            defaults to the first incomplete stage — which during
+            loading is whichever stage we haven't proven complete yet,
+            i.e. NOT the user's actual stage. Rendering the real panel
+            here would flash that wrong stage's content. A min-height
+            placeholder preserves layout without showing wrong data;
+            once readiness flips, the real panel takes over. */}
+        {hasReadyProgress ? (
+          <StagePanel
+            stage={openStage}
+            cta={ctaForStage(openStage.key)}
+            state={state}
+            scenario={scenario}
+            acceptedTrade={acceptedTrade}
+            committedAt={committedAt}
+            hasReview={hasReview}
+            pipelineItems={pipelineItems || []}
+            pipelineLoading={pipelineLoading}
+            recorded={recordedDecisions ?? null}
+            userCaptured={userCaptured ?? null}
+            userIdeasFromPipeline={userIdeasFromPipeline}
+            onOpenTradeLab={() => onOpenTradeLab(scenarioContext)}
+            onOpenIdeaPipeline={onOpenIdeaPipeline}
+            onOpenTradeBook={onOpenTradeBook}
+            onOpenOutcomes={onOpenOutcomes}
+            onCapture={openCapture}
+            hasUnlockedTradeBook={hasUnlockedTradeBook}
+            hasUnlockedOutcomes={hasUnlockedOutcomes}
+          />
+        ) : (
+          <section
+            className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm min-h-[320px]"
+            aria-busy="true"
+          />
+        )}
       </div>
     </div>
   )
@@ -650,12 +717,16 @@ function SystemLoopCard({
   activeKey,
   openKey,
   onSelect,
+  loading = false,
 }: {
   stages: StageMeta[]
   stepDone: Record<StageKey, boolean>
   activeKey: StageKey
   openKey: StageKey
   onSelect: (key: StageKey) => void
+  /** Render neutral cards (no active pulse, no checkmarks) while the
+   *  unlock-flag data isn't trustworthy yet — see PilotActionDashboard. */
+  loading?: boolean
 }) {
   return (
     <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
@@ -678,9 +749,13 @@ function SystemLoopCard({
         <div className="grid grid-cols-5 gap-1.5 items-stretch">
           {stages.map((s, i) => {
             const Icon = s.icon
-            const done = stepDone[s.key]
-            const isActive = s.key === activeKey && !done
-            const isOpen = s.key === openKey
+            // During the cold-load window, force every stage to render
+            // as the neutral "not done / not active" variant so the
+            // user doesn't see the wrong stage briefly pulsed before
+            // the queries land and snap the strip forward.
+            const done = loading ? false : stepDone[s.key]
+            const isActive = !loading && s.key === activeKey && !done
+            const isOpen = !loading && s.key === openKey
             // Visual state precedence: open > active (pulse) > done > neutral.
             // Note: every state keeps `border` at 1px width — the active
             // state uses `ring-2` (which paints outside the border box,

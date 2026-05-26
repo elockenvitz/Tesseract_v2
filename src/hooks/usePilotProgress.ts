@@ -27,7 +27,7 @@
  * cleared via the Reset Progress button on OpsPilotPanel.
  */
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
 import { supabase } from '../lib/supabase'
@@ -85,29 +85,15 @@ export function usePilotProgress() {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
-  // Synchronous cache of the user's pilot_progress JSONB, mirroring the
-  // `cachedHasGraduated` pattern below. Used as a render-time fallback
-  // when the query hasn't resolved (or for the brief window before
-  // user.id is even available to the query). Without this, a hard
-  // refresh leaves `hasUnlockedTradeBook` / `hasUnlockedOutcomes`
-  // undefined → falsy for the ~100-300ms it takes the query to
-  // resolve; during that window the System Loop highlights the wrong
-  // active stage and the Trade Book tab briefly renders the locked
-  // preview. Render-time fallback (not React Query `initialData`) is
-  // used because the latter is captured at first useQuery call time
-  // and doesn't reliably re-apply when user.id transitions from null
-  // to set on the second render.
-  const cachedProgress = useMemo<PilotProgress | null>(() => {
-    if (!user?.id) return null
-    try {
-      const raw = localStorage.getItem(`pilot_progress_${user.id}`)
-      if (!raw) return null
-      const parsed = JSON.parse(raw)
-      return (typeof parsed === 'object' && parsed !== null) ? (parsed as PilotProgress) : null
-    } catch {
-      return null
-    }
-  }, [user?.id])
+  // The auth-user-cache (populated synchronously by useAuth via
+  // getCachedUser()) already embeds the full users row, including the
+  // pilot_progress JSONB column. Earlier commits on this branch built
+  // a parallel `pilot_progress_<userId>` localStorage cache for the
+  // same data — a redundant layer that frequently sat empty on the
+  // first session under a new build, defeating every readiness gate
+  // downstream. Read pilot_progress straight off `user` instead:
+  // it's always there as long as the user is authenticated.
+  const userPilotProgress = (user as any)?.pilot_progress as PilotProgress | undefined
 
   const query = useQuery({
     queryKey: ['pilot-progress', user?.id],
@@ -124,49 +110,63 @@ export function usePilotProgress() {
     },
   })
 
-  // Effective progress: real query data when we have it, otherwise the
-  // localStorage cache. `query.data` is the server's view, `cachedProgress`
-  // is the previous session's snapshot. Falling back to the cache means
-  // every derived flag below (hasUnlockedTradeBook, hasUnlockedOutcomes,
-  // hasGraduated) returns the right value from the first paint.
-  const progress: PilotProgress = query.data ?? cachedProgress ?? {}
+  // Effective progress: merge the auth cache snapshot UNDER the live
+  // query result, so the query takes precedence per-key but anything
+  // it's missing falls back to the cache. We deliberately spread
+  // rather than `query.data ?? userPilotProgress`, because the
+  // queryFn returns `{}` on any error/RLS hiccup — and `{}` is
+  // truthy, which would shadow the auth-cache value entirely and
+  // drop us back into the same flicker. Spreading means even a
+  // briefly-empty query response doesn't wipe known unlock flags.
+  const progress: PilotProgress = {
+    ...(userPilotProgress ?? {}),
+    ...(query.data ?? {}),
+  }
 
-  // Persist the freshest progress JSONB to localStorage so the next
-  // hard refresh hydrates with the same state instead of waiting on
-  // the network round-trip. Keyed per-user; the JSONB itself already
-  // encodes the per-org stage keys, so no extra org dimension needed.
-  useEffect(() => {
-    if (!user?.id || !query.data) return
-    try {
-      localStorage.setItem(`pilot_progress_${user.id}`, JSON.stringify(query.data))
-    } catch {
-      /* ignore */
-    }
-  }, [user?.id, query.data])
+  // Per-stage write tracker. Once we've kicked off a DB write for a
+  // (stage, org) pair in this session, every subsequent mutate() for
+  // the same key bails before issuing another network request — this
+  // is what dedupes a burst of useEffect re-fires (the original cause
+  // of the 10K-row pileup in pilot_telemetry_events). The set is
+  // checked synchronously, so even concurrent in-flight calls in the
+  // same microtask coordinate correctly.
+  //
+  // We can't dedupe by reading the cache anymore, because `onMutate`
+  // below sets the cache optimistically BEFORE this mutationFn runs.
+  // The previous version checked `queryClient.getQueryData(...)` here
+  // and so always bailed — onMutate flipped the cache, mutationFn saw
+  // the key, returned without writing, and the DB never got the
+  // unlock timestamp. That manifested downstream as per-org pilot
+  // flags vanishing on the next hard refresh (graduated_at_<orgId>,
+  // trade_book_unlocked_at_<orgId>, etc.).
+  const writeInFlightRef = useRef<Set<string>>(new Set())
 
   const markStage = useMutation({
     mutationFn: async (stage: PilotStage) => {
       if (!user?.id) return
       // All three stages are per-org (see file header).
       const key = stageToKey(stage, currentOrgId)
-      // Re-read the LATEST cached progress at mutate time rather than
-      // closing over the render-time `progress` const. Without this,
-      // a burst of useEffect re-fires (DecisionAccountabilityPage's
-      // graduation effect, the sequential-gate listeners) all see an
-      // empty `progress` closure from the same render and each one
-      // independently writes + logs, producing the 10K-row pileup we
-      // saw in pilot_telemetry_events. Pulling from the cache means
-      // the second call in the burst sees the just-written timestamp
-      // and bails before doing a DB write.
-      const latest = queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id]) ?? progress
-      if (latest[key]) return
+      // Burst dedup — see writeInFlightRef comment above.
+      if (writeInFlightRef.current.has(key)) return
+      // Closure-captured `progress` is the snapshot at this render,
+      // BEFORE onMutate ran. If the key was already set then, this
+      // call is a re-fire of an already-completed mark — skip.
+      if (progress[key]) return
+      writeInFlightRef.current.add(key)
 
-      const nextProgress: PilotProgress = { ...latest, [key]: new Date().toISOString() }
-      const { error } = await supabase
-        .from('users')
-        .update({ pilot_progress: nextProgress })
-        .eq('id', user.id)
-      if (error) throw error
+      const nextProgress: PilotProgress = { ...progress, [key]: new Date().toISOString() }
+      try {
+        const { error } = await supabase
+          .from('users')
+          .update({ pilot_progress: nextProgress })
+          .eq('id', user.id)
+        if (error) throw error
+      } catch (err) {
+        // Allow retry on failure — keeping the ref locked here would
+        // leave the user stuck if the first attempt errored.
+        writeInFlightRef.current.delete(key)
+        throw err
+      }
       // Return the writer's stage so onSuccess can log telemetry exactly
       // once per real first-time unlock. (mutationFn used to call
       // logPilotEvent directly, which fired for every duplicate burst
@@ -281,6 +281,15 @@ export function usePilotProgress() {
   return {
     progress,
     isLoading: query.isLoading,
+    /** True when we have any source of truth for the unlock flags —
+     *  either the query has resolved (query.data is defined, even as
+     *  {}), or the synchronous snapshot from the auth user cache is
+     *  present. The latter is the common case for any authenticated
+     *  user: useAuth hydrates `user.pilot_progress` from
+     *  localStorage on the very first render, so we have data to
+     *  read from before the React Query fetch even starts. */
+    hasReadyProgress:
+      !!user?.id && (query.data !== undefined || userPilotProgress !== undefined),
     hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
     hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
