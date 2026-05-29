@@ -42,15 +42,43 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   // Read current_organization_id from the user profile (set by useAuth)
   const rawCurrentOrgId: string | null = (user as any)?.current_organization_id ?? null
 
-  // Fetch all orgs the user is an active member of
+  // Active morph session, if any. When a platform admin is morphing,
+  // we surface the TARGET user's org context throughout the app — the
+  // dropdown lists THEIR orgs, switchOrg routes through morph_switch_org
+  // instead of set_current_org, and userOrgs is fetched against their
+  // membership rows. Without this, the admin sees their own org list
+  // while the header shows the morphed user's identity, which is
+  // exactly the "stuck in my own orgs" symptom that prompted this.
+  const { data: activeMorph } = useQuery({
+    queryKey: ['active-morph-session', user?.id],
+    enabled: !!user?.id,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('morph_sessions')
+        .select('target_user_id, target_org_id')
+        .eq('admin_user_id', user!.id)
+        .eq('is_active', true)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) return null
+      return data as { target_user_id: string; target_org_id: string } | null
+    },
+  })
+  const effectiveUserId: string | null = activeMorph?.target_user_id ?? user?.id ?? null
+
+  // Fetch all orgs the EFFECTIVE user (target during morph, otherwise
+  // the auth user) is an active member of.
   const { data: userOrgs = [], isLoading } = useQuery({
-    queryKey: ['user-organizations', user?.id],
+    queryKey: ['user-organizations', effectiveUserId],
     queryFn: async () => {
       // Get the user's active memberships first, then fetch those orgs
       const { data: memberships, error: memErr } = await supabase
         .from('organization_memberships')
         .select('organization_id')
-        .eq('user_id', user!.id)
+        .eq('user_id', effectiveUserId!)
         .eq('status', 'active')
       if (memErr) throw memErr
       const orgIds = (memberships || []).map(m => m.organization_id)
@@ -78,7 +106,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
 
       return orgs
     },
-    enabled: !!user?.id,
+    enabled: !!effectiveUserId,
     staleTime: 10 * 60 * 1000, // 10 min — org list rarely changes
   })
 
@@ -201,8 +229,16 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       }
 
       try {
-        // Update the server-side current_organization_id
-        const { error } = await supabase.rpc('set_current_org', { p_org_id: orgId })
+        // Update the server-side current_organization_id. During an
+        // active morph session we route through `morph_switch_org`
+        // instead of `set_current_org` — the latter checks that the
+        // CALLER is a member of p_org_id, which an admin morphing into
+        // another user almost never is. `morph_switch_org` instead
+        // validates that the MORPH TARGET is a member, which is the
+        // right semantic for impersonation (see the migration that
+        // created it for the full gating logic).
+        const rpcName = activeMorph ? 'morph_switch_org' : 'set_current_org'
+        const { error } = await supabase.rpc(rpcName, { p_org_id: orgId })
         if (error) {
           switchingRef.current = false
           removeOverlay()
@@ -277,7 +313,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
         throw err
       }
     },
-    [currentOrgId]
+    [currentOrgId, activeMorph, userOrgs]
   )
 
   return (
