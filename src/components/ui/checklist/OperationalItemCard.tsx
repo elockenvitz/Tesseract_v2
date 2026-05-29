@@ -13,6 +13,7 @@ import {
   Search, Send, MessageSquare, Link as LinkIcon, BrainCircuit,
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import { useOrgMembers } from '../../../hooks/useOrgMembers'
 import {
   ChecklistItemData,
   userName, userInitials, avatarColor, relativeTime,
@@ -59,15 +60,8 @@ export function OperationalItemCard({
 
   // ─── Queries ────────────────────────────────────────────────────────
 
-  const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('users').select('id, email, first_name, last_name').order('first_name')
-      if (error) throw error
-      return data || []
-    },
-    enabled: assigningOwner,
-  })
+  // Org-scoped — see comment on matching swap in CollaborationManager.
+  const { data: users = [] } = useOrgMembers({ enabled: assigningOwner })
 
   const commentsKey = ['op-item-comments', item.dbId]
   const { data: comments = [] } = useQuery({

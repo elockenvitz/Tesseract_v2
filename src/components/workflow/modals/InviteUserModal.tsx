@@ -5,11 +5,10 @@
  * Extracted from WorkflowsPage.tsx during Phase 5 refactoring.
  */
 
-import React, { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import React, { useMemo, useState } from 'react'
 import { X, Search } from 'lucide-react'
 import { Button } from '../../ui/Button'
-import { supabase } from '../../../lib/supabase'
+import { useOrgMembers } from '../../../hooks/useOrgMembers'
 
 export interface InviteUserModalProps {
   /** Workflow ID */
@@ -32,25 +31,22 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
   const [selectedUser, setSelectedUser] = useState<{id: string, email: string, name: string} | null>(null)
   const [showDropdown, setShowDropdown] = useState(false)
 
-  // Query to get all users for searchable dropdown
-  const { data: users } = useQuery({
-    queryKey: ['users-search'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-        .order('last_name')
-
-      if (error) throw error
-
-      return data.map(user => ({
-        id: user.id,
-        email: user.email,
-        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email
-      }))
-    }
-  })
+  // Searchable picker restricted to current-org members. Previously
+  // queried users globally — same cross-org leak the rest of the
+  // pickers had. Defense-in-depth swap via useOrgMembers.
+  const { data: orgMembers = [] } = useOrgMembers()
+  const users = useMemo(
+    () =>
+      orgMembers.map(m => ({
+        id: m.id,
+        email: m.email ?? '',
+        name:
+          `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim()
+          || m.email
+          || 'Unknown',
+      })),
+    [orgMembers]
+  )
 
   // Filter users based on search term
   const filteredUsers = users?.filter(user =>

@@ -1075,16 +1075,12 @@ export function usePortfoliosForFilter() {
   })
 }
 
-export function useUsersForFilter() {
-  return useQuery({
-    queryKey: ['users-for-filter'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('users').select('id, email, first_name, last_name').order('first_name')
-      if (error) throw error
-      return data || []
-    },
-  })
-}
+// useUsersForFilter has been removed — it ran a global `from('users')`
+// query without any org scope, which surfaced names from every org
+// the caller could read. The two callers (this page's accountability
+// filter and OutcomesPage's owner filter) now use useOrgMembers
+// instead. If you need the same shape in the future, build on top of
+// useOrgMembers — never query the bare users table for a picker.
 
 // =============================================================================
 // Decision Story — full upstream/downstream context for post-mortem review.

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { UserPlus, X, Calendar, Check, Search, MessageSquare, Trash2 } from 'lucide-react'
 import { Button } from './Button'
 import { useNavigate } from 'react-router-dom'
@@ -65,18 +66,14 @@ export function AssignmentSelector({
     }
   }, [autoOpenModal])
 
-  // Fetch all users
-  const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('email')
-      if (error) throw error
-      return data as User[]
-    }
-  })
+  // Org-scoped — see comment on matching swap in CollaborationManager.
+  const { data: orgMembersData = [] } = useOrgMembers()
+  const users: User[] = orgMembersData.map(m => ({
+    id: m.id,
+    email: m.email ?? '',
+    first_name: m.first_name ?? undefined,
+    last_name: m.last_name ?? undefined,
+  }))
 
   // Fetch existing assignments
   const { data: assignments } = useQuery({

@@ -5,11 +5,12 @@
  * Supports multi-select with removable chips.
  */
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { supabase } from '../../../lib/supabase'
+import { useOrgMembers } from '../../../hooks/useOrgMembers'
 
 interface PickedUser {
   id: string
@@ -43,24 +44,24 @@ export function AddAdminModal({ workflowId, workflowName, scopeType, onClose, on
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const { data: users } = useQuery({
-    queryKey: ['users-search'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-        .order('last_name')
-
-      if (error) throw error
-
-      return data.map(user => ({
-        id: user.id,
-        email: user.email,
-        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email
-      }))
-    }
-  })
+  // Org-scoped: only members of the caller's current org appear in the
+  // picker. Previously queried users globally, which surfaced names
+  // from every org the platform admin (or any cross-org user) belonged
+  // to. Same defense-in-depth swap as the other pickers in commit
+  // 868ee2f.
+  const { data: orgMembers = [] } = useOrgMembers()
+  const users = useMemo<PickedUser[]>(
+    () =>
+      orgMembers.map(m => ({
+        id: m.id,
+        email: m.email ?? '',
+        name:
+          `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim()
+          || m.email
+          || 'Unknown',
+      })),
+    [orgMembers]
+  )
 
   // For portfolio-scoped workflows, check membership of selected users
   const { data: membershipWarnings = [] } = useQuery({

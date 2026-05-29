@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Users, UserPlus, Shield, Eye, MessageSquare, Edit2, Crown, Trash2, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import type { SimulationPermission, SimulationCollaboratorWithUser } from '../../types/trading'
@@ -83,28 +84,25 @@ export function SimulationCollaboratorsModal({
     enabled: isOpen,
   })
 
-  // Search for users
-  const { data: searchResults } = useQuery({
-    queryKey: ['users-search', searchEmail],
-    queryFn: async () => {
-      if (!searchEmail || searchEmail.length < 2) return []
-
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .or(`email.ilike.%${searchEmail}%,first_name.ilike.%${searchEmail}%,last_name.ilike.%${searchEmail}%`)
-        .limit(5)
-
-      if (error) throw error
-
-      // Filter out existing collaborators and current user
-      const existingUserIds = new Set(collaborators?.map(c => c.user_id) || [])
-      existingUserIds.add(user?.id || '')
-
-      return data.filter(u => !existingUserIds.has(u.id))
-    },
-    enabled: isOpen && searchEmail.length >= 2,
+  // Search pool — current-org members only, then filtered client-side.
+  // Previously a global ilike against the users table, which would let
+  // a simulation owner add a collaborator from another org.
+  const { data: orgMembers = [] } = useOrgMembers({
+    enabled: isOpen,
+    excludeUserId: user?.id,
   })
+  const searchResults = useMemo(() => {
+    if (!searchEmail || searchEmail.length < 2) return []
+    const q = searchEmail.toLowerCase()
+    const existingUserIds = new Set(collaborators?.map(c => c.user_id) || [])
+    return orgMembers
+      .filter(m => !existingUserIds.has(m.id))
+      .filter(m => {
+        const name = `${m.first_name ?? ''} ${m.last_name ?? ''}`.toLowerCase()
+        return name.includes(q) || (m.email ?? '').toLowerCase().includes(q)
+      })
+      .slice(0, 5)
+  }, [orgMembers, searchEmail, collaborators])
 
   // Add collaborator mutation
   const addCollaboratorMutation = useMutation({
