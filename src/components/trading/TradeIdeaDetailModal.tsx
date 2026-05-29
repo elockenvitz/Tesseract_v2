@@ -45,6 +45,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { emitAuditEvent } from '../../lib/audit'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from '../ui/Button'
 import { DatePicker } from '../ui/DatePicker'
 import { ContextTagsInput, type ContextTag, type ContextTagEntityType } from '../ui/ContextTagsInput'
@@ -657,21 +658,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
     return { netWeight, grossWeight, longCount, shortCount }
   }, [pairTradeData, pairTradeLegTargets])
 
-  // Fetch team members for assignment dropdowns
-  const { data: teamMembers } = useQuery({
-    queryKey: ['team-members'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-
-      if (error) throw error
-      return data || []
-    },
-    enabled: isOpen,
-    staleTime: 60000, // Cache for 1 minute
-  })
+  // Assignment dropdowns — org-scoped. Previously queried the bare
+  // users table, which surfaced names from every org the platform
+  // admin or any cross-org user belonged to.
+  const { data: teamMembers = [] } = useOrgMembers({ enabled: isOpen })
 
   // Get all leg IDs for pair trades (needed for fetching lab links and proposals)
   const pairTradeLegIds = useMemo(() => {

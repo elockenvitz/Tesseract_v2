@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { List, Search, Plus, Star, Users, ChevronDown, ChevronRight, X, Save, Palette, UserPlus, Trash2, Eye, EditIcon, Shield } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrgMembers } from '../hooks/useOrgMembers'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
@@ -287,26 +288,30 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
     toggleFavoriteMutation.mutate(listId)
   }, [toggleFavoriteMutation])
 
-  // ── User search (unchanged) ────────────────────────────────────────────
-  const searchUsers = async (query: string) => {
+  // ── User search ────────────────────────────────────────────────────────
+  // Pool of invitable users is now restricted to current-org members —
+  // previously a global ilike against the users table that surfaced
+  // anyone in the database whose name or email matched. Defense in
+  // depth: matches the org-scoped pattern applied elsewhere in
+  // commit 868ee2f.
+  const { data: orgMembers = [] } = useOrgMembers({ excludeUserId: user?.id })
+  const searchUsers = (query: string) => {
     if (!query.trim() || query.length < 2) {
       setSearchResults([])
       setShowUserDropdown(false)
       return
     }
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,email.ilike.%${query}%`)
-        .neq('id', user?.id)
-        .limit(10)
-      if (error) return
-      const existingCollaboratorIds = editingList?.collaborators?.map((c: any) => c.user_id) || []
-      const filteredResults = (data || []).filter((u: any) => !existingCollaboratorIds.includes(u.id))
-      setSearchResults(filteredResults)
-      setShowUserDropdown(filteredResults.length > 0)
-    } catch { /* ignore */ }
+    const q = query.toLowerCase()
+    const existingCollaboratorIds = editingList?.collaborators?.map((c: any) => c.user_id) || []
+    const filteredResults = orgMembers
+      .filter(m => !existingCollaboratorIds.includes(m.id))
+      .filter(m => {
+        const name = `${m.first_name ?? ''} ${m.last_name ?? ''}`.toLowerCase()
+        return name.includes(q) || (m.email ?? '').toLowerCase().includes(q)
+      })
+      .slice(0, 10)
+    setSearchResults(filteredResults)
+    setShowUserDropdown(filteredResults.length > 0)
   }
 
   const handleUserSearchChange = (value: string) => {

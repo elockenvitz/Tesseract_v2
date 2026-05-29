@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
@@ -474,55 +475,14 @@ export function TradeQueuePage() {
     staleTime: 30_000,
   })
 
-  // Fetch team members from portfolios the current user is on (for "Created by" filter)
-  const { data: teamMembers } = useQuery({
-    queryKey: ['portfolio-team-members', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return []
-
-      // First get the portfolios the current user is on
-      const { data: userPortfolios, error: portfolioError } = await supabase
-        .from('portfolio_team')
-        .select('portfolio_id')
-        .eq('user_id', user.id)
-
-      if (portfolioError) throw portfolioError
-      if (!userPortfolios?.length) return []
-
-      const portfolioIds = userPortfolios.map(p => p.portfolio_id)
-
-      // Then get all team members from those portfolios
-      const { data: members, error: membersError } = await supabase
-        .from('portfolio_team')
-        .select(`
-          user_id,
-          user:users!inner (
-            id,
-            email,
-            first_name,
-            last_name
-          )
-        `)
-        .in('portfolio_id', portfolioIds)
-
-      if (membersError) throw membersError
-
-      // Deduplicate users (they might be on multiple portfolios)
-      const uniqueUsers = new Map<string, { id: string; email: string; first_name: string | null; last_name: string | null }>()
-      members?.forEach((m: any) => {
-        if (m.user && !uniqueUsers.has(m.user.id)) {
-          uniqueUsers.set(m.user.id, m.user)
-        }
-      })
-
-      return Array.from(uniqueUsers.values()).sort((a, b) => {
-        const nameA = a.first_name || a.email || ''
-        const nameB = b.first_name || b.email || ''
-        return nameA.localeCompare(nameB)
-      })
-    },
-    enabled: !!user?.id,
-  })
+  // Members eligible for the "Owner" / "Created by" filter. Previously
+  // queried portfolio_team across every portfolio the current user
+  // belonged to, which leaked names from other orgs whenever a user was
+  // on portfolios in more than one org (any pilot tester or platform
+  // admin). Scope strictly to current-org members via the shared
+  // useOrgMembers hook — same defense-in-depth pattern applied to the
+  // other pickers in commit 868ee2f.
+  const { data: teamMembers } = useOrgMembers()
 
   // Fetch expression counts for trade ideas (how many labs each idea is in)
   const { data: expressionCounts, isLoading: isExpressionCountsLoading } = useTradeExpressionCounts()

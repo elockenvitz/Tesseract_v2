@@ -34,7 +34,6 @@ import {
   useDecisionStory,
   fetchDecisionStory,
   usePortfoliosForFilter,
-  useUsersForFilter,
   useCandidateTradeEvents,
   useManualMatch,
   useUnlinkMatch,
@@ -242,7 +241,6 @@ function FilterBar({
   onChange: (f: Partial<AccountabilityFilters>) => void
 }) {
   const { data: portfolios = [] } = usePortfoliosForFilter()
-  const { data: users = [] } = useUsersForFilter()
 
   const [showCustom, setShowCustom] = useState(false)
   const [customStart, setCustomStart] = useState('')

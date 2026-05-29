@@ -23,12 +23,22 @@ import {
   useOutcomeSummary,
   useAddReflection,
   usePortfoliosForFilter,
-  useUsersForFilter,
   type OutcomeDecision,
   type OutcomeFilters,
   type DecisionDirection,
 } from '../hooks/useOutcomes'
 import { useAuth } from '../hooks/useAuth'
+import { useOrgMembers, type OrgMember } from '../hooks/useOrgMembers'
+
+// Inline display-name helper so the picker rows match the same shape
+// the old useUsersForFilter mapping produced (a single `name` string)
+// without forcing the source-of-truth hook to compose UI strings.
+function pickerName(m: OrgMember): string {
+  const full = [m.first_name, m.last_name].filter(Boolean).join(' ').trim()
+  if (full) return full
+  if (m.email) return m.email.split('@')[0]
+  return 'Unknown'
+}
 import { AnalystPerformanceCard } from '../components/outcomes/AnalystPerformanceCard'
 import { PerformanceLeaderboard } from '../components/outcomes/PerformanceLeaderboard'
 import type { PeriodType } from '../hooks/useAnalystPerformance'
@@ -44,7 +54,8 @@ function FilterBar({ filters, onChange }: {
   onChange: (f: Partial<OutcomeFilters>) => void
 }) {
   const { data: portfolios = [] } = usePortfoliosForFilter()
-  const { data: users = [] } = useUsersForFilter()
+  // Org-scoped — see comment on the matching hook swap in TradeQueuePage.
+  const { data: users = [] } = useOrgMembers()
 
   const activeDays = (() => {
     if (!filters.dateRange?.start) return 90
@@ -114,8 +125,8 @@ function FilterBar({ filters, onChange }: {
         className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
       >
         <option value="">All Users</option>
-        {users.map((u: any) => (
-          <option key={u.id} value={u.id}>{u.name}</option>
+        {users.map(u => (
+          <option key={u.id} value={u.id}>{pickerName(u)}</option>
         ))}
       </select>
 
@@ -421,7 +432,8 @@ function DecisionsView() {
 function ScorecardsView() {
   const [periodType, setPeriodType] = useState<PeriodType>('all_time')
   const [selectedAnalystId, setSelectedAnalystId] = useState<string | null>(null)
-  const { data: users = [] } = useUsersForFilter()
+  // Org-scoped — see comment on the matching hook swap in TradeQueuePage.
+  const { data: users = [] } = useOrgMembers()
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -452,8 +464,8 @@ function ScorecardsView() {
             className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">All Analysts</option>
-            {users.map((u: any) => (
-              <option key={u.id} value={u.id}>{u.name}</option>
+            {users.map(u => (
+              <option key={u.id} value={u.id}>{pickerName(u)}</option>
             ))}
           </select>
         </div>

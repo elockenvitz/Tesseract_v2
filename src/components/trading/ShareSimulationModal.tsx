@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import {
   useSimulationShare,
   type SimulationShareAccess,
@@ -116,20 +117,12 @@ export function ShareSimulationModal({
     }
   }, [sent, onClose])
 
-  // Fetch all users
-  const { data: allUsers, isLoading: usersLoading } = useQuery({
-    queryKey: ['all-users-share'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .neq('id', user?.id)
-        .order('first_name', { ascending: true })
-
-      if (error) throw error
-      return data || []
-    },
+  // Share recipients — current-org members only. Previously surfaced
+  // every user in the database, which would let a user share into
+  // another org by selecting someone from there.
+  const { data: allUsers = [], isLoading: usersLoading } = useOrgMembers({
     enabled: isOpen,
+    excludeUserId: user?.id,
   })
 
   // Filter users based on search

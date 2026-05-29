@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Users, Plus, X, Trash2, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Card } from './Card'
 import { Button } from './Button'
 import { Badge } from './Badge'
@@ -120,31 +121,28 @@ export function CollaborationManager({
     enabled: isOpen
   })
 
-  // Search for users to invite
-  const { data: searchResults } = useQuery({
-    queryKey: ['user-search', searchQuery],
-    queryFn: async () => {
-      if (!searchQuery.trim() || searchQuery.length < 2) return []
-
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .or(`email.ilike.%${searchQuery.toLowerCase()}%,first_name.ilike.%${searchQuery.toLowerCase()}%,last_name.ilike.%${searchQuery.toLowerCase()}%`)
-        .neq('id', user?.id) // Exclude current user
-        .limit(10)
-
-      if (error) throw error
-
-      // Filter out users who are already collaborators or the owner
-      const existingUserIds = new Set(collaborations?.map(c => c.user_id) || [])
-      existingUserIds.add(noteOwnerId); // Exclude the owner
-
-      const filteredResults = data?.filter(u => !existingUserIds.has(u.id)) || []
-
-      return filteredResults
-    },
-    enabled: isOpen && searchQuery.length >= 2
+  // Pool of users eligible to invite — scoped to current-org members
+  // only, not the global users table. Previously a global search that
+  // returned anyone whose name or email matched the query (defense in
+  // depth: RLS may already restrict it, but the picker should match
+  // the rest of the app's org-only convention regardless).
+  const { data: orgMembers = [] } = useOrgMembers({
+    enabled: isOpen,
+    excludeUserId: user?.id,
   })
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) return []
+    const q = searchQuery.toLowerCase()
+    const existingUserIds = new Set(collaborations?.map(c => c.user_id) || [])
+    existingUserIds.add(noteOwnerId)
+    return orgMembers
+      .filter(m => !existingUserIds.has(m.id))
+      .filter(m => {
+        const name = `${m.first_name ?? ''} ${m.last_name ?? ''}`.toLowerCase()
+        return name.includes(q) || (m.email ?? '').toLowerCase().includes(q)
+      })
+      .slice(0, 10)
+  }, [orgMembers, searchQuery, collaborations, noteOwnerId])
 
   // Invite user mutation
   const inviteUserMutation = useMutation({

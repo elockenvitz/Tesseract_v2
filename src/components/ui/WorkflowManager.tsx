@@ -3,6 +3,7 @@ import { X, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown, Palette, Eye, Workflow
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from './Button'
 import { Badge } from './Badge'
 import { Card } from './Card'
@@ -227,19 +228,16 @@ export function WorkflowManager({
     enabled: !!selectedWorkflow
   })
 
-  const { data: allUsers } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('email')
-
-      if (error) throw error
-      return data as User[]
-    },
-    enabled: isOpen
-  })
+  // Org-scoped — see comment on matching swap in CollaborationManager.
+  // The picker that consumes allUsers is the "add collaborator" search
+  // and was previously hitting the global users table.
+  const { data: orgMembersData = [] } = useOrgMembers({ enabled: isOpen })
+  const allUsers: User[] = orgMembersData.map(m => ({
+    id: m.id,
+    email: m.email ?? '',
+    first_name: m.first_name ?? undefined,
+    last_name: m.last_name ?? undefined,
+  }))
 
   const createWorkflowMutation = useMutation({
     mutationFn: async (workflowData: { workflow: Partial<Workflow>, stages: Partial<WorkflowStage>[] }) => {

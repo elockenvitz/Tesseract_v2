@@ -21,6 +21,7 @@ import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { CalendarSettings } from '../components/calendar/CalendarSettings'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
+import { useOrgMembers } from '../hooks/useOrgMembers'
 
 interface CalendarEvent {
   id: string
@@ -1080,19 +1081,9 @@ function EventModal({
   const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
 
-  // Fetch users for attendees
-  const { data: users = [] } = useQuery({
-    queryKey: ['users-for-calendar'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-      if (error) throw error
-      return data as { id: string; email: string; first_name?: string; last_name?: string }[]
-    },
-    enabled: isOpen
-  })
+  // Attendees picker — org-scoped. Previously queried users globally.
+  // Same defense-in-depth swap as the other pickers in commit 868ee2f.
+  const { data: users = [] } = useOrgMembers({ enabled: isOpen })
 
   const filteredUsers = useMemo(() => {
     if (!attendeeSearch.trim()) return users

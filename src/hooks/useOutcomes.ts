@@ -338,23 +338,9 @@ export function usePortfoliosForFilter() {
   })
 }
 
-export function useUsersForFilter() {
-  return useQuery({
-    queryKey: ['users-for-filter'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, raw_user_meta_data')
-        .order('email')
-      if (error) throw error
-      return (data || []).map((u: any) => ({
-        id: u.id,
-        email: u.email,
-        name: u.raw_user_meta_data?.full_name || u.email.split('@')[0],
-      }))
-    },
-  })
-}
+// useUsersForFilter has been removed — see the matching deletion in
+// useDecisionAccountability for the rationale. Owner picker now goes
+// through useOrgMembers.
 
 // ============================================================
 // Internal helpers

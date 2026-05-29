@@ -5,6 +5,7 @@ import { X, Search, TrendingUp, TrendingDown, Link2, ArrowLeftRight, ChevronDown
 import { supabase } from '../../lib/supabase'
 import { useTradeIdeaService } from '../../hooks/useTradeIdeaService'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgMembers } from '../../hooks/useOrgMembers'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
@@ -176,20 +177,12 @@ export function AddTradeIdeaModal({
     enabled: isOpen,
   })
 
-  // Fetch team members for co-analyst assignment
-  const { data: teamMembers } = useQuery({
-    queryKey: ['team-members'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .neq('id', user?.id || '') // Exclude current user
-        .order('first_name')
-
-      if (error) throw error
-      return data
-    },
-    enabled: isOpen && !!user?.id,
+  // Co-analyst assignment picker — org-scoped. Previously queried the
+  // bare users table, which surfaced names from every org the platform
+  // admin or any cross-org user belonged to.
+  const { data: teamMembers } = useOrgMembers({
+    enabled: isOpen,
+    excludeUserId: user?.id,
   })
 
   // Fetch which portfolios hold the selected asset

@@ -5,11 +5,12 @@
  * Supports multi-select with removable chips.
  */
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { supabase } from '../../../lib/supabase'
+import { useOrgMembers } from '../../../hooks/useOrgMembers'
 
 interface PickedUser {
   id: string
@@ -42,24 +43,20 @@ export function AddStakeholderModal({ workflowId, workflowName, scopeType, onClo
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const { data: users } = useQuery({
-    queryKey: ['users-search'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name')
-        .order('first_name')
-        .order('last_name')
-
-      if (error) throw error
-
-      return data.map(user => ({
-        id: user.id,
-        email: user.email,
-        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email
-      }))
-    }
-  })
+  // Org-scoped — see comment on the matching swap in AddAdminModal.
+  const { data: orgMembers = [] } = useOrgMembers()
+  const users = useMemo<PickedUser[]>(
+    () =>
+      orgMembers.map(m => ({
+        id: m.id,
+        email: m.email ?? '',
+        name:
+          `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim()
+          || m.email
+          || 'Unknown',
+      })),
+    [orgMembers]
+  )
 
   // For portfolio-scoped workflows, check membership of selected users
   const { data: membershipWarnings = [] } = useQuery({
