@@ -55,7 +55,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { usePilotMode } from '../hooks/usePilotMode'
-import { logPilotEvent } from '../lib/pilot/pilot-telemetry'
+import { usePilotProgress } from '../hooks/usePilotProgress'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -154,100 +154,78 @@ export function TradeQueuePage() {
   const queryClient = useQueryClient()
   const pilotMode = usePilotMode()
   const { currentOrgId } = useOrganization()
-  // Pilot onboarding flags are scoped per user+org so an analyst
-  // running multiple pilot clients gets a fresh banner + fresh
-  // per-step progress in every new client. Without org scoping
-  // the previous client's "all 3 steps done → banner dismissed"
-  // state was sticking on the next client and the get-started
-  // banner never reappeared.
-  const pilotKey = (suffix: string) =>
-    `pilot_pipeline_${suffix}_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`
-  const BANNER_KEY = pilotKey('banner_dismissed')
-  const STEP1_KEY = pilotKey('step_moved')
-  const STEP2_KEY = pilotKey('step_inbox')
-  const STEP3_KEY = pilotKey('step_tradelab')
-  const readFlag = (key: string) => {
-    try { return localStorage.getItem(key) === '1' } catch { return false }
-  }
-  const writeFlag = (key: string) => {
-    try { localStorage.setItem(key, '1') } catch { /* ignore */ }
-  }
-  const [pilotBannerDismissed, setPilotBannerDismissed] = useState(() => readFlag(BANNER_KEY))
-  // Per-step completion. Each step ticks off when the pilot performs
-  // the corresponding action; once all three are done, the banner
-  // auto-retires. Persisted to localStorage so a tab refresh doesn't
-  // reset progress mid-onboarding.
-  const [pilotStep1Done, setPilotStep1Done] = useState(() => readFlag(STEP1_KEY))
-  const [pilotStep2Done, setPilotStep2Done] = useState(() => readFlag(STEP2_KEY))
-  const [pilotStep3Done, setPilotStep3Done] = useState(() => readFlag(STEP3_KEY))
+  // Pilot onboarding flags persist in users.pilot_progress JSONB
+  // (per-org), surfaced by usePilotProgress. Previously these lived in
+  // localStorage, which meant completing the steps on one hostname
+  // (localhost) didn't carry over to another (Netlify preview, a
+  // different browser, etc.).
+  const {
+    hasDismissedPipelineBanner: pilotBannerDismissed,
+    hasCompletedPipelineStepMoved: pilotStep1Done,
+    hasCompletedPipelineStepInbox: pilotStep2Done,
+    hasCompletedPipelineStepTradeLab: pilotStep3Done,
+    mark: markPilotStage,
+  } = usePilotProgress()
 
-  // When the active user/org changes, reset the local state from
-  // the new keys (otherwise we'd carry the previous client's
-  // flags into the new client's render).
+  // One-time migration: if a previously-completed flag is still sitting
+  // in localStorage from before the server-side switch but isn't yet on
+  // the server, fire mark() so it lands on users.pilot_progress. Keeps
+  // existing pilots from having to redo the Get Started flow once after
+  // this deploys. Self-deduped by markStage's writeInFlightRef + the
+  // `progress[key]` short-circuit, so re-rendering can't double-fire.
+  const legacyLocalKey = useCallback((suffix: string) =>
+    `pilot_pipeline_${suffix}_${user?.id || 'anon'}_${currentOrgId || 'no-org'}`,
+    [user?.id, currentOrgId])
   useEffect(() => {
-    setPilotBannerDismissed(readFlag(BANNER_KEY))
-    setPilotStep1Done(readFlag(STEP1_KEY))
-    setPilotStep2Done(readFlag(STEP2_KEY))
-    setPilotStep3Done(readFlag(STEP3_KEY))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, currentOrgId])
+    if (!user?.id) return
+    const tryMigrate = (lsKey: string, alreadyDone: boolean, stage: Parameters<typeof markPilotStage>[0]) => {
+      if (alreadyDone) return
+      try {
+        if (localStorage.getItem(lsKey) === '1') markPilotStage(stage)
+      } catch { /* ignore */ }
+    }
+    tryMigrate(legacyLocalKey('banner_dismissed'), pilotBannerDismissed, 'pipeline_banner_dismissed')
+    tryMigrate(legacyLocalKey('step_moved'),       pilotStep1Done,       'pipeline_step_moved')
+    tryMigrate(legacyLocalKey('step_inbox'),       pilotStep2Done,       'pipeline_step_inbox')
+    tryMigrate(legacyLocalKey('step_tradelab'),    pilotStep3Done,       'pipeline_step_tradelab')
+  }, [user?.id, currentOrgId, pilotBannerDismissed, pilotStep1Done, pilotStep2Done, pilotStep3Done, legacyLocalKey, markPilotStage])
 
-  // Each step marker guards on localStorage so the telemetry event
-  // fires exactly once per (user, org) — even if the underlying user
-  // action (drag, inbox open, openTradeLab dispatch) repeats. Without
-  // this, the global openTradeLab listener in particular would log a
-  // step event on every Trade Lab button click.
+  // Step markers — short-circuit if the stage is already complete so
+  // repeated user actions (eg the global openTradeLab listener firing
+  // on every Trade Lab button click) don't repeatedly hit the server.
+  // markStage itself is also burst-deduped, but checking here saves a
+  // function call + a render cycle.
   const markPilotStep1 = useCallback(() => {
-    if (readFlag(STEP1_KEY)) return
-    setPilotStep1Done(true)
-    writeFlag(STEP1_KEY)
-    logPilotEvent({ eventType: 'pilot_pipeline_step_idea_dragged', organizationId: currentOrgId })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [STEP1_KEY, currentOrgId])
+    if (pilotStep1Done) return
+    markPilotStage('pipeline_step_moved')
+  }, [pilotStep1Done, markPilotStage])
   const markPilotStep2 = useCallback(() => {
-    if (readFlag(STEP2_KEY)) return
-    setPilotStep2Done(true)
-    writeFlag(STEP2_KEY)
-    logPilotEvent({ eventType: 'pilot_pipeline_step_inbox_opened', organizationId: currentOrgId })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [STEP2_KEY, currentOrgId])
+    if (pilotStep2Done) return
+    markPilotStage('pipeline_step_inbox')
+  }, [pilotStep2Done, markPilotStage])
   const markPilotStep3 = useCallback(() => {
-    if (readFlag(STEP3_KEY)) return
-    setPilotStep3Done(true)
-    writeFlag(STEP3_KEY)
-    logPilotEvent({ eventType: 'pilot_pipeline_step_tradelab_opened', organizationId: currentOrgId })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [STEP3_KEY, currentOrgId])
-  // The banner is hidden the moment all three steps are done — derived
-  // directly from state rather than driven by a useEffect that flips
-  // `pilotBannerDismissed` on the NEXT render. Previously the auto-
-  // dismiss effect caused a visible flash when navigating back to the
-  // Idea Pipeline after completing Trade Lab: the page mounted with
-  // all three step flags read from localStorage, rendered the banner
-  // for one frame, then the effect set `dismissed=true` and unmounted
-  // it. Folding the "all done?" check straight into `showPilotBanner`
-  // means the first render already excludes the banner — no flash.
+    if (pilotStep3Done) return
+    markPilotStage('pipeline_step_tradelab')
+  }, [pilotStep3Done, markPilotStage])
+
+  // Banner visibility is derived synchronously from the progress flags so
+  // the very first render after pilot_progress hydrates already excludes
+  // it once all steps are done — no flash from a useEffect dismissing it
+  // a frame later.
   const allStepsDone = pilotStep1Done && pilotStep2Done && pilotStep3Done
   const showPilotBanner = pilotMode.effectiveIsPilot && !pilotBannerDismissed && !allStepsDone
-  const dismissPilotBanner = () => {
-    setPilotBannerDismissed(true)
-    writeFlag(BANNER_KEY)
-  }
-  // Persist the dismissed flag the first time all three steps are
-  // complete so the BANNER_KEY localStorage entry reflects reality
-  // (useful if anything else inspects it). This effect doesn't gate
-  // rendering — `showPilotBanner` already does — so it can't cause
-  // a flash; it's just bookkeeping.
+  const dismissPilotBanner = useCallback(() => {
+    markPilotStage('pipeline_banner_dismissed')
+  }, [markPilotStage])
+  // Auto-mark the banner as dismissed once all three steps are done so
+  // the persisted state matches the rendered state (anyone inspecting
+  // pilot_progress sees banner_dismissed as well). markPilotStage is
+  // self-deduped, so re-renders here don't repeat the write.
   useEffect(() => {
-    if (
-      pilotMode.effectiveIsPilot &&
-      !pilotBannerDismissed &&
-      allStepsDone
-    ) {
+    if (pilotMode.effectiveIsPilot && !pilotBannerDismissed && allStepsDone) {
       dismissPilotBanner()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pilotMode.effectiveIsPilot, pilotBannerDismissed, allStepsDone])
+  }, [pilotMode.effectiveIsPilot, pilotBannerDismissed, allStepsDone, dismissPilotBanner])
 
   // Trade service for audited mutations
   const { moveTrade, movePairTrade, isMoving, isMovingPairTrade } = useTradeIdeaService()
