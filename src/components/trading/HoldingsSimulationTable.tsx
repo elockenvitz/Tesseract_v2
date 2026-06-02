@@ -1572,8 +1572,10 @@ export function HoldingsSimulationTable({
     setFocusRow(idx)
     // Scroll directly — the existing focus-row scroll effect only fires for
     // keyboard navigation and only when focusRow actually changes.
+    // `block: 'center'` (not 'nearest') so the row lands mid-viewport and
+    // isn't immediately covered by the sticky <tfoot> summary bar.
     requestAnimationFrame(() => {
-      rowRefs.current.get(idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      rowRefs.current.get(idx)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     })
     setHighlightedAssetId(assetId)
     setTimeout(() => {
