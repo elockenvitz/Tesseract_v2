@@ -2751,15 +2751,17 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 })
               }
 
-              // Post-creation guard: if user toggled off during await, clean up immediately
+              // Post-creation guard: if user toggled off during await, clean up immediately.
+              // Use the just-created variant's id directly — previously this re-read
+              // the cache AFTER the filter, which always returned undefined, leaving
+              // an orphaned lab_variant row in the DB that came back on the next
+              // variants refetch and re-rendered the row in the table.
               if (checkboxOverridesRef.current.get(tradeIdea.asset_id) === false) {
                 queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
                 queryClient.setQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any, (old) =>
                   old?.filter(v => v.asset_id !== tradeIdea.asset_id) ?? []
                 )
-                const cached = queryClient.getQueryData<IntentVariant[]>(['intent-variants', tradeLab.id, null] as any) || []
-                const created = cached.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
-                if (created) v3DeleteVariant({ variantId: created.id })
+                if (createdVariant?.id) v3DeleteVariant({ variantId: createdVariant.id })
               }
             }
           } catch (variantError) {
