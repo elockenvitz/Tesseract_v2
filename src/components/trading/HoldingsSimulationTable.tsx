@@ -330,12 +330,15 @@ function HoldingRow({
   suggestMode, onSubmitSuggestion, pendingSuggestions, onOpenSuggestionReview,
   promoteSelected, onTogglePromote, showCheckboxCol,
   pairInfo,
+  isHighlighted,
 }: {
   row: SimulationRow
   rowIndex: number
   isEven: boolean
   focusedCol: number | null
   isEditing: boolean
+  /** Brief background pulse so freshly-added or quick-nav'd rows stand out. */
+  isHighlighted?: boolean
   onUpdateVariant: (variantId: string, updates: { action?: TradeAction; sizingInput?: string }) => void
   onFocusCell: (row: number, col: number) => void
   onStartEdit: () => void
@@ -630,6 +633,9 @@ function HoldingRow({
         row.isRemoved && '!bg-red-50 dark:!bg-red-950/20 opacity-50',
         !isFocused && 'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
         isFocused && '!bg-primary-50/40 dark:!bg-primary-950/10',
+        // Transient pulse for newly-added rows + quick-nav targets. Wins
+        // over the row's natural tint while the highlight is active.
+        isHighlighted && '!bg-primary-100/80 dark:!bg-primary-900/40 transition-colors duration-300',
       )}
     >
       {/* CHECKBOX column — only present when bulk-promote mode is active.
@@ -949,6 +955,15 @@ export function HoldingsSimulationTable({
   const [editing, setEditing] = useState(false)
   const [pendingEditAssetId, setPendingEditAssetId] = useState<string | null>(null)
   const [pendingEditCol, setPendingEditCol] = useState(COL.SIM_WT)
+  // Asset currently flashing a "just added / just navigated to" highlight.
+  // Set by navigateToAsset(); cleared by a short timer.
+  const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null)
+  // Count of variants added in the last ~3s — drives the transient "new"
+  // pill in the footer summary so a user scrolled elsewhere notices the add.
+  const [recentlyAddedCount, setRecentlyAddedCount] = useState(0)
+  // Snapshot of which asset_ids had variants on the prior render. null on
+  // first render so initial population doesn't trigger a flash.
+  const prevVariantAssetsRef = useRef<Set<string> | null>(null)
 
   // Execute confirmation modal
   const [showExecuteConfirm, setShowExecuteConfirm] = useState(false)
@@ -1548,6 +1563,51 @@ export function HoldingsSimulationTable({
     }
   }, [editing, focusRow, cleanupEmptyVariant, onCreateVariant, readOnly, suggestMode, displayRows])
 
+  // Scroll a specific asset into view + flash a highlight. Used both for
+  // quick-nav from the footer trade list and for auto-flash when a new
+  // variant arrives off-screen.
+  const navigateToAsset = useCallback((assetId: string) => {
+    const idx = displayRows.findIndex(r => r.asset_id === assetId)
+    if (idx < 0) return
+    setFocusRow(idx)
+    // Scroll directly — the existing focus-row scroll effect only fires for
+    // keyboard navigation and only when focusRow actually changes.
+    requestAnimationFrame(() => {
+      rowRefs.current.get(idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+    setHighlightedAssetId(assetId)
+    setTimeout(() => {
+      setHighlightedAssetId(prev => (prev === assetId ? null : prev))
+    }, 1800)
+  }, [displayRows])
+
+  // Detect newly-added variants in displayRows; scroll + flash them so a
+  // user scrolled elsewhere sees the addition. First-ever non-empty render
+  // is treated as initial population (no flash on load).
+  useEffect(() => {
+    const currentIds = new Set<string>()
+    displayRows.forEach(r => { if (r.variant) currentIds.add(r.asset_id) })
+
+    if (prevVariantAssetsRef.current === null) {
+      if (currentIds.size > 0) prevVariantAssetsRef.current = currentIds
+      return
+    }
+
+    const newIds: string[] = []
+    currentIds.forEach(id => {
+      if (!prevVariantAssetsRef.current!.has(id)) newIds.push(id)
+    })
+
+    if (newIds.length > 0) {
+      navigateToAsset(newIds[newIds.length - 1])
+      setRecentlyAddedCount(c => c + newIds.length)
+      setTimeout(() => {
+        setRecentlyAddedCount(c => Math.max(0, c - newIds.length))
+      }, 3000)
+    }
+    prevVariantAssetsRef.current = currentIds
+  }, [displayRows, navigateToAsset])
+
   const handleStopEdit = useCallback((committedValue?: string) => {
     if (suggestMode) {
       setEditing(false)
@@ -1643,6 +1703,7 @@ export function HoldingsSimulationTable({
       onTogglePromote={!readOnly && !suggestMode && onBulkPromote ? togglePromoteSelection : undefined}
       showCheckboxCol={showCheckboxCol}
       pairInfo={pairInfoByAsset?.get(row.asset_id)}
+      isHighlighted={highlightedAssetId === row.asset_id}
     />
   )
 
@@ -2189,6 +2250,14 @@ export function HoldingsSimulationTable({
                     <span>
                       <span className="font-semibold text-gray-700 dark:text-gray-300">{summary.totalPositions}</span> positions
                     </span>
+                    {recentlyAddedCount > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-semibold text-[10px] animate-pulse"
+                        title="Recently added — open the trade list below to navigate"
+                      >
+                        +{recentlyAddedCount} new
+                      </span>
+                    )}
                     {summary.tradedCount > 0 && (
                       <>
                         <span className="text-gray-300 dark:text-gray-600">&middot;</span>
@@ -2283,7 +2352,15 @@ export function HoldingsSimulationTable({
                             const action = row.derivedAction
                             const isBuy = action === 'buy' || action === 'add'
                             return (
-                              <tr key={row.asset_id} className={clsx(i % 2 === 0 ? ROW_EVEN : ROW_ODD)}>
+                              <tr
+                                key={row.asset_id}
+                                onClick={() => navigateToAsset(row.asset_id)}
+                                className={clsx(
+                                  i % 2 === 0 ? ROW_EVEN : ROW_ODD,
+                                  'cursor-pointer hover:!bg-primary-50 dark:hover:!bg-primary-900/20 transition-colors',
+                                )}
+                                title="Jump to this row in the table"
+                              >
                                 <td className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-700/30">
                                   <span className={clsx(
                                     'inline-block font-bold uppercase text-[8px] px-1.5 py-0.5 rounded-full whitespace-nowrap',
