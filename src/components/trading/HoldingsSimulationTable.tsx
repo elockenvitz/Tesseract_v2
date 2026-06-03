@@ -311,6 +311,12 @@ export interface HoldingsSimulationTableProps {
    *  a "↔ pair" badge alongside the symbol. Derived from trade_queue_items
    *  pair_id/pair_leg_type in SimulationPage. */
   pairInfoByAsset?: Map<string, import('../../lib/trade-lab/pair-info').PairLegInfo>
+  /** Asset IDs the parent has explicitly removed in the last few hundred ms
+   *  (uncheck in trade-ideas panel, Delete key, etc.). stableRows drops these
+   *  immediately instead of granting the usual one-render grace period —
+   *  the grace exists for cache churn during background refetches, not for
+   *  user-initiated removes which should feel instant. */
+  recentlyRemovedAssetIds?: Set<string>
 }
 
 // =============================================================================
@@ -947,6 +953,7 @@ export function HoldingsSimulationTable({
   suggestMode, onSubmitSuggestion, pendingSuggestionsByAsset, pendingSuggestionCount, onOpenSuggestionReview,
   onBulkPromote, isBulkPromoting, decisionConfirmationOpen,
   pairInfoByAsset,
+  recentlyRemovedAssetIds,
 }: HoldingsSimulationTableProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<GroupBy>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -1188,6 +1195,12 @@ export function HoldingsSimulationTable({
       if (row) {
         result.push(row)
         seen.add(id)
+      } else if (recentlyRemovedAssetIds?.has(id)) {
+        // Parent has explicitly removed this asset (uncheck / Delete /
+        // etc.) — drop instantly with no grace so the table feels
+        // responsive. Grace is reserved for cache churn during background
+        // refetches, not user-initiated removes.
+        continue
       } else if (!prevGrace.has(id)) {
         // First render missing — grace: retain last known version
         const prev = prevSnapshot.get(id)
@@ -1213,7 +1226,7 @@ export function HoldingsSimulationTable({
     lastRowSnapshotRef.current = new Map(result.map(r => [r.asset_id, r]))
 
     return result
-  }, [rows])
+  }, [rows, recentlyRemovedAssetIds])
 
   const groupBy = externalGroupBy ?? internalGroupBy
   const handleGroupByChange = onGroupByChange ?? setInternalGroupBy

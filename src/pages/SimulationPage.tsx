@@ -511,6 +511,30 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   // re-firing removals that are already pending.
   const convergenceRemovalsInFlightRef = useRef<Set<string>>(new Set())
 
+  // Tombstone set passed to HoldingsSimulationTable so its stableRows skips
+  // the one-render grace period for assets the user has just explicitly
+  // removed (uncheck in panel, Delete on focused row, etc.). The grace was
+  // designed for cache churn — not user intent — and made explicit removes
+  // feel laggy or even appear stuck when other state churned alongside.
+  // Self-clears after ~600ms so stableRows can resume normal behavior.
+  const [recentlyRemovedAssetIds, setRecentlyRemovedAssetIds] = useState<Set<string>>(new Set())
+  const markAssetRemoved = useCallback((assetId: string) => {
+    setRecentlyRemovedAssetIds(prev => {
+      if (prev.has(assetId)) return prev
+      const next = new Set(prev)
+      next.add(assetId)
+      return next
+    })
+    setTimeout(() => {
+      setRecentlyRemovedAssetIds(prev => {
+        if (!prev.has(assetId)) return prev
+        const next = new Set(prev)
+        next.delete(assetId)
+        return next
+      })
+    }, 600)
+  }, [])
+
   // Pending sizing edits made on temp variants. When the real variant arrives
   // (in importTradeMutation.onSuccess), the pending sizing overrides the trade idea's default.
   const pendingSizingRef = useRef<Map<string, string>>(new Map())
@@ -3092,6 +3116,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Instant UI feedback
     checkboxOverridesRef.current.set(assetId, false)
     setCheckboxOverrides(new Map(checkboxOverridesRef.current))
+    // Tombstone this asset so HoldingsSimulationTable.stableRows drops it
+    // immediately instead of holding it for a render of grace.
+    markAssetRemoved(assetId)
 
     // Cancel in-flight variant AND simulation fetches so pending refetches
     // can't overwrite our optimistic removal with stale data
@@ -3139,7 +3166,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     if (tradeLab?.id) {
       v3DeleteVariantsByAsset({ assetId })
     }
-  }, [simulation?.simulation_trades, tradeLab?.id, queryClient, removeTradeMutation, v3DeleteVariantsByAsset, selectedSimulationId])
+  }, [simulation?.simulation_trades, tradeLab?.id, queryClient, removeTradeMutation, v3DeleteVariantsByAsset, selectedSimulationId, markAssetRemoved])
 
   /** Remove any other checked source for the same asset_id to enforce exclusivity */
   const uncheckOtherSourcesForAsset = useCallback((assetId: string, source: 'idea' | 'proposal') => {
@@ -6621,6 +6648,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             }
                           }}
                           onRemoveAsset={handleRemoveAsset}
+                          recentlyRemovedAssetIds={recentlyRemovedAssetIds}
                           onDeleteVariant={(variantId) => {
                             // If deleting a temp variant from a direct edit (user escaped
                             // before server responded), track the cancellation so the
