@@ -401,6 +401,20 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
     focus: () => inputRef.current?.focus()
   }), [])
 
+  // Also expose focus via a window event so any surface (e.g. the
+  // PilotWelcomeBanner's "Explore an asset page" tile) can pop the
+  // search bar open without needing a ref drilled through. Opening the
+  // dropdown with an empty query surfaces the "no matches yet" state,
+  // which is fine — the user types and results populate immediately.
+  useEffect(() => {
+    const handler = () => {
+      inputRef.current?.focus()
+      setIsOpen(true)
+    }
+    window.addEventListener('focus-global-search', handler)
+    return () => window.removeEventListener('focus-global-search', handler)
+  }, [])
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!isOpen || displayResults.length === 0) return
 

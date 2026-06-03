@@ -346,13 +346,14 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       id: 'explore-asset',
       label: 'Explore an asset page',
       description: 'Open any asset to see its research fields, workflow status, and history.',
-      hint: 'Opens the Assets list — pick any ticker to dive in.',
+      hint: 'Focuses the search bar — start typing a ticker to pick one.',
       icon: BookOpen,
       done: (hasExploredAsset || progress.hasContribution || progress.hasNote || progress.hasRating),
-      // Was openAsset() which hard-coded AAPL. The user expected to be
-      // dropped into the Assets list so they could pick a ticker for
-      // themselves — that's what this tile's label implies.
-      action: () => onNavigate({ type: 'assets-list', id: 'assets-list', title: 'Assets', data: {} }),
+      // Focus the global search bar so the user can type any ticker and
+      // pick from live results. Listened to by GlobalSearch.
+      action: () => {
+        try { window.dispatchEvent(new CustomEvent('focus-global-search')) } catch { /* ignore */ }
+      },
       category: 'research',
     },
     {
