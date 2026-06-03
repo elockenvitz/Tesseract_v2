@@ -254,7 +254,12 @@ export function DashboardPage() {
   // tabs stay — we substitute the rendered content with a preview
   // component further below.
   useEffect(() => {
-    if (pilotMode.isLoading || !pilotMode.isPilot) return
+    // Use effectiveIsPilot (not isPilot) so a graduated user — whose
+    // org is still flagged pilot but who's earned the full app — isn't
+    // bounced off a tab the pilot access map happens to mark 'hidden'.
+    // Without this, clicking expand-chart from the Ideas tab opened the
+    // charting tab and then immediately redirected to the dashboard.
+    if (pilotMode.isLoading || !pilotMode.effectiveIsPilot) return
 
     const active = tabs.find(t => t.id === activeTabId)
     const activeFeature = active ? TAB_TYPE_TO_PILOT_FEATURE[active.type] : null
