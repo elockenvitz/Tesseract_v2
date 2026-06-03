@@ -346,10 +346,13 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       id: 'explore-asset',
       label: 'Explore an asset page',
       description: 'Open any asset to see its research fields, workflow status, and history.',
-      hint: 'Click below to open AAPL.',
+      hint: 'Opens the Assets list — pick any ticker to dive in.',
       icon: BookOpen,
       done: (hasExploredAsset || progress.hasContribution || progress.hasNote || progress.hasRating),
-      action: () => openAsset(),
+      // Was openAsset() which hard-coded AAPL. The user expected to be
+      // dropped into the Assets list so they could pick a ticker for
+      // themselves — that's what this tile's label implies.
+      action: () => onNavigate({ type: 'assets-list', id: 'assets-list', title: 'Assets', data: {} }),
       category: 'research',
     },
     {
