@@ -257,15 +257,24 @@ export function PilotActionDashboard({
       //      show up — and we don't leak cross-org because the join
       //      ties results to `currentOrg.id`.
       if (!currentOrg?.id) return []
+      // LEFT JOIN portfolios (no `!inner`) so trade ideas with
+      // portfolio_id=NULL (free-floating user captures the assignee/
+      // creator can see by RLS) aren't excluded from the dashboard's
+      // Capture/Develop counts. Without this, a portfolio-less idea
+      // satisfies the right-pane Get Started step but never advances
+      // the System Loop strip from Capture → Develop.
       let q = supabase
         .from('trade_queue_items')
-        .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name), portfolio:portfolios!inner(id, organization_id)')
+        .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name), portfolio:portfolios(id, organization_id)')
         .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'deciding'])
       if (pilotPortfolioId) {
         q = q.eq('portfolio_id', pilotPortfolioId)
       } else {
-        q = q.eq('portfolio.organization_id', currentOrg.id)
+        // Portfolio-less ideas (portfolio_id IS NULL) OR ideas attached
+        // to a portfolio in the current org. RLS already restricts the
+        // null-portfolio set to the creator/assignee, so we don't leak.
+        q = q.or(`portfolio_id.is.null,portfolio.organization_id.eq.${currentOrg.id}`)
       }
       const { data, error } = await q
         .order('stage_changed_at', { ascending: false, nullsFirst: false })
@@ -346,9 +355,14 @@ export function PilotActionDashboard({
       // via the portfolios!inner join so freshly captured ideas show up
       // in Capture without waiting on the seed (and without leaking
       // cross-org).
+      // Same LEFT-JOIN treatment as pipelineItems above — without it,
+      // a portfolio-less idea (created from the right-pane capture form,
+      // where the user didn't pick a portfolio) is excluded from
+      // userCaptured.ideas, and hasUserIdea stays false even though the
+      // user clearly captured something.
       const tqSelect = pilotPortfolioId
         ? 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata'
-        : 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata, portfolio:portfolios!inner(id, organization_id)'
+        : 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata, portfolio:portfolios(id, organization_id)'
       let tqQuery = supabase
         .from('trade_queue_items')
         .select(tqSelect)
@@ -357,7 +371,7 @@ export function PilotActionDashboard({
       if (pilotPortfolioId) {
         tqQuery = tqQuery.eq('portfolio_id', pilotPortfolioId)
       } else if (currentOrg?.id) {
-        tqQuery = tqQuery.eq('portfolio.organization_id', currentOrg.id)
+        tqQuery = tqQuery.or(`portfolio_id.is.null,portfolio.organization_id.eq.${currentOrg.id}`)
       }
       tqQuery = tqQuery.order('created_at', { ascending: false }).limit(10)
 
