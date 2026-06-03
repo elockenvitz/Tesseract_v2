@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useInvalidateAttention } from '../../hooks/useAttention'
+import { useOrganization } from '../../contexts/OrganizationContext'
+import { useAuth } from '../../hooks/useAuth'
 import { emitAuditEvent } from '../../lib/audit'
 import { clsx } from 'clsx'
 import type { TradeAction } from '../../types/trading'
@@ -172,6 +174,8 @@ export function QuickTradeIdeaCapture({
   assetName: propAssetName,
 }: QuickTradeIdeaCaptureProps) {
   const location = useLocation()
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   // Trade type: single or pair
   const [tradeType, setTradeType] = useState<'single' | 'pair'>('single')
@@ -467,23 +471,28 @@ export function QuickTradeIdeaCapture({
 
   // Surface existing ideas for the same asset already in the pipeline so
   // the user can choose to work on the existing one instead of forking a
-  // duplicate. Org scoping is handled by RLS on trade_queue_items
-  // (visibility tier 'active' = non-archived live pipeline items).
+  // duplicate. Scoped to the current org via a portfolios LEFT JOIN —
+  // RLS alone allows reads across every org the user belongs to, so a
+  // user with pilots in Tester + Checking + Helgans would see Tester's
+  // CVX duplicate-warned when capturing CVX in Checking. The OR also
+  // includes portfolio_id=NULL rows (free-floating user captures the
+  // RLS still lets the creator see).
   const { data: existingIdeasForAsset } = useQuery({
-    queryKey: ['quick-capture-existing-ideas', currentAssetId],
+    queryKey: ['quick-capture-existing-ideas', currentAssetId, currentOrgId, user?.id],
     queryFn: async () => {
-      if (!currentAssetId) return []
+      if (!currentAssetId || !currentOrgId) return []
       const { data, error } = await supabase
         .from('trade_queue_items')
-        .select('id, action, stage, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select('id, action, stage, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name), portfolio:portfolios(id, organization_id)')
         .eq('asset_id', currentAssetId)
         .eq('visibility_tier', 'active')
+        .or(`portfolio.organization_id.eq.${currentOrgId},and(portfolio_id.is.null,created_by.eq.${user?.id ?? '00000000-0000-0000-0000-000000000000'})`)
         .order('created_at', { ascending: false })
         .limit(10)
       if (error) throw error
       return (data ?? []) as unknown as ExistingIdeaRow[]
     },
-    enabled: !!currentAssetId && tradeType === 'single',
+    enabled: !!currentAssetId && !!currentOrgId && tradeType === 'single',
     staleTime: 30_000,
   })
 
@@ -509,20 +518,24 @@ export function QuickTradeIdeaCapture({
   // Both queries are bundled into one useQuery so a single cache
   // invalidation refreshes both views.
   const { data: pairDuplicateData } = useQuery({
-    queryKey: ['quick-capture-pair-duplicate-check', longIdsKey, shortIdsKey],
+    queryKey: ['quick-capture-pair-duplicate-check', longIdsKey, shortIdsKey, currentOrgId, user?.id],
     queryFn: async (): Promise<{
       perAsset: Record<string, ExistingIdeaRow[]>
       exactMatches: Array<{ pair_id: string; legs: ExistingIdeaRow[] }>
     }> => {
       const allLegIds = [...longAssets.map(a => a.id), ...shortAssets.map(a => a.id)]
-      if (allLegIds.length === 0) return { perAsset: {}, exactMatches: [] }
+      if (allLegIds.length === 0 || !currentOrgId) return { perAsset: {}, exactMatches: [] }
 
-      // Step 1: ideas for any of our leg assets.
+      // Step 1: ideas for any of our leg assets. Scoped to the current
+      // org via the same LEFT JOIN + .or() pattern as the single-asset
+      // query above — otherwise pair-leg warnings cross-leak from
+      // other orgs the user is a member of.
       const { data: legIdeas, error } = await supabase
         .from('trade_queue_items')
-        .select('id, asset_id, action, stage, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select('id, asset_id, action, stage, created_at, portfolio_id, pair_id, origin_metadata, users:created_by(id, email, first_name, last_name), portfolio:portfolios(id, organization_id)')
         .in('asset_id', allLegIds)
         .eq('visibility_tier', 'active')
+        .or(`portfolio.organization_id.eq.${currentOrgId},and(portfolio_id.is.null,created_by.eq.${user?.id ?? '00000000-0000-0000-0000-000000000000'})`)
         .order('created_at', { ascending: false })
       if (error) throw error
 
@@ -545,11 +558,16 @@ export function QuickTradeIdeaCapture({
         return { perAsset, exactMatches: [] }
       }
 
+      // Step 2 ALSO needs org-scoping — without it, a candidate
+      // pair_id discovered in step 1 (now scoped) could pull legs from
+      // OTHER orgs back in, falsely classifying the pair as an exact
+      // match against a cross-org pair.
       const { data: allLegs, error: legsErr } = await supabase
         .from('trade_queue_items')
-        .select('id, pair_id, asset_id, action, created_at, portfolio_id, stage, origin_metadata, users:created_by(id, email, first_name, last_name)')
+        .select('id, pair_id, asset_id, action, created_at, portfolio_id, stage, origin_metadata, users:created_by(id, email, first_name, last_name), portfolio:portfolios(id, organization_id)')
         .in('pair_id', candidatePairIds)
         .eq('visibility_tier', 'active')
+        .or(`portfolio.organization_id.eq.${currentOrgId},and(portfolio_id.is.null,created_by.eq.${user?.id ?? '00000000-0000-0000-0000-000000000000'})`)
       if (legsErr) throw legsErr
 
       const byPairId = new Map<string, ExistingIdeaRow[]>()
