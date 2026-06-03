@@ -258,19 +258,24 @@ export function QuickTradeIdeaCapture({
     [assets]
   )
   const { data: assetIdsInPipeline } = useQuery({
-    queryKey: ['quick-capture-pipeline-asset-ids', visibleAssetIdsKey],
+    queryKey: ['quick-capture-pipeline-asset-ids', visibleAssetIdsKey, currentOrgId],
     queryFn: async () => {
       const ids = (assets ?? []).map(a => a.id)
-      if (ids.length === 0) return new Set<string>()
+      if (ids.length === 0 || !currentOrgId) return new Set<string>()
+      // Scope by trade_queue_items.organization_id so the "In pipeline"
+      // badge in the search dropdown only marks tickers already active
+      // in the CURRENT org's pipeline — not in some other org the user
+      // is a member of.
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select('asset_id')
         .in('asset_id', ids)
         .eq('visibility_tier', 'active')
+        .eq('organization_id', currentOrgId)
       if (error) throw error
       return new Set((data ?? []).map(r => r.asset_id as string))
     },
-    enabled: (assets ?? []).length > 0,
+    enabled: (assets ?? []).length > 0 && !!currentOrgId,
     staleTime: 30_000,
   })
 
@@ -341,35 +346,37 @@ export function QuickTradeIdeaCapture({
   // as the single-trade `assetIdsInPipeline` above, scoped to whichever
   // tickers are currently visible in that side's dropdown.
   const { data: assetIdsInPipelineLong } = useQuery({
-    queryKey: ['quick-capture-pipeline-asset-ids-long', visibleLongIdsKey],
+    queryKey: ['quick-capture-pipeline-asset-ids-long', visibleLongIdsKey, currentOrgId],
     queryFn: async () => {
       const ids = visibleLongResults.map(a => a.id)
-      if (ids.length === 0) return new Set<string>()
+      if (ids.length === 0 || !currentOrgId) return new Set<string>()
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select('asset_id')
         .in('asset_id', ids)
         .eq('visibility_tier', 'active')
+        .eq('organization_id', currentOrgId)
       if (error) throw error
       return new Set((data ?? []).map(r => r.asset_id as string))
     },
-    enabled: visibleLongResults.length > 0,
+    enabled: visibleLongResults.length > 0 && !!currentOrgId,
     staleTime: 30_000,
   })
   const { data: assetIdsInPipelineShort } = useQuery({
-    queryKey: ['quick-capture-pipeline-asset-ids-short', visibleShortIdsKey],
+    queryKey: ['quick-capture-pipeline-asset-ids-short', visibleShortIdsKey, currentOrgId],
     queryFn: async () => {
       const ids = visibleShortResults.map(a => a.id)
-      if (ids.length === 0) return new Set<string>()
+      if (ids.length === 0 || !currentOrgId) return new Set<string>()
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select('asset_id')
         .in('asset_id', ids)
         .eq('visibility_tier', 'active')
+        .eq('organization_id', currentOrgId)
       if (error) throw error
       return new Set((data ?? []).map(r => r.asset_id as string))
     },
-    enabled: visibleShortResults.length > 0,
+    enabled: visibleShortResults.length > 0 && !!currentOrgId,
     staleTime: 30_000,
   })
 
