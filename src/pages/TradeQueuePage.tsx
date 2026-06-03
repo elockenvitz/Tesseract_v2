@@ -1574,14 +1574,11 @@ export function TradeQueuePage() {
                 done={pilotStep3Done}
               />
             </div>
-            <button
-              onClick={dismissPilotBanner}
-              className="ml-auto -my-1 p-1.5 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
-              title="Dismiss"
-              aria-label="Dismiss Idea Pipeline intro"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            {/* Banner intentionally has no dismiss control — each step
+                gates the user's path into the next surface (drag → Inbox
+                → Trade Lab), and letting the user X-out lost them the
+                signposting without actually progressing. Banner auto-
+                retires once all three steps are marked complete. */}
           </div>
         </div>
       )}

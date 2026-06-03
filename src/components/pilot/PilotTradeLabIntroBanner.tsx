@@ -157,14 +157,9 @@ export function PilotTradeLabIntroBanner({ userId, orgId }: PilotTradeLabIntroBa
             done={step3}
           />
         </div>
-        <button
-          onClick={dismiss}
-          className="ml-auto -my-1 p-1.5 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-100/60 dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30 transition-colors shrink-0"
-          title="Dismiss"
-          aria-label="Dismiss Trade Lab intro"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {/* Banner intentionally has no dismiss control — each step
+            gates the user's path into the next surface (Trade Book).
+            Banner auto-retires once all three steps are marked complete. */}
       </div>
     </div>
   )
