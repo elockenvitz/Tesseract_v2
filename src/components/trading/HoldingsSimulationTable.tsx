@@ -90,19 +90,27 @@ interface ColDef {
   width?: string
 }
 
+// Explicit widths so the table can use `table-fixed` layout — once the table
+// stops being content-driven, entering a sim weight (which adds content to
+// the Sim Wt / Sim Shrs / Sim $ / Δ ... columns and the action badge in
+// Symbol) no longer shoves every column to the right.
+//
+// Name has no width: with table-fixed, columns without an explicit width
+// share whatever space is left after the fixed columns claim theirs, so
+// Name absorbs all the slack from the parent.
 const COLUMNS: ColDef[] = [
-  { key: 'SYMBOL',        label: 'Symbol',    align: 'left',  sortable: true,  filterable: true, width: 'w-0' },
+  { key: 'SYMBOL',        label: 'Symbol',    align: 'left',  sortable: true,  filterable: true, width: 'w-36' },
   { key: 'NAME',          label: 'Name',      align: 'left',  sortable: true,  filterable: true },
-  { key: 'SHARES',        label: 'Shares',    align: 'right', sortable: true,  filterable: true },
-  { key: 'WEIGHT',        label: 'Wt%',       align: 'right', sortable: true,  filterable: true },
-  { key: 'BENCH',         label: 'Bench',     align: 'right', sortable: true,  filterable: true },
-  { key: 'ACTIVE',        label: 'Active',    align: 'right', sortable: true,  filterable: true },
-  { key: 'SIM_WT',        label: 'Sim Wt',    align: 'right', sortable: true,  filterable: true },
-  { key: 'SIM_SHARES',    label: 'Sim Shrs',  align: 'right', sortable: true,  filterable: true },
-  { key: 'SIM_NOTIONAL',  label: 'Sim $',     align: 'right', sortable: true,  filterable: true },
-  { key: 'DELTA_WT',      label: 'Δ Wt',      align: 'right', sortable: true,  filterable: true },
-  { key: 'DELTA_SHARES',  label: 'Δ Shrs',    align: 'right', sortable: true,  filterable: true },
-  { key: 'DELTA_NOTIONAL', label: 'Δ $',      align: 'right', sortable: true,  filterable: true },
+  { key: 'SHARES',        label: 'Shares',    align: 'right', sortable: true,  filterable: true, width: 'w-24' },
+  { key: 'WEIGHT',        label: 'Wt%',       align: 'right', sortable: true,  filterable: true, width: 'w-16' },
+  { key: 'BENCH',         label: 'Bench',     align: 'right', sortable: true,  filterable: true, width: 'w-16' },
+  { key: 'ACTIVE',        label: 'Active',    align: 'right', sortable: true,  filterable: true, width: 'w-16' },
+  { key: 'SIM_WT',        label: 'Sim Wt',    align: 'right', sortable: true,  filterable: true, width: 'w-20' },
+  { key: 'SIM_SHARES',    label: 'Sim Shrs',  align: 'right', sortable: true,  filterable: true, width: 'w-24' },
+  { key: 'SIM_NOTIONAL',  label: 'Sim $',     align: 'right', sortable: true,  filterable: true, width: 'w-28' },
+  { key: 'DELTA_WT',      label: 'Δ Wt',      align: 'right', sortable: true,  filterable: true, width: 'w-20' },
+  { key: 'DELTA_SHARES',  label: 'Δ Shrs',    align: 'right', sortable: true,  filterable: true, width: 'w-24' },
+  { key: 'DELTA_NOTIONAL', label: 'Δ $',      align: 'right', sortable: true,  filterable: true, width: 'w-28' },
 ]
 
 // =============================================================================
@@ -665,15 +673,16 @@ function HoldingRow({
       )}
       {/* SYMBOL */}
       <td
-        className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap min-w-[8.5rem]', leftBorder, cf(COL.SYMBOL))}
+        className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap', leftBorder, cf(COL.SYMBOL))}
         onClick={() => onFocusCell(rowIndex, COL.SYMBOL)}
       >
-        {/* min-w on both the td and the inner div, plus a permanently-
-            rendered badge slot (visibility-based, not conditional render).
-            Tailwind's `invisible` keeps the slot in the layout so the
-            cell's natural width is identical with or without sizing — no
-            column reflow when the user enters a sim weight. */}
-        <div className="flex items-center gap-1.5 min-w-[8.5rem]">
+        {/* Symbol column width is fixed by COLUMNS[].width on the header
+            (table-fixed layout). Inner div is min-w-0 so the symbol text
+            can truncate within the fixed column if it's longer than the
+            allotted space. The badge slot is always rendered (toggled with
+            `invisible`) so the cell content width doesn't change when
+            sizing arrives — and table-fixed wouldn't reflow on that anyway. */}
+        <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
             {row.symbol}
           </span>
@@ -1978,7 +1987,7 @@ export function HoldingsSimulationTable({
             don't render in this box model, so row separators have to live
             on the tds. The filter row, cash row, phantom row, and tfoot
             are all migrated accordingly. */}
-        <table className="w-full border-separate border-spacing-0">
+        <table className="w-full table-fixed border-separate border-spacing-0">
           <thead className="sticky top-0 z-20 bg-white dark:bg-gray-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
             {/* Column headers */}
             <tr className="bg-white dark:bg-gray-900">
