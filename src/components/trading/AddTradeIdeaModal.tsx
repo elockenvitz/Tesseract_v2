@@ -69,7 +69,7 @@ export function AddTradeIdeaModal({
   // Use the audited trade idea service
   const {
     createTradeAsync,
-    createPairTrade,
+    createPairTradeAsync,
     isCreating,
     isCreatingPairTrade,
   } = useTradeIdeaService({
@@ -94,6 +94,9 @@ export function AddTradeIdeaModal({
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
   const portfolioDropdownRef = useRef<HTMLDivElement>(null)
   const portfolioButtonRef = useRef<HTMLButtonElement>(null)
+  // Synchronous re-entry guard: button's disabled prop lags by a render,
+  // so fast double-clicks can fire handleSubmit twice before isMutating flips.
+  const submittingRef = useRef(false)
   const urgency = 'medium' as const // System-derived urgency replaces manual selection
   // Combined rationale/thesis field (matching QuickTradeIdeaCapture)
   const [rationale, setRationale] = useState('')
@@ -613,6 +616,17 @@ export function AddTradeIdeaModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (submittingRef.current) return
+    submittingRef.current = true
+
+    try {
+      await submitTradeIdea()
+    } finally {
+      submittingRef.current = false
+    }
+  }
+
+  const submitTradeIdea = async () => {
     const primaryPortfolioId = selectedPortfolioIds[0] || null
 
     if (isPairTrade) {
@@ -622,7 +636,7 @@ export function AddTradeIdeaModal({
         alert('Please select at least 2 assets for the pairs trade')
         return
       }
-      createPairTrade({
+      await createPairTradeAsync({
         portfolioId: primaryPortfolioId!,
         name: pairTradeName || autoGeneratePairTradeName,
         description: pairTradeDescription,

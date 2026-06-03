@@ -11,11 +11,13 @@ import {
   X, ChevronDown, ChevronRight, CheckCircle2,
   FileText, Lightbulb, Star,
   BookOpen, Sparkles, PenLine, Tag, List,
+  LayoutGrid, MessageSquarePlus, UserPlus,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 
 interface PilotWelcomeBannerProps {
@@ -36,6 +38,13 @@ interface TutorialStep {
 export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
+  // Post-graduation steps live in users.pilot_progress (server-side, keyed
+  // per org) so completion carries across hostnames / browsers / devices.
+  const {
+    hasCompletedPostGradAppLauncher,
+    hasCompletedPostGradFeedback,
+    hasCompletedPostGradRecommend,
+  } = usePilotProgress()
 
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(`pilot-banner-dismissed-${currentOrgId}`) === 'true' } catch { return false }
@@ -284,9 +293,25 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
   }
 
   const steps: TutorialStep[] = [
-    // Open the idea feed first — it's the team's running stream of
-    // thoughts/notes/trade ideas. Seeing what's already in motion
-    // grounds the rest of the Get Started flow.
+    // Open the app launcher FIRST — it's the user's map to everything
+    // else Tesseract can do, so it makes sense as the first move into
+    // the broader app after the guided pilot loop. Ticks off when the
+    // launcher is opened.
+    {
+      id: 'open-app-launcher',
+      label: 'Open the app launcher',
+      description: 'Browse everything else Tesseract can do from the top-left launcher.',
+      hint: 'Click the Tesseract logo in the top-left to expand the launcher.',
+      icon: LayoutGrid,
+      done: hasCompletedPostGradAppLauncher,
+      action: () => {
+        try { window.dispatchEvent(new CustomEvent('open-app-launcher')) } catch { /* ignore */ }
+      },
+      category: 'discover',
+    },
+    // Then the idea feed — the team's running stream of thoughts /
+    // notes / trade ideas. Seeing what's already in motion grounds the
+    // rest of the Get Started flow.
     {
       id: 'view-idea-feed',
       label: 'View idea feed',
@@ -396,6 +421,35 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
       done: progress.hasList,
       action: () => onNavigate({ type: 'lists', id: 'lists', title: 'Lists', data: {} }),
       category: 'discover',
+    },
+    // Post-graduation onboarding — additional steps surfaced once the
+    // user has finished the pilot loop. App-launcher lives at the TOP
+    // of the list (see above); these two trail at the end. State is
+    // per-(user, org) in users.pilot_progress so it carries across
+    // hostnames / browsers / devices.
+    {
+      id: 'provide-feedback',
+      label: 'Provide feedback',
+      description: 'Tell us what\'s working and what\'s not — it shapes the next release.',
+      hint: 'Opens the feedback widget.',
+      icon: MessageSquarePlus,
+      done: hasCompletedPostGradFeedback,
+      action: () => {
+        try { window.dispatchEvent(new CustomEvent('open-feedback-widget')) } catch { /* ignore */ }
+      },
+      category: 'collaborate',
+    },
+    {
+      id: 'recommend-user',
+      label: 'Recommend a user',
+      description: 'Invite another investor or analyst who\'d get value from Tesseract.',
+      hint: 'Opens the refer-a-friend form.',
+      icon: UserPlus,
+      done: hasCompletedPostGradRecommend,
+      action: () => {
+        try { window.dispatchEvent(new CustomEvent('open-feedback-widget', { detail: { type: 'referral' } })) } catch { /* ignore */ }
+      },
+      category: 'collaborate',
     },
   ]
 

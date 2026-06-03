@@ -87,41 +87,56 @@ export function Layout({
     })
   }, [onSearchResult])
 
+  // Each toolbar button toggles its own view: clicking when its view is
+  // already open closes the right pane; clicking otherwise opens it on
+  // that view. Previously the same click always opened, never closed —
+  // users had no obvious way to dismiss the pane without clicking some
+  // other view first.
   const handleShowNotifications = () => {
-    setCommPaneView('notifications')
-    if (!isCommPaneOpen) {
+    if (isCommPaneOpen && commPaneView === 'notifications') {
       toggleCommPane()
+      return
     }
+    setCommPaneView('notifications')
+    if (!isCommPaneOpen) toggleCommPane()
   }
 
   const handleShowDirectMessages = () => {
-    setCommPaneView('direct-messages')
-    if (!isCommPaneOpen) {
+    if (isCommPaneOpen && commPaneView === 'direct-messages') {
       toggleCommPane()
+      return
     }
+    setCommPaneView('direct-messages')
+    if (!isCommPaneOpen) toggleCommPane()
   }
 
   const handleShowProfile = () => {
-    setCommPaneView('profile')
-    if (!isCommPaneOpen) {
+    if (isCommPaneOpen && commPaneView === 'profile') {
       toggleCommPane()
+      return
     }
+    setCommPaneView('profile')
+    if (!isCommPaneOpen) toggleCommPane()
   }
 
   const handleShowAI = () => {
-    setCommPaneView('ai')
-    if (!isCommPaneOpen) {
+    if (isCommPaneOpen && commPaneView === 'ai') {
       toggleCommPane()
+      return
     }
+    setCommPaneView('ai')
+    if (!isCommPaneOpen) toggleCommPane()
   }
 
   const handleShowThoughts = () => {
+    if (isCommPaneOpen && commPaneView === 'thoughts') {
+      toggleCommPane()
+      return
+    }
     // Use sidebar store to open in capture mode
     openCaptureSidebar()
     setCommPaneView('thoughts')
-    if (!isCommPaneOpen) {
-      toggleCommPane()
-    }
+    if (!isCommPaneOpen) toggleCommPane()
   }
 
   const handleNotificationClick = useCallback((notification: any) => {

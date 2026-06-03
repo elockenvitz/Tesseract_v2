@@ -291,7 +291,14 @@ export function Header({
             {/* App Launcher — icon only */}
             <div className="relative" ref={appMenuRef}>
               <button
-                onClick={() => setShowAppMenu(!showAppMenu)}
+                onClick={() => {
+                  setShowAppMenu(!showAppMenu)
+                  // Tick off post-graduation Get Started step 1.
+                  // PilotPostGradGetStarted listens for this and marks
+                  // the stage; markStage is self-deduped so re-clicks
+                  // don't repeatedly hit the DB.
+                  window.dispatchEvent(new CustomEvent('pilot-postgrad:app-launcher-opened'))
+                }}
                 className="flex items-center justify-center w-9 h-9 -ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 aria-label="App launcher"
                 title="App launcher"

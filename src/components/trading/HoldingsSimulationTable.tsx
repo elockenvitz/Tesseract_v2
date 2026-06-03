@@ -90,19 +90,27 @@ interface ColDef {
   width?: string
 }
 
+// Explicit widths so the table can use `table-fixed` layout — once the table
+// stops being content-driven, entering a sim weight (which adds content to
+// the Sim Wt / Sim Shrs / Sim $ / Δ ... columns and the action badge in
+// Symbol) no longer shoves every column to the right.
+//
+// Name has no width: with table-fixed, columns without an explicit width
+// share whatever space is left after the fixed columns claim theirs, so
+// Name absorbs all the slack from the parent.
 const COLUMNS: ColDef[] = [
-  { key: 'SYMBOL',        label: 'Symbol',    align: 'left',  sortable: true,  filterable: true, width: 'w-0' },
+  { key: 'SYMBOL',        label: 'Symbol',    align: 'left',  sortable: true,  filterable: true, width: 'w-36' },
   { key: 'NAME',          label: 'Name',      align: 'left',  sortable: true,  filterable: true },
-  { key: 'SHARES',        label: 'Shares',    align: 'right', sortable: true,  filterable: true },
-  { key: 'WEIGHT',        label: 'Wt%',       align: 'right', sortable: true,  filterable: true },
-  { key: 'BENCH',         label: 'Bench',     align: 'right', sortable: true,  filterable: true },
-  { key: 'ACTIVE',        label: 'Active',    align: 'right', sortable: true,  filterable: true },
-  { key: 'SIM_WT',        label: 'Sim Wt',    align: 'right', sortable: true,  filterable: true },
-  { key: 'SIM_SHARES',    label: 'Sim Shrs',  align: 'right', sortable: true,  filterable: true },
-  { key: 'SIM_NOTIONAL',  label: 'Sim $',     align: 'right', sortable: true,  filterable: true },
-  { key: 'DELTA_WT',      label: 'Δ Wt',      align: 'right', sortable: true,  filterable: true },
-  { key: 'DELTA_SHARES',  label: 'Δ Shrs',    align: 'right', sortable: true,  filterable: true },
-  { key: 'DELTA_NOTIONAL', label: 'Δ $',      align: 'right', sortable: true,  filterable: true },
+  { key: 'SHARES',        label: 'Shares',    align: 'right', sortable: true,  filterable: true, width: 'w-24' },
+  { key: 'WEIGHT',        label: 'Wt%',       align: 'right', sortable: true,  filterable: true, width: 'w-16' },
+  { key: 'BENCH',         label: 'Bench',     align: 'right', sortable: true,  filterable: true, width: 'w-16' },
+  { key: 'ACTIVE',        label: 'Active',    align: 'right', sortable: true,  filterable: true, width: 'w-16' },
+  { key: 'SIM_WT',        label: 'Sim Wt',    align: 'right', sortable: true,  filterable: true, width: 'w-20' },
+  { key: 'SIM_SHARES',    label: 'Sim Shrs',  align: 'right', sortable: true,  filterable: true, width: 'w-24' },
+  { key: 'SIM_NOTIONAL',  label: 'Sim $',     align: 'right', sortable: true,  filterable: true, width: 'w-28' },
+  { key: 'DELTA_WT',      label: 'Δ Wt',      align: 'right', sortable: true,  filterable: true, width: 'w-20' },
+  { key: 'DELTA_SHARES',  label: 'Δ Shrs',    align: 'right', sortable: true,  filterable: true, width: 'w-24' },
+  { key: 'DELTA_NOTIONAL', label: 'Δ $',      align: 'right', sortable: true,  filterable: true, width: 'w-28' },
 ]
 
 // =============================================================================
@@ -311,6 +319,12 @@ export interface HoldingsSimulationTableProps {
    *  a "↔ pair" badge alongside the symbol. Derived from trade_queue_items
    *  pair_id/pair_leg_type in SimulationPage. */
   pairInfoByAsset?: Map<string, import('../../lib/trade-lab/pair-info').PairLegInfo>
+  /** Asset IDs the parent has explicitly removed in the last few hundred ms
+   *  (uncheck in trade-ideas panel, Delete key, etc.). stableRows drops these
+   *  immediately instead of granting the usual one-render grace period —
+   *  the grace exists for cache churn during background refetches, not for
+   *  user-initiated removes which should feel instant. */
+  recentlyRemovedAssetIds?: Set<string>
 }
 
 // =============================================================================
@@ -330,12 +344,15 @@ function HoldingRow({
   suggestMode, onSubmitSuggestion, pendingSuggestions, onOpenSuggestionReview,
   promoteSelected, onTogglePromote, showCheckboxCol,
   pairInfo,
+  isHighlighted,
 }: {
   row: SimulationRow
   rowIndex: number
   isEven: boolean
   focusedCol: number | null
   isEditing: boolean
+  /** Brief background pulse so freshly-added or quick-nav'd rows stand out. */
+  isHighlighted?: boolean
   onUpdateVariant: (variantId: string, updates: { action?: TradeAction; sizingInput?: string }) => void
   onFocusCell: (row: number, col: number) => void
   onStartEdit: () => void
@@ -615,21 +632,24 @@ function HoldingRow({
       className={clsx(
         'group/row transition-colors duration-75',
         isEven ? ROW_EVEN : ROW_ODD,
-        // New positions (not in baseline)
-        row.isNew && !isFocused && (action === 'sell' || action === 'trim'
+        // Row tint is determined by row state (new / sized / pending /
+        // removed). Cell focus is communicated separately by an outline
+        // ring at the cell level — we deliberately do NOT change row bg
+        // on focus, so a green "new position" row stays green when the
+        // user clicks into a cell instead of flipping to blue.
+        row.isNew && (action === 'sell' || action === 'trim'
           ? '!bg-red-50 dark:!bg-red-950/20'
           : '!bg-emerald-50 dark:!bg-emerald-950/20'),
-        // Existing positions with active sizing (ideas/recommendations)
-        !row.isNew && hasSizing && !isFocused && !row.isRemoved && (action === 'sell' || action === 'trim'
+        !row.isNew && hasSizing && !row.isRemoved && (action === 'sell' || action === 'trim'
           ? '!bg-amber-50/80 dark:!bg-amber-950/15'
           : '!bg-blue-50/80 dark:!bg-blue-950/15'),
-        // Pending-sizing tint (lighter than active sizing, only when not
-        // already painted by hasSizing / isNew branches above).
-        !row.isNew && !hasSizing && isPendingSizing && !isFocused && !row.isRemoved &&
+        !row.isNew && !hasSizing && isPendingSizing && !row.isRemoved &&
           '!bg-primary-50/40 dark:!bg-primary-950/10',
         row.isRemoved && '!bg-red-50 dark:!bg-red-950/20 opacity-50',
-        !isFocused && 'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
-        isFocused && '!bg-primary-50/40 dark:!bg-primary-950/10',
+        'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
+        // Transient pulse for newly-added rows + quick-nav targets. Wins
+        // over the row's natural tint while the highlight is active.
+        isHighlighted && '!bg-primary-100/80 dark:!bg-primary-900/40 transition-colors duration-300',
       )}
     >
       {/* CHECKBOX column — only present when bulk-promote mode is active.
@@ -656,28 +676,38 @@ function HoldingRow({
         className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap', leftBorder, cf(COL.SYMBOL))}
         onClick={() => onFocusCell(rowIndex, COL.SYMBOL)}
       >
+        {/* Symbol column width is fixed by COLUMNS[].width on the header
+            (table-fixed layout). Inner div is min-w-0 so the symbol text
+            can truncate within the fixed column if it's longer than the
+            allotted space. The badge slot is always rendered (toggled with
+            `invisible`) so the cell content width doesn't change when
+            sizing arrives — and table-fixed wouldn't reflow on that anyway. */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
             {row.symbol}
           </span>
-          {hasSizing && v && (
-            <span className="flex-shrink-0 flex items-center gap-0.5">
-              <span
-                className={clsx(
-                  'px-1.5 py-px rounded-full text-[8px] font-bold uppercase tracking-wide text-center select-none shadow-sm whitespace-nowrap',
-                  ACTION_BG[action],
-                )}
-              >{actionLabel(action, row.isNew, row.isRemoved)}</span>
-              {row.hasIdeaDirectionConflict && !row.hasConflict && (
-                <span
-                  title={`Sizing conflicts with idea direction — idea intends to ${row.deltaShares > 0 ? 'sell/reduce' : 'buy/add'} but current sizing ${row.deltaShares > 0 ? 'increases' : 'decreases'} exposure`}
-                  className="cursor-help"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                </span>
+          <span
+            className={clsx(
+              'flex-shrink-0 flex items-center gap-0.5',
+              !(hasSizing && v) && 'invisible',
+            )}
+            aria-hidden={!(hasSizing && v)}
+          >
+            <span
+              className={clsx(
+                'px-1.5 py-px rounded-full text-[8px] font-bold uppercase tracking-wide text-center select-none shadow-sm whitespace-nowrap',
+                hasSizing && v ? ACTION_BG[action] : 'bg-gray-200 dark:bg-gray-700 text-transparent',
               )}
-            </span>
-          )}
+            >{hasSizing && v ? actionLabel(action, row.isNew, row.isRemoved) : 'REDUCE'}</span>
+            {hasSizing && v && row.hasIdeaDirectionConflict && !row.hasConflict && (
+              <span
+                title={`Sizing conflicts with idea direction — idea intends to ${row.deltaShares > 0 ? 'sell/reduce' : 'buy/add'} but current sizing ${row.deltaShares > 0 ? 'increases' : 'decreases'} exposure`}
+                className="cursor-help"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+              </span>
+            )}
+          </span>
           {row.acceptedTrade && (
             <AcceptedTradeBadge
               executionStatus={row.acceptedTrade.execution_status as ExecutionStatus}
@@ -941,6 +971,7 @@ export function HoldingsSimulationTable({
   suggestMode, onSubmitSuggestion, pendingSuggestionsByAsset, pendingSuggestionCount, onOpenSuggestionReview,
   onBulkPromote, isBulkPromoting, decisionConfirmationOpen,
   pairInfoByAsset,
+  recentlyRemovedAssetIds,
 }: HoldingsSimulationTableProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<GroupBy>('none')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -949,6 +980,15 @@ export function HoldingsSimulationTable({
   const [editing, setEditing] = useState(false)
   const [pendingEditAssetId, setPendingEditAssetId] = useState<string | null>(null)
   const [pendingEditCol, setPendingEditCol] = useState(COL.SIM_WT)
+  // Asset currently flashing a "just added / just navigated to" highlight.
+  // Set by navigateToAsset(); cleared by a short timer.
+  const [highlightedAssetId, setHighlightedAssetId] = useState<string | null>(null)
+  // Count of variants added in the last ~3s — drives the transient "new"
+  // pill in the footer summary so a user scrolled elsewhere notices the add.
+  const [recentlyAddedCount, setRecentlyAddedCount] = useState(0)
+  // Snapshot of which asset_ids had variants on the prior render. null on
+  // first render so initial population doesn't trigger a flash.
+  const prevVariantAssetsRef = useRef<Set<string> | null>(null)
 
   // Execute confirmation modal
   const [showExecuteConfirm, setShowExecuteConfirm] = useState(false)
@@ -1173,6 +1213,12 @@ export function HoldingsSimulationTable({
       if (row) {
         result.push(row)
         seen.add(id)
+      } else if (recentlyRemovedAssetIds?.has(id)) {
+        // Parent has explicitly removed this asset (uncheck / Delete /
+        // etc.) — drop instantly with no grace so the table feels
+        // responsive. Grace is reserved for cache churn during background
+        // refetches, not user-initiated removes.
+        continue
       } else if (!prevGrace.has(id)) {
         // First render missing — grace: retain last known version
         const prev = prevSnapshot.get(id)
@@ -1198,7 +1244,7 @@ export function HoldingsSimulationTable({
     lastRowSnapshotRef.current = new Map(result.map(r => [r.asset_id, r]))
 
     return result
-  }, [rows])
+  }, [rows, recentlyRemovedAssetIds])
 
   const groupBy = externalGroupBy ?? internalGroupBy
   const handleGroupByChange = onGroupByChange ?? setInternalGroupBy
@@ -1548,6 +1594,56 @@ export function HoldingsSimulationTable({
     }
   }, [editing, focusRow, cleanupEmptyVariant, onCreateVariant, readOnly, suggestMode, displayRows])
 
+  // Scroll a specific asset into view + flash a highlight. Used both for
+  // quick-nav from the footer trade list and for auto-flash when a new
+  // variant arrives off-screen.
+  const navigateToAsset = useCallback((assetId: string) => {
+    const idx = displayRows.findIndex(r => r.asset_id === assetId)
+    if (idx < 0) return
+    setFocusRow(idx)
+    // Scroll directly — the existing focus-row scroll effect only fires for
+    // keyboard navigation and only when focusRow actually changes.
+    // `block: 'center'` (not 'nearest') so the row lands mid-viewport and
+    // isn't immediately covered by the sticky <tfoot> summary bar.
+    requestAnimationFrame(() => {
+      rowRefs.current.get(idx)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+    setHighlightedAssetId(assetId)
+    setTimeout(() => {
+      setHighlightedAssetId(prev => (prev === assetId ? null : prev))
+    }, 1800)
+  }, [displayRows])
+
+  // Detect newly-added variants in displayRows; scroll + flash them so a
+  // user scrolled elsewhere sees the addition. First-ever non-empty render
+  // is treated as initial population (no flash on load).
+  useEffect(() => {
+    const currentIds = new Set<string>()
+    displayRows.forEach(r => { if (r.variant) currentIds.add(r.asset_id) })
+
+    if (prevVariantAssetsRef.current === null) {
+      // Always snapshot on the first effect run — even if empty — so the
+      // user's first check after page load gets diffed as "new" instead
+      // of being swallowed by the initial-population branch.
+      prevVariantAssetsRef.current = currentIds
+      return
+    }
+
+    const newIds: string[] = []
+    currentIds.forEach(id => {
+      if (!prevVariantAssetsRef.current!.has(id)) newIds.push(id)
+    })
+
+    if (newIds.length > 0) {
+      navigateToAsset(newIds[newIds.length - 1])
+      setRecentlyAddedCount(c => c + newIds.length)
+      setTimeout(() => {
+        setRecentlyAddedCount(c => Math.max(0, c - newIds.length))
+      }, 3000)
+    }
+    prevVariantAssetsRef.current = currentIds
+  }, [displayRows, navigateToAsset])
+
   const handleStopEdit = useCallback((committedValue?: string) => {
     if (suggestMode) {
       setEditing(false)
@@ -1643,6 +1739,7 @@ export function HoldingsSimulationTable({
       onTogglePromote={!readOnly && !suggestMode && onBulkPromote ? togglePromoteSelection : undefined}
       showCheckboxCol={showCheckboxCol}
       pairInfo={pairInfoByAsset?.get(row.asset_id)}
+      isHighlighted={highlightedAssetId === row.asset_id}
     />
   )
 
@@ -1890,7 +1987,7 @@ export function HoldingsSimulationTable({
             don't render in this box model, so row separators have to live
             on the tds. The filter row, cash row, phantom row, and tfoot
             are all migrated accordingly. */}
-        <table className="w-full border-separate border-spacing-0">
+        <table className="w-full table-fixed border-separate border-spacing-0">
           <thead className="sticky top-0 z-20 bg-white dark:bg-gray-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
             {/* Column headers */}
             <tr className="bg-white dark:bg-gray-900">
@@ -2189,6 +2286,14 @@ export function HoldingsSimulationTable({
                     <span>
                       <span className="font-semibold text-gray-700 dark:text-gray-300">{summary.totalPositions}</span> positions
                     </span>
+                    {recentlyAddedCount > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-semibold text-[10px] animate-pulse"
+                        title="Recently added — open the trade list below to navigate"
+                      >
+                        +{recentlyAddedCount} new
+                      </span>
+                    )}
                     {summary.tradedCount > 0 && (
                       <>
                         <span className="text-gray-300 dark:text-gray-600">&middot;</span>
@@ -2283,7 +2388,15 @@ export function HoldingsSimulationTable({
                             const action = row.derivedAction
                             const isBuy = action === 'buy' || action === 'add'
                             return (
-                              <tr key={row.asset_id} className={clsx(i % 2 === 0 ? ROW_EVEN : ROW_ODD)}>
+                              <tr
+                                key={row.asset_id}
+                                onClick={() => navigateToAsset(row.asset_id)}
+                                className={clsx(
+                                  i % 2 === 0 ? ROW_EVEN : ROW_ODD,
+                                  'cursor-pointer hover:!bg-primary-50 dark:hover:!bg-primary-900/20 transition-colors',
+                                )}
+                                title="Jump to this row in the table"
+                              >
                                 <td className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-700/30">
                                   <span className={clsx(
                                     'inline-block font-bold uppercase text-[8px] px-1.5 py-0.5 rounded-full whitespace-nowrap',

@@ -39,6 +39,20 @@ export type PilotStage =
   | 'trade_book_unlocked'
   | 'outcomes_unlocked'
   | 'graduated'
+  // Idea Pipeline Get Started banner — previously stored in localStorage,
+  // which meant completing the steps on one hostname (localhost) didn't
+  // carry over to another (Netlify deploy preview, another browser, etc.).
+  | 'pipeline_banner_dismissed'
+  | 'pipeline_step_moved'
+  | 'pipeline_step_inbox'
+  | 'pipeline_step_tradelab'
+  // Post-graduation Get Started banner — surfaces only AFTER the user
+  // has completed the Pipeline → Trade Lab → Trade Book → Outcomes loop
+  // (i.e., `graduated_at_<orgId>` is set). Each step ticks off when the
+  // user OPENS the corresponding UI; auto-retires when all three are done.
+  | 'post_grad_step_app_launcher'
+  | 'post_grad_step_feedback'
+  | 'post_grad_step_recommend'
 
 export interface PilotProgress {
   /** @deprecated user-level legacy keys, no longer read or written.
@@ -58,12 +72,26 @@ export interface PilotProgress {
 const tradeBookUnlockedKey = (orgId: string | null) => `trade_book_unlocked_at_${orgId || 'no-org'}`
 const outcomesUnlockedKey  = (orgId: string | null) => `outcomes_unlocked_at_${orgId || 'no-org'}`
 const graduatedKey         = (orgId: string | null) => `graduated_at_${orgId || 'no-org'}`
+const pipelineBannerDismissedKey = (orgId: string | null) => `pipeline_banner_dismissed_at_${orgId || 'no-org'}`
+const pipelineStepMovedKey       = (orgId: string | null) => `pipeline_step_moved_at_${orgId || 'no-org'}`
+const pipelineStepInboxKey       = (orgId: string | null) => `pipeline_step_inbox_at_${orgId || 'no-org'}`
+const pipelineStepTradeLabKey    = (orgId: string | null) => `pipeline_step_tradelab_at_${orgId || 'no-org'}`
+const postGradAppLauncherKey     = (orgId: string | null) => `post_grad_step_app_launcher_at_${orgId || 'no-org'}`
+const postGradFeedbackKey        = (orgId: string | null) => `post_grad_step_feedback_at_${orgId || 'no-org'}`
+const postGradRecommendKey       = (orgId: string | null) => `post_grad_step_recommend_at_${orgId || 'no-org'}`
 
 const stageToKey = (stage: PilotStage, orgId: string | null): string => {
   switch (stage) {
-    case 'trade_book_unlocked': return tradeBookUnlockedKey(orgId)
-    case 'outcomes_unlocked':   return outcomesUnlockedKey(orgId)
-    case 'graduated':           return graduatedKey(orgId)
+    case 'trade_book_unlocked':        return tradeBookUnlockedKey(orgId)
+    case 'outcomes_unlocked':          return outcomesUnlockedKey(orgId)
+    case 'graduated':                  return graduatedKey(orgId)
+    case 'pipeline_banner_dismissed':  return pipelineBannerDismissedKey(orgId)
+    case 'pipeline_step_moved':        return pipelineStepMovedKey(orgId)
+    case 'pipeline_step_inbox':        return pipelineStepInboxKey(orgId)
+    case 'pipeline_step_tradelab':     return pipelineStepTradeLabKey(orgId)
+    case 'post_grad_step_app_launcher': return postGradAppLauncherKey(orgId)
+    case 'post_grad_step_feedback':     return postGradFeedbackKey(orgId)
+    case 'post_grad_step_recommend':    return postGradRecommendKey(orgId)
   }
 }
 
@@ -78,6 +106,14 @@ const STAGE_TO_EVENT: Record<PilotStage, string> = {
   trade_book_unlocked: 'pilot_trade_book_unlocked',
   outcomes_unlocked: 'pilot_outcomes_unlocked',
   graduated: 'pilot_graduated',
+  pipeline_banner_dismissed: 'pilot_pipeline_banner_dismissed',
+  // Event names below preserve the pre-server-migration TradeQueuePage telemetry.
+  pipeline_step_moved: 'pilot_pipeline_step_idea_dragged',
+  pipeline_step_inbox: 'pilot_pipeline_step_inbox_opened',
+  pipeline_step_tradelab: 'pilot_pipeline_step_tradelab_opened',
+  post_grad_step_app_launcher: 'pilot_post_grad_step_app_launcher',
+  post_grad_step_feedback:     'pilot_post_grad_step_feedback',
+  post_grad_step_recommend:    'pilot_post_grad_step_recommend',
 }
 
 export function usePilotProgress() {
@@ -292,6 +328,15 @@ export function usePilotProgress() {
       !!user?.id && (query.data !== undefined || userPilotProgress !== undefined),
     hasUnlockedTradeBook: !!progress[tradeBookUnlockedKey(currentOrgId)],
     hasUnlockedOutcomes: !!progress[outcomesUnlockedKey(currentOrgId)],
+    // Idea Pipeline Get Started banner — per-(user, org).
+    hasDismissedPipelineBanner: !!progress[pipelineBannerDismissedKey(currentOrgId)],
+    hasCompletedPipelineStepMoved:    !!progress[pipelineStepMovedKey(currentOrgId)],
+    hasCompletedPipelineStepInbox:    !!progress[pipelineStepInboxKey(currentOrgId)],
+    hasCompletedPipelineStepTradeLab: !!progress[pipelineStepTradeLabKey(currentOrgId)],
+    // Post-graduation Get Started — per-(user, org).
+    hasCompletedPostGradAppLauncher: !!progress[postGradAppLauncherKey(currentOrgId)],
+    hasCompletedPostGradFeedback:    !!progress[postGradFeedbackKey(currentOrgId)],
+    hasCompletedPostGradRecommend:   !!progress[postGradRecommendKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
      *  CURRENT org. Each new pilot client starts as not-yet-graduated
      *  even for an analyst who's graduated in prior clients. */

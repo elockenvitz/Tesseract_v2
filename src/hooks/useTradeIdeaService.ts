@@ -98,6 +98,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
 
   const invalidateQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+    queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
     queryClient.invalidateQueries({ queryKey: ['trade-detail'] })
     queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
     queryClient.invalidateQueries({ queryKey: ['audit-events'] })
@@ -202,6 +203,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
       // Background refetch to ensure consistency — staleTime on the list query
       // means this won't flash since the optimistic data is already correct
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
     },
   })
@@ -463,6 +465,7 @@ export function useTradeIdeaService(options: UseTradeIdeaServiceOptions = {}) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+      queryClient.invalidateQueries({ queryKey: ['trade-queue-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['pair-trades'] })
     },
   })
