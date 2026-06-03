@@ -44,7 +44,26 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
     hasCompletedPostGradAppLauncher,
     hasCompletedPostGradFeedback,
     hasCompletedPostGradRecommend,
+    mark: markPilotStage,
   } = usePilotProgress()
+
+  // Listen for the post-grad step "opened" events fired by the relevant
+  // UI surfaces (Header app launcher, FeedbackWidget open, FeedbackWidget
+  // refer tab). markPilotStage is server-side and self-deduped so each
+  // event only writes once per (user, org) — repeated opens are no-ops.
+  useEffect(() => {
+    const onLauncher = () => markPilotStage('post_grad_step_app_launcher')
+    const onFeedback = () => markPilotStage('post_grad_step_feedback')
+    const onRecommend = () => markPilotStage('post_grad_step_recommend')
+    window.addEventListener('pilot-postgrad:app-launcher-opened', onLauncher)
+    window.addEventListener('pilot-postgrad:feedback-opened', onFeedback)
+    window.addEventListener('pilot-postgrad:recommend-opened', onRecommend)
+    return () => {
+      window.removeEventListener('pilot-postgrad:app-launcher-opened', onLauncher)
+      window.removeEventListener('pilot-postgrad:feedback-opened', onFeedback)
+      window.removeEventListener('pilot-postgrad:recommend-opened', onRecommend)
+    }
+  }, [markPilotStage])
 
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(`pilot-banner-dismissed-${currentOrgId}`) === 'true' } catch { return false }
@@ -484,13 +503,11 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
               style={{ width: `${(completedCount / steps.length) * 100}%` }}
             />
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleDismiss() }}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded"
-            title="Dismiss"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {/* Get Started checklist intentionally has no dismiss control —
+              the 12 steps are the user's path into the rest of Tesseract,
+              and letting them X-out the checklist hid the only roadmap
+              to where the other features live. Banner auto-retires when
+              every step is complete via the allDoneForAutoDismiss effect. */}
         </div>
       </div>
 

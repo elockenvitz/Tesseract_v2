@@ -240,14 +240,10 @@ export function PilotOutcomesGetStarted({
             />
           </button>
         </div>
-        <button
-          onClick={dismiss}
-          className="ml-auto -my-1 p-1.5 rounded text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/60 dark:text-emerald-400 dark:hover:text-emerald-200 dark:hover:bg-emerald-900/30 transition-colors shrink-0"
-          title="Dismiss"
-          aria-label="Dismiss Outcomes intro"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {/* Banner intentionally has no dismiss control — Outcomes is the
+            terminal stage of the pilot loop, and each step guides the
+            user through what graduation actually unlocks. Auto-retires
+            once all steps complete. */}
       </div>
     </div>
   )
