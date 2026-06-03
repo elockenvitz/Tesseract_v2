@@ -355,22 +355,30 @@ export function TradeQueuePage() {
     })
   }
 
-  // Fetch trade queue items
+  // Fetch trade queue items — strictly scoped to the current org via the
+  // inner-joined portfolios filter. RLS alone allows reads across every
+  // org the user belongs to, so a multi-pilot tester would see Tester
+  // Capital's CVX on AAAAA's kanban. Portfolio-less rows have no org by
+  // definition, so they don't belong on any org's pipeline view either —
+  // they're reachable via the asset page / direct URL if the user needs
+  // to attach them later.
   const { data: tradeItems, isLoading, error } = useQuery({
-    queryKey: ['trade-queue-items'],
+    queryKey: ['trade-queue-items', currentOrgId],
     queryFn: async () => {
+      if (!currentOrgId) return [] as TradeQueueItemWithDetails[]
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select(`
           *,
           assets (id, symbol, company_name, sector),
-          portfolios (id, name, portfolio_id),
+          portfolios!inner (id, name, portfolio_id, organization_id),
           users:created_by (id, email, first_name, last_name),
           trade_queue_comments (id),
           trade_queue_votes (id, vote),
           pair_trades (id, name, description, rationale, urgency, status)
         `)
         .eq('visibility_tier', 'active')
+        .eq('portfolios.organization_id', currentOrgId)
         .order('priority', { ascending: false })
         .order('created_at', { ascending: false })
 
