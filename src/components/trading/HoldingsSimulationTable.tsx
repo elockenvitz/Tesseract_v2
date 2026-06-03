@@ -665,34 +665,40 @@ function HoldingRow({
       )}
       {/* SYMBOL */}
       <td
-        className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap', leftBorder, cf(COL.SYMBOL))}
+        className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap min-w-[8.5rem]', leftBorder, cf(COL.SYMBOL))}
         onClick={() => onFocusCell(rowIndex, COL.SYMBOL)}
       >
-        {/* min-w reserves space for symbol + the widest action badge
-            ("Reduce" / "Close") so entering a sim weight doesn't grow the
-            column and push every other column rightward. */}
-        <div className="flex items-center gap-1.5 min-w-[7rem]">
+        {/* min-w on both the td and the inner div, plus a permanently-
+            rendered badge slot (visibility-based, not conditional render).
+            Tailwind's `invisible` keeps the slot in the layout so the
+            cell's natural width is identical with or without sizing — no
+            column reflow when the user enters a sim weight. */}
+        <div className="flex items-center gap-1.5 min-w-[8.5rem]">
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
             {row.symbol}
           </span>
-          {hasSizing && v && (
-            <span className="flex-shrink-0 flex items-center gap-0.5">
-              <span
-                className={clsx(
-                  'px-1.5 py-px rounded-full text-[8px] font-bold uppercase tracking-wide text-center select-none shadow-sm whitespace-nowrap',
-                  ACTION_BG[action],
-                )}
-              >{actionLabel(action, row.isNew, row.isRemoved)}</span>
-              {row.hasIdeaDirectionConflict && !row.hasConflict && (
-                <span
-                  title={`Sizing conflicts with idea direction — idea intends to ${row.deltaShares > 0 ? 'sell/reduce' : 'buy/add'} but current sizing ${row.deltaShares > 0 ? 'increases' : 'decreases'} exposure`}
-                  className="cursor-help"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                </span>
+          <span
+            className={clsx(
+              'flex-shrink-0 flex items-center gap-0.5',
+              !(hasSizing && v) && 'invisible',
+            )}
+            aria-hidden={!(hasSizing && v)}
+          >
+            <span
+              className={clsx(
+                'px-1.5 py-px rounded-full text-[8px] font-bold uppercase tracking-wide text-center select-none shadow-sm whitespace-nowrap',
+                hasSizing && v ? ACTION_BG[action] : 'bg-gray-200 dark:bg-gray-700 text-transparent',
               )}
-            </span>
-          )}
+            >{hasSizing && v ? actionLabel(action, row.isNew, row.isRemoved) : 'REDUCE'}</span>
+            {hasSizing && v && row.hasIdeaDirectionConflict && !row.hasConflict && (
+              <span
+                title={`Sizing conflicts with idea direction — idea intends to ${row.deltaShares > 0 ? 'sell/reduce' : 'buy/add'} but current sizing ${row.deltaShares > 0 ? 'increases' : 'decreases'} exposure`}
+                className="cursor-help"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+              </span>
+            )}
+          </span>
           {row.acceptedTrade && (
             <AcceptedTradeBadge
               executionStatus={row.acceptedTrade.execution_status as ExecutionStatus}
