@@ -257,25 +257,20 @@ export function PilotActionDashboard({
       //      show up — and we don't leak cross-org because the join
       //      ties results to `currentOrg.id`.
       if (!currentOrg?.id) return []
-      // LEFT JOIN portfolios (no `!inner`) so trade ideas with
-      // portfolio_id=NULL (free-floating user captures the assignee/
-      // creator can see by RLS) aren't excluded from the dashboard's
-      // Capture/Develop counts. Without this, a portfolio-less idea
-      // satisfies the right-pane Get Started step but never advances
-      // the System Loop strip from Capture → Develop.
-      let q = supabase
+      // Scope by trade_queue_items.organization_id (canonical column added
+      // in 20260603020000_trade_queue_items_organization_id.sql). The
+      // BEFORE INSERT trigger stamps this from the portfolio's org for
+      // portfolio-pinned items and from users.current_organization_id for
+      // free-floating captures, so a single column filter catches both:
+      // every idea the user has tied to this org counts toward Capture,
+      // and orphans from other orgs (or whose org was deleted) don't
+      // leak in.
+      const q = supabase
         .from('trade_queue_items')
-        .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name), portfolio:portfolios(id, organization_id)')
+        .select('id, stage, status, created_at, stage_changed_at, origin_metadata, asset:assets(symbol, company_name)')
         .eq('visibility_tier', 'active')
         .in('status', ['idea', 'discussing', 'simulating', 'deciding'])
-      if (pilotPortfolioId) {
-        q = q.eq('portfolio_id', pilotPortfolioId)
-      } else {
-        // Portfolio-less ideas (portfolio_id IS NULL) OR ideas attached
-        // to a portfolio in the current org. RLS already restricts the
-        // null-portfolio set to the creator/assignee, so we don't leak.
-        q = q.or(`portfolio_id.is.null,portfolio.organization_id.eq.${currentOrg.id}`)
-      }
+        .eq('organization_id', currentOrg.id)
       const { data, error } = await q
         .order('stage_changed_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -350,28 +345,20 @@ export function PilotActionDashboard({
     // stage strip to hitch after paint.
     staleTime: 30_000,
     queryFn: async () => {
-      // Same two-mode scoping as `pipelineItems` above. When the pilot
-      // scenario hasn't pinned a portfolio yet, fall back to org-scope
-      // via the portfolios!inner join so freshly captured ideas show up
-      // in Capture without waiting on the seed (and without leaking
-      // cross-org).
-      // Same LEFT-JOIN treatment as pipelineItems above — without it,
-      // a portfolio-less idea (created from the right-pane capture form,
-      // where the user didn't pick a portfolio) is excluded from
-      // userCaptured.ideas, and hasUserIdea stays false even though the
-      // user clearly captured something.
-      const tqSelect = pilotPortfolioId
-        ? 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata'
-        : 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata, portfolio:portfolios(id, organization_id)'
+      // Scope by trade_queue_items.organization_id like pipelineItems
+      // above. Any idea the user has tied to this org counts toward
+      // Capture, whether it has a portfolio or not — so submitting a
+      // portfolio-less idea from the right-pane Quick Capture form now
+      // advances the System Loop from Capture → Develop, instead of
+      // being silently excluded by the strict portfolio_id filter.
+      const tqSelect = 'id, created_at, stage, asset:assets(symbol, company_name), origin_metadata'
       let tqQuery = supabase
         .from('trade_queue_items')
         .select(tqSelect)
         .eq('visibility_tier', 'active')
         .eq('created_by', user!.id)
-      if (pilotPortfolioId) {
-        tqQuery = tqQuery.eq('portfolio_id', pilotPortfolioId)
-      } else if (currentOrg?.id) {
-        tqQuery = tqQuery.or(`portfolio_id.is.null,portfolio.organization_id.eq.${currentOrg.id}`)
+      if (currentOrg?.id) {
+        tqQuery = tqQuery.eq('organization_id', currentOrg.id)
       }
       tqQuery = tqQuery.order('created_at', { ascending: false }).limit(10)
 
