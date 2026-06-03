@@ -34,7 +34,6 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { usePilotMode } from '../../hooks/usePilotMode'
-import { PilotPostGradGetStarted } from './PilotPostGradGetStarted'
 import { usePilotScenarioStatus, type PilotScenarioState } from '../../hooks/usePilotScenarioStatus'
 
 interface PilotActionDashboardProps {
@@ -644,11 +643,6 @@ export function PilotActionDashboard({
   return (
     <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900">
       <div className="max-w-6xl mx-auto p-6 space-y-5">
-
-        {/* Post-graduation Get Started — only renders once the user has
-            graduated (and not yet completed the three post-grad steps).
-            Sits above the page header so it's the first thing they see. */}
-        <PilotPostGradGetStarted />
 
         {/* ── Page header ────────────────────────────────────────
             H1 + a single supporting subtitle. The loop tagline is

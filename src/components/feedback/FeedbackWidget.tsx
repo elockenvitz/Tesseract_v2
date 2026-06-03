@@ -6,7 +6,7 @@
  * so ops can review from the same queue.
  */
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
   MessageSquarePlus, X, Bug, Lightbulb, HelpCircle, UserPlus,
@@ -46,6 +46,27 @@ export function FeedbackWidget() {
   const [friendNote, setFriendNote] = useState('')
 
   const [submitted, setSubmitted] = useState(false)
+
+  // Other surfaces (e.g. PilotWelcomeBanner steps) can open the widget
+  // via a window event so they don't need to wire a ref or prop through
+  // to here. Optional `detail.type` switches the form to a specific tab
+  // ('referral' for the recommend-a-teammate step).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ type?: FeedbackType }>).detail
+      if (detail?.type) setType(detail.type)
+      setIsOpen(true)
+      // Fire the same telemetry events the toolbar buttons fire so the
+      // post-graduation Get Started steps tick off identically regardless
+      // of where the user opened the widget from.
+      window.dispatchEvent(new CustomEvent('pilot-postgrad:feedback-opened'))
+      if (detail?.type === 'referral') {
+        window.dispatchEvent(new CustomEvent('pilot-postgrad:recommend-opened'))
+      }
+    }
+    window.addEventListener('open-feedback-widget', handler)
+    return () => window.removeEventListener('open-feedback-widget', handler)
+  }, [])
 
   const resetFields = useCallback(() => {
     setTitle('')
