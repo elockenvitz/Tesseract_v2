@@ -46,6 +46,13 @@ export type PilotStage =
   | 'pipeline_step_moved'
   | 'pipeline_step_inbox'
   | 'pipeline_step_tradelab'
+  // Post-graduation Get Started banner — surfaces only AFTER the user
+  // has completed the Pipeline → Trade Lab → Trade Book → Outcomes loop
+  // (i.e., `graduated_at_<orgId>` is set). Each step ticks off when the
+  // user OPENS the corresponding UI; auto-retires when all three are done.
+  | 'post_grad_step_app_launcher'
+  | 'post_grad_step_feedback'
+  | 'post_grad_step_recommend'
 
 export interface PilotProgress {
   /** @deprecated user-level legacy keys, no longer read or written.
@@ -69,6 +76,9 @@ const pipelineBannerDismissedKey = (orgId: string | null) => `pipeline_banner_di
 const pipelineStepMovedKey       = (orgId: string | null) => `pipeline_step_moved_at_${orgId || 'no-org'}`
 const pipelineStepInboxKey       = (orgId: string | null) => `pipeline_step_inbox_at_${orgId || 'no-org'}`
 const pipelineStepTradeLabKey    = (orgId: string | null) => `pipeline_step_tradelab_at_${orgId || 'no-org'}`
+const postGradAppLauncherKey     = (orgId: string | null) => `post_grad_step_app_launcher_at_${orgId || 'no-org'}`
+const postGradFeedbackKey        = (orgId: string | null) => `post_grad_step_feedback_at_${orgId || 'no-org'}`
+const postGradRecommendKey       = (orgId: string | null) => `post_grad_step_recommend_at_${orgId || 'no-org'}`
 
 const stageToKey = (stage: PilotStage, orgId: string | null): string => {
   switch (stage) {
@@ -79,6 +89,9 @@ const stageToKey = (stage: PilotStage, orgId: string | null): string => {
     case 'pipeline_step_moved':        return pipelineStepMovedKey(orgId)
     case 'pipeline_step_inbox':        return pipelineStepInboxKey(orgId)
     case 'pipeline_step_tradelab':     return pipelineStepTradeLabKey(orgId)
+    case 'post_grad_step_app_launcher': return postGradAppLauncherKey(orgId)
+    case 'post_grad_step_feedback':     return postGradFeedbackKey(orgId)
+    case 'post_grad_step_recommend':    return postGradRecommendKey(orgId)
   }
 }
 
@@ -98,6 +111,9 @@ const STAGE_TO_EVENT: Record<PilotStage, string> = {
   pipeline_step_moved: 'pilot_pipeline_step_idea_dragged',
   pipeline_step_inbox: 'pilot_pipeline_step_inbox_opened',
   pipeline_step_tradelab: 'pilot_pipeline_step_tradelab_opened',
+  post_grad_step_app_launcher: 'pilot_post_grad_step_app_launcher',
+  post_grad_step_feedback:     'pilot_post_grad_step_feedback',
+  post_grad_step_recommend:    'pilot_post_grad_step_recommend',
 }
 
 export function usePilotProgress() {
@@ -317,6 +333,10 @@ export function usePilotProgress() {
     hasCompletedPipelineStepMoved:    !!progress[pipelineStepMovedKey(currentOrgId)],
     hasCompletedPipelineStepInbox:    !!progress[pipelineStepInboxKey(currentOrgId)],
     hasCompletedPipelineStepTradeLab: !!progress[pipelineStepTradeLabKey(currentOrgId)],
+    // Post-graduation Get Started — per-(user, org).
+    hasCompletedPostGradAppLauncher: !!progress[postGradAppLauncherKey(currentOrgId)],
+    hasCompletedPostGradFeedback:    !!progress[postGradFeedbackKey(currentOrgId)],
+    hasCompletedPostGradRecommend:   !!progress[postGradRecommendKey(currentOrgId)],
     /** Per-org: true only if the user has reached Outcomes in the
      *  CURRENT org. Each new pilot client starts as not-yet-graduated
      *  even for an analyst who's graduated in prior clients. */

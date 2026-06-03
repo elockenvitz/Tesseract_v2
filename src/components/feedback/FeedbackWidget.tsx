@@ -141,7 +141,13 @@ export function FeedbackWidget() {
           caps so it reads as an intentional button instead of a
           mysterious icon. */}
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          setIsOpen(true)
+          // Tick off post-graduation Get Started step 2 ("provide feedback").
+          // PilotPostGradGetStarted listens for this event; markStage is
+          // self-deduped so re-opens don't repeatedly hit the DB.
+          window.dispatchEvent(new CustomEvent('pilot-postgrad:feedback-opened'))
+        }}
         className={clsx(
           'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-colors',
           isOpen && 'hidden'
@@ -185,7 +191,15 @@ export function FeedbackWidget() {
                   return (
                     <button
                       key={ft.type}
-                      onClick={() => setType(ft.type)}
+                      onClick={() => {
+                        setType(ft.type)
+                        // Selecting "Refer" doubles as opening the
+                        // recommend-a-teammate flow for the post-grad
+                        // Get Started banner.
+                        if (ft.type === 'referral') {
+                          window.dispatchEvent(new CustomEvent('pilot-postgrad:recommend-opened'))
+                        }
+                      }}
                       className={clsx(
                         'flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border text-[11px] font-medium transition-all',
                         isActive ? ft.color : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
@@ -265,7 +279,12 @@ export function FeedbackWidget() {
                   {/* Soft nudge toward referrals */}
                   <button
                     type="button"
-                    onClick={() => setType('referral')}
+                    onClick={() => {
+                      setType('referral')
+                      // Tick off post-graduation Get Started step 3
+                      // ("recommend a teammate"). Self-deduped.
+                      window.dispatchEvent(new CustomEvent('pilot-postgrad:recommend-opened'))
+                    }}
                     className="w-full text-left text-[11px] text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
                   >
                     Know someone who'd be a great pilot user? Refer a friend →
