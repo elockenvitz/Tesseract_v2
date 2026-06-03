@@ -484,13 +484,11 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
               style={{ width: `${(completedCount / steps.length) * 100}%` }}
             />
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleDismiss() }}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded"
-            title="Dismiss"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {/* Get Started checklist intentionally has no dismiss control —
+              the 12 steps are the user's path into the rest of Tesseract,
+              and letting them X-out the checklist hid the only roadmap
+              to where the other features live. Banner auto-retires when
+              every step is complete via the allDoneForAutoDismiss effect. */}
         </div>
       </div>
 
