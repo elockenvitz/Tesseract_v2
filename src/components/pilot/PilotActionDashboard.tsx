@@ -559,8 +559,26 @@ export function PilotActionDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepDone.capture, stepDone.develop, stepDone.decide, stepDone.review, stepDone.analyze])
 
-  // Open stage = whatever the user clicked (defaults to active).
-  const [openKey, setOpenKey] = useState<StageKey>(activeKey)
+  // Combined readiness: only treat the dashboard as "loaded" once BOTH
+  // the unlock-flag query AND the pipelineItems query have resolved.
+  // Either alone is enough for activeKey to settle on a value that's
+  // still wrong on a fresh hostname (no localStorage cache), producing
+  // a visible flash of "stage 1 active" before activeKey snaps to the
+  // user's real stage. Gate the strip + panel on the combined signal.
+  const dashboardReady = hasReadyProgress && !pipelineLoading
+
+  // Open stage = whatever the user clicked (defaults to active). Deferred
+  // initialization: don't seed openKey from activeKey until dashboardReady,
+  // otherwise a transient activeKey='capture' on cold load gets baked into
+  // openKey and sticks even after activeKey moves to the real stage.
+  const [openKey, setOpenKey] = useState<StageKey>('capture')
+  const openKeyInitializedRef = useRef(false)
+  useEffect(() => {
+    if (openKeyInitializedRef.current) return
+    if (!dashboardReady) return
+    setOpenKey(activeKey)
+    openKeyInitializedRef.current = true
+  }, [dashboardReady, activeKey])
   const openStage = STAGES.find(s => s.key === openKey) ?? STAGES[0]
 
   // Auto-advance: only fire on the *actual* transition from undone
@@ -650,15 +668,12 @@ export function PilotActionDashboard({
           activeKey={activeKey}
           openKey={openKey}
           onSelect={setOpenKey}
-          // While the unlock-flag queries haven't resolved AND we have
-          // no localStorage cache to fall back on, the computed
-          // activeKey can briefly point at a stage the user is actually
-          // past (e.g. Decide instead of Review on hard refresh,
-          // because hasUnlockedTradeBook reads as false until the
-          // query lands). Pass `loading` so the strip renders neutral
-          // — no active pulse, no checkmarks — for that brief window
-          // and snaps to the correct state once the data arrives.
-          loading={!hasReadyProgress}
+          // Strip stays neutral until BOTH the unlock-flag query AND
+          // pipelineItems have resolved — otherwise activeKey is
+          // computed from incomplete signals and can briefly highlight
+          // an earlier stage than the user is actually on (the "flashes
+          // stage 1" problem on cold load).
+          loading={!dashboardReady}
         />
 
         {/* ── Selected-stage panel ───────────────────────────────
@@ -676,7 +691,7 @@ export function PilotActionDashboard({
             here would flash that wrong stage's content. A min-height
             placeholder preserves layout without showing wrong data;
             once readiness flips, the real panel takes over. */}
-        {hasReadyProgress ? (
+        {dashboardReady ? (
           <StagePanel
             stage={openStage}
             cta={ctaForStage(openStage.key)}
