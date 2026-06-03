@@ -624,21 +624,21 @@ function HoldingRow({
       className={clsx(
         'group/row transition-colors duration-75',
         isEven ? ROW_EVEN : ROW_ODD,
-        // New positions (not in baseline)
-        row.isNew && !isFocused && (action === 'sell' || action === 'trim'
+        // Row tint is determined by row state (new / sized / pending /
+        // removed). Cell focus is communicated separately by an outline
+        // ring at the cell level — we deliberately do NOT change row bg
+        // on focus, so a green "new position" row stays green when the
+        // user clicks into a cell instead of flipping to blue.
+        row.isNew && (action === 'sell' || action === 'trim'
           ? '!bg-red-50 dark:!bg-red-950/20'
           : '!bg-emerald-50 dark:!bg-emerald-950/20'),
-        // Existing positions with active sizing (ideas/recommendations)
-        !row.isNew && hasSizing && !isFocused && !row.isRemoved && (action === 'sell' || action === 'trim'
+        !row.isNew && hasSizing && !row.isRemoved && (action === 'sell' || action === 'trim'
           ? '!bg-amber-50/80 dark:!bg-amber-950/15'
           : '!bg-blue-50/80 dark:!bg-blue-950/15'),
-        // Pending-sizing tint (lighter than active sizing, only when not
-        // already painted by hasSizing / isNew branches above).
-        !row.isNew && !hasSizing && isPendingSizing && !isFocused && !row.isRemoved &&
+        !row.isNew && !hasSizing && isPendingSizing && !row.isRemoved &&
           '!bg-primary-50/40 dark:!bg-primary-950/10',
         row.isRemoved && '!bg-red-50 dark:!bg-red-950/20 opacity-50',
-        !isFocused && 'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
-        isFocused && '!bg-primary-50/40 dark:!bg-primary-950/10',
+        'hover:!bg-gray-100/70 dark:hover:!bg-white/[0.04]',
         // Transient pulse for newly-added rows + quick-nav targets. Wins
         // over the row's natural tint while the highlight is active.
         isHighlighted && '!bg-primary-100/80 dark:!bg-primary-900/40 transition-colors duration-300',
@@ -668,7 +668,10 @@ function HoldingRow({
         className={clsx('pl-3 pr-2 py-1.5 whitespace-nowrap', leftBorder, cf(COL.SYMBOL))}
         onClick={() => onFocusCell(rowIndex, COL.SYMBOL)}
       >
-        <div className="flex items-center gap-1.5 min-w-0">
+        {/* min-w reserves space for symbol + the widest action badge
+            ("Reduce" / "Close") so entering a sim weight doesn't grow the
+            column and push every other column rightward. */}
+        <div className="flex items-center gap-1.5 min-w-[7rem]">
           <span className="text-[13px] font-semibold text-gray-900 dark:text-white truncate">
             {row.symbol}
           </span>
@@ -1604,7 +1607,10 @@ export function HoldingsSimulationTable({
     displayRows.forEach(r => { if (r.variant) currentIds.add(r.asset_id) })
 
     if (prevVariantAssetsRef.current === null) {
-      if (currentIds.size > 0) prevVariantAssetsRef.current = currentIds
+      // Always snapshot on the first effect run — even if empty — so the
+      // user's first check after page load gets diffed as "new" instead
+      // of being swallowed by the initial-population branch.
+      prevVariantAssetsRef.current = currentIds
       return
     }
 
