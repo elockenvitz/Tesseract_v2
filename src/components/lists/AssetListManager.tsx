@@ -156,11 +156,13 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
 
   // Fetch user's asset lists
   const { data: assetLists, isLoading } = useQuery({
-    queryKey: ['asset-lists', filterType],
+    queryKey: ['asset-lists', filterType, currentOrgId],
     queryFn: async () => {
-      if (!user?.id) return []
+      if (!user?.id || !currentOrgId) return []
 
-      // Fetch lists created by user
+      // Fetch lists created by user — scoped to current org but keep
+      // the two `is_default=true` system lists visible across orgs
+      // (they're user-level globals from signup).
       let ownedQuery = supabase
         .from('asset_lists')
         .select(`
@@ -168,6 +170,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           asset_list_items(id)
         `)
         .eq('created_by', user.id)
+        .or(`is_default.eq.true,organization_id.eq.${currentOrgId}`)
 
       const { data: ownedLists, error: ownedError } = await ownedQuery.order('created_at', { ascending: false })
 

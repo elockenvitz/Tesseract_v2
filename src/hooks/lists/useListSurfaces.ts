@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ function sortLists(
 
 export function useListSurfaces(sortBy: ListSortKey = 'recent') {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const userId = user?.id
 
   // Query 1 — All visible lists (RLS returns owned + shared)
@@ -92,8 +94,14 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
     isLoading: listsLoading,
     error: listsError
   } = useQuery({
-    queryKey: ['list-surfaces'],
+    queryKey: ['list-surfaces', currentOrgId],
+    enabled: !!currentOrgId,
     queryFn: async () => {
+      // Scope user-created lists by organization_id; keep the two
+      // system-seeded `is_default=true` lists (Investment Ideas / Work
+      // in Process) visible across every org since they're user-level
+      // globals stamped at signup. See migration
+      // 20260603160000_asset_lists_organization_id.sql.
       const { data, error } = await supabase
         .from('asset_lists')
         .select(`
@@ -109,6 +117,7 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
           updated_by_user:users!asset_lists_updated_by_fkey(id, first_name, last_name, email),
           created_by_user:users!asset_lists_created_by_fkey(id, first_name, last_name, email)
         `)
+        .or(`is_default.eq.true,organization_id.eq.${currentOrgId!}`)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false })
 
