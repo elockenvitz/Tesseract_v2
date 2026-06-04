@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FileText, Search, X, Calendar, Share2, ArrowUp, ArrowDown, TrendingUp, Briefcase, Tag, Book, SlidersHorizontal, Check, Plus, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -52,6 +53,8 @@ const SOURCE_TYPE_OPTIONS = [
 ]
 
 export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
+  const { currentOrgId } = useOrganization()
+
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSourceTypes, setSelectedSourceTypes] = useState<string[]>([])
@@ -148,31 +151,42 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
     })
   }
 
-  // Fetch all notes
+  // Fetch all notes — strictly scoped to the current org via the
+  // canonical organization_id column on each note table (added in
+  // 20260603140000_notes_organization_id.sql). Without the filter,
+  // notes a user wrote in another org bled into this org's All Notes
+  // list — same cross-org leak pattern fixed for trade_queue_items and
+  // analyst_ratings.
   const { data: notes, isLoading } = useQuery({
-    queryKey: ['all-notes-with-users'],
+    queryKey: ['all-notes-with-users', currentOrgId],
     staleTime: 0, // Always refetch on mount (override 5min global default)
+    enabled: !!currentOrgId,
     queryFn: async (): Promise<Note[]> => {
+      if (!currentOrgId) return []
       const [assetNotesRes, portfolioNotesRes, themeNotesRes, customNotesRes] = await Promise.all([
         supabase
           .from('asset_notes')
           .select(`*, assets (id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, priority, process_stage, created_at, updated_at)`)
           .neq('is_deleted', true)
+          .eq('organization_id', currentOrgId)
           .order('updated_at', { ascending: false }),
         supabase
           .from('portfolio_notes')
           .select(`*, portfolios (id, name, description, portfolio_type, created_at, updated_at)`)
           .neq('is_deleted', true)
+          .eq('organization_id', currentOrgId)
           .order('updated_at', { ascending: false }),
         supabase
           .from('theme_notes')
           .select(`*, themes (id, name, description, theme_type, color, created_at, updated_at)`)
           .neq('is_deleted', true)
+          .eq('organization_id', currentOrgId)
           .order('updated_at', { ascending: false }),
         supabase
           .from('custom_notebook_notes')
           .select('*, custom_notebooks(name)')
           .neq('is_deleted', true)
+          .eq('organization_id', currentOrgId)
           .order('updated_at', { ascending: false }),
       ])
 

@@ -461,6 +461,11 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
       queryClient.invalidateQueries({ queryKey: ['recent-quick-ideas'] })
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
       queryClient.invalidateQueries({ queryKey: ['direct-open-prompt-count'] })
+      // Tick the "Use a prompt" item in PilotWelcomeBanner's checklist.
+      // Without this, the step only flips on hard refresh / window-focus
+      // refetch — same gap that the matching invalidate in
+      // QuickThoughtCapture closed for "Post a thought".
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
       onClose()
     },
     onError: (err) => {

@@ -271,6 +271,13 @@ export function QuickThoughtCapture({
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts'] })
       // Also invalidate attention queries so the Attention Dashboard updates immediately
       invalidateAttention()
+      // Tick the "Post a thought" checklist item in PilotWelcomeBanner.
+      // That query is the only consumer of `pilot-tutorial-progress`,
+      // and without an explicit invalidation here it sits in cache
+      // until the user switches tabs (refetchOnWindowFocus) or the
+      // staleTime expires — the step stayed un-ticked even though the
+      // user just posted a thought right in front of it.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
 
       // Auto-link to parent if a "Next step" action was pending
       if (data?.id) {

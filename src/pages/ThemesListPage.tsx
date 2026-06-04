@@ -255,6 +255,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
     },
     onSuccess: (newTheme) => {
       queryClient.invalidateQueries({ queryKey: ['all-themes'] })
+      // Tick "Explore a theme" in the PilotWelcomeBanner checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
       setShowCreateForm(false)
       setNewThemeName('')
       setNewThemeDescription('')

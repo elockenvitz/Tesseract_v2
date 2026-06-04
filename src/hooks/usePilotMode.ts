@@ -221,10 +221,18 @@ export function usePilotMode(): PilotModeState {
   ])
   const access = useMemo(() => {
     // Once the user has graduated, all pilot gating drops away —
-    // they get the same access as a non-pilot user even though the
-    // org may still be flagged as pilot. The graduation flag is set
-    // when they reach Outcomes (see DecisionAccountabilityPage).
-    if (!isPilot || hasGraduated) return PILOT_ACCESS_DEFAULTS
+    // they get the FULL app, every feature unlocked. Previously this
+    // returned PILOT_ACCESS_DEFAULTS, which still marks charting /
+    // calendar / files as 'hidden' (defaults are the starting point
+    // for a fresh pilot, NOT the post-graduation state). That made
+    // graduated users get bounced off charting, calendar, etc. with
+    // no obvious cause.
+    if (!isPilot || hasGraduated) {
+      const fullAccess = {} as PilotAccessConfig
+      ;(Object.keys(PILOT_ACCESS_DEFAULTS) as Array<keyof PilotAccessConfig>)
+        .forEach(k => { fullAccess[k] = 'full' })
+      return fullAccess
+    }
     const base = mergePilotAccess(orgFlags?.accessOverride)
     // Progressive unlocks layered on top of the org's static access map.
     // Unlock requires BOTH:

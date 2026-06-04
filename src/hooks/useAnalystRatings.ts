@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 export interface RatingScaleValue {
   value: string
@@ -80,17 +81,23 @@ interface UseAnalystRatingsOptions {
 
 export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
-  // Fetch all ratings for this asset
+  // Fetch all ratings for this asset, strictly scoped to the current org.
+  // Without the org filter a user's rating from one pilot org pre-fills
+  // the asset page in every other org they later belong to (the
+  // canonical analyst_ratings.organization_id column is the source of
+  // truth, populated by the BEFORE INSERT trigger).
   const {
     data: ratings,
     isLoading,
     error,
     refetch
   } = useQuery({
-    queryKey: ['analyst-ratings', assetId, userId],
+    queryKey: ['analyst-ratings', assetId, userId, currentOrgId],
     queryFn: async () => {
+      if (!currentOrgId) return [] as AnalystRating[]
       let query = supabase
         .from('analyst_ratings')
         .select(`
@@ -99,6 +106,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
           rating_scale:rating_scales!analyst_ratings_rating_scale_id_fkey(*)
         `)
         .eq('asset_id', assetId)
+        .eq('organization_id', currentOrgId)
         .order('updated_at', { ascending: false })
 
       if (userId) {
@@ -114,7 +122,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
         user: r.user ? { ...r.user, full_name: getFullName(r.user) } : undefined
       })) as AnalystRating[]
     },
-    enabled: !!assetId,
+    enabled: !!assetId && !!currentOrgId,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000
   })
@@ -161,13 +169,20 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
       sourceFileId?: string
     }) => {
       if (!user) throw new Error('Not authenticated')
+      if (!currentOrgId) throw new Error('No active organization')
 
-      // Check if rating already exists (unique constraint on asset_id + user_id)
+      // Check if rating already exists IN THIS ORG — uniqueness is
+      // now per (asset, user, org). Without the org filter, the lookup
+      // would find a leftover pre-migration rating with org=NULL and
+      // try to UPDATE it, which the org-scoped read query then hides
+      // (org=NULL ≠ currentOrgId) so the UI looks like saves never
+      // happened.
       const { data: existing } = await supabase
         .from('analyst_ratings')
         .select('id')
         .eq('asset_id', assetId)
         .eq('user_id', user.id)
+        .eq('organization_id', currentOrgId)
         .maybeSingle()
 
       const ratingData = {
@@ -200,6 +215,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
           .insert({
             asset_id: assetId,
             user_id: user.id,
+            organization_id: currentOrgId,
             ...ratingData
           })
           .select(`
@@ -215,6 +231,8 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-ratings', assetId] })
+      // Tick "Rate an asset" in PilotWelcomeBanner's checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
     }
   })
 
@@ -231,6 +249,8 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-ratings', assetId] })
+      // Tick "Rate an asset" in PilotWelcomeBanner's checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
     }
   })
 
