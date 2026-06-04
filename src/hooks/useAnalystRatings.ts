@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 export interface RatingScaleValue {
   value: string
@@ -80,17 +81,23 @@ interface UseAnalystRatingsOptions {
 
 export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
-  // Fetch all ratings for this asset
+  // Fetch all ratings for this asset, strictly scoped to the current org.
+  // Without the org filter a user's rating from one pilot org pre-fills
+  // the asset page in every other org they later belong to (the
+  // canonical analyst_ratings.organization_id column is the source of
+  // truth, populated by the BEFORE INSERT trigger).
   const {
     data: ratings,
     isLoading,
     error,
     refetch
   } = useQuery({
-    queryKey: ['analyst-ratings', assetId, userId],
+    queryKey: ['analyst-ratings', assetId, userId, currentOrgId],
     queryFn: async () => {
+      if (!currentOrgId) return [] as AnalystRating[]
       let query = supabase
         .from('analyst_ratings')
         .select(`
@@ -99,6 +106,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
           rating_scale:rating_scales!analyst_ratings_rating_scale_id_fkey(*)
         `)
         .eq('asset_id', assetId)
+        .eq('organization_id', currentOrgId)
         .order('updated_at', { ascending: false })
 
       if (userId) {
@@ -114,7 +122,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
         user: r.user ? { ...r.user, full_name: getFullName(r.user) } : undefined
       })) as AnalystRating[]
     },
-    enabled: !!assetId,
+    enabled: !!assetId && !!currentOrgId,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000
   })
