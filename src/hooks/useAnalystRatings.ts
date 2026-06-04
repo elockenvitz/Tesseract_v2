@@ -231,6 +231,8 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-ratings', assetId] })
+      // Tick "Rate an asset" in PilotWelcomeBanner's checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
     }
   })
 
@@ -247,6 +249,8 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-ratings', assetId] })
+      // Tick "Rate an asset" in PilotWelcomeBanner's checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
     }
   })
 

@@ -268,6 +268,9 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
       queryClient.invalidateQueries({ queryKey: ['contribution-history'] })
       queryClient.invalidateQueries({ queryKey: ['aggregate-history', assetId] })
+      // Tick "Fill out a research field" + "Explore an asset page" in
+      // the PilotWelcomeBanner checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
     }
   })
 

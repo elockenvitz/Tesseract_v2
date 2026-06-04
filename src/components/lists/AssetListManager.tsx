@@ -276,6 +276,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       // refresh.
       queryClient.invalidateQueries({ queryKey: ['asset-lists'] })
       queryClient.invalidateQueries({ queryKey: ['list-surfaces'] })
+      // Tick "Build a list" in the PilotWelcomeBanner checklist.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
 
       setShowCreateForm(false)
       setNewListName('')

@@ -666,6 +666,10 @@ export function UniversalNoteEditor({
 
       queryClient.invalidateQueries({ queryKey: [config.queryKey, entityId] })
       queryClient.invalidateQueries({ queryKey: ['recent-notes'] })
+      // Tick "Write a note" / "Explore a theme" in PilotWelcomeBanner —
+      // those steps gate on hasNote / hasTheme which read the per-org
+      // count of asset_notes / theme_notes rows.
+      queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
       // Pre-populate content cache for the new note
       queryClient.setQueryData([config.queryKey, 'content', newNote.id], {
         id: newNote.id,
