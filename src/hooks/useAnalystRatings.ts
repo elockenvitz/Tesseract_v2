@@ -169,13 +169,20 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
       sourceFileId?: string
     }) => {
       if (!user) throw new Error('Not authenticated')
+      if (!currentOrgId) throw new Error('No active organization')
 
-      // Check if rating already exists (unique constraint on asset_id + user_id)
+      // Check if rating already exists IN THIS ORG — uniqueness is
+      // now per (asset, user, org). Without the org filter, the lookup
+      // would find a leftover pre-migration rating with org=NULL and
+      // try to UPDATE it, which the org-scoped read query then hides
+      // (org=NULL ≠ currentOrgId) so the UI looks like saves never
+      // happened.
       const { data: existing } = await supabase
         .from('analyst_ratings')
         .select('id')
         .eq('asset_id', assetId)
         .eq('user_id', user.id)
+        .eq('organization_id', currentOrgId)
         .maybeSingle()
 
       const ratingData = {
@@ -208,6 +215,7 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
           .insert({
             asset_id: assetId,
             user_id: user.id,
+            organization_id: currentOrgId,
             ...ratingData
           })
           .select(`
