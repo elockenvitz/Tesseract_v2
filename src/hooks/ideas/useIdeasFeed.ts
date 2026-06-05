@@ -15,6 +15,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { subDays } from 'date-fns'
 import type { FeedItem, ScoredFeedItem, ItemType, Author } from './types'
 
@@ -84,6 +85,7 @@ export function isSignalCard(item: MixedFeedItem): item is SignalCard {
 
 function useUserContext() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   const followedQuery = useQuery({
     queryKey: ['feed-context', 'followed', user?.id],
@@ -116,6 +118,7 @@ function useUserContext() {
 
   return {
     userId: user?.id || null,
+    organizationId: currentOrgId,
     followedIds: followedQuery.data || [],
     heldAssetIds: holdingsQuery.data || new Set<string>(),
   }
@@ -127,7 +130,7 @@ function useUserContext() {
 
 function scoreFeedItem(
   item: FeedItem,
-  ctx: { userId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
+  ctx: { userId: string | null; organizationId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
   mode: FeedMode,
 ): ScoredFeedItem {
   const ageHours = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
@@ -217,7 +220,7 @@ function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
 async function fetchFeedPage(
   offset: number,
   filters: IdeasFeedFilters,
-  ctx: { userId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
+  ctx: { userId: string | null; organizationId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
 ): Promise<FeedPage> {
   // Expand time window as user scrolls deeper — starts at 90d, grows to 365d
   const baseDays = filters.timeRange === 'day' ? 1
@@ -234,13 +237,17 @@ async function fetchFeedPage(
 
   const queries: Promise<FeedItem[]>[] = []
 
-  // Quick thoughts
+  // Quick thoughts — strictly scoped to current org. quick_thoughts now
+  // carries organization_id (migration 20260605120000); the BEFORE INSERT
+  // trigger stamps it from users.current_organization_id, so a thought
+  // posted in Org A no longer appears on the Ideas feed in Org B.
   if (!wantTypes || wantTypes.includes('quick_thought')) {
     queries.push((async () => {
       let q = supabase
         .from('quick_thoughts')
         .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
         .eq('is_archived', false)
+        .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
         .order('created_at', { ascending: false })
         .range(offset, offset + fetchSize - 1)
@@ -278,7 +285,8 @@ async function fetchFeedPage(
     })())
   }
 
-  // Trade ideas
+  // Trade ideas — strictly scoped to current org via the canonical
+  // trade_queue_items.organization_id column.
   if (!wantTypes || wantTypes.includes('trade_idea')) {
     queries.push((async () => {
       let q = supabase
@@ -286,6 +294,7 @@ async function fetchFeedPage(
         .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
         .eq('status', 'idea')
         .eq('visibility_tier', 'active')
+        .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
         .order('created_at', { ascending: false })
         .range(offset, offset + fetchSize - 1)
@@ -322,12 +331,14 @@ async function fetchFeedPage(
     })())
   }
 
-  // Notes (asset notes only for now — most relevant)
+  // Notes (asset notes only for now — most relevant). Strictly scoped
+  // to current org via asset_notes.organization_id.
   if (!wantTypes || wantTypes.includes('note')) {
     queries.push((async () => {
       let q = supabase
         .from('asset_notes')
         .select('id, title, content, created_at, user_id, asset_id, assets:asset_id(id, symbol, company_name)')
+        .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
         .order('created_at', { ascending: false })
         .range(offset, offset + fetchSize - 1)
@@ -361,12 +372,14 @@ async function fetchFeedPage(
     })())
   }
 
-  // Thesis updates
+  // Thesis updates — strictly scoped to current org via
+  // asset_contributions.organization_id.
   if (!wantTypes || wantTypes.includes('thesis_update')) {
     queries.push((async () => {
       let q = supabase
         .from('asset_contributions')
         .select('id, section, content, created_at, created_by, asset_id, assets:asset_id(id, symbol, company_name)')
+        .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
         .order('created_at', { ascending: false })
         .range(offset, offset + fetchSize - 1)
@@ -478,13 +491,13 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
   const ctx = useUserContext()
 
   const query = useInfiniteQuery({
-    queryKey: ['ideas-feed', filters, ctx.userId, ctx.followedIds.length],
+    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId, ctx.followedIds.length],
     queryFn: async ({ pageParam = 0 }) => {
       return fetchFeedPage(pageParam, filters, ctx)
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: !!ctx.userId,
+    enabled: !!ctx.userId && !!ctx.organizationId,
     staleTime: 30_000,
   })
 
