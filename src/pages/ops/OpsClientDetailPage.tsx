@@ -315,6 +315,12 @@ export function OpsClientDetailPage() {
         b.forEach(x => u.add(x))
         return u.size
       }
+      // Merge any number of user-id sets (telemetry + artifact signals).
+      const mergeSets = (...sets: Array<Set<string>>) => {
+        const u = new Set<string>()
+        for (const s of sets) s.forEach(x => u.add(x))
+        return u
+      }
 
       // Post-graduation Get Started — PilotWelcomeBanner's 7 server-
       // trackable items. These ALSO ran in the previous ops page and
@@ -351,6 +357,68 @@ export function OpsClientDetailPage() {
         supabase.from('asset_lists').select('created_by').in('created_by', memberIds).eq('is_default', false).gte('created_at', orgCreatedAt),
       ])
 
+      // ── Artifact-derived signals ───────────────────────────────────
+      // The in-banner telemetry steps under-report real progress: those
+      // events only fire while the Get Started banner is mounted and once
+      // per browser (localStorage-gated), so a pilot who dismisses the
+      // banner, switches devices, or completes a step the banner wasn't
+      // listening for shows as stalled even though they did the work.
+      // Where a step leaves a durable DB artifact we union that in — the
+      // counts can only ever go UP, never regress a user telemetry already
+      // captured. View-only steps (e.g. "Open the Decision Inbox") leave no
+      // artifact and stay telemetry-only.
+      const labVariantAnySet = new Set<string>()     // ≥1 lab variant → opened Trade Lab + added a rec
+      const sizedArtifactSet = new Set<string>()      // actively edited sizing (not just the auto-seeded rec)
+      const executedArtifactSet = new Set<string>()   // committed a trade → reached Trade Book
+      const rationaleArtifactSet = new Set<string>()  // wrote a comment on a committed trade
+      const orgPortfolioIds = (
+        (await supabase.from('portfolios').select('id').eq('organization_id', orgId)).data ?? []
+      ).map((p: any) => p.id as string)
+
+      if (orgPortfolioIds.length > 0) {
+        const [variantRes, acceptedRes] = await Promise.all([
+          supabase.from('lab_variants')
+            .select('created_by, created_at, updated_at, sizing_input')
+            .in('created_by', memberIds)
+            .in('portfolio_id', orgPortfolioIds)
+            .is('deleted_at', null),
+          supabase.from('accepted_trades')
+            .select('id, accepted_by')
+            .in('accepted_by', memberIds)
+            .in('portfolio_id', orgPortfolioIds)
+            .eq('is_active', true),
+        ])
+
+        for (const v of (variantRes.data ?? []) as Array<{ created_by: string; created_at: string; updated_at: string; sizing_input: string | null }>) {
+          if (!v.created_by) continue
+          labVariantAnySet.add(v.created_by)
+          // "Sized" = the user changed the sizing AFTER the row was created.
+          // The seeded recommendation is auto-imported with its sizing
+          // already set (created_at === updated_at), so requiring a later
+          // updated_at separates a real sizing action from merely landing
+          // in the lab. 2s buffer absorbs autosave jitter.
+          const sized = !!v.sizing_input && v.sizing_input.trim() !== ''
+          const edited = new Date(v.updated_at).getTime() - new Date(v.created_at).getTime() > 2000
+          if (sized && edited) sizedArtifactSet.add(v.created_by)
+        }
+
+        const acceptedTradeIds: string[] = []
+        for (const t of (acceptedRes.data ?? []) as Array<{ id: string; accepted_by: string | null }>) {
+          if (t.accepted_by) executedArtifactSet.add(t.accepted_by)
+          acceptedTradeIds.push(t.id)
+        }
+
+        if (acceptedTradeIds.length > 0) {
+          const commentRes = await supabase.from('accepted_trade_comments')
+            .select('user_id')
+            .in('user_id', memberIds)
+            .in('accepted_trade_id', acceptedTradeIds)
+          for (const c of (commentRes.data ?? []) as Array<{ user_id: string }>) {
+            if (c.user_id) rationaleArtifactSet.add(c.user_id)
+          }
+        }
+      }
+
       // Count distinct members per post-grad step.
       const distinctUsers = (rows: any[] | null | undefined, key: string) =>
         new Set((rows ?? []).map(r => r[key] as string)).size
@@ -386,15 +454,20 @@ export function OpsClientDetailPage() {
           // Idea Pipeline (3)
           ideaDragged:     stepUsers('pilot_pipeline_step_idea_dragged').size,
           inboxOpened:     stepUsers('pilot_pipeline_step_inbox_opened').size,
-          tradelabOpened:  stepUsers('pilot_pipeline_step_tradelab_opened').size,
+          // Opened Trade Lab = telemetry OR has a lab variant (can't have a
+          // variant without opening the lab).
+          tradelabOpened:  mergeSets(stepUsers('pilot_pipeline_step_tradelab_opened'), labVariantAnySet).size,
           // Trade Lab (3)
-          recReviewed:     stepUsers('pilot_tradelab_step_rec_reviewed').size,
-          recSized:        stepUsers('pilot_tradelab_step_rec_sized').size,
-          // Executed = telemetry step OR macro pilot_progress unlock.
-          executed:        unionSize(stepUsers('pilot_tradelab_step_executed'), tradeBookSet),
+          // Reviewed/added the rec = telemetry OR a lab variant exists.
+          recReviewed:     mergeSets(stepUsers('pilot_tradelab_step_rec_reviewed'), labVariantAnySet).size,
+          // Sized = telemetry OR actively edited a variant's sizing.
+          recSized:        mergeSets(stepUsers('pilot_tradelab_step_rec_sized'), sizedArtifactSet).size,
+          // Executed = telemetry step OR macro unlock OR a committed trade.
+          executed:        mergeSets(stepUsers('pilot_tradelab_step_executed'), tradeBookSet, executedArtifactSet).size,
           // Trade Book (3)
           tradeReviewed:   stepUsers('pilot_tradebook_step_trade_reviewed').size,
-          rationaleAdded:  stepUsers('pilot_tradebook_step_rationale_added').size,
+          // Rationale = telemetry OR a comment on a committed trade.
+          rationaleAdded:  mergeSets(stepUsers('pilot_tradebook_step_rationale_added'), rationaleArtifactSet).size,
           // Opened Outcomes = telemetry step OR macro pilot_progress unlock.
           openedOutcomes:  unionSize(stepUsers('pilot_tradebook_step_opened_outcomes'), outcomesSet),
           // Outcomes — Finish the Loop (3). Falls back to the graduated_at
@@ -757,10 +830,11 @@ export function OpsClientDetailPage() {
             <div>
               <h3 className="text-sm font-semibold text-gray-800">Pilot Get Started funnel</h3>
               <p className="text-[11px] text-gray-400 mt-0.5">
-                Distinct members who completed each step. Step-level signals come from
+                Distinct members who completed each step. Signals union
                 <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">pilot_telemetry_events</code>
-                with a fallback to <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">users.pilot_progress</code>
-                macro keys.
+                with durable artifacts (lab variants, committed trades, rationale comments) and
+                <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">users.pilot_progress</code>
+                macro keys — so action steps reflect what's in the DB, not just whether the banner was open. View-only steps stay telemetry-based.
               </p>
             </div>
             <span className="text-xs text-gray-400">
