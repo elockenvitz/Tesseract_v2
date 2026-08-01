@@ -1183,7 +1183,6 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
       return data || []
     },
-    enabled: !!selectedWorkflow?.id,
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000
   })
