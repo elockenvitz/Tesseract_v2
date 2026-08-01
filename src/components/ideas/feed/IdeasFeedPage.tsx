@@ -229,10 +229,11 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   return (
     <div className="h-full flex flex-col bg-gray-50/50">
       {/* ═══ HEADER ═══ */}
-      <div className="bg-white border-b border-gray-100 px-6 py-2.5 shrink-0 dark:border-gray-800 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-100 px-3 md:px-6 py-2.5 shrink-0 dark:border-gray-800 dark:bg-gray-800">
         <div className="max-w-[1060px] mx-auto">
-          {/* Title + mode + actions row */}
-          <div className="flex items-center justify-between mb-2">
+          {/* Title + mode + actions row. Wraps on phones — the mode toggle and
+              action buttons together exceed a 390px row. */}
+          <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2 min-w-0">
             <div className="flex items-center gap-4">
               <h1 className="text-[16px] font-semibold text-gray-900 flex items-center gap-2 dark:text-white">
                 <Lightbulb className="w-4.5 h-4.5 text-primary-600" />
@@ -344,7 +345,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
 
       {/* ═══ FEED ═══ */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[1060px] mx-auto px-4 py-3">
+        <div className="max-w-[1060px] mx-auto px-3 md:px-4 py-3">
           {/* Loading state */}
           {isLoading && <FeedSkeleton count={5} />}
 
