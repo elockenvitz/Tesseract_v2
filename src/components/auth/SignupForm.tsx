@@ -62,7 +62,7 @@ export function SignupForm() {
   if (success) {
     return (
       <div className="text-center space-y-4">
-        <div className="bg-success-50 border border-success-200 text-success-700 px-4 py-3 rounded-lg">
+        <div className="bg-success-50 border border-success-200 text-success-700 dark:bg-success-900/30 dark:border-success-800 dark:text-success-300 px-4 py-3 rounded-lg">
           Account created successfully! You can now sign in.
         </div>
         <Link
@@ -78,7 +78,7 @@ export function SignupForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {error && (
-        <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg">
+        <div className="bg-error-50 border border-error-200 text-error-700 dark:bg-error-900/30 dark:border-error-800 dark:text-error-300 px-4 py-3 rounded-lg">
           {error}
         </div>
       )}
@@ -132,7 +132,7 @@ export function SignupForm() {
       </Button>
 
       <div className="text-center">
-        <span className="text-sm text-gray-600">
+        <span className="text-sm text-gray-600 dark:text-gray-400">
           Already have an account?{' '}
           <Link
             to="/login"

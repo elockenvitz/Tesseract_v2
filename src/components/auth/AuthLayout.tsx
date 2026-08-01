@@ -9,7 +9,7 @@ interface AuthLayoutProps {
 
 export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="text-center">
           <div className="flex justify-center mb-6">
@@ -19,9 +19,9 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
               className="h-12 w-auto"
             />
           </div>
-          <h2 className="mt-6 text-2xl font-semibold text-gray-900">{title}</h2>
+          <h2 className="mt-6 text-2xl font-semibold text-gray-900 dark:text-white">{title}</h2>
           {subtitle && (
-            <p className="mt-2 text-sm text-gray-600">{subtitle}</p>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{subtitle}</p>
           )}
         </div>
       </div>
