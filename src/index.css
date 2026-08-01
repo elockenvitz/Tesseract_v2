@@ -209,12 +209,16 @@
     min-width: 0;
   }
 
-  /* Media should never be the thing that widens a row. */
+  /* Media should never be the thing that widens a row.
+     `table` is deliberately NOT in this list. Constraining a data table to the
+     viewport does not make it readable — it crushes the columns, and combined
+     with `overflow-x: clip` on the ancestors the overflowing content becomes
+     both invisible and unscrollable. A wide table belongs in its own
+     `.mobile-scroll-x` container, which scrolls independently of the page. */
   img,
   svg,
   video,
-  canvas,
-  table {
+  canvas {
     max-width: 100%;
   }
 
