@@ -121,6 +121,18 @@
 }
 
 @layer utilities {
+  /* Full visible viewport height.
+     100vh on mobile includes the area behind the browser URL bar, so a
+     100vh shell is taller than what you can actually see and its header
+     sits off-screen until you scroll up. 100dvh tracks the visible
+     viewport. Both declarations live in one block so the vh fallback
+     applies only where dvh is unsupported — putting them in separate
+     Tailwind classes would leave the winner up to stylesheet order. */
+  .h-viewport {
+    height: 100vh;
+    height: 100dvh;
+  }
+
   /* Safe-area insets — notch and home-indicator padding. Zero on desktop. */
   .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }

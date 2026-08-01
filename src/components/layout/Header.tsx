@@ -291,9 +291,11 @@ export function Header({
   return (
     <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
       <div className="px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex justify-between items-center h-16 min-w-0 gap-1">
           {/* Logo, Org Switcher, and Search */}
-          <div className="flex items-center flex-1">
+          {/* min-w-0 lets this column shrink below its content width; without
+              it the flex row refuses to compress and overflows the viewport. */}
+          <div className="flex items-center flex-1 min-w-0">
             {/* App Launcher — icon only */}
             <div className="relative" ref={appMenuRef}>
               <button
@@ -535,7 +537,7 @@ export function Header({
             {/* Divider + Org Switcher */}
             {currentOrg && (
               <>
-              <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-3 flex-shrink-0" />
+              <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1.5 md:mx-3 flex-shrink-0" />
               <div className="relative" ref={orgSwitcherRef}>
                 <button
                   onClick={() => { if (userOrgs.length > 1) setShowOrgSwitcher(!showOrgSwitcher) }}
@@ -548,7 +550,7 @@ export function Header({
                   aria-label="Switch organization"
                   title={userOrgs.length > 1 ? 'Switch organization' : currentOrg.name}
                 >
-                  <span className="font-semibold text-base text-gray-800 dark:text-gray-200 max-w-[200px] truncate">
+                  <span className="font-semibold text-sm md:text-base text-gray-800 dark:text-gray-200 max-w-[104px] md:max-w-[200px] truncate">
                     {currentOrg.name}
                   </span>
                   {!!currentOrg.settings?.pilot_mode && (
@@ -610,32 +612,37 @@ export function Header({
               </>
             )}
 
-            {/* Search */}
-            <div className="flex-1 max-w-lg ml-5">
+            {/* Search — must be allowed to shrink on phones (min-w-0), or it
+                holds the row wider than the viewport and forces horizontal
+                scroll. Search stays visible on mobile; the icon buttons go. */}
+            <div className="flex-1 min-w-0 ml-2 md:max-w-lg md:ml-5">
               <GlobalSearch onSelectResult={onSearchResult} onFocusSearch={onFocusSearch} />
             </div>
 
             {/* Feedback pill — lives next to the search bar so it's
                 always reachable without floating over the page. */}
-            <div className="ml-3 flex-shrink-0">
+            <div className="hidden md:block ml-3 flex-shrink-0">
               <FeedbackWidget />
             </div>
 
             {/* Morph-session indicator — only renders when actively morphing */}
-            <div className="ml-3 flex-shrink-0">
+            <div className="hidden md:block ml-3 flex-shrink-0">
               <MorphBanner />
             </div>
           </div>
 
-          {/* Right side actions */}
-          <div className="flex items-center space-x-4">
+          {/* Right side actions. On phones only notifications and profile
+              survive — five 44px targets plus the avatar demand ~310px of a
+              390px viewport. Thoughts, AI and DMs are reachable from the nav
+              drawer instead. */}
+          <div className="flex items-center flex-shrink-0 space-x-0.5 md:space-x-4">
             {/* Capture Thought Button */}
             <button
               onClick={() => {
                 onShowThoughts()
               }}
               className={clsx(
-                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative",
+                "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'thoughts'
                   ? "text-amber-600 bg-amber-100"
                   : "text-gray-400 hover:text-gray-600"
@@ -651,7 +658,7 @@ export function Header({
                 onShowAI()
               }}
               className={clsx(
-                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative",
+                "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'ai'
                   ? "text-primary-600 bg-primary-100"
                   : "text-gray-400 hover:text-gray-600"
@@ -669,7 +676,7 @@ export function Header({
                 onShowDirectMessages?.()
               }}
               className={clsx(
-                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative",
+                "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'direct-messages'
                   ? "text-primary-600 bg-primary-100"
                   : "text-gray-400 hover:text-gray-600"
@@ -707,7 +714,7 @@ export function Header({
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-3 p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                className="flex items-center space-x-0 md:space-x-3 p-1 md:p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                 title="Account menu"
               >
                 <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center">
@@ -721,7 +728,7 @@ export function Header({
                   </p>
                   <p className="text-xs text-gray-500 capitalize">{userDetails?.user_role || 'Investor'}</p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-gray-400" />
+                <ChevronDown className="hidden md:block h-4 w-4 text-gray-400" />
               </button>
 
               {/* User Menu Dropdown */}
