@@ -170,17 +170,34 @@
      that can be panned by touch and scrolled programmatically, which is why
      the page remained draggable into whitespace. `clip` genuinely clips.
      Paired with a `hidden` fallback for browsers without overflow: clip. */
+  /* The app shell owns all scrolling on phones; the page itself must not
+     scroll. If it can, two things go wrong: the header scrolls out of view,
+     and the browser shows/hides its URL bar during the scroll, which resizes
+     the viewport and reflows the whole shell mid-gesture. Locking html/body
+     means only inner containers scroll and the header becomes structurally
+     immovable. `overscroll-behavior: none` also kills rubber-banding and
+     pull-to-refresh, which visibly displace the header. */
   html,
   body {
-    overflow-x: hidden;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     overflow-x: clip;
     max-width: 100%;
   }
 
   #root {
-    overflow-x: hidden;
+    height: 100%;
+    overflow: hidden;
     overflow-x: clip;
     max-width: 100%;
+  }
+
+  /* With a definite height on the html/body chain, percentage height is stable
+     where 100dvh is not — dvh tracks the URL bar and resizes the shell while
+     you scroll, which is what made the header appear to drift. */
+  .h-viewport {
+    height: 100%;
   }
 
   /* Inputs and textareas carry an intrinsic min-content width from their
