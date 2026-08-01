@@ -396,7 +396,7 @@ export function Layout({
   const { isOrgArchived } = useOrganization()
 
   return (
-    <div className="h-screen flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
+    <div className="h-viewport flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       <Header
         onSearchResult={onSearchResult}
         onShowDirectMessages={handleShowDirectMessages}
