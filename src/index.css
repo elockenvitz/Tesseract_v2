@@ -165,16 +165,40 @@
    --------------------------------------------------------------------------- */
 @media (max-width: 767px) {
   /* Horizontal scroll containment. Any single overflowing child otherwise
-     makes the entire page pannable, which breaks every fixed element. */
+     makes the entire page pannable, which breaks every fixed element.
+     `clip` rather than `hidden`: `hidden` still creates a scroll container
+     that can be panned by touch and scrolled programmatically, which is why
+     the page remained draggable into whitespace. `clip` genuinely clips.
+     Paired with a `hidden` fallback for browsers without overflow: clip. */
   html,
   body {
     overflow-x: hidden;
-    max-width: 100vw;
+    overflow-x: clip;
+    max-width: 100%;
   }
 
   #root {
     overflow-x: hidden;
-    max-width: 100vw;
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  /* Inputs and textareas carry an intrinsic min-content width from their
+     `size`/`cols` attributes that `min-w-0` on a wrapper cannot override.
+     Inside a flex row this silently holds the row wider than the viewport. */
+  input,
+  textarea,
+  select {
+    min-width: 0;
+  }
+
+  /* Media should never be the thing that widens a row. */
+  img,
+  svg,
+  video,
+  canvas,
+  table {
+    max-width: 100%;
   }
 
   /* iOS zooms the viewport when a focused input's font-size is under 16px, and

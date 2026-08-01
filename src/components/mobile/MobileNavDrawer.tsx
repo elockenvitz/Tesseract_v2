@@ -126,7 +126,8 @@ export function MobileNavDrawer({
                 type="button"
                 onClick={() => {
                   onClose()
-                  onOpenSearch()
+                  // Header owns the full-screen search overlay.
+                  window.dispatchEvent(new CustomEvent('open-mobile-search'))
                 }}
                 className="w-full flex items-center gap-3 h-12 px-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
               >

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -16,6 +16,7 @@ import { SettingsPage } from '../../pages/SettingsPage'
 import { SetupWizard } from '../onboarding/SetupWizard'
 import { TesseractLogo } from '../ui/TesseractLogo'
 import { useIsMobile } from '../../hooks/useMediaQuery'
+import { MobileSearchOverlay } from '../mobile/MobileSearchOverlay'
 // SetupWizard removed — org creation disabled for normal users
 
 interface HeaderProps {
@@ -48,6 +49,7 @@ export function Header({
   onOpenMobileNav
 }: HeaderProps) {
   const isMobile = useIsMobile()
+  const [showMobileSearch, setShowMobileSearch] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showAppMenu, setShowAppMenu] = useState(false)
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false)
@@ -168,6 +170,14 @@ export function Header({
     }
     window.addEventListener('openSettings', handleOpenSettings)
     return () => window.removeEventListener('openSettings', handleOpenSettings)
+  }, [])
+
+  // The mobile nav drawer's search row opens the same overlay. An event keeps
+  // the drawer (rendered by Layout) from having to thread state through Header.
+  useEffect(() => {
+    const handler = () => setShowMobileSearch(true)
+    window.addEventListener('open-mobile-search', handler)
+    return () => window.removeEventListener('open-mobile-search', handler)
   }, [])
 
   // Subscribe to real-time message updates
@@ -612,10 +622,12 @@ export function Header({
               </>
             )}
 
-            {/* Search — must be allowed to shrink on phones (min-w-0), or it
-                holds the row wider than the viewport and forces horizontal
-                scroll. Search stays visible on mobile; the icon buttons go. */}
-            <div className="flex-1 min-w-0 ml-2 md:max-w-lg md:ml-5">
+            {/* Search. Hidden on phones: an <input> has an intrinsic
+                min-content width from its default `size` (~20 chars), which
+                `min-w-0` on the wrapper cannot shrink past — it held the header
+                wider than the viewport and pushed the profile off-screen. Phones
+                get a search icon that opens MobileSearchOverlay instead. */}
+            <div className="hidden md:block flex-1 min-w-0 md:max-w-lg md:ml-5">
               <GlobalSearch onSelectResult={onSearchResult} onFocusSearch={onFocusSearch} />
             </div>
 
@@ -636,6 +648,16 @@ export function Header({
               390px viewport. Thoughts, AI and DMs are reachable from the nav
               drawer instead. */}
           <div className="flex items-center flex-shrink-0 space-x-0.5 md:space-x-4">
+            {/* Mobile search entry point — replaces the inline input below md */}
+            <button
+              onClick={() => setShowMobileSearch(true)}
+              className="md:hidden flex items-center justify-center h-11 w-11 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Search"
+              title="Search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+
             {/* Capture Thought Button */}
             <button
               onClick={() => {
@@ -879,6 +901,11 @@ export function Header({
 
       {/* Org Setup Wizard — only manually triggered, never auto-opens */}
       {/* Org creation is disabled for normal users; provisioned by platform admin only */}
+      <MobileSearchOverlay
+        open={showMobileSearch}
+        onClose={() => setShowMobileSearch(false)}
+        onSelectResult={onSearchResult}
+      />
     </header>
   )
 }
