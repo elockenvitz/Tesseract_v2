@@ -28,7 +28,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
   return (
     <div className="space-y-1">
       {label && (
-        <label htmlFor={inputId} className="block text-sm font-medium text-gray-700">
+        <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           {label}
         </label>
       )}
@@ -38,8 +38,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
           id={inputId}
           className={clsx(
             'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 shadow-sm transition-colors cursor-text',
+            'bg-white text-gray-900',
+            'dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-500',
             'focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500',
-            error && 'border-error-500 focus:border-error-500 focus:ring-error-500',
+            'disabled:bg-gray-50 dark:disabled:bg-gray-900',
+            error && 'border-error-500 dark:border-error-500 focus:border-error-500 focus:ring-error-500',
             (rightAdornment || loading) && 'pr-10', // Add padding to the right if adornment or loading spinner exists
             className
           )}
@@ -58,10 +61,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
         )}
       </div>
       {error && (
-        <p className="text-sm text-error-600">{error}</p>
+        <p className="text-sm text-error-600 dark:text-error-400">{error}</p>
       )}
       {helperText && !error && (
-        <p className="text-sm text-gray-500">{helperText}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{helperText}</p>
       )}
     </div>
   )

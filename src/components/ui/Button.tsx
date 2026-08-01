@@ -11,9 +11,9 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 // Move static objects outside component to prevent recreating on each render
 const VARIANTS = {
   primary: 'bg-gradient-to-r from-primary-600 to-primary-700 text-white hover:from-primary-700 hover:to-primary-800 focus:ring-primary-500 shadow-sm',
-  secondary: 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500 shadow-sm',
-  outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 focus:ring-primary-500',
-  ghost: 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:ring-primary-500',
+  secondary: 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500 shadow-sm dark:bg-gray-700 dark:hover:bg-gray-600',
+  outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:border-gray-500',
+  ghost: 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:ring-primary-500 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white',
   danger: 'bg-error-600 text-white hover:bg-error-700 focus:ring-error-500 shadow-sm',
 } as const
 
@@ -23,7 +23,9 @@ const SIZES = {
   lg: 'px-6 py-3 text-base',
 } as const
 
-const BASE_CLASSES = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
+// `focus:ring-offset-2` renders the offset in the page background colour, so it
+// needs a dark counterpart or the focus ring sits in a white halo.
+const BASE_CLASSES = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed'
 
 export const Button = React.memo(forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   variant = 'primary',

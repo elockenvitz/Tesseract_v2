@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { Info } from 'lucide-react'
 
+// gray-900 is also the dark-mode page background, so the tooltip needs a
+// lighter surface in dark or it disappears into the page behind it.
+const TOOLTIP_SURFACE =
+  'fixed z-50 px-3 py-2 text-sm text-white bg-gray-900 dark:bg-gray-700 dark:ring-1 dark:ring-gray-600 rounded-lg shadow-lg max-w-xs pointer-events-none'
+
 interface TooltipProps {
   content: string
   children?: React.ReactNode
@@ -124,13 +129,13 @@ export function Tooltip({ content, children, position = 'top', className }: Tool
         <div
           ref={tooltipRef}
           style={coords ? { top: coords.top, left: coords.left } : { visibility: 'hidden', top: 0, left: 0 }}
-          className="fixed z-50 px-3 py-2 text-sm text-white bg-gray-900 rounded-lg shadow-lg max-w-xs pointer-events-none"
+          className={TOOLTIP_SURFACE}
         >
           {content}
           {coords && (
             <div
               className={clsx(
-                'absolute w-2 h-2 bg-gray-900 rotate-45',
+                'absolute w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45',
                 position === 'top' && 'bottom-[-4px] left-1/2 -translate-x-1/2',
                 position === 'bottom' && 'top-[-4px] left-1/2 -translate-x-1/2',
                 position === 'left' && 'right-[-4px] top-1/2 -translate-y-1/2',
@@ -154,7 +159,7 @@ interface InfoTooltipProps {
 export function InfoTooltip({ content, position = 'top', iconClassName }: InfoTooltipProps) {
   return (
     <Tooltip content={content} position={position}>
-      <Info className={clsx('w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors', iconClassName)} />
+      <Info className={clsx('w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors', iconClassName)} />
     </Tooltip>
   )
 }
