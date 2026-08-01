@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lightbulb } from 'lucide-react'
 import { ReelsFeedItem } from '../feed/ReelsFeedItem'
-import { MobileFeedActionRail } from './MobileFeedActionRail'
+import { ACTION_BAR_HEIGHT, MobileFeedActionRail } from './MobileFeedActionRail'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
@@ -11,7 +11,6 @@ interface MobileDashboardProps {
   onNavigate?: (result: any) => void
   onShare?: (item: ScoredFeedItem) => void
   onCreateIdea?: (item: ScoredFeedItem) => void
-  onOpenFullChart?: (symbol: string) => void
 }
 
 /**
@@ -32,7 +31,6 @@ export function MobileDashboard({
   onNavigate,
   onShare,
   onCreateIdea,
-  onOpenFullChart,
 }: MobileDashboardProps) {
   const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useIdeasFeed({
     mode: 'for_you',
@@ -40,6 +38,16 @@ export function MobileDashboard({
 
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // Drop items with nothing to say. AI insights in particular can arrive as a
+  // headline plus a call to action and no actual finding — a full screen
+  // asking you to act on nothing is worse than one fewer card.
+  const visibleItems = items.filter(item => {
+    const body = stripMarkup(item.content ?? '')
+    if (body.length >= MIN_BODY_CHARS) return true
+    // Short is fine when the card carries other substance.
+    return 'asset' in item && !!item.asset
+  })
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -72,7 +80,7 @@ export function MobileDashboard({
     )
   }
 
-  if (!items.length) {
+  if (!visibleItems.length) {
     return (
       <div className="h-full flex items-center justify-center px-8">
         <div className="text-center">
@@ -89,24 +97,24 @@ export function MobileDashboard({
   return (
     <>
       <div className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain">
-        {items.map(item => {
-          const asset = 'asset' in item && item.asset ? item.asset : null
+        {visibleItems.map(item => {
           const source = readthroughSourceType(item.type)
           return (
             <section key={item.id} className="relative h-full w-full snap-start snap-always">
-              <ReelsFeedItem
-                item={item}
-                hideHeaderActions
-                onAssetClick={openAsset}
-                onOpenFullChart={onOpenFullChart}
-                onShare={onShare}
-                onCreateIdea={onCreateIdea}
-              />
+              {/* Inset by exactly the bar height so the card never renders
+                  underneath the actions. */}
+              <div className="absolute inset-x-0 top-0" style={{ bottom: ACTION_BAR_HEIGHT }}>
+                <ReelsFeedItem
+                  item={item}
+                  hideHeaderActions
+                  onAssetClick={openAsset}
+                  onShare={onShare}
+                  onCreateIdea={onCreateIdea}
+                />
+              </div>
               <MobileFeedActionRail
                 itemId={item.id}
                 itemType={item.type}
-                symbol={asset?.symbol}
-                onOpenChart={asset?.symbol ? () => onOpenFullChart?.(asset.symbol) : undefined}
                 onShare={onShare ? () => onShare(item) : undefined}
                 onCreateIdea={onCreateIdea ? () => onCreateIdea(item) : undefined}
                 onReadthrough={source ? () => setReadthroughFor(item) : undefined}
@@ -138,6 +146,13 @@ export function MobileDashboard({
  * tables, and guessing the wrong one would write a link that resolves to
  * nothing, so readthrough is withheld there rather than recorded incorrectly.
  */
+/** Below this, a card has no substantive body worth a full screen. */
+const MIN_BODY_CHARS = 24
+
+function stripMarkup(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim()
+}
+
 function readthroughSourceType(type: ItemType): ReadthroughSourceType | null {
   switch (type) {
     case 'quick_thought':

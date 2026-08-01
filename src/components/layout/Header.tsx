@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -322,20 +322,19 @@ export function Header({
                   setShowAppMenu(!showAppMenu)
                 }}
                 className={clsx(
-                  'flex items-center justify-center gap-0.5 h-11 px-1.5 -ml-1 rounded-lg transition-colors',
-                  // On phones the mark is the only way into navigation, so it
-                  // needs to read as a control rather than as a logo: visible
-                  // button chrome plus a disclosure chevron. Desktop keeps the
-                  // bare mark, where the app-launcher convention is familiar.
-                  'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700',
-                  'md:w-9 md:h-9 md:px-0 md:bg-transparent md:dark:bg-transparent md:hover:bg-gray-100 md:dark:hover:bg-gray-800'
+                  'flex items-center justify-center gap-1 h-11 px-1 -ml-1 rounded-lg transition-colors',
+                  'hover:bg-gray-100 dark:hover:bg-gray-800',
+                  'md:w-9 md:h-9 md:px-0'
                 )}
                 aria-label={isMobile ? 'Open menu' : 'App launcher'}
                 aria-haspopup="menu"
                 title={isMobile ? 'Menu' : 'App launcher'}
               >
                 <TesseractLogo size={24} />
-                <ChevronDown className="md:hidden h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+                {/* A hamburger is the unambiguous "this opens navigation"
+                    signal on a phone; a chevron reads as a dropdown. Desktop
+                    keeps the bare mark, where the launcher grid is familiar. */}
+                <Menu className="md:hidden h-4 w-4 text-gray-600 dark:text-gray-300" />
               </button>
 
               {/* App Launcher Panel */}
@@ -674,12 +673,16 @@ export function Header({
                 onShowThoughts()
               }}
               className={clsx(
-                "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
+                // Kept on phones: capturing an idea the moment you have one is
+                // the point of the mobile app, so it must be reachable from
+                // every screen. Amber on mobile so it reads as the one
+                // create action rather than another grey utility icon.
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'thoughts'
-                  ? "text-amber-600 bg-amber-100"
-                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  ? "text-amber-600 bg-amber-100 dark:bg-amber-900/30"
+                  : "text-amber-500 md:text-gray-400 md:hover:text-gray-600 dark:hover:text-gray-300"
               )}
-              title="Capture a thought"
+              title="Capture an idea"
             >
               <Lightbulb className="h-5 w-5" />
             </button>

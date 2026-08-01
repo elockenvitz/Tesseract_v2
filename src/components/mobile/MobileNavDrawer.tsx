@@ -174,14 +174,19 @@ export function MobileNavDrawer({
                         {tab.title}
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onTabClose(tab.id)}
-                      className="flex items-center justify-center h-11 w-11 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                      aria-label={`Close ${tab.title}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {/* The dashboard tab cannot be closed (see
+                        DashboardPage.handleTabClose), so offering an X there
+                        is a control that does nothing. */}
+                    {tab.id !== 'dashboard' && (
+                      <button
+                        type="button"
+                        onClick={() => onTabClose(tab.id)}
+                        className="flex items-center justify-center h-11 w-11 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        aria-label={`Close ${tab.title}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 )
               })}

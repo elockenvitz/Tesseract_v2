@@ -1212,15 +1212,10 @@ export function DashboardPage() {
     // and horizontal overflow that breakpoints do not fix. See MobileDashboard.
     if (isMobile) {
       return (
-        <MobileDashboard
-          onNavigate={handleSearchResult}
-          onOpenFullChart={(symbol) => handleSearchResult({
-            id: `chart-${symbol}`,
-            title: symbol,
-            type: 'charting',
-            data: { symbol },
-          })}
-        />
+        // No full-chart handler: Charting is desktop-only, so offering it here
+        // just routes to a "desktop only" card. ReelsChartPanel hides its
+        // expand affordance when no handler is supplied.
+        <MobileDashboard onNavigate={handleSearchResult} />
       )
     }
 

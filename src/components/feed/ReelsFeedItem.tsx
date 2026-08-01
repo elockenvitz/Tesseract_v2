@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import {
   TrendingUp, TrendingDown, Lightbulb, FileText, GitBranch, Sparkles,
-  MessageSquare, User, ChevronDown, ChevronUp, Share2, PlusCircle
+  MessageSquare, User, ChevronDown, ChevronUp, ChevronRight, Share2, PlusCircle
 } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
@@ -161,7 +161,10 @@ export function ReelsFeedItem({
                 <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
               </div>
             )}
-            <span className="text-sm font-medium hidden sm:inline">
+            {/* Always show the name. A bare avatar glyph with no label tells
+                the reader nothing about who wrote the post — which is the
+                single most useful piece of context on a research feed. */}
+            <span className="text-sm font-medium truncate max-w-[9rem] sm:max-w-none">
               {item.author.full_name ||
                 (item.author.first_name && item.author.last_name
                   ? `${item.author.first_name} ${item.author.last_name}`
@@ -170,7 +173,8 @@ export function ReelsFeedItem({
           </button>
 
           {/* Time */}
-          <span className="text-gray-400 text-sm hidden md:inline">
+          {/* Recency matters on a research feed — keep it on phones too. */}
+          <span className="text-gray-400 text-xs md:text-sm whitespace-nowrap">
             {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
           </span>
         </div>
@@ -229,6 +233,36 @@ export function ReelsFeedItem({
       {/* Content area */}
       <div className="absolute top-[calc(52px+50%)] left-0 right-0 bottom-0 px-4 py-3 overflow-y-auto">
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
+          {/* Qualifiers lead, compactly, so they frame the reasoning rather
+              than trailing after it as a stack of competing chips. */}
+          {item.type === 'trade_idea' && 'action' in item && item.action && (
+            <div className="flex items-center gap-2 mb-2">
+              <span className={clsx(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide',
+                item.action === 'buy'
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+              )}>
+                {item.action === 'buy'
+                  ? <TrendingUp className="h-3 w-3" />
+                  : <TrendingDown className="h-3 w-3" />}
+                {item.action.toUpperCase()}
+              </span>
+              {/* Only surfaced when it actually signals something. "medium"
+                  and "low" on every card is noise. */}
+              {'urgency' in item && (item.urgency === 'urgent' || item.urgency === 'high') && (
+                <span className={clsx(
+                  'px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide',
+                  item.urgency === 'urgent'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                )}>
+                  {item.urgency}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Title for notes/insights */}
           {'title' in item && item.title && (
             <h2 className="text-lg font-bold text-gray-900 mb-2 dark:text-white">
@@ -236,8 +270,8 @@ export function ReelsFeedItem({
             </h2>
           )}
 
-          {/* Content */}
-          <p className="text-gray-700 text-base leading-relaxed dark:text-gray-300">
+          {/* The reasoning — the substance of the post, so it gets the weight */}
+          <p className="text-gray-800 text-[15px] leading-relaxed dark:text-gray-200">
             {displayContent}
           </p>
 
@@ -264,37 +298,12 @@ export function ReelsFeedItem({
             </button>
           )}
 
-          {/* Trade idea specific info */}
-          {item.type === 'trade_idea' && 'action' in item && (
-            <div className="flex items-center gap-2 mt-3">
-              <span className={clsx(
-                'px-3 py-1 rounded-full text-sm font-medium',
-                item.action === 'buy'
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-red-100 text-red-700'
-              )}>
-                {item.action === 'buy' ? (
-                  <TrendingUp className="h-4 w-4 inline-block mr-1" />
-                ) : (
-                  <TrendingDown className="h-4 w-4 inline-block mr-1" />
-                )}
-                {item.action?.toUpperCase()}
-              </span>
-              {'urgency' in item && item.urgency && (
-                <span className={clsx(
-                  'px-2 py-1 rounded-full text-xs font-medium',
-                  item.urgency === 'urgent' && 'bg-red-100 text-red-700',
-                  item.urgency === 'high' && 'bg-orange-100 text-orange-700',
-                  item.urgency === 'medium' && 'bg-yellow-100 text-yellow-700',
-                  item.urgency === 'low' && 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
-                )}>
-                  {item.urgency}
-                </span>
-              )}
-            </div>
-          )}
+          {/* Action/urgency now lead the card, above the reasoning. */}
 
-          {/* Asset badge */}
+          {/* Route to the asset as a quiet text link. The chart panel directly
+              above already renders `$SYMBOL` in bold with the company name, so
+              a second prominent symbol chip here was pure duplication — but
+              the navigation itself is still worth keeping. */}
           {displaySymbol && (
             <button
               onClick={(e) => {
@@ -305,25 +314,35 @@ export function ReelsFeedItem({
                   onAssetClick?.(noteSource.id, noteSource.name)
                 }
               }}
-              className="inline-flex items-center gap-1 mt-3 px-3 py-1 bg-primary-100 rounded-full text-primary-700 hover:bg-primary-200 transition-colors font-medium"
+              className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
             >
-              <span>${displaySymbol}</span>
+              <span>Open {displaySymbol}</span>
+              <ChevronRight className="h-4 w-4" />
             </button>
           )}
 
-          {/* Tags */}
-          {'tags' in item && item.tags && item.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {item.tags.slice(0, 5).map(tag => (
-                <span
-                  key={tag}
-                  className="px-2 py-0.5 bg-gray-200 rounded-full text-gray-600 text-xs dark:text-gray-400"
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Tags. Capped at three and de-duplicated against the asset badge
+              above — a chip repeating the symbol already shown adds noise
+              without adding information. */}
+          {'tags' in item && item.tags && item.tags.length > 0 && (() => {
+            const symbolLower = displaySymbol?.toLowerCase()
+            const tags = item.tags
+              .filter(tag => tag && tag.toLowerCase() !== symbolLower)
+              .slice(0, 3)
+            if (!tags.length) return null
+            return (
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {tags.map(tag => (
+                  <span
+                    key={tag}
+                    className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[11px] dark:bg-gray-800 dark:text-gray-400"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>
