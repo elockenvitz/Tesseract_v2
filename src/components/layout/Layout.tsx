@@ -10,6 +10,8 @@ import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -58,6 +60,18 @@ export function Layout({
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
+
+  // On phones the tab strip is replaced by a nav drawer opened from the
+  // Tesseract mark — the Chrome-tab metaphor assumes you are juggling several
+  // surfaces at once, which does not survive a 390px viewport.
+  const isMobile = useIsMobile()
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+
+  // Close the drawer if the viewport grows back to desktop mid-session
+  // (rotation, or a resized browser window), so it cannot get stranded open.
+  useEffect(() => {
+    if (!isMobile) setIsMobileNavOpen(false)
+  }, [isMobile])
 
   // Global sidebar store for thoughts capture/inspect modes
   const {
@@ -393,6 +407,7 @@ export function Layout({
         commPaneView={commPaneView}
         onShowAI={handleShowAI}
         onShowThoughts={handleShowThoughts}
+        onOpenMobileNav={() => setIsMobileNavOpen(true)}
       />
       {isOrgArchived && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-sm text-amber-800">
@@ -401,18 +416,20 @@ export function Layout({
           <span className="text-amber-600">All data is read-only. Contact a platform administrator to restore.</span>
         </div>
       )}
-      <TabManager
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onTabChange={onTabChange}
-        onTabClose={onTabClose}
-        onCloseTabs={onCloseTabs}
-        onNewTab={onNewTab}
-        onTabReorder={onTabReorder}
-        onTabsReorder={onTabsReorder}
-        onFocusSearch={onFocusSearch}
-        hideNewTab={hideNewTab}
-      />
+      {!isMobile && (
+        <TabManager
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onTabChange={onTabChange}
+          onTabClose={onTabClose}
+          onCloseTabs={onCloseTabs}
+          onNewTab={onNewTab}
+          onTabReorder={onTabReorder}
+          onTabsReorder={onTabsReorder}
+          onFocusSearch={onFocusSearch}
+          hideNewTab={hideNewTab}
+        />
+      )}
       <main className="flex-1 min-h-0 overflow-hidden">
         {(() => {
           const activeTab = tabs.find(tab => tab.id === activeTabId)
@@ -422,9 +439,11 @@ export function Layout({
             <div className={clsx(
               "relative h-full flex flex-col",
               isFullWidth ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
-              !isFullWidth && !isCompactPad && "px-4 sm:px-6 lg:px-8 py-6",
+              !isFullWidth && !isCompactPad && "px-3 py-4 sm:px-6 sm:py-6 lg:px-8",
               "transition-[margin] duration-300 ease-in-out",
-              isCommPaneOpen && !isCommPaneFullscreen ? "mr-96" : "mr-0",
+              // The comm pane becomes a bottom sheet on phones, so it must not
+              // reserve a 384px right margin out of a 390px viewport.
+              isCommPaneOpen && !isCommPaneFullscreen && !isMobile ? "mr-96" : "mr-0",
               isFocusMode && "ring-4 ring-primary-400 ring-opacity-50"
             )}>
           {isFocusMode && (
@@ -446,6 +465,7 @@ export function Layout({
       </main>
       
       <CommunicationPane
+        isMobile={isMobile}
         isOpen={isCommPaneOpen}
         onToggle={toggleCommPane}
         isFullscreen={isCommPaneFullscreen}
@@ -476,6 +496,19 @@ export function Layout({
           }
         }}
       />
+
+      {isMobile && (
+        <MobileNavDrawer
+          open={isMobileNavOpen}
+          onClose={() => setIsMobileNavOpen(false)}
+          onSearchResult={onSearchResult}
+          onOpenSearch={onFocusSearch}
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onTabChange={onTabChange}
+          onTabClose={onTabClose}
+        />
+      )}
     </div>
   )
 }

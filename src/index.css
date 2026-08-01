@@ -105,6 +105,92 @@
   }
 }
 
+@layer utilities {
+  /* Safe-area insets — notch and home-indicator padding. Zero on desktop. */
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
+  .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
+
+  /* Opt in where a row genuinely must scroll sideways (a wide table kept as a
+     table). Adds momentum scrolling and stops the scroll chaining to the page. */
+  .mobile-scroll-x {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Opt out of the global minimum hit area below — for chips, inline badges
+     and dense toolbars where a 44px box would wreck the layout. */
+  .no-touch-target {
+    min-height: 0;
+    min-width: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Mobile base layer.
+
+   Scoped to phone widths so desktop rendering is untouched. These are blunt
+   global rules on purpose: the app has ~540 `p-1` wrappers and ~2,000 12-14px
+   icons, so per-component fixes do not scale. Use `.no-touch-target` to opt a
+   specific control out.
+   --------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  /* Horizontal scroll containment. Any single overflowing child otherwise
+     makes the entire page pannable, which breaks every fixed element. */
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* iOS zooms the viewport when a focused input's font-size is under 16px, and
+     never zooms back out. This is the single most common "my app feels broken
+     on iPhone" bug. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Kill the grey flash on tap; we render our own active states. */
+  a,
+  button,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@media (max-width: 767px) and (pointer: coarse) {
+  button:not(.no-touch-target),
+  [role='button']:not(.no-touch-target),
+  [role='tab']:not(.no-touch-target),
+  select:not(.no-touch-target) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Inline controls inside prose or a text run should not become 44px blocks. */
+  p button:not(.no-touch-target),
+  span > button:not(.no-touch-target),
+  label button:not(.no-touch-target) {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* Hover-reveal patterns have no touch equivalent — show them outright. */
+  .group:hover .group-hover\:opacity-100,
+  .opacity-0.group-hover\:opacity-100 {
+    opacity: 1;
+  }
+}
+
 @layer components {
   .sidebar-nav-item {
     @apply flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200;
