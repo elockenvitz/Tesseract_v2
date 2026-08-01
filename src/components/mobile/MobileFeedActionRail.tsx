@@ -1,37 +1,35 @@
 import { clsx } from 'clsx'
-import {
-  GitCompareArrows, LineChart, PlusCircle, Share2, TrendingDown, TrendingUp,
-} from 'lucide-react'
+import { GitCompareArrows, PlusCircle, Share2, TrendingDown, TrendingUp } from 'lucide-react'
 import { useIdeaReactions } from '../../hooks/ideas/useIdeaReactions'
 import type { ItemType } from '../../hooks/ideas/types'
+
+/** Height the feed card must leave clear for the bar. Exported so the caller
+ *  insets its content by exactly this much instead of guessing. */
+export const ACTION_BAR_HEIGHT = 64
 
 interface MobileFeedActionRailProps {
   itemId: string
   itemType: ItemType
-  /** Absent when the item has no associated asset — chart action is hidden. */
-  symbol?: string | null
-  onOpenChart?: () => void
   onShare?: () => void
   onCreateIdea?: () => void
   onReadthrough?: () => void
 }
 
 /**
- * Vertical action rail over a full-screen feed item.
+ * Actions for the post currently on screen.
  *
- * Right-edge placement is deliberate: it sits under the thumb on a phone and
- * leaves the card content unobstructed, and it keeps every action reachable
- * without leaving the post — the interaction model the feed is built around.
+ * A horizontal bar pinned to the bottom rather than a floating vertical rail:
+ * the rail sat on top of the card and covered the text it was meant to act on.
+ * A bar occupies its own reserved strip, so nothing overlaps and every action
+ * still sits in the thumb zone.
  *
  * Bullish/bearish write to the existing `idea_reactions` table via
- * useIdeaReactions, so signals marked here show up everywhere reactions
+ * useIdeaReactions, so a signal marked here appears everywhere reactions
  * already do rather than becoming a mobile-only side channel.
  */
 export function MobileFeedActionRail({
   itemId,
   itemType,
-  symbol,
-  onOpenChart,
   onShare,
   onCreateIdea,
   onReadthrough,
@@ -42,46 +40,40 @@ export function MobileFeedActionRail({
   const bearish = reactionCounts?.bearish ?? { count: 0, hasReacted: false }
 
   return (
-    <div className="absolute right-2 bottom-24 z-40 flex flex-col items-center gap-1 pb-safe">
-      <RailButton
+    <div
+      className="absolute inset-x-0 bottom-0 z-40 flex items-stretch justify-around gap-1 px-2 pb-safe border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur"
+      style={{ height: ACTION_BAR_HEIGHT }}
+    >
+      <BarButton
         icon={TrendingUp}
         label="Bullish"
         count={bullish.count}
         active={bullish.hasReacted}
-        activeClass="text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300"
+        activeClass="text-emerald-600 dark:text-emerald-400"
         disabled={isToggling}
         onClick={() => toggleReaction('bullish')}
       />
-      <RailButton
+      <BarButton
         icon={TrendingDown}
         label="Bearish"
         count={bearish.count}
         active={bearish.hasReacted}
-        activeClass="text-red-600 bg-red-100 dark:bg-red-900/40 dark:text-red-300"
+        activeClass="text-red-600 dark:text-red-400"
         disabled={isToggling}
         onClick={() => toggleReaction('bearish')}
       />
       {onReadthrough && (
-        <RailButton icon={GitCompareArrows} label="Readthrough" onClick={onReadthrough} />
+        <BarButton icon={GitCompareArrows} label="Readthrough" onClick={onReadthrough} />
       )}
-      {symbol && onOpenChart && (
-        <RailButton icon={LineChart} label="Chart" onClick={onOpenChart} />
-      )}
-      {onShare && <RailButton icon={Share2} label="Share" onClick={onShare} />}
+      {onShare && <BarButton icon={Share2} label="Share" onClick={onShare} />}
       {onCreateIdea && (
-        <RailButton
-          icon={PlusCircle}
-          label="Idea"
-          activeClass="text-primary-700 bg-primary-100"
-          active
-          onClick={onCreateIdea}
-        />
+        <BarButton icon={PlusCircle} label="Idea" activeClass="text-primary-600" active onClick={onCreateIdea} />
       )}
     </div>
   )
 }
 
-function RailButton({
+function BarButton({
   icon: Icon,
   label,
   count,
@@ -105,19 +97,15 @@ function RailButton({
       disabled={disabled}
       aria-label={label}
       aria-pressed={active}
-      className="flex flex-col items-center gap-0.5 w-14 py-1.5 disabled:opacity-50 no-touch-target"
+      className={clsx(
+        'flex-1 flex flex-col items-center justify-center gap-0.5 rounded-lg disabled:opacity-50 no-touch-target',
+        'active:bg-gray-100 dark:active:bg-gray-800 transition-colors',
+        active ? activeClass : 'text-gray-500 dark:text-gray-400'
+      )}
     >
-      <span
-        className={clsx(
-          'flex items-center justify-center h-11 w-11 rounded-full transition-colors',
-          'bg-white/85 dark:bg-gray-800/85 backdrop-blur shadow-sm ring-1 ring-black/5',
-          active && activeClass
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300 leading-none">
-        {count && count > 0 ? count : label}
+      <Icon className="h-5 w-5" />
+      <span className="text-[10px] font-medium leading-none">
+        {count && count > 0 ? `${label} ${count}` : label}
       </span>
     </button>
   )

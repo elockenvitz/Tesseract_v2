@@ -161,7 +161,10 @@ export function ReelsFeedItem({
                 <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
               </div>
             )}
-            <span className="text-sm font-medium hidden sm:inline">
+            {/* Always show the name. A bare avatar glyph with no label tells
+                the reader nothing about who wrote the post — which is the
+                single most useful piece of context on a research feed. */}
+            <span className="text-sm font-medium truncate max-w-[9rem] sm:max-w-none">
               {item.author.full_name ||
                 (item.author.first_name && item.author.last_name
                   ? `${item.author.first_name} ${item.author.last_name}`
@@ -170,7 +173,8 @@ export function ReelsFeedItem({
           </button>
 
           {/* Time */}
-          <span className="text-gray-400 text-sm hidden md:inline">
+          {/* Recency matters on a research feed — keep it on phones too. */}
+          <span className="text-gray-400 text-xs md:text-sm whitespace-nowrap">
             {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
           </span>
         </div>
@@ -311,19 +315,28 @@ export function ReelsFeedItem({
             </button>
           )}
 
-          {/* Tags */}
-          {'tags' in item && item.tags && item.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {item.tags.slice(0, 5).map(tag => (
-                <span
-                  key={tag}
-                  className="px-2 py-0.5 bg-gray-200 rounded-full text-gray-600 text-xs dark:text-gray-400"
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Tags. Capped at three and de-duplicated against the asset badge
+              above — a chip repeating the symbol already shown adds noise
+              without adding information. */}
+          {'tags' in item && item.tags && item.tags.length > 0 && (() => {
+            const symbolLower = displaySymbol?.toLowerCase()
+            const tags = item.tags
+              .filter(tag => tag && tag.toLowerCase() !== symbolLower)
+              .slice(0, 3)
+            if (!tags.length) return null
+            return (
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {tags.map(tag => (
+                  <span
+                    key={tag}
+                    className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[11px] dark:bg-gray-800 dark:text-gray-400"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>
