@@ -218,13 +218,17 @@
     max-width: 100%;
   }
 
-  /* iOS zooms the viewport when a focused input's font-size is under 16px, and
-     never zooms back out. This is the single most common "my app feels broken
-     on iPhone" bug. */
-  input,
+  /* iOS zooms the viewport when a focused input's font-size is under 16px and
+     never zooms back out — it also shifts the page, hiding whatever sat below
+     the field. `!important` is deliberate: almost every input here carries a
+     Tailwind size class (`text-sm`, `text-xs`), and a class beats a bare
+     element selector on specificity no matter the source order, so without it
+     this rule silently loses and the zoom still happens.
+     Checkboxes and radios are excluded — font-size changes their box metrics. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea {
-    font-size: 16px;
+    font-size: 16px !important;
   }
 
   /* Kill the grey flash on tap; we render our own active states. */

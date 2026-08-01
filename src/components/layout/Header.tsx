@@ -321,11 +321,21 @@ export function Header({
                   }
                   setShowAppMenu(!showAppMenu)
                 }}
-                className="flex items-center justify-center w-11 h-11 -ml-2 md:w-9 md:h-9 md:-ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                aria-label={isMobile ? 'Open navigation' : 'App launcher'}
+                className={clsx(
+                  'flex items-center justify-center gap-0.5 h-11 px-1.5 -ml-1 rounded-lg transition-colors',
+                  // On phones the mark is the only way into navigation, so it
+                  // needs to read as a control rather than as a logo: visible
+                  // button chrome plus a disclosure chevron. Desktop keeps the
+                  // bare mark, where the app-launcher convention is familiar.
+                  'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700',
+                  'md:w-9 md:h-9 md:px-0 md:bg-transparent md:dark:bg-transparent md:hover:bg-gray-100 md:dark:hover:bg-gray-800'
+                )}
+                aria-label={isMobile ? 'Open menu' : 'App launcher'}
+                aria-haspopup="menu"
                 title={isMobile ? 'Menu' : 'App launcher'}
               >
-                <TesseractLogo size={28} />
+                <TesseractLogo size={24} />
+                <ChevronDown className="md:hidden h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
               </button>
 
               {/* App Launcher Panel */}

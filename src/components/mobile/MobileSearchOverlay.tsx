@@ -86,7 +86,11 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overscroll-contain" />
+      {/* GlobalSearch renders its own absolutely-positioned results panel just
+          below the field, so this area is intentionally empty — it exists to
+          paint the rest of the screen in the surface colour rather than
+          letting the app show through behind the results. */}
+      <div className="flex-1 bg-white dark:bg-gray-900" />
     </div>,
     document.body
   )
