@@ -42,8 +42,10 @@ export {
 } from './types'
 
 // Base provider exports
+// IFinancialDataProvider is an interface, so it needs `export type` under
+// isolatedModules — a value re-export of a type has nothing to emit.
+export type { IFinancialDataProvider } from './base-provider'
 export {
-  IFinancialDataProvider,
   BaseFinancialDataProvider,
   validateProviderConfig
 } from './base-provider'
