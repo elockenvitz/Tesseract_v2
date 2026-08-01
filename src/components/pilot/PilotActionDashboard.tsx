@@ -762,7 +762,10 @@ function SystemLoopCard({
 
       {/* Stage strip */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-        <div className="grid grid-cols-5 gap-1.5 items-stretch">
+        {/* Five stages across is ~70px per card on a phone. Wrap instead —
+            two per row still reads as a loop, and stops the strip forcing
+            the page wider than the screen. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5 items-stretch">
           {stages.map((s, i) => {
             const Icon = s.icon
             // During the cold-load window, force every stage to render

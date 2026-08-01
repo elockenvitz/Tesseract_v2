@@ -261,7 +261,10 @@ export function DashboardFilters({
   portfolios,
 }: DashboardFiltersProps) {
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/60 shadow-sm">
+    // Wraps on narrow screens. This row holds a segmented control, two
+    // labelled selects and a reset button — well over a phone's width — and
+    // as a single non-wrapping flex row it pushed the whole page sideways.
+    <div className="flex flex-wrap items-center gap-2 md:gap-2.5 px-3 py-2 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/60 shadow-sm">
       {/* Mode selector */}
       <div className="flex items-center rounded-lg bg-gray-100 dark:bg-gray-700/50 p-[3px] gap-[2px]">
         {MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
