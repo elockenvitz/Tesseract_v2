@@ -44,7 +44,7 @@ export function ProgressBar({
   return (
     <div>
       <div className="flex justify-between text-sm mb-1">
-        <span className="text-gray-600">{label}</span>
+        <span className="text-gray-600 dark:text-gray-400">{label}</span>
         {showPercentage && (
           <span className="font-medium">{Math.round(clampedValue)}%</span>
         )}

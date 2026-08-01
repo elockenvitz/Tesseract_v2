@@ -402,7 +402,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
   if (isLoading) {
     return (
       <div className={`flex h-full ${className}`}>
-        <div className="w-80 border-r border-gray-200 animate-pulse">
+        <div className="w-80 border-r border-gray-200 animate-pulse dark:border-gray-700">
           <div className="p-4">
             <div className="h-8 bg-gray-200 rounded w-32 mb-4"></div>
             <div className="space-y-2">
@@ -423,11 +423,11 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
   return (
     <div className={`flex h-full ${className}`}>
       {/* Left Sidebar - Workflow List */}
-      <div className="w-80 border-r border-gray-200 bg-gray-50 overflow-y-auto">
+      <div className="w-80 border-r border-gray-200 bg-gray-50 overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
         <div className="p-4">
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Workflows</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Workflows</h2>
             <Button size="sm" onClick={handleCreateWorkflow}>
               <Plus className="w-4 h-4" />
             </Button>
@@ -441,7 +441,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
               placeholder="Search workflows..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
             />
           </div>
 
@@ -449,25 +449,25 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
           <div className="grid grid-cols-2 gap-2 mb-4">
             <button
               onClick={() => setFilterBy('all')}
-              className={`text-xs px-2 py-1 rounded ${filterBy === 'all' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+              className={`text-xs px-2 py-1 rounded ${filterBy === 'all' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400 dark:bg-gray-800'}`}
             >
               All
             </button>
             <button
               onClick={() => setFilterBy('favorites')}
-              className={`text-xs px-2 py-1 rounded ${filterBy === 'favorites' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+              className={`text-xs px-2 py-1 rounded ${filterBy === 'favorites' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400 dark:bg-gray-800'}`}
             >
               ⭐ Favorites
             </button>
             <button
               onClick={() => setFilterBy('my')}
-              className={`text-xs px-2 py-1 rounded ${filterBy === 'my' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+              className={`text-xs px-2 py-1 rounded ${filterBy === 'my' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400 dark:bg-gray-800'}`}
             >
               My Workflows
             </button>
             <button
               onClick={() => setFilterBy('shared')}
-              className={`text-xs px-2 py-1 rounded ${filterBy === 'shared' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+              className={`text-xs px-2 py-1 rounded ${filterBy === 'shared' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400 dark:bg-gray-800'}`}
             >
               Shared
             </button>
@@ -482,7 +482,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                 className={`p-3 rounded-lg cursor-pointer transition-colors ${
                   selectedWorkflow?.id === workflow.id
                     ? 'bg-blue-50 border border-blue-200'
-                    : 'bg-white hover:bg-gray-50 border border-gray-200'
+                    : 'bg-white hover:bg-gray-50 border border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -491,7 +491,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: workflow.color }}
                     />
-                    <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                    <h3 className="font-medium text-sm text-gray-900 truncate dark:text-white">{workflow.name}</h3>
                   </div>
                   <div className="flex items-center space-x-1">
                     {workflow.is_favorited && (
@@ -504,10 +504,10 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                 </div>
 
                 {workflow.description && (
-                  <p className="text-xs text-gray-600 mb-2 line-clamp-2">{workflow.description}</p>
+                  <p className="text-xs text-gray-600 mb-2 line-clamp-2 dark:text-gray-400">{workflow.description}</p>
                 )}
 
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
                   <span>{workflow.usage_count} uses</span>
                   <span>{workflow.active_assets} active</span>
                 </div>
@@ -564,8 +564,8 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                   style={{ backgroundColor: selectedWorkflow.color }}
                 />
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">{selectedWorkflow.name}</h1>
-                  <p className="text-gray-600">{selectedWorkflow.description}</p>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedWorkflow.name}</h1>
+                  <p className="text-gray-600 dark:text-gray-400">{selectedWorkflow.description}</p>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
@@ -581,7 +581,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
             </div>
 
             {/* View Tabs */}
-            <div className="border-b border-gray-200 mb-6">
+            <div className="border-b border-gray-200 mb-6 dark:border-gray-700">
               <nav className="flex space-x-8">
                 {[
                   { id: 'overview', label: 'Overview', icon: BarChart3 },
@@ -598,7 +598,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                       className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
                         activeView === tab.id
                           ? 'border-blue-500 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                       }`}
                     >
                       <Icon className="w-4 h-4" />
@@ -617,25 +617,25 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                   <Card>
                     <div className="text-center">
                       <div className="text-3xl font-bold text-blue-600">{selectedWorkflow.usage_count}</div>
-                      <div className="text-sm text-gray-500">Total Uses</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Total Uses</div>
                     </div>
                   </Card>
                   <Card>
                     <div className="text-center">
                       <div className="text-3xl font-bold text-orange-600">{selectedWorkflow.active_assets}</div>
-                      <div className="text-sm text-gray-500">Active Assets</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Active Assets</div>
                     </div>
                   </Card>
                   <Card>
                     <div className="text-center">
                       <div className="text-3xl font-bold text-green-600">{selectedWorkflow.completed_assets}</div>
-                      <div className="text-sm text-gray-500">Completed</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Completed</div>
                     </div>
                   </Card>
                   <Card>
                     <div className="text-center">
                       <div className="text-3xl font-bold text-purple-600">{selectedWorkflow.cadence_days}</div>
-                      <div className="text-sm text-gray-500">Day Cadence</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Day Cadence</div>
                     </div>
                   </Card>
                 </div>
@@ -646,19 +646,19 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                     <h3 className="text-lg font-semibold mb-4">Workflow Details</h3>
                     <div className="space-y-3">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Created by:</span>
+                        <span className="text-gray-600 dark:text-gray-400">Created by:</span>
                         <span className="font-medium">{selectedWorkflow.creator_name}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Created:</span>
+                        <span className="text-gray-600 dark:text-gray-400">Created:</span>
                         <span>{new Date(selectedWorkflow.created_at).toLocaleDateString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Last updated:</span>
+                        <span className="text-gray-600 dark:text-gray-400">Last updated:</span>
                         <span>{new Date(selectedWorkflow.updated_at).toLocaleDateString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Visibility:</span>
+                        <span className="text-gray-600 dark:text-gray-400">Visibility:</span>
                         <div className="space-x-2">
                           {selectedWorkflow.is_public && (
                             <Badge variant="success">Public</Badge>
@@ -675,20 +675,20 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
                     <h3 className="text-lg font-semibold mb-4">Stages Overview</h3>
                     <div className="space-y-2">
                       {selectedWorkflow.stages?.map((stage, index) => (
-                        <div key={stage.id} className="flex items-center space-x-3 p-2 rounded-lg bg-gray-50">
+                        <div key={stage.id} className="flex items-center space-x-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-900">
                           <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-600">
                             {index + 1}
                           </div>
                           <div className="flex-1">
                             <div className="font-medium text-sm">{stage.stage_label}</div>
-                            <div className="text-xs text-gray-600">{stage.stage_description}</div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400">{stage.stage_description}</div>
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             {stage.standard_deadline_days}d
                           </div>
                         </div>
                       )) || (
-                        <div className="text-center py-4 text-gray-500">
+                        <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                           No stages defined
                         </div>
                       )}
@@ -701,7 +701,7 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
             {/* Placeholder for other views */}
             {activeView !== 'overview' && (
               <div className="text-center py-12">
-                <div className="text-gray-500">
+                <div className="text-gray-500 dark:text-gray-400">
                   {activeView === 'stages' && 'Stages management coming soon...'}
                   {activeView === 'checklist' && 'Checklist template management coming soon...'}
                   {activeView === 'admins' && 'Team and admin management coming soon...'}
@@ -714,10 +714,10 @@ export function WorkflowsPage({ className = '' }: WorkflowsPageProps) {
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <Workflow className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                 {filteredWorkflows.length === 0 ? 'No workflows found' : 'Select a workflow'}
               </h3>
-              <p className="text-gray-500 mb-6">
+              <p className="text-gray-500 mb-6 dark:text-gray-400">
                 {filteredWorkflows.length === 0
                   ? 'Create your first workflow to get started'
                   : 'Choose a workflow from the sidebar to view details, manage stages, and configure settings'

@@ -40,7 +40,7 @@ export function TemplateSuggestions({
         <button
           type="button"
           onClick={onCreateNew}
-          className="w-full flex items-center px-3 py-2 text-left text-primary-600 hover:bg-primary-50 border-b border-gray-100"
+          className="w-full flex items-center px-3 py-2 text-left text-primary-600 hover:bg-primary-50 border-b border-gray-100 dark:border-gray-800"
         >
           <Plus className="w-4 h-4 mr-2" />
           <span className="font-medium">Create new template</span>

@@ -96,10 +96,10 @@ export function ShareButton({
         </button>
 
         {showMenu && (
-          <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50">
+          <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
             <button
               onClick={handleCopyLink}
-              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
             >
               {copied ? (
                 <>
@@ -115,7 +115,7 @@ export function ShareButton({
             </button>
             <button
               onClick={() => handleShare('email')}
-              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
             >
               <Mail className="h-4 w-4" />
               <span>Email</span>
@@ -131,7 +131,7 @@ export function ShareButton({
       <button
         onClick={handleClick}
         className={clsx(
-          'p-1 text-gray-400 hover:text-gray-600 transition-colors',
+          'p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300',
           className
         )}
         title="Share"
@@ -147,7 +147,7 @@ export function ShareButton({
         onClick={handleClick}
         className={clsx(
           'flex items-center gap-1.5 px-3 py-1.5 rounded-lg',
-          'text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors',
+          'text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400',
           className
         )}
         title="Share"
@@ -159,10 +159,10 @@ export function ShareButton({
       </button>
 
       {showMenu && (
-        <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50">
+        <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
           <button
             onClick={handleCopyLink}
-            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
           >
             {copied ? (
               <>
@@ -178,14 +178,14 @@ export function ShareButton({
           </button>
           <button
             onClick={() => handleShare('email')}
-            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
           >
             <Mail className="h-4 w-4" />
             <span>Email</span>
           </button>
           <button
             onClick={() => handleShare('message')}
-            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
           >
             <MessageSquare className="h-4 w-4" />
             <span>Share in discussion</span>

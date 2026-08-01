@@ -661,26 +661,26 @@ export function SetupWizard({ onComplete, onSkip, isModal = false, mode = 'initi
   return (
     <div className={clsx(
       'flex flex-col relative',
-      isModal ? 'h-full' : 'min-h-screen bg-gray-50'
+      isModal ? 'h-full' : 'min-h-screen bg-gray-50 dark:bg-gray-900'
     )}>
       {/* Loading overlay with blur */}
       {isLoading && (
         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-            <p className="text-sm text-gray-500">Loading your profile...</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading your profile...</p>
           </div>
         </div>
       )}
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                 {isCustomization ? 'Make this your workspace' : 'Welcome to Tesseract'}
               </h1>
-              <p className="text-gray-600">
+              <p className="text-gray-600 dark:text-gray-400">
                 {isCustomization
                   ? "You've seen how Tesseract works. Customize it to match how you actually invest."
                   : "Let's get you set up in just a few steps"}
@@ -714,8 +714,8 @@ export function SetupWizard({ onComplete, onSkip, isModal = false, mode = 'initi
                         'w-10 h-10 rounded-full flex items-center justify-center transition-colors',
                         isActive && 'bg-primary-600 text-white',
                         isCompleted && !isActive && 'bg-green-500 text-white',
-                        isSkipped && !isActive && 'bg-gray-300 text-gray-500',
-                        !isActive && !isCompleted && !isSkipped && 'bg-gray-200 text-gray-500'
+                        isSkipped && !isActive && 'bg-gray-300 text-gray-500 dark:text-gray-400',
+                        !isActive && !isCompleted && !isSkipped && 'bg-gray-200 text-gray-500 dark:text-gray-400'
                       )}
                     >
                       {isCompleted && !isActive ? (
@@ -728,7 +728,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false, mode = 'initi
                     </div>
                     <span className={clsx(
                       'text-xs mt-1 font-medium text-center whitespace-nowrap',
-                      isActive ? 'text-primary-600' : 'text-gray-500'
+                      isActive ? 'text-primary-600' : 'text-gray-500 dark:text-gray-400'
                     )}>
                       {step.label}
                     </span>
@@ -754,7 +754,7 @@ export function SetupWizard({ onComplete, onSkip, isModal = false, mode = 'initi
       </div>
 
       {/* Footer */}
-      <div className="bg-white border-t border-gray-200 px-6 py-4">
+      <div className="bg-white border-t border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Button
             variant="outline"
@@ -812,47 +812,47 @@ function ProfileStep({ profile, setProfile, user }: {
         <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <User className="h-10 w-10 text-primary-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Confirm Your Profile</h2>
-        <p className="text-gray-600 mt-1">Let's make sure we have your details right</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Confirm Your Profile</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Let's make sure we have your details right</p>
       </div>
 
       <Card className="max-w-xl mx-auto">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">First Name</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
                 {user?.first_name || '—'}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Last Name</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
                 {user?.last_name || '—'}
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Email</label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
               {user?.email || '—'}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title (Optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Title (Optional)</label>
             <input
               type="text"
               value={profile.title}
               onChange={(e) => setProfile(prev => ({ ...prev, title: e.target.value }))}
               placeholder="e.g., Senior Analyst, Portfolio Manager"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">
               What best describes your role? <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-3 gap-3">
@@ -871,14 +871,14 @@ function ProfileStep({ profile, setProfile, user }: {
                       'p-4 rounded-lg border-2 text-center transition-all flex flex-col items-center',
                       isSelected
                         ? 'border-primary-500 bg-primary-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                     )}
                   >
                     <Icon className={clsx('h-6 w-6 mb-2', isSelected ? 'text-primary-600' : 'text-gray-400')} />
-                    <div className={clsx('font-medium', isSelected ? 'text-primary-900' : 'text-gray-900')}>
+                    <div className={clsx('font-medium', isSelected ? 'text-primary-900' : 'text-gray-900 dark:text-white')}>
                       {role.label}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">{role.description}</div>
+                    <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">{role.description}</div>
                   </button>
                 )
               })}
@@ -938,7 +938,7 @@ function OrgNodeItem({
   }
 
   return (
-    <div className={clsx('border-l-2', depth > 0 ? 'ml-4 border-gray-200' : 'border-transparent')} style={{ willChange: 'auto' }}>
+    <div className={clsx('border-l-2', depth > 0 ? 'ml-4 border-gray-200 dark:border-gray-700' : 'border-transparent')} style={{ willChange: 'auto' }}>
       <div
         className={clsx(
           'flex items-center gap-2 p-2 rounded-lg transition-colors',
@@ -949,7 +949,7 @@ function OrgNodeItem({
         <button
           onClick={onToggle}
           className={clsx(
-            'p-1 rounded hover:bg-gray-100',
+            'p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700',
             !hasChildren && !nodeMembers.length && 'invisible'
           )}
         >
@@ -960,11 +960,11 @@ function OrgNodeItem({
         <span className="text-gray-400">{getNodeIcon()}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-900 truncate">{node.name}</span>
+            <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{node.name}</span>
             <span className="text-xs text-gray-400">{getNodeTypeLabel()}</span>
           </div>
           {nodeMembers.length > 0 && !isExpanded && (
-            <span className="text-xs text-gray-500">{nodeMembers.length} member{nodeMembers.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{nodeMembers.length} member{nodeMembers.length !== 1 ? 's' : ''}</span>
           )}
         </div>
 
@@ -999,7 +999,7 @@ function OrgNodeItem({
           {nodeMembers.length > 0 && (
             <div className="py-2 space-y-1">
               {nodeMembers.map((member) => (
-                <div key={member.user_id} className="flex items-center gap-2 px-2 py-1 text-sm text-gray-600">
+                <div key={member.user_id} className="flex items-center gap-2 px-2 py-1 text-sm text-gray-600 dark:text-gray-400">
                   <UserCircle className="h-4 w-4 text-gray-300" />
                   <span>
                     {member.first_name && member.last_name
@@ -1007,7 +1007,7 @@ function OrgNodeItem({
                       : member.email}
                   </span>
                   {member.role && (
-                    <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{member.role}</span>
+                    <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">{member.role}</span>
                   )}
                 </div>
               ))}
@@ -1191,9 +1191,9 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
         <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <FolderTree className="h-10 w-10 text-blue-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Request Team Access</h2>
-        <p className="text-gray-600 mt-1">Browse the organization structure and request access to teams</p>
-        <p className="text-sm text-gray-500 mt-2">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Request Team Access</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Browse the organization structure and request access to teams</p>
+        <p className="text-sm text-gray-500 mt-2 dark:text-gray-400">
           <AlertCircle className="h-4 w-4 inline mr-1" />
           Expand nodes to see members and find the right team
         </p>
@@ -1202,7 +1202,7 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
       {/* Organization Hierarchy */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2 dark:text-white">
             <Building2 className="h-5 w-5 text-gray-400" />
             Organization Structure
           </h3>
@@ -1215,7 +1215,7 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
             </button>
             <button
               onClick={collapseAll}
-              className="text-xs text-gray-600 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50"
+              className="text-xs text-gray-600 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400"
             >
               Collapse All
             </button>
@@ -1224,7 +1224,7 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
 
         <div className="space-y-1 max-h-[400px] overflow-y-auto">
           {orgNodes.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No organization structure defined yet</p>
+            <p className="text-gray-500 text-sm text-center py-4 dark:text-gray-400">No organization structure defined yet</p>
           ) : (
             renderOrgTree()
           )}
@@ -1234,7 +1234,7 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
       {/* Portfolios Section */}
       {portfolios.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 dark:text-white">
             <Briefcase className="h-5 w-5 text-gray-400" />
             Portfolios
           </h3>
@@ -1248,12 +1248,12 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
                   key={portfolio.id}
                   className={clsx(
                     'flex items-center justify-between p-2 rounded-lg border',
-                    isSelected ? 'bg-primary-50 border-primary-200' : 'hover:bg-gray-50 border-gray-200'
+                    isSelected ? 'bg-primary-50 border-primary-200' : 'hover:bg-gray-50 border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700'
                   )}
                 >
                   <div className="flex items-center gap-2">
                     <Briefcase className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-900">{portfolio.name}</span>
+                    <span className="text-sm text-gray-900 dark:text-white">{portfolio.name}</span>
                   </div>
                   {existingRequest?.status === 'approved' ? (
                     <span className="text-xs text-green-600 font-medium px-2 py-1 bg-green-50 rounded">Member</span>
@@ -1289,7 +1289,7 @@ function TeamsStep({ orgNodes, portfolios, orgNodeMembers, accessRequests, exist
             {accessRequests.map((request) => (
               <span
                 key={request.target_id}
-                className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-full text-sm text-primary-700 border border-primary-200"
+                className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-full text-sm text-primary-700 border border-primary-200 dark:bg-gray-800"
               >
                 {request.target_name}
                 <button
@@ -1323,7 +1323,7 @@ function RoleSpecificStep({ profile, setProfile, toggleArrayItem }: {
   return (
     <div className="text-center py-12">
       <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-      <p className="text-gray-600">Please go back and select your role type first.</p>
+      <p className="text-gray-600 dark:text-gray-400">Please go back and select your role type first.</p>
     </div>
   )
 }
@@ -1339,14 +1339,14 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <TrendingUp className="h-10 w-10 text-green-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Investment Profile</h2>
-        <p className="text-gray-600 mt-1">Tell us about your investment focus and strategy</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Investment Profile</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Tell us about your investment focus and strategy</p>
       </div>
 
       {/* Investment Style */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Investment Style</h3>
-        <p className="text-sm text-gray-500 mb-4">Select all that apply</p>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Investment Style</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">Select all that apply</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {INVESTMENT_STYLES.map((style) => (
             <button
@@ -1360,11 +1360,11 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
                 'p-3 rounded-lg border-2 text-left transition-all',
                 profile.investment_style.includes(style.id)
                   ? 'border-green-500 bg-green-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               )}
             >
               <div className="font-medium text-sm">{style.label}</div>
-              <div className="text-xs text-gray-500 mt-1">{style.description}</div>
+              <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">{style.description}</div>
             </button>
           ))}
         </div>
@@ -1373,7 +1373,7 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
       {/* Time Horizon & Market Cap */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-3">Time Horizon</h3>
+          <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Time Horizon</h3>
           <div className="space-y-2">
             {TIME_HORIZONS.map((horizon) => (
               <button
@@ -1387,12 +1387,12 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
                   'w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between',
                   profile.time_horizon.includes(horizon.id)
                     ? 'border-green-500 bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                 )}
               >
                 <div>
                   <div className="font-medium text-sm">{horizon.label}</div>
-                  <div className="text-xs text-gray-500">{horizon.description}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{horizon.description}</div>
                 </div>
                 {profile.time_horizon.includes(horizon.id) && <Check className="h-5 w-5 text-green-600" />}
               </button>
@@ -1401,7 +1401,7 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
         </Card>
 
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-3">Market Cap Focus</h3>
+          <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Market Cap Focus</h3>
           <div className="space-y-2">
             {MARKET_CAP_OPTIONS.map((cap) => (
               <button
@@ -1415,12 +1415,12 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
                   'w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between',
                   profile.market_cap_focus.includes(cap.id)
                     ? 'border-green-500 bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                 )}
               >
                 <div>
                   <div className="font-medium text-sm">{cap.label}</div>
-                  <div className="text-xs text-gray-500">{cap.description}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{cap.description}</div>
                 </div>
                 {profile.market_cap_focus.includes(cap.id) && <Check className="h-5 w-5 text-green-600" />}
               </button>
@@ -1432,7 +1432,7 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
       {/* Geography & Asset Class */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-3">Geography Focus</h3>
+          <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Geography Focus</h3>
           <div className="space-y-2">
             {GEOGRAPHY_OPTIONS.map((geo) => (
               <button
@@ -1446,12 +1446,12 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
                   'w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between',
                   profile.geography_focus.includes(geo.id)
                     ? 'border-green-500 bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                 )}
               >
                 <div>
                   <div className="font-medium text-sm">{geo.label}</div>
-                  <div className="text-xs text-gray-500">{geo.description}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{geo.description}</div>
                 </div>
                 {profile.geography_focus.includes(geo.id) && <Check className="h-5 w-5 text-green-600" />}
               </button>
@@ -1460,7 +1460,7 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
         </Card>
 
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-3">Asset Classes</h3>
+          <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Asset Classes</h3>
           <div className="space-y-2">
             {ASSET_CLASS_OPTIONS.map((asset) => (
               <button
@@ -1474,12 +1474,12 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
                   'w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between',
                   profile.asset_class_focus.includes(asset.id)
                     ? 'border-green-500 bg-green-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                 )}
               >
                 <div>
                   <div className="font-medium text-sm">{asset.label}</div>
-                  <div className="text-xs text-gray-500">{asset.description}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{asset.description}</div>
                 </div>
                 {profile.asset_class_focus.includes(asset.id) && <Check className="h-5 w-5 text-green-600" />}
               </button>
@@ -1490,8 +1490,8 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
 
       {/* Sectors */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Sector Focus</h3>
-        <p className="text-sm text-gray-500 mb-4">Select the sectors you follow or cover</p>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Sector Focus</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">Select the sectors you follow or cover</p>
         <div className="flex flex-wrap gap-2">
           {SECTOR_OPTIONS.map((sector) => (
             <button
@@ -1505,7 +1505,7 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
                 'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                 profile.sector_focus.includes(sector)
                   ? 'bg-green-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
               )}
             >
               {sector}
@@ -1516,13 +1516,13 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
 
       {/* Strategy Description */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Tell Us More</h3>
-        <p className="text-sm text-gray-500 mb-4">
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Tell Us More</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           This helps us personalize your experience and provide relevant context
         </p>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               Describe your investment strategy
             </label>
             <textarea
@@ -1530,11 +1530,11 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
               onChange={(e) => setProfile(prev => ({ ...prev, strategy_description: e.target.value }))}
               placeholder="e.g., I focus on identifying undervalued growth companies in the technology sector with strong competitive moats..."
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               What are your current focus areas and interests?
             </label>
             <textarea
@@ -1542,7 +1542,7 @@ function InvestorProfileStep({ profile, setProfile, toggleArrayItem }: {
               onChange={(e) => setProfile(prev => ({ ...prev, investment_focus_summary: e.target.value }))}
               placeholder="e.g., Currently researching AI infrastructure plays, interested in semiconductor supply chain dynamics..."
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
         </div>
@@ -1562,14 +1562,14 @@ function OperationsProfileStep({ profile, setProfile, toggleArrayItem }: {
         <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Settings className="h-10 w-10 text-blue-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Operations Profile</h2>
-        <p className="text-gray-600 mt-1">Tell us about your operations focus</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Operations Profile</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Tell us about your operations focus</p>
       </div>
 
       {/* Workflow Types */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Workflow Areas</h3>
-        <p className="text-sm text-gray-500 mb-4">What types of workflows do you manage?</p>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Workflow Areas</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">What types of workflows do you manage?</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {OPS_WORKFLOW_TYPES.map((workflow) => (
             <button
@@ -1583,11 +1583,11 @@ function OperationsProfileStep({ profile, setProfile, toggleArrayItem }: {
                 'p-3 rounded-lg border-2 text-left transition-all',
                 profile.ops_workflow_types.includes(workflow.id)
                   ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               )}
             >
               <div className="font-medium text-sm">{workflow.label}</div>
-              <div className="text-xs text-gray-500 mt-1">{workflow.description}</div>
+              <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">{workflow.description}</div>
             </button>
           ))}
         </div>
@@ -1595,13 +1595,13 @@ function OperationsProfileStep({ profile, setProfile, toggleArrayItem }: {
 
       {/* Role Description */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Role Description</h3>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Role Description</h3>
         <textarea
           value={profile.ops_role_description}
           onChange={(e) => setProfile(prev => ({ ...prev, ops_role_description: e.target.value }))}
           placeholder="Describe your day-to-day responsibilities and the teams/processes you support..."
           rows={4}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
         />
       </Card>
     </div>
@@ -1619,14 +1619,14 @@ function ComplianceProfileStep({ profile, setProfile, toggleArrayItem }: {
         <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Shield className="h-10 w-10 text-purple-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Compliance Profile</h2>
-        <p className="text-gray-600 mt-1">Tell us about your compliance focus</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Compliance Profile</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Tell us about your compliance focus</p>
       </div>
 
       {/* Compliance Areas */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Compliance Areas</h3>
-        <p className="text-sm text-gray-500 mb-4">What areas do you focus on?</p>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Compliance Areas</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">What areas do you focus on?</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {COMPLIANCE_AREAS.map((area) => (
             <button
@@ -1640,11 +1640,11 @@ function ComplianceProfileStep({ profile, setProfile, toggleArrayItem }: {
                 'p-3 rounded-lg border-2 text-left transition-all',
                 profile.compliance_areas.includes(area.id)
                   ? 'border-purple-500 bg-purple-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               )}
             >
               <div className="font-medium text-sm">{area.label}</div>
-              <div className="text-xs text-gray-500 mt-1">{area.description}</div>
+              <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">{area.description}</div>
             </button>
           ))}
         </div>
@@ -1652,13 +1652,13 @@ function ComplianceProfileStep({ profile, setProfile, toggleArrayItem }: {
 
       {/* Role Description */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Role Description</h3>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Role Description</h3>
         <textarea
           value={profile.compliance_role_description}
           onChange={(e) => setProfile(prev => ({ ...prev, compliance_role_description: e.target.value }))}
           placeholder="Describe your compliance responsibilities, the teams you oversee, and key focus areas..."
           rows={4}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
         />
       </Card>
     </div>
@@ -1675,14 +1675,14 @@ function IntegrationsStep({ profile, setProfile }: {
         <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Database className="h-10 w-10 text-orange-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Data & Integrations</h2>
-        <p className="text-gray-600 mt-1">Connect your market data tools</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Data & Integrations</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Connect your market data tools</p>
       </div>
 
       {/* Market Data Provider */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Market Data Provider</h3>
-        <p className="text-sm text-gray-500 mb-4">Which platform do you primarily use for market data?</p>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Market Data Provider</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">Which platform do you primarily use for market data?</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {MARKET_DATA_PROVIDERS.map((provider) => (
             <button
@@ -1692,11 +1692,11 @@ function IntegrationsStep({ profile, setProfile }: {
                 'p-4 rounded-lg border-2 text-center transition-all flex flex-col items-center justify-center min-h-[100px]',
                 profile.market_data_provider === provider.id
                   ? 'border-orange-500 bg-orange-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               )}
             >
               {/* TODO: Replace with actual company logos */}
-              <div className="h-10 w-10 mb-2 flex items-center justify-center rounded-lg bg-gray-100 text-gray-400">
+              <div className="h-10 w-10 mb-2 flex items-center justify-center rounded-lg bg-gray-100 text-gray-400 dark:bg-gray-800">
                 {provider.id === 'other' ? (
                   <Settings className="h-5 w-5" />
                 ) : provider.id === 'none' ? (
@@ -1717,7 +1717,7 @@ function IntegrationsStep({ profile, setProfile }: {
               value={profile.market_data_provider_other}
               onChange={(e) => setProfile(prev => ({ ...prev, market_data_provider_other: e.target.value }))}
               placeholder="Enter your market data provider"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
         )}
@@ -1725,8 +1725,8 @@ function IntegrationsStep({ profile, setProfile }: {
 
       {/* Data Needs */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Data Requirements</h3>
-        <p className="text-sm text-gray-500 mb-4">What types of data do you need access to?</p>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Data Requirements</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">What types of data do you need access to?</p>
         <div className="space-y-3">
           {[
             { key: 'needs_realtime_prices', label: 'Real-time Prices', description: 'Live streaming quotes' },
@@ -1740,11 +1740,11 @@ function IntegrationsStep({ profile, setProfile }: {
                 type="checkbox"
                 checked={profile[item.key as keyof UserProfileExtended] as boolean}
                 onChange={(e) => setProfile(prev => ({ ...prev, [item.key]: e.target.checked }))}
-                className="mt-1 h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                className="mt-1 h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600"
               />
               <div>
-                <div className="font-medium text-sm text-gray-900">{item.label}</div>
-                <div className="text-xs text-gray-500">{item.description}</div>
+                <div className="font-medium text-sm text-gray-900 dark:text-white">{item.label}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{item.description}</div>
               </div>
             </label>
           ))}
@@ -1753,25 +1753,25 @@ function IntegrationsStep({ profile, setProfile }: {
 
       {/* Integration Notes */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-3">Additional Notes</h3>
+        <h3 className="font-semibold text-gray-900 mb-3 dark:text-white">Additional Notes</h3>
         <textarea
           value={profile.integration_notes}
           onChange={(e) => setProfile(prev => ({ ...prev, integration_notes: e.target.value }))}
           placeholder="Any specific integration requirements or existing workflows you'd like to connect?"
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
         />
       </Card>
 
       {/* Coming Soon Notice */}
-      <Card className="bg-gray-50 border-gray-200">
+      <Card className="bg-gray-50 border-gray-200 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-start gap-3">
           <div className="p-2 bg-gray-200 rounded-lg">
-            <Settings className="h-5 w-5 text-gray-500" />
+            <Settings className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </div>
           <div>
-            <h4 className="font-medium text-gray-900">Dashboard Customization</h4>
-            <p className="text-sm text-gray-500 mt-1">
+            <h4 className="font-medium text-gray-900 dark:text-white">Dashboard Customization</h4>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
               Coming soon: Customize your dashboard widgets, layouts, and notification preferences.
             </p>
           </div>
@@ -1792,8 +1792,8 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <CheckCircle className="h-10 w-10 text-green-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Review & Complete</h2>
-        <p className="text-gray-600 mt-1">Review your setup before finishing</p>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Review & Complete</h2>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Review your setup before finishing</p>
       </div>
 
       {/* Skipped Steps Warning */}
@@ -1813,18 +1813,18 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
 
       {/* Profile Summary */}
       <Card>
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2 dark:text-white">
           <User className="h-5 w-5 text-gray-400" />
           Profile
         </h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <span className="text-gray-500">Role:</span>
+            <span className="text-gray-500 dark:text-gray-400">Role:</span>
             <span className="ml-2 font-medium capitalize">{profile.user_type || '—'}</span>
           </div>
           {profile.title && (
             <div>
-              <span className="text-gray-500">Title:</span>
+              <span className="text-gray-500 dark:text-gray-400">Title:</span>
               <span className="ml-2 font-medium">{profile.title}</span>
             </div>
           )}
@@ -1834,7 +1834,7 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
       {/* Access Requests Summary */}
       {accessRequests.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2 dark:text-white">
             <Users className="h-5 w-5 text-gray-400" />
             Access Requests ({accessRequests.length})
           </h3>
@@ -1849,7 +1849,7 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
               </span>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-3">
+          <p className="text-xs text-gray-500 mt-3 dark:text-gray-400">
             These requests will be sent to administrators for approval.
           </p>
         </Card>
@@ -1858,26 +1858,26 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
       {/* Role-Specific Summary */}
       {profile.user_type === 'investor' && (
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2 dark:text-white">
             <TrendingUp className="h-5 w-5 text-gray-400" />
             Investment Profile
           </h3>
           <div className="space-y-3 text-sm">
             {profile.investment_style.length > 0 && (
               <div>
-                <span className="text-gray-500">Style:</span>
+                <span className="text-gray-500 dark:text-gray-400">Style:</span>
                 <span className="ml-2">{profile.investment_style.map(s => s.replace('_', ' ')).join(', ')}</span>
               </div>
             )}
             {profile.sector_focus.length > 0 && (
               <div>
-                <span className="text-gray-500">Sectors:</span>
+                <span className="text-gray-500 dark:text-gray-400">Sectors:</span>
                 <span className="ml-2">{profile.sector_focus.join(', ')}</span>
               </div>
             )}
             {profile.geography_focus.length > 0 && (
               <div>
-                <span className="text-gray-500">Geography:</span>
+                <span className="text-gray-500 dark:text-gray-400">Geography:</span>
                 <span className="ml-2">{profile.geography_focus.map(g => g.replace('_', ' ')).join(', ')}</span>
               </div>
             )}
@@ -1888,12 +1888,12 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
       {/* Data Integrations Summary */}
       {profile.market_data_provider && (
         <Card>
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2 dark:text-white">
             <Database className="h-5 w-5 text-gray-400" />
             Data & Integrations
           </h3>
           <div className="text-sm">
-            <span className="text-gray-500">Market Data:</span>
+            <span className="text-gray-500 dark:text-gray-400">Market Data:</span>
             <span className="ml-2 font-medium capitalize">
               {profile.market_data_provider === 'other'
                 ? profile.market_data_provider_other || 'Other'
@@ -1903,7 +1903,7 @@ function ReviewStep({ profile, accessRequests, skippedSteps }: {
         </Card>
       )}
 
-      <div className="text-center text-sm text-gray-500 pt-4">
+      <div className="text-center text-sm text-gray-500 pt-4 dark:text-gray-400">
         Click "Complete Setup" to finish and start using Tesseract
       </div>
     </div>

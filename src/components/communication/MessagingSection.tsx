@@ -547,7 +547,7 @@ export function MessagingSection({
               ))}
             </div>
           ) : recentConversations.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
               <MessageCircle className="h-16 w-16 text-gray-400 mx-auto mb-4" />
               <p>No recent conversations</p>
             </div>
@@ -561,20 +561,20 @@ export function MessagingSection({
                       onContextChange(conv.context_type, conv.context_id, conv.context_name, conv.context_data)
                     }
                   }}
-                  className="p-4 rounded-lg cursor-pointer hover:bg-gray-50 mb-2 border border-gray-200"
+                  className="p-4 rounded-lg cursor-pointer hover:bg-gray-50 mb-2 border border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2 flex-1 min-w-0">
-                      <h4 className="font-semibold text-gray-900 truncate">{conv.context_name}</h4>
+                      <h4 className="font-semibold text-gray-900 truncate dark:text-white">{conv.context_name}</h4>
                       {conv.has_unread && (
                         <span className="w-2 h-2 rounded-full bg-error-500 flex-shrink-0"></span>
                       )}
                     </div>
-                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0 dark:text-gray-400">
                       {formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: true })}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600 truncate">{conv.last_message}</p>
+                  <p className="text-sm text-gray-600 truncate dark:text-gray-400">{conv.last_message}</p>
                 </div>
               ))}
             </div>
@@ -587,7 +587,7 @@ export function MessagingSection({
   return (
     <div className="flex flex-col h-full">
       {/* Context Header */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
         {/* Header with Back Button, Search, Filter, and Focus Button */}
         {contextType && contextId && (
           <div className="flex items-center space-x-2 mb-3">
@@ -596,7 +596,7 @@ export function MessagingSection({
                 onClick={() => {
                   onBack()
                 }}
-                className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 dark:hover:text-gray-300"
                 title="Back to conversations"
               >
                 <ArrowLeft className="h-5 w-5" />
@@ -611,7 +611,7 @@ export function MessagingSection({
                 placeholder="Search messages..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
 
@@ -619,7 +619,7 @@ export function MessagingSection({
             <select
               value={filterBy}
               onChange={(e) => setFilterBy(e.target.value as any)}
-              className="px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 flex-shrink-0"
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 flex-shrink-0 dark:border-gray-600"
             >
               <option value="all">All</option>
               <option value="pinned">Pinned</option>
@@ -637,7 +637,7 @@ export function MessagingSection({
                 "p-2 rounded-lg transition-colors flex-shrink-0",
                 isFocusMode
                   ? "bg-primary-600 text-white hover:bg-primary-700"
-                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700"
               )}
               title="Focus mode - Select component to cite"
             >
@@ -670,7 +670,7 @@ export function MessagingSection({
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className="h-full overflow-y-auto custom-scrollbar pb-4">
           {!contextType || !contextId ? (
-            <div className="p-6 text-center text-gray-500">
+            <div className="p-6 text-center text-gray-500 dark:text-gray-400">
               <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm">Select an asset, portfolio, or theme to start a discussion</p>
             </div>
@@ -703,7 +703,7 @@ export function MessagingSection({
                       <div
                         className={clsx(
                           "flex items-start space-x-3 mt-4 first:mt-0 cursor-pointer rounded-lg p-2 -mx-2 transition-colors",
-                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                          isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50"
                         )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
@@ -713,7 +713,7 @@ export function MessagingSection({
                         )}>
                           <span className={clsx(
                             "text-xs font-semibold",
-                            isOwnMessage ? "text-primary-600" : "text-gray-600"
+                            isOwnMessage ? "text-primary-600" : "text-gray-600 dark:text-gray-400"
                           )}>
                             {getUserInitials(message.user)}
                           </span>
@@ -723,7 +723,7 @@ export function MessagingSection({
                           <div className="flex items-center space-x-2 mb-1">
                             <span className={clsx(
                               "text-sm font-semibold",
-                              isOwnMessage ? "text-primary-700" : "text-gray-900"
+                              isOwnMessage ? "text-primary-700" : "text-gray-900 dark:text-white"
                             )}>
                               {getUserDisplayName(message.user)}
                             </span>
@@ -742,34 +742,34 @@ export function MessagingSection({
 
                           {/* Reply indicator */}
                           {message.reply_to && (
-                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300 dark:text-gray-400 dark:bg-gray-800">
                               <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
-                              <span className="text-gray-500">Replying to previous message</span>
+                              <span className="text-gray-500 dark:text-gray-400">Replying to previous message</span>
                             </div>
                           )}
 
                           {/* Cited content */}
                           {message.cited_content && (
                             <div className="p-2.5 bg-blue-50 border-l-4 border-primary-500 rounded-r mb-2">
-                              <p className="text-xs text-gray-600 italic leading-relaxed">
+                              <p className="text-xs text-gray-600 italic leading-relaxed dark:text-gray-400">
                                 {message.cited_content.substring(0, 100)}...
                               </p>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed dark:text-gray-100">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {/* Message Actions */}
                           {isSelected && (
-                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleReply(message.id)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 Reply
                               </button>
@@ -778,7 +778,7 @@ export function MessagingSection({
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -790,7 +790,7 @@ export function MessagingSection({
                       <div
                         className={clsx(
                           "flex items-start rounded-lg px-2 -mx-2 -mt-0.5 cursor-pointer transition-colors",
-                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                          isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50"
                         )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
@@ -798,28 +798,28 @@ export function MessagingSection({
                         <div className="flex-1 min-w-0">
                           {/* Reply indicator */}
                           {message.reply_to && (
-                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300 dark:text-gray-400 dark:bg-gray-800">
                               <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
-                              <span className="text-gray-500">Replying to previous message</span>
+                              <span className="text-gray-500 dark:text-gray-400">Replying to previous message</span>
                             </div>
                           )}
 
                           {/* Cited content */}
                           {message.cited_content && (
                             <div className="p-2.5 bg-blue-50 border-l-4 border-primary-500 rounded-r mb-2">
-                              <p className="text-xs text-gray-600 italic leading-relaxed">
+                              <p className="text-xs text-gray-600 italic leading-relaxed dark:text-gray-400">
                                 {message.cited_content.substring(0, 100)}...
                               </p>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed dark:text-gray-100">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {/* Message Actions */}
                           {isSelected && (
-                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                               <span className="text-xs text-gray-400">
                                 {formatMessageTime(message.created_at)}
                               </span>
@@ -828,7 +828,7 @@ export function MessagingSection({
                                   e.stopPropagation()
                                   handleReply(message.id)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 Reply
                               </button>
@@ -837,7 +837,7 @@ export function MessagingSection({
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -852,7 +852,7 @@ export function MessagingSection({
               <div ref={messagesEndRef} className="h-4" />
             </div>
           ) : (
-            <div className="p-6 text-center text-gray-500">
+            <div className="p-6 text-center text-gray-500 dark:text-gray-400">
               <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm">No messages yet</p>
               <p className="text-xs">Start the discussion!</p>
@@ -862,7 +862,7 @@ export function MessagingSection({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 relative">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 relative dark:border-gray-700 dark:bg-gray-900">
         {/* Reply indicator */}
         {replyToMessage && replyToMessageData && (
           <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -911,10 +911,10 @@ export function MessagingSection({
 
         <div className="flex space-x-2">
           <div className={clsx(
-            "flex-1 rounded-lg bg-white transition-all",
+            "flex-1 rounded-lg bg-white transition-all dark:bg-gray-800",
             contextType && contextId
               ? "ring-1 ring-gray-300 focus-within:ring-2 focus-within:ring-primary-500 cursor-text"
-              : "ring-1 ring-gray-200 bg-gray-100 cursor-not-allowed"
+              : "ring-1 ring-gray-200 bg-gray-100 cursor-not-allowed dark:bg-gray-800"
           )}>
             <UniversalSmartInput
               ref={smartInputRef}
@@ -951,7 +951,7 @@ export function MessagingSection({
         </div>
 
         {(!contextType || !contextId) && (
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
             Open an asset, portfolio, or theme tab to start a discussion
           </p>
         )}

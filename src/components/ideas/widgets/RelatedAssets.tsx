@@ -91,7 +91,7 @@ export function RelatedAssets({
       <div className={clsx('flex gap-2', className)}>
         {[...Array(3)].map((_, i) => (
           <div key={i} className="animate-pulse">
-            <div className="h-8 w-16 bg-gray-100 rounded-lg" />
+            <div className="h-8 w-16 bg-gray-100 rounded-lg dark:bg-gray-800" />
           </div>
         ))}
       </div>
@@ -104,7 +104,7 @@ export function RelatedAssets({
 
   return (
     <div className={clsx('space-y-2', className)}>
-      <div className="flex items-center gap-1 text-xs text-gray-500">
+      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
         <Link2 className="h-3 w-3" />
         <span>Related</span>
       </div>
@@ -113,11 +113,11 @@ export function RelatedAssets({
           <button
             key={asset.id}
             onClick={() => onAssetClick?.(asset.id, asset.symbol)}
-            className="flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
           >
-            <span className="font-semibold text-gray-900">${asset.symbol}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">${asset.symbol}</span>
             {asset.current_price && (
-              <span className="text-gray-500 text-xs">
+              <span className="text-gray-500 text-xs dark:text-gray-400">
                 ${asset.current_price.toFixed(2)}
               </span>
             )}

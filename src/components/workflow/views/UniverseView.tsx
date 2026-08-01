@@ -150,15 +150,15 @@ function PortfolioScopeEditor({
     <div>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <span className="text-2xl font-bold text-gray-900">{selectedPortfolios.length}</span>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <span className="text-2xl font-bold text-gray-900 dark:text-white">{selectedPortfolios.length}</span>
+          <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
             {selectedPortfolios.length === 1 ? 'Portfolio in scope' : 'Portfolios in scope'}
           </p>
         </div>
         {canEdit && !isEditing && (
           <button
             onClick={() => setIsEditing(true)}
-            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
           >
             Edit Portfolios
           </button>
@@ -175,7 +175,7 @@ function PortfolioScopeEditor({
 
       {/* Add portfolio dropdown — only in edit mode */}
       {isEditing && showAdd && (
-        <div className="mb-3 border border-gray-200 rounded-lg bg-white shadow-sm">
+        <div className="mb-3 border border-gray-200 rounded-lg bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="p-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -183,19 +183,19 @@ function PortfolioScopeEditor({
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search portfolios..."
-                className="w-full text-sm pl-8 pr-3 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                className="w-full text-sm pl-8 pr-3 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700"
                 autoFocus
               />
             </div>
           </div>
-          <div className="max-h-[180px] overflow-y-auto border-t border-gray-100">
+          <div className="max-h-[180px] overflow-y-auto border-t border-gray-100 dark:border-gray-800">
             {unselected.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-4">No portfolios available to add</p>
             ) : unselected.map(p => (
               <button
                 key={p.id}
                 onClick={() => { onAdd!(p.id); setSearch(''); setShowAdd(false) }}
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0"
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 dark:hover:bg-gray-800 dark:text-gray-300"
               >
                 {p.name}
               </button>
@@ -205,18 +205,18 @@ function PortfolioScopeEditor({
       )}
 
       {/* Portfolio list */}
-      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
         {selectedPortfolios.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">No portfolios selected</p>
         ) : selectedPortfolios.map(p => (
           <div key={p.id} className="flex items-center justify-between px-3 py-2.5">
-            <span className="text-sm font-medium text-gray-900">{p.name}</span>
+            <span className="text-sm font-medium text-gray-900 dark:text-white">{p.name}</span>
             {isEditing && onRemove && (
               confirmRemove === p.id ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-gray-500">Remove?</span>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Remove?</span>
                   <button onClick={() => { onRemove(p.id); setConfirmRemove(null) }} className="text-[11px] font-medium text-red-600 hover:text-red-700">Yes</button>
-                  <button onClick={() => setConfirmRemove(null)} className="text-[11px] text-gray-400 hover:text-gray-600">No</button>
+                  <button onClick={() => setConfirmRemove(null)} className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">No</button>
                 </div>
               ) : (
                 <button onClick={() => setConfirmRemove(p.id)} className="text-[11px] text-gray-400 hover:text-red-600 transition-colors">
@@ -232,7 +232,7 @@ function PortfolioScopeEditor({
       {isEditing && onAdd && !showAdd && (
         <button
           onClick={() => { setShowAdd(true); setSearch('') }}
-          className="mt-2 w-full px-3 py-2 text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 hover:text-gray-700 transition-colors text-center"
+          className="mt-2 w-full px-3 py-2 text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 hover:text-gray-700 transition-colors text-center dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400"
         >
           <Plus className="w-3.5 h-3.5 inline mr-1" />Add Portfolio
         </button>
@@ -317,7 +317,7 @@ export function UniverseView({
       )}
 
       {/* ─── Scope (hero card) ────────────────────── */}
-      <div className="rounded-lg border border-gray-200 bg-white px-5 py-4">
+      <div className="rounded-lg border border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-800">
         {scopeType === 'portfolio' ? (
           <PortfolioScopeEditor
             selectedPortfolios={selectedPortfolios}
@@ -331,15 +331,15 @@ export function UniverseView({
           <div className="flex items-start justify-between">
             <div>
               {isLoadingMatch ? (
-                <div className="h-8 w-16 bg-gray-100 rounded animate-pulse mb-1" />
+                <div className="h-8 w-16 bg-gray-100 rounded animate-pulse mb-1 dark:bg-gray-800" />
               ) : !hasRules ? (
                 <span className="text-2xl font-bold text-amber-600">All</span>
               ) : matchCount !== null ? (
-                <span className="text-2xl font-bold text-gray-900">{matchCount}</span>
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">{matchCount}</span>
               ) : (
                 <span className="text-2xl font-bold text-gray-300">—</span>
               )}
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                 {!hasRules ? 'No selection rules — every asset is in scope' : 'Matching assets'}
               </p>
             </div>
@@ -350,7 +350,7 @@ export function UniverseView({
             )}
           </div>
           {hasDelta && (
-            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
               {addedSinceLastRun !== null && addedSinceLastRun > 0 && (
                 <span className="text-xs text-emerald-600 font-medium">+{addedSinceLastRun} new since last run</span>
               )}
@@ -366,7 +366,7 @@ export function UniverseView({
       {/* ─── Selection Rules (asset scope only) ──────────── */}
       {scopeType !== 'portfolio' && (
         <>
-          <div className="border-t border-gray-100" />
+          <div className="border-t border-gray-100 dark:border-gray-800" />
           <SimplifiedUniverseBuilder
             workflowId={workflowId}
             rules={rules}

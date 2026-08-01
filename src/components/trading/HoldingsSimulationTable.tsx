@@ -665,7 +665,7 @@ function HoldingRow({
               type="checkbox"
               checked={promoteSelected ?? false}
               onChange={(e) => { e.stopPropagation(); onTogglePromote(v.id) }}
-              className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer dark:border-gray-600"
               title="Select for execution"
             />
           ) : null}
@@ -2048,7 +2048,7 @@ export function HoldingsSimulationTable({
                     checked={selectAllState === 'all'}
                     onChange={toggleSelectAll}
                     disabled={promotableRows.length === 0}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed dark:border-gray-600"
                     title={selectAllState === 'all' ? 'Clear selection' : 'Select all trades'}
                   />
                 </td>
@@ -2072,7 +2072,7 @@ export function HoldingsSimulationTable({
                       {filters[col.key] && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setFilter(col.key, '') }}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                         ><X className="w-2.5 h-2.5" /></button>
                       )}
                     </div>

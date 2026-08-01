@@ -89,19 +89,19 @@ export function ChecklistItemCard({
           ? 'bg-blue-100 border-blue-400 shadow-lg scale-[1.02] z-10 relative'
           : isDragOver
             ? 'bg-blue-50 border-blue-300 transform translate-y-1'
-            : 'bg-white hover:bg-gray-50 border-gray-200'
+            : 'bg-white hover:bg-gray-50 border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800'
       } ${showControls ? 'cursor-grab active:cursor-grabbing select-none' : ''}`}
     >
       <div className="flex items-start space-x-3">
         {/* Drag Handle */}
         {showControls && (
-          <div className="cursor-move text-gray-400 hover:text-gray-600 pt-1">
+          <div className="cursor-move text-gray-400 hover:text-gray-600 pt-1 dark:hover:text-gray-300">
             <GripVertical className="w-4 h-4" />
           </div>
         )}
 
         {/* Item Number */}
-        <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center border border-gray-300 rounded text-xs font-medium text-gray-600">
+        <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center border border-gray-300 rounded text-xs font-medium text-gray-600 dark:border-gray-600 dark:text-gray-400">
           {index + 1}
         </div>
 
@@ -110,13 +110,13 @@ export function ChecklistItemCard({
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center space-x-2">
-                <span className="font-medium text-gray-900">{item.item_text}</span>
+                <span className="font-medium text-gray-900 dark:text-white">{item.item_text}</span>
                 {item.item_type === 'thinking' ? (
                   <span className="flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-semibold rounded bg-purple-50 text-purple-600 border border-purple-200">
                     <BrainCircuit className="w-2.5 h-2.5" />Analysis
                   </span>
                 ) : (
-                  <span className="flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-semibold rounded bg-gray-100 text-gray-500 border border-gray-200">
+                  <span className="flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-semibold rounded bg-gray-100 text-gray-500 border border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                     <Settings2 className="w-2.5 h-2.5" />Task
                   </span>
                 )}
@@ -128,7 +128,7 @@ export function ChecklistItemCard({
               </div>
 
               {item.item_description && (
-                <p className="text-sm text-gray-500 mt-1">{item.item_description}</p>
+                <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{item.item_description}</p>
               )}
 
               {/* Metadata */}
@@ -141,7 +141,7 @@ export function ChecklistItemCard({
                     {item.tags.map((tag, i) => (
                       <span
                         key={i}
-                        className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200"
+                        className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                       >
                         {tag}
                       </span>
@@ -162,7 +162,7 @@ export function ChecklistItemCard({
                       onEdit()
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className="p-1.5 rounded hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>

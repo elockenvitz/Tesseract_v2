@@ -55,7 +55,7 @@ function QuestionThread({ promptId }: { promptId: string }) {
               <span className="text-white text-[7px] font-semibold">{userInitials(u)}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] text-gray-700 leading-snug">{r.content}</p>
+              <p className="text-[11px] text-gray-700 leading-snug dark:text-gray-300">{r.content}</p>
               <p className="text-[9px] text-gray-400 mt-0.5">{userName(u)} · {relativeTime(r.created_at)}</p>
             </div>
           </div>
@@ -544,7 +544,7 @@ export function DecisionItemCard({
   return (
     <>
       <div className={`rounded-lg border transition-all ${
-        isExpanded ? 'border-gray-200 bg-white shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'
+        isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
       } ${!isEditable ? 'opacity-75' : ''}`}>
 
         {/* ── Row ────────────────────────────────────────────────── */}
@@ -555,7 +555,7 @@ export function DecisionItemCard({
             className={`flex-shrink-0 w-[18px] h-[18px] mt-[1px] rounded-full border-[1.5px] flex items-center justify-center transition-colors ${
               status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
               : status === 'na' ? 'bg-gray-400 border-gray-400 text-white'
-              : isEditable ? 'border-gray-300 hover:border-gray-400' : 'border-gray-200'
+              : isEditable ? 'border-gray-300 hover:border-gray-400 dark:border-gray-600' : 'border-gray-200 dark:border-gray-700'
             } ${!isEditable ? 'cursor-not-allowed' : 'cursor-pointer'}`}
           >
             {status === 'completed' && <Check className="w-2.5 h-2.5" strokeWidth={3} />}
@@ -564,7 +564,7 @@ export function DecisionItemCard({
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className={`text-[13px] font-medium leading-snug ${status === 'completed' ? 'text-gray-400' : 'text-gray-900'}`}>
+              <span className={`text-[13px] font-medium leading-snug ${status === 'completed' ? 'text-gray-400' : 'text-gray-900 dark:text-white'}`}>
                 {item.text}
               </span>
               {stateBadge && !isExpanded && (
@@ -573,7 +573,7 @@ export function DecisionItemCard({
             </div>
             {/* Collapsed preview */}
             {!isExpanded && commentaries.length > 0 && (
-              <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-1 leading-snug">{commentaries[0].comment_text}</p>
+              <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-1 leading-snug dark:text-gray-400">{commentaries[0].comment_text}</p>
             )}
           </div>
 
@@ -587,7 +587,7 @@ export function DecisionItemCard({
 
         {/* ── Expanded ────────────────────────────────────────────── */}
         {isExpanded && (
-          <div className="border-t border-gray-100">
+          <div className="border-t border-gray-100 dark:border-gray-800">
             {/* Commentary — per-user entries */}
             <div className="px-4 pt-3 pb-2 space-y-2.5">
               {/* Other people's commentary */}
@@ -597,10 +597,10 @@ export function DecisionItemCard({
                     <div className={`w-4 h-4 rounded-full ${avatarColor(userName(c.user))} flex items-center justify-center flex-shrink-0`}>
                       <span className="text-white text-[7px] font-semibold">{userInitials(c.user)}</span>
                     </div>
-                    <span className="text-[11px] font-medium text-gray-600">{userName(c.user)}</span>
+                    <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">{userName(c.user)}</span>
                     <span className="text-[10px] text-gray-400">{relativeTime(c.created_at)}{c.is_edited ? ' · edited' : ''}</span>
                   </div>
-                  <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap pl-[22px] mt-0.5">{c.comment_text}</p>
+                  <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap pl-[22px] mt-0.5 dark:text-gray-100">{c.comment_text}</p>
                 </div>
               ))}
 
@@ -611,13 +611,13 @@ export function DecisionItemCard({
                     <div className={`w-4 h-4 rounded-full ${avatarColor(userName({ first_name: currentUser?.user_metadata?.first_name, last_name: currentUser?.user_metadata?.last_name, email: currentUser?.email }))} flex items-center justify-center flex-shrink-0`}>
                       <span className="text-white text-[7px] font-semibold">{userInitials({ first_name: currentUser?.user_metadata?.first_name, last_name: currentUser?.user_metadata?.last_name, email: currentUser?.email })}</span>
                     </div>
-                    <span className="text-[11px] font-medium text-gray-600">{userName({ first_name: currentUser?.user_metadata?.first_name, last_name: currentUser?.user_metadata?.last_name, email: currentUser?.email })}</span>
+                    <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">{userName({ first_name: currentUser?.user_metadata?.first_name, last_name: currentUser?.user_metadata?.last_name, email: currentUser?.email })}</span>
                   </div>
                   <div className="pl-[22px] mt-0.5">
-                    <textarea value={commentaryDraft} onChange={e => setCommentaryDraft(e.target.value)} placeholder="Add your commentary..." className="w-full text-[13px] leading-relaxed px-0 py-0 border-0 focus:outline-none focus:ring-0 resize-none text-gray-900 placeholder:text-gray-300" rows={1} autoFocus onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (commentaryDraft.trim()) saveCommentaryM.mutate({ text: commentaryDraft.trim(), existingId: myCommentary?.id }) }; if (e.key === 'Escape') setEditingCommentary(false) }} onInput={e => { const t = e.target as HTMLTextAreaElement; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }} />
+                    <textarea value={commentaryDraft} onChange={e => setCommentaryDraft(e.target.value)} placeholder="Add your commentary..." className="w-full text-[13px] leading-relaxed px-0 py-0 border-0 focus:outline-none focus:ring-0 resize-none text-gray-900 placeholder:text-gray-300 dark:text-white" rows={1} autoFocus onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (commentaryDraft.trim()) saveCommentaryM.mutate({ text: commentaryDraft.trim(), existingId: myCommentary?.id }) }; if (e.key === 'Escape') setEditingCommentary(false) }} onInput={e => { const t = e.target as HTMLTextAreaElement; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }} />
                     <div className="flex items-center gap-2 mt-0.5">
                       <button onClick={() => { if (commentaryDraft.trim()) saveCommentaryM.mutate({ text: commentaryDraft.trim(), existingId: myCommentary?.id }) }} className="text-[10px] font-medium text-blue-600 hover:text-blue-700">Save</button>
-                      <button onClick={() => setEditingCommentary(false)} className="text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+                      <button onClick={() => setEditingCommentary(false)} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -627,11 +627,11 @@ export function DecisionItemCard({
                     <div className={`w-4 h-4 rounded-full ${avatarColor(userName(myCommentary.user))} flex items-center justify-center flex-shrink-0`}>
                       <span className="text-white text-[7px] font-semibold">{userInitials(myCommentary.user)}</span>
                     </div>
-                    <span className="text-[11px] font-medium text-gray-600">{userName(myCommentary.user)}</span>
+                    <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">{userName(myCommentary.user)}</span>
                     <span className="text-[10px] text-gray-400">{relativeTime(myCommentary.created_at)}{myCommentary.is_edited ? ' · edited' : ''}</span>
                     {isEditable && <Edit3 className="w-3 h-3 text-transparent group-hover/commentary:text-gray-300 transition-colors flex-shrink-0" />}
                   </div>
-                  <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap pl-[22px] mt-0.5">{myCommentary.comment_text}</p>
+                  <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap pl-[22px] mt-0.5 dark:text-gray-100">{myCommentary.comment_text}</p>
                 </div>
               ) : isEditable ? (
                 <button onClick={() => { setEditingCommentary(true); setCommentaryDraft('') }} className="w-full text-left">
@@ -647,12 +647,12 @@ export function DecisionItemCard({
                   <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Supporting notes</span>
                 </div>
                 {addingSignal && (
-                  <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                     <div className="flex gap-1.5 mb-2">
                       {(Object.entries(SIGNAL_META) as [SignalType, typeof SIGNAL_META[SignalType]][]).map(([key, meta]) => (
-                        <button key={key} onClick={() => setSignalType(key)} className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${signalType === key ? `${meta.bg} ${meta.color}` : 'text-gray-500 hover:bg-gray-100'}`}>{meta.label}</button>
+                        <button key={key} onClick={() => setSignalType(key)} className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${signalType === key ? `${meta.bg} ${meta.color}` : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'}`}>{meta.label}</button>
                       ))}
-                      <button onClick={() => setAddingSignal(false)} className="ml-auto text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+                      <button onClick={() => setAddingSignal(false)} className="ml-auto text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
                     </div>
                     <MentionInput value={signalText} onChange={(v, m, r) => { setSignalText(v); setSignalMentions(m); setSignalReferences(r) }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (signalText.trim()) addSignalM.mutate({ signal_type: signalType, text: signalText.trim() }) }; if (e.key === 'Escape') setAddingSignal(false) }} placeholder="Write your note..." className="text-[12px]" rows={2} hideHelper />
                     <div className="flex justify-end mt-2"><button onClick={() => { if (signalText.trim()) addSignalM.mutate({ signal_type: signalType, text: signalText.trim() }) }} disabled={!signalText.trim()} className={`px-3 py-1 text-[11px] font-medium rounded-md ${signalText.trim() ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-400'}`}>Add</button></div>
@@ -675,13 +675,13 @@ export function DecisionItemCard({
                       className={`flex flex-col items-center justify-center gap-1 py-5 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
                         fileDragOver
                           ? 'border-blue-400 bg-blue-50/50'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-700'
                       }`}
                     >
                       {uploading ? (
                         <>
                           <div className="animate-spin w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full" />
-                          <span className="text-[11px] text-gray-500">Uploading...</span>
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400">Uploading...</span>
                         </>
                       ) : (
                         <>
@@ -693,20 +693,20 @@ export function DecisionItemCard({
                       )}
                     </div>
                     <div className="flex items-center justify-end mt-1.5">
-                      <button onClick={() => { setAddingEvidence(false); setFileDragOver(false) }} className="text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+                      <button onClick={() => { setAddingEvidence(false); setFileDragOver(false) }} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
                     </div>
                   </div>
                 )}
                 <div className="space-y-2">
                   {signals.map(s => { const meta = SIGNAL_META[s.signal_type as SignalType] || SIGNAL_META.insight; const isOwn = currentUser?.id === s.user_id; const isEditing = editingSignalId === s.id; return (
                     <div key={s.id} className="group/sig">{isEditing ? (
-                      <div className="p-2.5 bg-gray-50 rounded-lg"><textarea value={editingSignalText} onChange={e => setEditingSignalText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); editSignalM.mutate({ id: s.id, text: editingSignalText.trim() }) }; if (e.key === 'Escape') setEditingSignalId(null) }} className="w-full text-[12px] px-0 py-0 border-0 focus:outline-none focus:ring-0 resize-none bg-transparent" rows={2} autoFocus /><div className="flex gap-2 mt-1.5"><button onClick={() => editSignalM.mutate({ id: s.id, text: editingSignalText.trim() })} className="text-[11px] font-medium bg-gray-900 text-white px-3 py-0.5 rounded-md">Save</button><button onClick={() => setEditingSignalId(null)} className="text-[11px] text-gray-400">Cancel</button></div></div>
+                      <div className="p-2.5 bg-gray-50 rounded-lg dark:bg-gray-900"><textarea value={editingSignalText} onChange={e => setEditingSignalText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); editSignalM.mutate({ id: s.id, text: editingSignalText.trim() }) }; if (e.key === 'Escape') setEditingSignalId(null) }} className="w-full text-[12px] px-0 py-0 border-0 focus:outline-none focus:ring-0 resize-none bg-transparent" rows={2} autoFocus /><div className="flex gap-2 mt-1.5"><button onClick={() => editSignalM.mutate({ id: s.id, text: editingSignalText.trim() })} className="text-[11px] font-medium bg-gray-900 text-white px-3 py-0.5 rounded-md">Save</button><button onClick={() => setEditingSignalId(null)} className="text-[11px] text-gray-400">Cancel</button></div></div>
                     ) : (
-                      <div className="flex items-start gap-2.5"><span className={`text-[11px] mt-[1px] flex-shrink-0 ${meta.color}`}>{meta.icon}</span><div className="flex-1 min-w-0"><p className="text-[12px] text-gray-700 leading-relaxed">{s.comment_text}</p><div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400"><span>{userName(s.user)} · {relativeTime(s.created_at)}</span>{isOwn && <><span className="mx-0.5">·</span><button onClick={() => { setEditingSignalId(s.id); setEditingSignalText(s.comment_text) }} className="hover:text-blue-600">Edit</button><span className="mx-0.5">·</span><button onClick={() => { if (confirm('Delete?')) deleteSignalM.mutate(s.id) }} className="hover:text-red-500">Delete</button></>}</div></div></div>
+                      <div className="flex items-start gap-2.5"><span className={`text-[11px] mt-[1px] flex-shrink-0 ${meta.color}`}>{meta.icon}</span><div className="flex-1 min-w-0"><p className="text-[12px] text-gray-700 leading-relaxed dark:text-gray-300">{s.comment_text}</p><div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400"><span>{userName(s.user)} · {relativeTime(s.created_at)}</span>{isOwn && <><span className="mx-0.5">·</span><button onClick={() => { setEditingSignalId(s.id); setEditingSignalText(s.comment_text) }} className="hover:text-blue-600">Edit</button><span className="mx-0.5">·</span><button onClick={() => { if (confirm('Delete?')) deleteSignalM.mutate(s.id) }} className="hover:text-red-500">Delete</button></>}</div></div></div>
                     )}</div>
                   ) })}
                   {evidence.map(ev => (
-                    <div key={ev.id} className="group/ev flex items-center gap-2.5 py-0.5"><Paperclip className="w-3 h-3 text-gray-300 flex-shrink-0" /><div className="flex-1 min-w-0"><span className="text-[12px] text-gray-700">{ev.file_name}</span>{ev.description && <span className="text-[10px] ml-1.5 text-gray-400">{ev.description}</span>}</div><div className="flex gap-1.5 text-[10px] text-gray-400 flex-shrink-0"><button onClick={() => handleDownload(ev)} className="hover:text-blue-600">Download</button>{isEditable && <button onClick={() => { if (confirm('Remove?')) deleteEvidenceM.mutate(ev.id) }} className="hover:text-red-500">Remove</button>}</div></div>
+                    <div key={ev.id} className="group/ev flex items-center gap-2.5 py-0.5"><Paperclip className="w-3 h-3 text-gray-300 flex-shrink-0" /><div className="flex-1 min-w-0"><span className="text-[12px] text-gray-700 dark:text-gray-300">{ev.file_name}</span>{ev.description && <span className="text-[10px] ml-1.5 text-gray-400">{ev.description}</span>}</div><div className="flex gap-1.5 text-[10px] text-gray-400 flex-shrink-0"><button onClick={() => handleDownload(ev)} className="hover:text-blue-600">Download</button>{isEditable && <button onClick={() => { if (confirm('Remove?')) deleteEvidenceM.mutate(ev.id) }} className="hover:text-red-500">Remove</button>}</div></div>
                   ))}
                 </div>
               </div>
@@ -729,7 +729,7 @@ export function DecisionItemCard({
                             {typeMeta && <span className={`font-medium ${typeMeta.color}`}>{typeMeta.label}</span>}
                             <span className="text-gray-400"> to {userName(wr.owner)}</span>
                             <span className="text-gray-300 mx-1">·</span>
-                            <span className="text-gray-700">{wr.prompt}</span>
+                            <span className="text-gray-700 dark:text-gray-300">{wr.prompt}</span>
                           </p>
                           <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5 text-[10px]">
                             {wr.prompt_id && (
@@ -753,17 +753,17 @@ export function DecisionItemCard({
               <div className="px-4 py-1.5 border-t border-gray-50 relative" ref={attachMenuRef}>
                 <button
                   onClick={() => setShowAttachMenu(!showAttachMenu)}
-                  className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-800"
                 >
                   <Plus className="w-3 h-3" />
                   <span>Attach</span>
                 </button>
                 {showAttachMenu && (
-                  <div className="absolute bottom-full left-4 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[140px]">
-                    <button onClick={() => { setAddingEvidence(true); setEvidenceDesc(''); setShowAttachMenu(false) }} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 text-left">
+                  <div className="absolute bottom-full left-4 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[140px] dark:border-gray-700 dark:bg-gray-800">
+                    <button onClick={() => { setAddingEvidence(true); setEvidenceDesc(''); setShowAttachMenu(false) }} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 text-left dark:hover:bg-gray-800 dark:text-gray-300">
                       <Paperclip className="w-3.5 h-3.5 text-gray-400" />File
                     </button>
-                    <button onClick={() => { setAddingLink(true); setLinkUrl(''); setLinkLabel(''); setShowAttachMenu(false) }} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 text-left">
+                    <button onClick={() => { setAddingLink(true); setLinkUrl(''); setLinkLabel(''); setShowAttachMenu(false) }} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 text-left dark:hover:bg-gray-800 dark:text-gray-300">
                       <LinkIcon className="w-3.5 h-3.5 text-gray-400" />Link
                     </button>
                   </div>
@@ -774,16 +774,16 @@ export function DecisionItemCard({
             {/* Inline link attach */}
             {addingLink && (
               <div className="px-4 py-2 border-t border-gray-50">
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2 dark:border-gray-700 dark:bg-gray-900">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Attach link</span>
-                    <button onClick={() => setAddingLink(false)} className="text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Attach link</span>
+                    <button onClick={() => setAddingLink(false)} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
                   </div>
                   <input
                     value={linkUrl}
                     onChange={e => setLinkUrl(e.target.value)}
                     placeholder="https://..."
-                    className="w-full text-[12px] px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    className="w-full text-[12px] px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-700"
                     autoFocus
                     onKeyDown={e => { if (e.key === 'Escape') setAddingLink(false) }}
                   />
@@ -791,7 +791,7 @@ export function DecisionItemCard({
                     value={linkLabel}
                     onChange={e => setLinkLabel(e.target.value)}
                     placeholder="Label (optional)"
-                    className="w-full text-[12px] px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    className="w-full text-[12px] px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-700"
                     onKeyDown={e => {
                       if (e.key === 'Enter' && linkUrl.trim()) {
                         e.preventDefault()
@@ -820,11 +820,11 @@ export function DecisionItemCard({
       {/* Confirm delete question */}
       {confirmDeleteWrId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDeleteWrId(null)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-5" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Remove question</h3>
-            <p className="text-[13px] text-gray-500 mb-4">This will remove the question and its linked prompt. Any responses will no longer be visible here.</p>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-5 dark:bg-gray-800" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-gray-900 mb-1 dark:text-white">Remove question</h3>
+            <p className="text-[13px] text-gray-500 mb-4 dark:text-gray-400">This will remove the question and its linked prompt. Any responses will no longer be visible here.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDeleteWrId(null)} className="px-3 py-1.5 text-[12px] text-gray-600 hover:text-gray-900 transition-colors">Cancel</button>
+              <button onClick={() => setConfirmDeleteWrId(null)} className="px-3 py-1.5 text-[12px] text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400">Cancel</button>
               <button onClick={() => { deleteWorkRequestM.mutate(confirmDeleteWrId); setConfirmDeleteWrId(null) }} className="px-3 py-1.5 text-[12px] font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors">Remove</button>
             </div>
           </div>

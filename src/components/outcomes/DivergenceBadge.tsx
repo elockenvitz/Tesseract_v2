@@ -78,22 +78,22 @@ export function DivergenceBadge({ breakdown }: DivergenceBadgeProps) {
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed z-50 w-72 max-w-[calc(100vw-16px)] bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+            className="fixed z-50 w-72 max-w-[calc(100vw-16px)] bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800"
             style={{ left: position.x, top: position.y }}
           >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
-              <span className="text-sm font-medium text-gray-900">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+              <span className="text-sm font-medium text-gray-900 dark:text-white">
                 Analyst Rating Divergence
               </span>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                className="p-0.5 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <div className="p-3 space-y-2">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Analysts on this asset have different views.
               </p>
               <div className="space-y-1.5">
@@ -108,7 +108,7 @@ export function DivergenceBadge({ breakdown }: DivergenceBadgeProps) {
                     >
                       {entry.label}
                     </span>
-                    <span className="text-xs text-gray-600">
+                    <span className="text-xs text-gray-600 dark:text-gray-400">
                       {entry.analysts.join(', ')}
                     </span>
                   </div>

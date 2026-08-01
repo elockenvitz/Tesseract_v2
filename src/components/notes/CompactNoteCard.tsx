@@ -68,7 +68,7 @@ export function CompactNoteCard({ note, currentUserId, showAuthor = true, onClic
     <div
       onClick={handleClick}
       className={clsx(
-        'group p-2.5 rounded-lg border border-gray-200 bg-white',
+        'group p-2.5 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
         'hover:border-primary-300 hover:bg-primary-50/30 transition-all cursor-pointer',
         'shadow-sm hover:shadow'
       )}
@@ -77,10 +77,10 @@ export function CompactNoteCard({ note, currentUserId, showAuthor = true, onClic
       <div className="flex items-center gap-2 min-w-0">
         <Icon className={clsx(
           'h-4 w-4 flex-shrink-0',
-          sourceType === 'external_link' ? 'text-blue-500' : 'text-gray-500'
+          sourceType === 'external_link' ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'
         )} />
 
-        <span className="flex-1 font-medium text-sm text-gray-900 truncate" title={note.title}>
+        <span className="flex-1 font-medium text-sm text-gray-900 truncate dark:text-white" title={note.title}>
           {note.title}
         </span>
 
@@ -102,7 +102,7 @@ export function CompactNoteCard({ note, currentUserId, showAuthor = true, onClic
         {showAuthor && (
           <span className={clsx(
             'text-xs',
-            isOwn ? 'text-primary-600 font-medium' : 'text-gray-500'
+            isOwn ? 'text-primary-600 font-medium' : 'text-gray-500 dark:text-gray-400'
           )}>
             {isOwn ? 'You' : authorName}
           </span>

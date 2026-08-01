@@ -120,22 +120,22 @@ export function SuggestAssetModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-2">
             {suggestionType === 'add' ? (
               <Plus className="h-5 w-5 text-green-600" />
             ) : (
               <Minus className="h-5 w-5 text-red-600" />
             )}
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Suggest {suggestionType === 'add' ? 'Adding' : 'Removing'} Asset
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
@@ -145,7 +145,7 @@ export function SuggestAssetModal({
           {/* Asset selection (for 'add' type) */}
           {suggestionType === 'add' && !preselectedAsset && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                 Search Asset
               </label>
               <div className="relative">
@@ -155,35 +155,35 @@ export function SuggestAssetModal({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by symbol or name..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none dark:border-gray-700"
                   autoFocus
                 />
               </div>
 
               {searchQuery.length >= 2 && (
-                <div className="mt-2 border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+                <div className="mt-2 border border-gray-200 rounded-lg max-h-40 overflow-y-auto dark:border-gray-700">
                   {isSearching ? (
                     <div className="flex items-center justify-center py-6">
                       <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                     </div>
                   ) : searchResults && searchResults.length > 0 ? (
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
                       {searchResults.map((asset) => (
                         <button
                           key={asset.id}
                           onClick={() => setSelectedAsset(asset)}
                           className={clsx(
-                            'w-full px-4 py-2 text-left hover:bg-gray-50 transition-colors',
+                            'w-full px-4 py-2 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                             selectedAsset?.id === asset.id && 'bg-blue-50'
                           )}
                         >
-                          <p className="font-medium text-gray-900">{asset.symbol}</p>
-                          <p className="text-sm text-gray-500">{asset.company_name}</p>
+                          <p className="font-medium text-gray-900 dark:text-white">{asset.symbol}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{asset.company_name}</p>
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-center text-gray-500 py-4">No assets found</p>
+                    <p className="text-center text-gray-500 py-4 dark:text-gray-400">No assets found</p>
                   )}
                 </div>
               )}
@@ -192,14 +192,14 @@ export function SuggestAssetModal({
 
           {/* Selected asset display (for 'remove' or after selection) */}
           {selectedAsset && (
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-1">
+            <div className="bg-gray-50 rounded-lg p-3 dark:bg-gray-900">
+              <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">
                 {suggestionType === 'add' ? 'Suggesting to add' : 'Suggesting to remove'}
               </p>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-semibold text-gray-900">{selectedAsset.symbol}</p>
-                  <p className="text-sm text-gray-600">{selectedAsset.company_name}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{selectedAsset.symbol}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{selectedAsset.company_name}</p>
                 </div>
                 {suggestionType === 'add' && !preselectedAsset && (
                   <button
@@ -216,34 +216,34 @@ export function SuggestAssetModal({
           {/* Target user selection */}
           {!preselectedTargetUser && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                 Suggest to
               </label>
               {availableUsers.length > 0 ? (
-                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto dark:border-gray-700 dark:divide-gray-800">
                   {availableUsers.map((targetUser) => (
                     <button
                       key={targetUser.id}
                       onClick={() => setSelectedTargetUser(targetUser)}
                       className={clsx(
-                        'w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-gray-50 transition-colors',
+                        'w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                         selectedTargetUser?.id === targetUser.id && 'bg-blue-50'
                       )}
                     >
                       <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                        <User className="h-4 w-4 text-gray-500" />
+                        <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">
+                        <p className="font-medium text-gray-900 dark:text-white">
                           {getUserDisplayName(targetUser)}
                         </p>
-                        <p className="text-xs text-gray-500">{targetUser.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{targetUser.email}</p>
                       </div>
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 italic">
+                <p className="text-sm text-gray-500 italic dark:text-gray-400">
                   No other users to suggest to
                 </p>
               )}
@@ -252,17 +252,17 @@ export function SuggestAssetModal({
 
           {/* Target user display (when preselected) */}
           {preselectedTargetUser && (
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-1">Suggesting to</p>
+            <div className="bg-gray-50 rounded-lg p-3 dark:bg-gray-900">
+              <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Suggesting to</p>
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                  <User className="h-4 w-4 text-gray-500" />
+                  <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">
+                  <p className="font-medium text-gray-900 dark:text-white">
                     {getUserDisplayName(preselectedTargetUser)}
                   </p>
-                  <p className="text-xs text-gray-500">{preselectedTargetUser.email}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{preselectedTargetUser.email}</p>
                 </div>
               </div>
             </div>
@@ -270,7 +270,7 @@ export function SuggestAssetModal({
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
               Add a note (optional)
             </label>
             <textarea
@@ -282,7 +282,7 @@ export function SuggestAssetModal({
                   : "Why do you think they should remove this?"
               }
               rows={2}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none dark:border-gray-700"
             />
           </div>
 
@@ -296,7 +296,7 @@ export function SuggestAssetModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+        <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 dark:border-gray-800 dark:bg-gray-900">
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>

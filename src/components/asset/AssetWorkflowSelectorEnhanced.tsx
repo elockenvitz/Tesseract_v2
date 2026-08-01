@@ -160,15 +160,15 @@ export function AssetWorkflowSelectorEnhanced({
         className={`flex items-center space-x-2 px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition-colors text-sm ${
           mode === 'header' && activeWorkflows.length === 0
             ? 'bg-blue-50 border-blue-200 hover:bg-blue-100'
-            : 'bg-white border-gray-300'
+            : 'bg-white border-gray-300 dark:border-gray-600 dark:bg-gray-800'
         }`}
       >
         {mode === 'header' && activeWorkflows.length === 0 ? (
           <Plus className="w-4 h-4 text-blue-600" />
         ) : (
-          <GitBranch className="w-4 h-4 text-gray-500" />
+          <GitBranch className="w-4 h-4 text-gray-500 dark:text-gray-400" />
         )}
-        <span className={`font-medium ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-900'}`}>
+        <span className={`font-medium ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-900 dark:text-white'}`}>
           {mode === 'header'
             ? activeWorkflows.length === 0
               ? 'Add to Process'
@@ -179,7 +179,7 @@ export function AssetWorkflowSelectorEnhanced({
           }
         </span>
         {mode !== 'header' && selectedWorkflow && selectedWorkflowData && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
             {formatVersion(
               selectedWorkflowData.template_version_number || 1,
               null,
@@ -187,7 +187,7 @@ export function AssetWorkflowSelectorEnhanced({
             )}
           </span>
         )}
-        <ChevronDown className={`w-4 h-4 ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-500'} transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 ${mode === 'header' && activeWorkflows.length === 0 ? 'text-blue-600' : 'text-gray-500 dark:text-gray-400'} transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown */}
@@ -205,17 +205,17 @@ export function AssetWorkflowSelectorEnhanced({
           }`}>
             {mode === 'header' ? (
               /* Header Mode - Active workflows + Available to add */
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {/* Active Workflows Section */}
                 {activeWorkflows.length > 0 && (
                   <div className="p-2">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1 dark:text-gray-400">
                       Active Processes ({activeWorkflows.length})
                     </div>
                     {activeWorkflows.map(aw => (
                       <div
                         key={aw.id}
-                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2"
+                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2 dark:hover:bg-gray-800"
                       >
                         <button
                           onClick={() => handleSelect(aw.workflow_id)}
@@ -223,7 +223,7 @@ export function AssetWorkflowSelectorEnhanced({
                         >
                           <div className="flex items-center space-x-2">
                             <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
-                            <span className="font-medium text-gray-900 truncate text-sm">
+                            <span className="font-medium text-gray-900 truncate text-sm dark:text-white">
                               {aw.workflows?.name}
                             </span>
                             {aw.workflow_id === selectedWorkflowId && (
@@ -231,11 +231,11 @@ export function AssetWorkflowSelectorEnhanced({
                             )}
                           </div>
                           <div className="flex items-center space-x-2 mt-1 ml-5">
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
                               {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
                             </span>
-                            <span className="text-xs text-gray-500">•</span>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
                               {calculateProgress(aw)}% complete
                             </span>
                           </div>
@@ -257,29 +257,29 @@ export function AssetWorkflowSelectorEnhanced({
                 {/* Available to Add Section */}
                 {availableWorkflows.length > 0 && (
                   <div className="p-2">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-1.5 mb-1 dark:text-gray-400">
                       Available Processes ({availableWorkflows.length})
                     </div>
                     {availableWorkflows.map(workflow => (
                       <div
                         key={workflow.id}
-                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out animate-in fade-in slide-in-from-top-2"
+                        className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out animate-in fade-in slide-in-from-top-2 dark:hover:bg-gray-800"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2">
                             <Plus className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                            <span className="font-medium text-gray-900 truncate text-sm">
+                            <span className="font-medium text-gray-900 truncate text-sm dark:text-white">
                               {workflow.name}
                             </span>
                           </div>
                           <div className="flex items-center space-x-2 mt-1 ml-5">
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
                               {formatVersion(workflow.template_version_number || 1, null, null)}
                             </span>
                             {workflow.description && (
                               <>
-                                <span className="text-xs text-gray-500">•</span>
-                                <span className="text-xs text-gray-500 truncate max-w-[200px]">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                                <span className="text-xs text-gray-500 truncate max-w-[200px] dark:text-gray-400">
                                   {workflow.description}
                                 </span>
                               </>
@@ -299,25 +299,25 @@ export function AssetWorkflowSelectorEnhanced({
 
                 {/* Empty State */}
                 {activeWorkflows.length === 0 && availableWorkflows.length === 0 && (
-                  <div className="px-3 py-8 text-center text-gray-500 text-sm">
+                  <div className="px-3 py-8 text-center text-gray-500 text-sm dark:text-gray-400">
                     No processes available
                   </div>
                 )}
               </div>
             ) : (
               /* Stage Tab Mode - Comprehensive */
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {/* Active Workflows */}
                 {activeWorkflows.length > 0 && (
                   <div className="p-3">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">
                       Active Processes ({activeWorkflows.length})
                     </div>
                     <div className="space-y-1">
                       {activeWorkflows.map(aw => (
                         <div
                           key={aw.id}
-                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2"
+                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out group animate-in fade-in slide-in-from-top-2 dark:hover:bg-gray-800"
                         >
                           <button
                             onClick={() => handleSelect(aw.workflow_id)}
@@ -325,7 +325,7 @@ export function AssetWorkflowSelectorEnhanced({
                           >
                             <div className="flex items-center space-x-2">
                               <Play className="w-3 h-3 text-green-600 flex-shrink-0" />
-                              <span className="font-medium text-gray-900 truncate text-sm">
+                              <span className="font-medium text-gray-900 truncate text-sm dark:text-white">
                                 {aw.workflows?.name}
                               </span>
                               {aw.workflow_id === selectedWorkflowId && (
@@ -333,11 +333,11 @@ export function AssetWorkflowSelectorEnhanced({
                               )}
                             </div>
                             <div className="flex items-center space-x-2 mt-1 ml-5">
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
                               </span>
-                              <span className="text-xs text-gray-500">•</span>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {calculateProgress(aw)}% complete
                               </span>
                             </div>
@@ -360,7 +360,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {/* Completed Workflows */}
                 {completedWorkflows.length > 0 && (
                   <div className="p-3">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">
                       Completed ({completedWorkflows.length})
                     </div>
                     <div className="space-y-1">
@@ -368,13 +368,13 @@ export function AssetWorkflowSelectorEnhanced({
                         <button
                           key={aw.id}
                           onClick={() => handleSelect(aw.workflow_id)}
-                          className="w-full text-left px-3 py-2 rounded hover:bg-gray-50 transition-colors"
+                          className="w-full text-left px-3 py-2 rounded hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2">
                                 <CheckCircle className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                <span className="font-medium text-gray-700 truncate text-sm">
+                                <span className="font-medium text-gray-700 truncate text-sm dark:text-gray-300">
                                   {aw.workflows?.name}
                                 </span>
                                 {aw.workflow_id === selectedWorkflowId && (
@@ -382,10 +382,10 @@ export function AssetWorkflowSelectorEnhanced({
                                 )}
                               </div>
                               <div className="flex items-center space-x-2 mt-1 ml-5">
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
                                   {formatVersion(aw.workflows?.template_version_number || 1, null, null)}
                                 </span>
-                                <span className="text-xs text-gray-500">•</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
                                 <span className="text-xs text-green-600">100% complete</span>
                               </div>
                             </div>
@@ -401,24 +401,24 @@ export function AssetWorkflowSelectorEnhanced({
                 {/* Available to Add */}
                 {availableWorkflows.length > 0 && (
                   <div className="p-3">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">
                       Available to Add ({availableWorkflows.length})
                     </div>
                     <div className="space-y-1">
                       {availableWorkflows.map(workflow => (
                         <div
                           key={workflow.id}
-                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out animate-in fade-in slide-in-from-top-2"
+                          className="flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 transition-all duration-200 ease-in-out animate-in fade-in slide-in-from-top-2 dark:hover:bg-gray-800"
                         >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
                               <Plus className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                              <span className="font-medium text-gray-900 truncate text-sm">
+                              <span className="font-medium text-gray-900 truncate text-sm dark:text-white">
                                 {workflow.name}
                               </span>
                             </div>
                             <div className="flex items-center space-x-2 mt-1 ml-5">
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {formatVersion(workflow.template_version_number || 1, null, null)}
                               </span>
                             </div>
@@ -438,7 +438,7 @@ export function AssetWorkflowSelectorEnhanced({
                 {/* Upcoming Branches */}
                 {upcomingBranches.length > 0 && (
                   <div className="p-3">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">
                       Upcoming Branches ({upcomingBranches.length})
                     </div>
                     <div className="space-y-1">
@@ -472,7 +472,7 @@ export function AssetWorkflowSelectorEnhanced({
 
                 {/* Empty State */}
                 {displayWorkflows.length === 0 && availableWorkflows.length === 0 && upcomingBranches.length === 0 && (
-                  <div className="px-3 py-8 text-center text-gray-500 text-sm">
+                  <div className="px-3 py-8 text-center text-gray-500 text-sm dark:text-gray-400">
                     No processes available
                   </div>
                 )}

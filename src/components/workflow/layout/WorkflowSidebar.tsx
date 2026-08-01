@@ -143,11 +143,11 @@ export function WorkflowSidebar({
   }
 
   return (
-    <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
+    <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full dark:border-gray-700 dark:bg-gray-800">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-gray-900">Workflows</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Workflows</h1>
           <div className="flex items-center space-x-2">
             <Button
               onClick={() => onSelectWorkflow(null)}
@@ -171,7 +171,7 @@ export function WorkflowSidebar({
             placeholder="Search workflows..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
           />
         </div>
 
@@ -180,7 +180,7 @@ export function WorkflowSidebar({
           <button
             onClick={() => setFilterBy('all')}
             className={`px-3 py-1 text-xs rounded-full transition-colors ${
-              filterBy === 'all' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              filterBy === 'all' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             }`}
           >
             All
@@ -188,7 +188,7 @@ export function WorkflowSidebar({
           <button
             onClick={() => setFilterBy('my')}
             className={`px-3 py-1 text-xs rounded-full transition-colors ${
-              filterBy === 'my' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              filterBy === 'my' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             }`}
           >
             Mine
@@ -196,7 +196,7 @@ export function WorkflowSidebar({
           <button
             onClick={() => setFilterBy('shared')}
             className={`px-3 py-1 text-xs rounded-full transition-colors ${
-              filterBy === 'shared' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              filterBy === 'shared' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             }`}
           >
             Shared
@@ -210,7 +210,7 @@ export function WorkflowSidebar({
           /* Loading skeleton */
           <div className="p-4 space-y-3 animate-pulse">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="p-3 border border-gray-200 rounded-lg">
+              <div key={i} className="p-3 border border-gray-200 rounded-lg dark:border-gray-700">
                 <div className="flex items-center space-x-3">
                   <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
                   <div className="flex-1 space-y-2">
@@ -228,9 +228,9 @@ export function WorkflowSidebar({
               <div>
                 <button
                   onClick={() => setIsPersistentExpanded(!isPersistentExpanded)}
-                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
+                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700"
                 >
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                     Persistent Workflows ({persistentWorkflows.length})
                   </h3>
                   <ChevronDown
@@ -240,7 +240,7 @@ export function WorkflowSidebar({
                   />
                 </button>
                 {isPersistentExpanded && (
-                  <div className="border-b border-gray-200">
+                  <div className="border-b border-gray-200 dark:border-gray-700">
                     {persistentWorkflows.map((workflow) => (
                       <button
                         key={workflow.id}
@@ -257,12 +257,12 @@ export function WorkflowSidebar({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
-                              <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                              <h3 className="font-medium text-sm text-gray-900 truncate dark:text-white">{workflow.name}</h3>
                               {workflow.is_favorited && (
                                 <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
                               )}
                             </div>
-                            <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                            <p className="text-xs text-gray-500 truncate mt-1 dark:text-gray-400">{workflow.description}</p>
                           </div>
                         </div>
                       </button>
@@ -277,9 +277,9 @@ export function WorkflowSidebar({
               <div>
                 <button
                   onClick={() => setIsCadenceExpanded(!isCadenceExpanded)}
-                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200"
+                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700"
                 >
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                     Cadence Workflows ({cadenceWorkflows.length})
                   </h3>
                   <ChevronDown
@@ -289,7 +289,7 @@ export function WorkflowSidebar({
                   />
                 </button>
                 {isCadenceExpanded && (
-                  <div className="border-b border-gray-200">
+                  <div className="border-b border-gray-200 dark:border-gray-700">
                     {cadenceWorkflows.map((workflow) => (
                       <button
                         key={workflow.id}
@@ -306,12 +306,12 @@ export function WorkflowSidebar({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
-                              <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                              <h3 className="font-medium text-sm text-gray-900 truncate dark:text-white">{workflow.name}</h3>
                               {workflow.is_favorited && (
                                 <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
                               )}
                             </div>
-                            <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                            <p className="text-xs text-gray-500 truncate mt-1 dark:text-gray-400">{workflow.description}</p>
                           </div>
                         </div>
                       </button>
@@ -322,19 +322,19 @@ export function WorkflowSidebar({
             )}
 
             {persistentWorkflows.length === 0 && cadenceWorkflows.length === 0 && (
-              <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="p-4 text-center text-gray-500 text-sm dark:text-gray-400">
                 {searchTerm ? 'No workflows found' : 'No workflows available'}
               </div>
             )}
 
             {/* Archived Workflows Section */}
             {archivedWorkflows && archivedWorkflows.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-gray-200">
+              <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                  className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                 >
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                     Archived ({archivedWorkflows.length})
                   </h3>
                   <ChevronDown
@@ -360,7 +360,7 @@ export function WorkflowSidebar({
                             style={{ backgroundColor: workflow.color }}
                           />
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-sm text-gray-500 truncate">{workflow.name}</h3>
+                            <h3 className="font-medium text-sm text-gray-500 truncate dark:text-gray-400">{workflow.name}</h3>
                             <p className="text-xs text-gray-400 truncate mt-1">{workflow.description}</p>
                           </div>
                         </div>
@@ -378,7 +378,7 @@ export function WorkflowSidebar({
       {contextMenu.isOpen && (
         <div
           ref={contextMenuRef}
-          className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]"
+          className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px] dark:border-gray-700 dark:bg-gray-800"
           style={{
             left: contextMenu.x,
             top: contextMenu.y
@@ -388,7 +388,7 @@ export function WorkflowSidebar({
             // Unarchive option for archived workflows
             <button
               onClick={handleUnarchive}
-              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
             >
               <ArchiveRestore className="w-4 h-4" />
               <span>Restore</span>
@@ -397,7 +397,7 @@ export function WorkflowSidebar({
             // Archive option for active workflows
             <button
               onClick={handleArchive}
-              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
             >
               <Archive className="w-4 h-4" />
               <span>Archive</span>
@@ -407,7 +407,7 @@ export function WorkflowSidebar({
           {onDuplicateWorkflow && (
             <button
               onClick={handleDuplicate}
-              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
             >
               <Copy className="w-4 h-4" />
               <span>Duplicate</span>
@@ -416,7 +416,7 @@ export function WorkflowSidebar({
 
           {onDeleteWorkflow && (
             <>
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
               <button
                 onClick={handleDelete}
                 className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"

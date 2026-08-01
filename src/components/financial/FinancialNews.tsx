@@ -74,21 +74,21 @@ export function FinancialNews({ symbols, limit = 5, className = '' }: FinancialN
         <Card key={item.id} padding="sm" className="hover:shadow-md transition-shadow">
           <div className="space-y-2">
             <div className="flex items-start justify-between gap-3">
-              <h4 className="font-medium text-gray-900 text-sm leading-5 flex-1">
+              <h4 className="font-medium text-gray-900 text-sm leading-5 flex-1 dark:text-white">
                 {item.headline}
               </h4>
               <a
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                className="text-gray-400 hover:text-gray-600 flex-shrink-0 dark:hover:text-gray-300"
               >
                 <ExternalLink className="h-4 w-4" />
               </a>
             </div>
 
             {item.summary && (
-              <p className="text-xs text-gray-600 line-clamp-2">
+              <p className="text-xs text-gray-600 line-clamp-2 dark:text-gray-400">
                 {item.summary}
               </p>
             )}

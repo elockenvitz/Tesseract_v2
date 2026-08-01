@@ -91,18 +91,18 @@ export function ScreenshotModal({
       className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/50"
       onKeyDown={handleKeyDown}
     >
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-violet-100 rounded-lg">
               <Image className="h-4 w-4 text-violet-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">Add Screenshot Details</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">Add Screenshot Details</h3>
           </div>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600"
+            className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="h-5 w-5" />
           </button>
@@ -110,8 +110,8 @@ export function ScreenshotModal({
 
         {/* Preview */}
         {screenshotDataUrl && (
-          <div className="p-4 bg-gray-50 border-b border-gray-100">
-            <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-white">
+          <div className="p-4 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
+            <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <img
                 src={screenshotDataUrl}
                 alt="Screenshot preview"
@@ -130,7 +130,7 @@ export function ScreenshotModal({
         <div className="p-4 space-y-4">
           {/* Source URL */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               <div className="flex items-center gap-1.5">
                 <Link2 className="h-4 w-4 text-gray-400" />
                 Source URL
@@ -142,16 +142,16 @@ export function ScreenshotModal({
               value={sourceUrl}
               onChange={(e) => setSourceUrl(e.target.value)}
               placeholder="https://example.com/page"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:border-gray-700"
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Where was this screenshot taken from?
             </p>
           </div>
 
           {/* Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               <div className="flex items-center gap-1.5">
                 <FileText className="h-4 w-4 text-gray-400" />
                 Title
@@ -162,13 +162,13 @@ export function ScreenshotModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Screenshot title (optional)"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:border-gray-700"
             />
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               Notes
             </label>
             <textarea
@@ -176,23 +176,23 @@ export function ScreenshotModal({
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add any context or notes about this screenshot..."
               rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none dark:border-gray-700"
             />
           </div>
 
           {/* Tags */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               <div className="flex items-center gap-1.5">
                 <Tag className="h-4 w-4 text-gray-400" />
                 Tags
               </div>
             </label>
-            <div className="flex flex-wrap gap-1.5 p-2 border border-gray-200 rounded-lg min-h-[42px] focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500">
+            <div className="flex flex-wrap gap-1.5 p-2 border border-gray-200 rounded-lg min-h-[42px] focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500 dark:border-gray-700">
               {tags.map(tag => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-sm"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-sm dark:text-gray-300 dark:bg-gray-800"
                 >
                   {tag}
                   <button
@@ -217,17 +217,17 @@ export function ScreenshotModal({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-          <div className="text-xs text-gray-500">
-            <kbd className="px-1.5 py-0.5 bg-white border rounded">⌘</kbd>
+        <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between dark:border-gray-800 dark:bg-gray-900">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            <kbd className="px-1.5 py-0.5 bg-white border rounded dark:bg-gray-800">⌘</kbd>
             <span className="mx-1">+</span>
-            <kbd className="px-1.5 py-0.5 bg-white border rounded">Enter</kbd>
+            <kbd className="px-1.5 py-0.5 bg-white border rounded dark:bg-gray-800">Enter</kbd>
             <span className="ml-1">to save</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onCancel}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700 dark:text-gray-400"
             >
               Cancel
             </button>
@@ -237,7 +237,7 @@ export function ScreenshotModal({
               className={clsx(
                 'flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg transition-colors',
                 isUploading
-                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed dark:text-gray-400'
                   : 'bg-primary-600 text-white hover:bg-primary-700'
               )}
             >

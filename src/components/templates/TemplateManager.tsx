@@ -156,9 +156,9 @@ export function TemplateManager() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-medium text-gray-900">Quick Text Templates</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs">.t</code> in any text input.
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Quick Text Templates</h3>
+          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
+            Create reusable text snippets. Use <code className="px-1 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.template</code> or <code className="px-1 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.t</code> in any text input.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -216,21 +216,21 @@ export function TemplateManager() {
       {/* Preview Modal */}
       {previewTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60">
-          <div className="bg-gray-100 rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+          <div className="bg-gray-100 rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col dark:bg-gray-800">
             {/* Minimal Header */}
             <div className="flex items-center justify-between px-4 py-2 bg-gray-200/80">
-              <span className="text-sm text-gray-600">Preview: {previewTemplate.name}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Preview: {previewTemplate.name}</span>
               <button
                 onClick={() => setPreviewTemplate(null)}
-                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-300 rounded"
+                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-300 rounded dark:hover:text-gray-200 dark:text-gray-400"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Note-like Content Area */}
-            <div className="flex-1 overflow-auto p-6 bg-gray-100">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 min-h-[300px]">
+            <div className="flex-1 overflow-auto p-6 bg-gray-100 dark:bg-gray-800">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 min-h-[300px] dark:border-gray-700 dark:bg-gray-800">
                 <div className="p-6">
                   <div
                     className="prose prose-sm sm:prose max-w-none

@@ -74,7 +74,7 @@ function VisibilityBadge({ visibility, isOwn }: { visibility: ThemeContributionV
     )
   }
   return (
-    <span className={clsx(common, isOwn ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600')}>
+    <span className={clsx(common, isOwn ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800')}>
       <Building2 className="w-2.5 h-2.5" /> Org
     </span>
   )
@@ -186,7 +186,7 @@ export function ThemeContributionSection({
   return (
     <div
       className={clsx(
-        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200',
+        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
         TILE_THEME.accent,
         TILE_THEME.hoverBorder,
         TILE_THEME.hoverBg,
@@ -196,7 +196,7 @@ export function ThemeContributionSection({
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 gap-2">
+      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 gap-2 dark:border-gray-800">
         <div className="flex items-center gap-3 min-w-0">
           <div className={clsx('p-1.5 rounded-lg shrink-0', TILE_THEME.iconBg)}>
             <FileText className={clsx('w-4 h-4', TILE_THEME.iconColor)} />
@@ -204,7 +204,7 @@ export function ThemeContributionSection({
           <div className="flex items-center gap-3 flex-wrap min-w-0">
             {/* Our View is read-only — title is static, no edit
                 affordance. Editing happens from the user's own view tab. */}
-            <h3 className="text-base font-semibold text-gray-900 truncate">{field.name}</h3>
+            <h3 className="text-base font-semibold text-gray-900 truncate dark:text-white">{field.name}</h3>
             {lastUpdated && (
               <span className="text-xs text-gray-400">
                 Updated {formatDistanceToNow(new Date(lastUpdated), { addSuffix: true })}
@@ -271,7 +271,7 @@ export function ThemeContributionSection({
         )}
 
         {isLoading && fieldContributions.length === 0 && (
-          <div className="h-16 bg-gray-50 rounded animate-pulse mt-2" />
+          <div className="h-16 bg-gray-50 rounded animate-pulse mt-2 dark:bg-gray-900" />
         )}
       </div>
     </div>
@@ -309,14 +309,14 @@ function InlineEditor({
         minHeight="140px"
       />
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
           {themeIsPublic ? (
             <>
               <span>Visible to:</span>
               <select
                 value={visibility}
                 onChange={(e) => setVisibility(e.target.value as ThemeContributionVisibility)}
-                className="text-xs px-2 py-1 border border-gray-200 rounded bg-white"
+                className="text-xs px-2 py-1 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="org">Org only</option>
                 <option value="shared">Shared</option>
@@ -383,9 +383,9 @@ function AggregatedContent({
       {all.map(c => {
         const isOwn = !!currentUserId && c.created_by === currentUserId
         return (
-          <div key={c.id} className="text-sm text-gray-700 leading-relaxed">
+          <div key={c.id} className="text-sm text-gray-700 leading-relaxed dark:text-gray-300">
             <span
-              className="font-medium text-gray-900 inline-flex items-center gap-1 align-top cursor-pointer hover:text-primary-600 transition-colors"
+              className="font-medium text-gray-900 inline-flex items-center gap-1 align-top cursor-pointer hover:text-primary-600 transition-colors dark:text-white"
               onClick={() => !isOwn && onContributorClick(c.created_by)}
               title={isOwn ? 'You' : `View ${displayName(c)}'s full research`}
             >
@@ -417,13 +417,13 @@ function FocusedOwn({ own, placeholder, onStartEdit, onClear }: {
       {hasOwn ? (
         <div className="relative">
           <div
-            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0"
+            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 dark:text-gray-300"
             dangerouslySetInnerHTML={{ __html: own!.content }}
           />
           <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
             <button
               onClick={(e) => { e.stopPropagation(); onStartEdit() }}
-              className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded dark:hover:text-gray-200 dark:hover:bg-gray-700"
               title="Edit"
             >
               <Edit3 className="w-3.5 h-3.5" />
@@ -460,7 +460,7 @@ function FocusedOther({ contribution }: { contribution: ThemeContribution | null
   }
   return (
     <div
-      className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0"
+      className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 dark:text-gray-300"
       dangerouslySetInnerHTML={{ __html: contribution.content }}
     />
   )

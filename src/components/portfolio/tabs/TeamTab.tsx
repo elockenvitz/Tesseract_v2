@@ -192,7 +192,7 @@ export function TeamTab({
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">Team</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Team</h2>
         </div>
         <div className="space-y-4">
           {[...Array(3)].map((_, i) => (
@@ -219,7 +219,7 @@ export function TeamTab({
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">Team</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Team</h2>
         </div>
         <div className="text-sm text-red-600">Error loading team: {(teamError as any)?.message || 'Unknown error'}</div>
       </div>
@@ -232,12 +232,12 @@ export function TeamTab({
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">Team</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Team</h2>
         </div>
         <div className="text-center py-12">
           <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No team members yet</h3>
-          <p className="text-gray-500 mb-4">Add team members to this portfolio.</p>
+          <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No team members yet</h3>
+          <p className="text-gray-500 mb-4 dark:text-gray-400">Add team members to this portfolio.</p>
           <Button size="sm" onClick={onAddMember}>
             <Plus className="h-4 w-4 mr-2" />
             Add Member
@@ -252,7 +252,7 @@ export function TeamTab({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-900">Team</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Team</h2>
         <Button size="sm" onClick={onAddMember}>
           <Plus className="h-4 w-4 mr-2" />
           Add Member
@@ -260,14 +260,14 @@ export function TeamTab({
       </div>
 
       {groupedByCategory.map(({ groupLabel, members }) => {
-        const badgeStyle = ROLE_BADGE_STYLE[groupLabel] || 'bg-gray-50 text-gray-700 border-gray-200/60'
+        const badgeStyle = ROLE_BADGE_STYLE[groupLabel] || 'bg-gray-50 text-gray-700 border-gray-200/60 dark:text-gray-300 dark:bg-gray-900'
 
         return (
           <div key={groupLabel}>
             {/* Group header */}
             <div className="flex items-center gap-2 mb-3">
               <h3 className="text-[13px] font-semibold uppercase tracking-wider text-gray-400">{groupLabel}</h3>
-              <div className="flex-1 h-px bg-gray-100" />
+              <div className="flex-1 h-px bg-gray-100 dark:bg-gray-800" />
               <span className="text-[11px] text-gray-400 tabular-nums">{members.length}</span>
             </div>
 
@@ -292,7 +292,7 @@ export function TeamTab({
                         {/* Row 1: Name + role badge ··· edit/delete */}
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <h4 className="text-[13px] font-semibold text-gray-900 truncate">{displayName}</h4>
+                            <h4 className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">{displayName}</h4>
                             <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold border shrink-0 ${badgeStyle}`}>
                               {member._role}
                             </span>
@@ -300,7 +300,7 @@ export function TeamTab({
                           <div className="flex gap-0.5 opacity-0 group-hover/member:opacity-100 transition-opacity">
                             <button
                               onClick={() => onEditMember(member, member._role)}
-                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-primary-600 transition-colors"
+                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-primary-600 transition-colors dark:hover:bg-gray-700"
                             >
                               <Edit className="h-3.5 w-3.5" />
                             </button>
@@ -321,7 +321,7 @@ export function TeamTab({
                               {m.coverageSectors.map((sector: string) => (
                                 <span
                                   key={sector}
-                                  className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-600"
+                                  className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800"
                                 >
                                   {sector}
                                 </span>

@@ -136,7 +136,7 @@ export function NotificationPane({
       case 'list_collaboration':
         return <List className="h-4 w-4 text-teal-600" />
       default:
-        return <AlertCircle className="h-4 w-4 text-gray-600" />
+        return <AlertCircle className="h-4 w-4 text-gray-600 dark:text-gray-400" />
     }
   }
 
@@ -342,20 +342,20 @@ export function NotificationPane({
 
   return (
     <div className={clsx(
-      'fixed right-0 top-16 bottom-0 bg-white border-l border-gray-200 shadow-lg transform transition-transform duration-300 ease-in-out z-30',
+      'fixed right-0 top-16 bottom-0 bg-white border-l border-gray-200 shadow-lg transform transition-transform duration-300 ease-in-out z-30 dark:border-gray-700 dark:bg-gray-800',
       isFullscreen ? 'left-0' : 'w-96',
       isOpen ? 'translate-x-0' : 'translate-x-full'
     )}>
       <div className="flex flex-col h-full">
         {/* Filter Tabs */}
-        <div className="flex border-b border-gray-200 bg-white pt-4">
+        <div className="flex border-b border-gray-200 bg-white pt-4 dark:border-gray-700 dark:bg-gray-800">
           <button
             onClick={() => setFilter('all')}
             className={clsx(
               'flex-1 px-4 py-3 text-sm font-medium transition-colors',
               filter === 'all'
                 ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             All ({notifications?.length || 0})
@@ -366,7 +366,7 @@ export function NotificationPane({
               'flex-1 px-4 py-3 text-sm font-medium transition-colors',
               filter === 'unread'
                 ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             Unread ({unreadCount})
@@ -390,26 +390,26 @@ export function NotificationPane({
               ))}
             </div>
           ) : filteredNotifications.length > 0 ? (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredNotifications.map((notification) => (
                 <div
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
                   className={clsx(
-                    'p-4 hover:bg-gray-50 cursor-pointer transition-colors relative',
+                    'p-4 hover:bg-gray-50 cursor-pointer transition-colors relative dark:hover:bg-gray-800',
                     !notification.is_read && 'bg-blue-50 border-l-4 border-primary-500'
                   )}
                 >
                   <div className="flex items-start space-x-3">
                     <div className="flex-shrink-0 mt-1">
-                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center dark:bg-gray-800">
                         {getNotificationIcon(notification.type)}
                       </div>
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="text-sm font-semibold text-gray-900 truncate">
+                        <h4 className="text-sm font-semibold text-gray-900 truncate dark:text-white">
                           {notification.title}
                         </h4>
                         {!notification.is_read && (
@@ -417,12 +417,12 @@ export function NotificationPane({
                         )}
                       </div>
                       
-                      <p className="text-sm text-gray-600 mb-2">
+                      <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">
                         {notification.message}
                       </p>
                       
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4 text-xs text-gray-500">
+                        <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
                           <div className="flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
                             {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
@@ -459,13 +459,13 @@ export function NotificationPane({
             </div>
           ) : (
             <div className="p-8 text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
                 <Bell className="h-8 w-8 text-gray-400" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                 {filter === 'unread' ? 'No unread notifications' : 'No notifications yet'}
               </h3>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-sm dark:text-gray-400">
                 {filter === 'unread' 
                   ? 'All caught up! Check back later for updates.'
                   : 'You\'ll receive notifications about asset changes, shared notes, and more.'
@@ -477,7 +477,7 @@ export function NotificationPane({
 
         {/* Footer */}
         {filteredNotifications.length > 0 && (
-          <div className="p-4 border-t border-gray-200 bg-gray-50">
+          <div className="p-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
             <div className="flex items-center justify-between mb-2">
               {unreadCount > 0 && (
                 <Button
@@ -491,7 +491,7 @@ export function NotificationPane({
                 </Button>
               )}
             </div>
-            <div className="flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
               <span>
                 {filteredNotifications.length} of {notifications?.length || 0}
               </span>

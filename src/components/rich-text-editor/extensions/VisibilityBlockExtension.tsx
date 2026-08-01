@@ -86,10 +86,10 @@ const VisibilityBlockView: React.FC<{
         return {
           icon: null,
           label: 'Restricted',
-          bgColor: 'bg-gray-50',
-          borderColor: 'border-gray-300',
-          textColor: 'text-gray-700',
-          badgeBg: 'bg-gray-100'
+          bgColor: 'bg-gray-50 dark:bg-gray-900',
+          borderColor: 'border-gray-300 dark:border-gray-600',
+          textColor: 'text-gray-700 dark:text-gray-300',
+          badgeBg: 'bg-gray-100 dark:bg-gray-800'
         }
     }
   }

@@ -127,7 +127,7 @@ export function AggregationToolbar({
         >
           <span
             className={clsx(
-              'inline-flex h-4 w-4 items-center justify-center transform rounded-full bg-white transition-transform shadow-sm',
+              'inline-flex h-4 w-4 items-center justify-center transform rounded-full bg-white transition-transform shadow-sm dark:bg-gray-800',
               !showOpinions ? 'translate-x-6' : 'translate-x-1'
             )}
           >

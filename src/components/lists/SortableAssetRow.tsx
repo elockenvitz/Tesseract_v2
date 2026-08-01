@@ -46,7 +46,7 @@ export function SortableAssetRow({
       style={style}
       className={clsx(
         className,
-        isDragging && 'shadow-lg bg-white ring-2 ring-blue-500'
+        isDragging && 'shadow-lg bg-white ring-2 ring-blue-500 dark:bg-gray-800'
       )}
     >
       {children}
@@ -74,7 +74,7 @@ export function DragHandle({
   return (
     <button
       className={clsx(
-        'touch-none cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600',
+        'touch-none cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300',
         className
       )}
       {...listeners}

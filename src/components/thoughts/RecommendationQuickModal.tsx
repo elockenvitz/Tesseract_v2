@@ -264,7 +264,7 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         {row.legs.map(leg => (
                           <span key={leg.action} className="inline-flex items-center gap-1">
-                            <span className={`text-[10px] font-bold uppercase px-1 py-0 rounded ${ACTION_COLORS[leg.action] || 'text-gray-500 bg-gray-100'}`}>
+                            <span className={`text-[10px] font-bold uppercase px-1 py-0 rounded ${ACTION_COLORS[leg.action] || 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'}`}>
                               {leg.action}
                             </span>
                             <span className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -292,7 +292,7 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
                   onClick={() => setSelectedIdea(row.primaryIdea)}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left group"
                 >
-                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${ACTION_COLORS[row.action || ''] || 'text-gray-500 bg-gray-100'}`}>
+                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${ACTION_COLORS[row.action || ''] || 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'}`}>
                     {row.action}
                   </span>
                   <div className="flex-1 min-w-0">

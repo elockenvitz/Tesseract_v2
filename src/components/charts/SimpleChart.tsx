@@ -41,7 +41,7 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
     return (
       <div className={`w-full ${className}`} style={{ height }}>
         <div className="animate-pulse bg-gray-200 rounded-lg h-full flex items-center justify-center">
-          <div className="text-gray-500">Loading chart data...</div>
+          <div className="text-gray-500 dark:text-gray-400">Loading chart data...</div>
         </div>
       </div>
     )
@@ -50,10 +50,10 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
   if (!currentQuote || chartData.length === 0) {
     return (
       <div className={`w-full ${className}`} style={{ height }}>
-        <div className="bg-gray-50 rounded-lg h-full flex items-center justify-center">
+        <div className="bg-gray-50 rounded-lg h-full flex items-center justify-center dark:bg-gray-900">
           <div className="text-center">
             <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-            <div className="text-gray-500">No chart data available</div>
+            <div className="text-gray-500 dark:text-gray-400">No chart data available</div>
             <div className="text-sm text-gray-400">Financial data for {symbol} could not be loaded</div>
           </div>
         </div>
@@ -70,14 +70,14 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
   return (
     <div className={`w-full space-y-4 ${className}`}>
       {/* Chart Header */}
-      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg">
+      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-800">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">{symbol}</h3>
-          <div className="text-sm text-gray-500">30-Day Price Chart</div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{symbol}</h3>
+          <div className="text-sm text-gray-500 dark:text-gray-400">30-Day Price Chart</div>
         </div>
         <div className="text-sm">
           <div>
-            <span className="text-gray-600">Current:</span>
+            <span className="text-gray-600 dark:text-gray-400">Current:</span>
             <span className="ml-1 font-medium">${currentQuote.price.toFixed(2)}</span>
           </div>
           <div className={`${currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -88,7 +88,7 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
       </div>
 
       {/* Chart */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -118,13 +118,13 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
       </div>
 
       {/* Chart Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm dark:bg-gray-900">
         <div>
-          <div className="text-gray-600">Period</div>
+          <div className="text-gray-600 dark:text-gray-400">Period</div>
           <div className="font-medium">30 Days</div>
         </div>
         <div>
-          <div className="text-gray-600">Change</div>
+          <div className="text-gray-600 dark:text-gray-400">Change</div>
           <div className={`font-medium ${
             (chartData[chartData.length - 1]?.value || 0) >= (chartData[0]?.value || 0)
               ? 'text-green-600'
@@ -139,13 +139,13 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
           </div>
         </div>
         <div>
-          <div className="text-gray-600">High</div>
+          <div className="text-gray-600 dark:text-gray-400">High</div>
           <div className="font-medium">
             ${Math.max(...chartData.map(d => d.value)).toFixed(2)}
           </div>
         </div>
         <div>
-          <div className="text-gray-600">Low</div>
+          <div className="text-gray-600 dark:text-gray-400">Low</div>
           <div className="font-medium">
             ${Math.min(...chartData.map(d => d.value)).toFixed(2)}
           </div>

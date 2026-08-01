@@ -62,7 +62,7 @@ function IconButton({
       }}
       className={clsx(
         'p-1 rounded-md transition-colors duration-150',
-        'text-gray-400 hover:text-gray-600 hover:bg-gray-100',
+        'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
         className
       )}
@@ -155,7 +155,7 @@ export function CardActions({
             <div
               className={clsx(
                 'absolute right-0 bottom-full mb-1 z-50',
-                'w-40 bg-white rounded-lg shadow-lg border border-gray-200',
+                'w-40 bg-white rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800',
                 'py-1 text-sm'
               )}
               onClick={(e) => e.stopPropagation()}
@@ -183,7 +183,7 @@ export function CardActions({
 
               {onArchive && (
                 <>
-                  <div className="border-t border-gray-100 my-1" />
+                  <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
                   <MenuButton
                     icon={Archive}
                     label="Archive"
@@ -223,7 +223,7 @@ function MenuButton({
         'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors',
         destructive
           ? 'text-red-600 hover:bg-red-50'
-          : 'text-gray-700 hover:bg-gray-50'
+          : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
       )}
     >
       <Icon className="h-4 w-4" />

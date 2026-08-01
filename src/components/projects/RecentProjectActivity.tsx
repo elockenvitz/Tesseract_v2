@@ -182,8 +182,8 @@ export function RecentProjectActivity({ onProjectSelect }: RecentProjectActivity
     return (
       <Card>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-          <p className="text-sm text-gray-500">Latest project updates</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Latest project updates</p>
         </div>
         <div className="animate-pulse space-y-3">
           <div className="h-16 bg-gray-200 rounded"></div>
@@ -197,8 +197,8 @@ export function RecentProjectActivity({ onProjectSelect }: RecentProjectActivity
   return (
     <Card>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-        <p className="text-sm text-gray-500">Latest project updates</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Latest project updates</p>
       </div>
 
       <div className="space-y-3">
@@ -209,7 +209,7 @@ export function RecentProjectActivity({ onProjectSelect }: RecentProjectActivity
             return (
               <div
                 key={activity.id}
-                className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
               >
                 <div className={`p-2 rounded-lg flex-shrink-0 ${activity.color}`}>
                   <Icon className="h-4 w-4" />
@@ -218,20 +218,20 @@ export function RecentProjectActivity({ onProjectSelect }: RecentProjectActivity
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between mb-1">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                         {activity.project_title}
                       </p>
-                      <p className="text-xs text-gray-600">
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
                         {getActivityMessage(activity)}
                       </p>
                     </div>
-                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0 dark:text-gray-400">
                       {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
                     </span>
                   </div>
 
                   {activity.details && (
-                    <p className="text-xs text-gray-600 line-clamp-2 mt-1">
+                    <p className="text-xs text-gray-600 line-clamp-2 mt-1 dark:text-gray-400">
                       {activity.details}
                     </p>
                   )}

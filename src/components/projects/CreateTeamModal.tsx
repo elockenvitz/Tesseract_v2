@@ -352,7 +352,7 @@ export function CreateTeamModal({ isOpen, onClose, editingTeam }: CreateTeamModa
             onClick={onClose}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -477,7 +477,7 @@ export function CreateTeamModal({ isOpen, onClose, editingTeam }: CreateTeamModa
               </div>
               {hasActiveFilters && (
                 <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     Showing {filteredUsers.length} of {allUsers?.length || 0}
                   </span>
                   <button
@@ -522,7 +522,7 @@ export function CreateTeamModal({ isOpen, onClose, editingTeam }: CreateTeamModa
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleUser(u.id)}
-                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer flex-shrink-0"
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer flex-shrink-0 dark:border-gray-600"
                         />
                         <button
                           type="button"

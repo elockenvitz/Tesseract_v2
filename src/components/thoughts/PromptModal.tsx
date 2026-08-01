@@ -496,13 +496,13 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
         <div className="flex flex-wrap items-center gap-1.5">
           {/* "General" fallback when no context is attached */}
           {allContexts.length === 0 && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-500 border-gray-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-500 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
               General
             </span>
           )}
           {/* Existing context chips */}
           {allContexts.map(ctx => {
-            const cfg = CTX_CONFIG[ctx.type || ''] || { icon: TrendingUp, color: 'text-gray-600', bgColor: 'bg-gray-50', borderColor: 'border-gray-200' }
+            const cfg = CTX_CONFIG[ctx.type || ''] || { icon: TrendingUp, color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-50 dark:bg-gray-900', borderColor: 'border-gray-200 dark:border-gray-700' }
             const Icon = cfg.icon
             return (
               <span

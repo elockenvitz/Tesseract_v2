@@ -573,11 +573,11 @@ export function OpsClientDetailPage() {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       {/* Back + Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/ops/clients')} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+        <button onClick={() => navigate('/ops/clients')} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700">
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 dark:text-white">
             <Building2 className="w-5 h-5 text-indigo-600" />
             {org?.name || 'Loading...'}
           </h1>
@@ -586,7 +586,7 @@ export function OpsClientDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
         {TABS.map((tab) => {
           const Icon = tab.icon
           return (
@@ -597,12 +597,12 @@ export function OpsClientDetailPage() {
                 'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
                 activeTab === tab.key
                   ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               <Icon className="w-3.5 h-3.5" />
               {tab.label}
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full">{tab.count}</span>
+              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full dark:text-gray-400 dark:bg-gray-800">{tab.count}</span>
             </button>
           )
         })}
@@ -632,13 +632,13 @@ export function OpsClientDetailPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 truncate">{inv.email}</span>
+                          <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{inv.email}</span>
                           {inv.invited_is_org_admin && (
                             <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded">Admin</span>
                           )}
                           <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700">pending</span>
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           Invited {new Date(inv.created_at).toLocaleDateString()}
                         </p>
                       </div>
@@ -650,7 +650,7 @@ export function OpsClientDetailPage() {
                         }
                       }}
                       disabled={cancelInviteM.isPending}
-                      className="px-2 py-1 text-[10px] font-medium rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors flex items-center gap-1"
+                      className="px-2 py-1 text-[10px] font-medium rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors flex items-center gap-1 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
                     >
                       <X className="w-3 h-3" />
                       Cancel
@@ -660,7 +660,7 @@ export function OpsClientDetailPage() {
               </div>
             </div>
           )}
-          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
           {members.length === 0 ? (
             <div className="px-5 py-8 text-center text-sm text-gray-400">
               {pendingInvites.length > 0
@@ -675,9 +675,9 @@ export function OpsClientDetailPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900 truncate">{m.user_full_name}</span>
+                    <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{m.user_full_name}</span>
                     {m.is_org_admin && <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded">Admin</span>}
-                    <span className={clsx('px-1.5 py-0.5 text-[10px] rounded', m.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>{m.status}</span>
+                    <span className={clsx('px-1.5 py-0.5 text-[10px] rounded', m.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800')}>{m.status}</span>
                   </div>
                   <p className="text-xs text-gray-400 truncate">{m.user_email}</p>
                 </div>
@@ -692,12 +692,12 @@ export function OpsClientDetailPage() {
                           placeholder="Reason..."
                           value={morphReason}
                           onChange={(e) => setMorphReason(e.target.value)}
-                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500"
+                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500 dark:border-gray-600"
                           autoFocus
                           onKeyDown={(e) => { if (e.key === 'Enter') handleMorph(m.user_id); if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') } }}
                         />
                         <button onClick={() => handleMorph(m.user_id)} disabled={!morphReason.trim() || startMorph.isPending} className="px-2 py-1 text-xs font-medium rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50">Go</button>
-                        <button onClick={() => { setMorphTargetId(null); setMorphReason('') }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                        <button onClick={() => { setMorphTargetId(null); setMorphReason('') }} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
                       </>
                     ) : (
                       <>
@@ -740,7 +740,7 @@ export function OpsClientDetailPage() {
 
       {/* Portfolios */}
       {activeTab === 'portfolios' && (
-        <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
           {portfolios.length === 0 ? (
             <div className="px-5 py-8 text-center text-sm text-gray-400">No portfolios</div>
           ) : portfolios.map((p: any) => {
@@ -748,13 +748,13 @@ export function OpsClientDetailPage() {
             return (
               <div key={p.id} className="px-5 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{p.name}</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{p.name}</p>
                   <p className="text-xs text-gray-400">{p.is_active ? 'Active' : 'Inactive'}</p>
                 </div>
                 <div className="text-xs text-right">
                   {hs ? (
                     <>
-                      <p className="text-gray-600">{hs.total_positions} positions</p>
+                      <p className="text-gray-600 dark:text-gray-400">{hs.total_positions} positions</p>
                       <p className="text-gray-400">Last: {hs.snapshot_date} ({hs.source})</p>
                     </>
                   ) : (
@@ -769,31 +769,31 @@ export function OpsClientDetailPage() {
 
       {/* Holdings */}
       {activeTab === 'holdings' && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 dark:border-gray-700 dark:bg-gray-800">
           {holdingsStatus.length === 0 ? (
             <div className="text-center py-8 text-sm text-gray-400">No holdings data uploaded for this client yet.</div>
           ) : (
             <div className="space-y-3">
-              <h3 className="text-sm font-medium text-gray-700">Latest Holdings Snapshots</h3>
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Latest Holdings Snapshots</h3>
+              <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
                 <table className="w-full text-xs">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Portfolio</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Source</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">Positions</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Portfolio</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Date</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Source</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Positions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                     {holdingsStatus.map((hs: any) => {
                       const portfolio = portfolios.find((p: any) => p.id === hs.portfolio_id)
                       return (
                         <tr key={hs.portfolio_id}>
-                          <td className="px-3 py-2 text-gray-900 font-medium">{portfolio?.name || 'Unknown'}</td>
-                          <td className="px-3 py-2 text-gray-600">{hs.snapshot_date}</td>
-                          <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]">{hs.source}</span></td>
-                          <td className="px-3 py-2 text-right text-gray-600">{hs.total_positions}</td>
+                          <td className="px-3 py-2 text-gray-900 font-medium dark:text-white">{portfolio?.name || 'Unknown'}</td>
+                          <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{hs.snapshot_date}</td>
+                          <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] dark:text-gray-400 dark:bg-gray-800">{hs.source}</span></td>
+                          <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">{hs.total_positions}</td>
                         </tr>
                       )
                     })}
@@ -825,15 +825,15 @@ export function OpsClientDetailPage() {
           totalMembers). Reading top-to-bottom is a drop-off chart —
           where the bars get short is where pilots stalled. */}
       {activeTab === 'onboarding' && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-800">Pilot Get Started funnel</h3>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Pilot Get Started funnel</h3>
               <p className="text-[11px] text-gray-400 mt-0.5">
                 Distinct members who completed each step. Signals union
-                <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">pilot_telemetry_events</code>
+                <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px] dark:bg-gray-800">pilot_telemetry_events</code>
                 with durable artifacts (lab variants, committed trades, rationale comments) and
-                <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px]">users.pilot_progress</code>
+                <code className="mx-1 px-1 py-0.5 rounded bg-gray-100 text-[10px] dark:bg-gray-800">users.pilot_progress</code>
                 macro keys — so action steps reflect what's in the DB, not just whether the banner was open. View-only steps stay telemetry-based.
               </p>
             </div>
@@ -863,8 +863,8 @@ export function OpsClientDetailPage() {
                   {/* Headline — % of members who walked the full loop */}
                   <div>
                     <div className="flex items-baseline justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-700">Graduated</span>
-                      <span className="text-xs text-gray-500 tabular-nums">{graduated} of {total} member{total === 1 ? '' : 's'} · {overallPct}%</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Graduated</span>
+                      <span className="text-xs text-gray-500 tabular-nums dark:text-gray-400">{graduated} of {total} member{total === 1 ? '' : 's'} · {overallPct}%</span>
                     </div>
                     <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div
@@ -881,16 +881,16 @@ export function OpsClientDetailPage() {
                       <div key={stage} className="space-y-1.5">
                         <div className="flex items-center gap-2">
                           <span className={clsx('w-1.5 h-1.5 rounded-full', stageAccent[stage])} />
-                          <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">{stage}</span>
+                          <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 dark:text-gray-400">{stage}</span>
                         </div>
                         {items.map((item, i) => {
                           const pct = item.total > 0 ? (item.count / item.total) * 100 : 0
                           const allDone = item.count === item.total && item.total > 0
                           return (
-                            <div key={`${stage}-${i}`} className="flex items-center gap-3 py-1.5 pl-3 border-l-2 border-gray-100">
+                            <div key={`${stage}-${i}`} className="flex items-center gap-3 py-1.5 pl-3 border-l-2 border-gray-100 dark:border-gray-800">
                               <div className={clsx(
                                 'w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0',
-                                allDone ? 'bg-green-100' : item.count > 0 ? 'bg-indigo-50' : 'bg-gray-100',
+                                allDone ? 'bg-green-100' : item.count > 0 ? 'bg-indigo-50' : 'bg-gray-100 dark:bg-gray-800',
                               )}>
                                 {allDone
                                   ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
@@ -899,14 +899,14 @@ export function OpsClientDetailPage() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline justify-between gap-2">
-                                  <p className={clsx('text-sm font-medium truncate', item.count > 0 ? 'text-gray-900' : 'text-gray-500')}>
+                                  <p className={clsx('text-sm font-medium truncate', item.count > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>
                                     {item.label}
                                   </p>
-                                  <span className="text-[11px] text-gray-500 tabular-nums shrink-0">
+                                  <span className="text-[11px] text-gray-500 tabular-nums shrink-0 dark:text-gray-400">
                                     {item.count}/{item.total}
                                   </span>
                                 </div>
-                                <div className="mt-1 w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="mt-1 w-full h-1 bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
                                   <div
                                     className={clsx('h-full rounded-full', allDone ? 'bg-green-500' : item.count > 0 ? stageAccent[stage] : 'bg-gray-200')}
                                     style={{ width: `${pct}%` }}
@@ -967,12 +967,12 @@ export function OpsClientDetailPage() {
 
 function EngagementCard({ icon: Icon, label, value, period }: { icon: typeof Activity; label: string; value: number | string; period: string }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
+    <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center gap-2 mb-1">
         <Icon className="w-4 h-4 text-indigo-500" />
-        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
       </div>
-      <p className="text-xl font-bold text-gray-900">{value}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
       <p className="text-[10px] text-gray-400 mt-0.5">{period}</p>
     </div>
   )

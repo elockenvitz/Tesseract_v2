@@ -283,7 +283,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
               style={{ width: `${progress}%` }}
             />
           </div>
-          <span className="text-xs text-gray-500 whitespace-nowrap">
+          <span className="text-xs text-gray-500 whitespace-nowrap dark:text-gray-400">
             {completedCount}/{items.length} ({progress}%)
           </span>
         </div>
@@ -296,7 +296,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
             key={item.id}
             className={clsx(
               'flex items-center gap-2 p-2 rounded-lg group',
-              item.completed ? 'bg-green-50' : 'bg-gray-50 hover:bg-gray-100'
+              item.completed ? 'bg-green-50' : 'bg-gray-50 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
             )}
           >
             {!readOnly && (
@@ -307,7 +307,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
                   'w-5 h-5 rounded border flex items-center justify-center transition-colors',
                   item.completed
                     ? 'bg-green-500 border-green-500 text-white'
-                    : 'border-gray-300 hover:border-green-500'
+                    : 'border-gray-300 hover:border-green-500 dark:border-gray-600'
                 )}
               >
                 {item.completed && <Check className="w-3 h-3" />}
@@ -320,7 +320,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
                   type="text"
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
-                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
                   autoFocus
                 />
                 <button
@@ -340,7 +340,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
               <>
                 <span className={clsx(
                   'flex-1 text-sm',
-                  item.completed && 'line-through text-gray-500'
+                  item.completed && 'line-through text-gray-500 dark:text-gray-400'
                 )}>
                   {item.text}
                 </span>
@@ -351,7 +351,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
                         setEditingId(item.id)
                         setEditText(item.text)
                       }}
-                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded dark:hover:text-gray-300"
                     >
                       <Edit2 className="w-3 h-3" />
                     </button>
@@ -378,7 +378,7 @@ export function ChecklistField({ fieldId, assetId, config, readOnly = false, ext
             onChange={(e) => setNewItemText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addItem()}
             placeholder="Add new item..."
-            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
           <button
             onClick={addItem}
@@ -463,7 +463,7 @@ export function MetricField({ fieldId, assetId, config, readOnly = false, extern
   }
 
   return (
-    <div className="p-4 bg-gray-50 rounded-lg">
+    <div className="p-4 bg-gray-50 rounded-lg dark:bg-gray-900">
       {isEditing ? (
         <div className="flex items-center gap-2">
           <input
@@ -471,10 +471,10 @@ export function MetricField({ fieldId, assetId, config, readOnly = false, extern
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Enter value..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium dark:border-gray-600"
             autoFocus
           />
-          <span className="text-gray-500">{unit}</span>
+          <span className="text-gray-500 dark:text-gray-400">{unit}</span>
           <button
             onClick={handleSave}
             disabled={isSaving}
@@ -484,7 +484,7 @@ export function MetricField({ fieldId, assetId, config, readOnly = false, extern
           </button>
           <button
             onClick={() => setIsEditing(false)}
-            className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+            className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 dark:text-gray-300"
           >
             <X className="w-4 h-4" />
           </button>
@@ -492,14 +492,14 @@ export function MetricField({ fieldId, assetId, config, readOnly = false, extern
       ) : (
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-bold text-gray-900">
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
               {formatValue(metricData.value)}
-              {unit && <span className="text-sm text-gray-500 ml-1">{unit}</span>}
+              {unit && <span className="text-sm text-gray-500 ml-1 dark:text-gray-400">{unit}</span>}
             </div>
             {showChange && change !== null && (
               <div className={clsx(
                 'flex items-center gap-1 text-sm mt-1',
-                change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-500'
+                change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'
               )}>
                 {change > 0 ? <TrendingUp className="w-4 h-4" /> : change < 0 ? <TrendingDown className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
                 <span>
@@ -520,7 +520,7 @@ export function MetricField({ fieldId, assetId, config, readOnly = false, extern
                 setInputValue(metricData.value?.toString() || '')
                 setIsEditing(true)
               }}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg dark:hover:text-gray-300"
             >
               <Edit2 className="w-4 h-4" />
             </button>
@@ -589,9 +589,9 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
     const colors = {
       catalyst: 'bg-purple-100 text-purple-700 border-purple-300',
       earnings: 'bg-blue-100 text-blue-700 border-blue-300',
-      event: 'bg-gray-100 text-gray-700 border-gray-300',
+      event: 'bg-gray-100 text-gray-700 border-gray-300 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800',
       milestone: 'bg-amber-100 text-amber-700 border-amber-300',
-      other: 'bg-gray-100 text-gray-700 border-gray-300'
+      other: 'bg-gray-100 text-gray-700 border-gray-300 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800'
     }
     return colors[type] || colors.other
   }
@@ -599,7 +599,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
   const getImpactColor = (impact?: TimelineEvent['impact']) => {
     if (impact === 'positive') return 'text-green-600'
     if (impact === 'negative') return 'text-red-600'
-    return 'text-gray-500'
+    return 'text-gray-500 dark:text-gray-400'
   }
 
   if (isLoading) {
@@ -614,7 +614,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
     <div className="space-y-4">
       {/* Timeline events */}
       {sortedEvents.length > 0 ? (
-        <div className="relative pl-6 border-l-2 border-gray-200 space-y-4">
+        <div className="relative pl-6 border-l-2 border-gray-200 space-y-4 dark:border-gray-700">
           {sortedEvents.map(event => {
             const eventDate = parseISO(event.date)
             const isPast = eventDate < new Date()
@@ -629,11 +629,11 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
               >
                 {/* Timeline dot */}
                 <div className={clsx(
-                  'absolute -left-[25px] w-4 h-4 rounded-full border-2 bg-white',
-                  isPast ? 'border-gray-300' : 'border-primary-500'
+                  'absolute -left-[25px] w-4 h-4 rounded-full border-2 bg-white dark:bg-gray-800',
+                  isPast ? 'border-gray-300 dark:border-gray-600' : 'border-primary-500'
                 )} />
 
-                <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
@@ -643,7 +643,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
                         )}>
                           {event.type}
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
                           {format(eventDate, 'MMM d, yyyy')}
                         </span>
                         {event.impact && event.impact !== 'neutral' && (
@@ -652,9 +652,9 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
                           </span>
                         )}
                       </div>
-                      <h4 className="text-sm font-medium text-gray-900">{event.title}</h4>
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-white">{event.title}</h4>
                       {event.description && (
-                        <p className="text-xs text-gray-500 mt-1">{event.description}</p>
+                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{event.description}</p>
                       )}
                     </div>
                     {!readOnly && (
@@ -672,7 +672,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
           })}
         </div>
       ) : (
-        <p className="text-sm text-gray-500 text-center py-4">
+        <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">
           No events added yet
         </p>
       )}
@@ -681,23 +681,23 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
       {!readOnly && (
         <>
           {showAddForm ? (
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3 dark:border-gray-700 dark:bg-gray-900">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Date</label>
+                  <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Date</label>
                   <input
                     type="date"
                     value={newEvent.date || ''}
                     onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Type</label>
+                  <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Type</label>
                   <select
                     value={newEvent.type || 'event'}
                     onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value as TimelineEvent['type'] })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                   >
                     <option value="catalyst">Catalyst</option>
                     <option value="earnings">Earnings</option>
@@ -708,27 +708,27 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Title</label>
+                <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Title</label>
                 <input
                   type="text"
                   value={newEvent.title || ''}
                   onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
                   placeholder="Event title..."
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Description (optional)</label>
+                <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Description (optional)</label>
                 <input
                   type="text"
                   value={newEvent.description || ''}
                   onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
                   placeholder="Brief description..."
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Expected Impact</label>
+                <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Expected Impact</label>
                 <div className="flex gap-2">
                   {(['positive', 'neutral', 'negative'] as const).map(impact => (
                     <button
@@ -739,8 +739,8 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
                         newEvent.impact === impact
                           ? impact === 'positive' ? 'bg-green-100 border-green-300 text-green-700'
                             : impact === 'negative' ? 'bg-red-100 border-red-300 text-red-700'
-                            : 'bg-gray-200 border-gray-300 text-gray-700'
-                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                            : 'bg-gray-200 border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300'
+                          : 'bg-white border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800'
                       )}
                     >
                       {impact}
@@ -751,7 +751,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setShowAddForm(false)}
-                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -767,7 +767,7 @@ export function TimelineField({ fieldId, assetId, config, readOnly = false, exte
           ) : (
             <button
               onClick={() => setShowAddForm(true)}
-              className="w-full py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-gray-300 hover:border-primary-300 transition-colors"
+              className="w-full py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-gray-300 hover:border-primary-300 transition-colors dark:border-gray-600 dark:text-gray-400"
             >
               <Plus className="w-4 h-4 inline mr-1" />
               Add Event
@@ -832,10 +832,10 @@ export function NumericField({ fieldId, assetId, config, readOnly = false, exter
             min={config?.min}
             max={config?.max}
             step={config?.step}
-            className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm dark:border-gray-600"
             autoFocus
           />
-          {config?.unit && <span className="text-sm text-gray-500">{config.unit}</span>}
+          {config?.unit && <span className="text-sm text-gray-500 dark:text-gray-400">{config.unit}</span>}
           <button
             onClick={handleSave}
             disabled={isSaving}
@@ -845,18 +845,18 @@ export function NumericField({ fieldId, assetId, config, readOnly = false, exter
           </button>
           <button
             onClick={() => setIsEditing(false)}
-            className="p-2 text-gray-400 hover:bg-gray-100 rounded"
+            className="p-2 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
           >
             <X className="w-4 h-4" />
           </button>
         </>
       ) : (
         <>
-          <span className="text-sm font-medium text-gray-900">
+          <span className="text-sm font-medium text-gray-900 dark:text-white">
             {currentValue !== null ? new Intl.NumberFormat('en-US').format(currentValue) : 'Not set'}
           </span>
           {config?.unit && currentValue !== null && (
-            <span className="text-sm text-gray-500">{config.unit}</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{config.unit}</span>
           )}
           {!readOnly && (
             <button
@@ -864,7 +864,7 @@ export function NumericField({ fieldId, assetId, config, readOnly = false, exter
                 setInputValue(currentValue?.toString() || '')
                 setIsEditing(true)
               }}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <Edit2 className="w-4 h-4" />
             </button>
@@ -921,7 +921,7 @@ export function DateField({ fieldId, assetId, config, readOnly = false, external
             type={config?.showTime ? 'datetime-local' : 'date'}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:border-gray-600"
             autoFocus
           />
           <button
@@ -933,7 +933,7 @@ export function DateField({ fieldId, assetId, config, readOnly = false, external
           </button>
           <button
             onClick={() => setIsEditing(false)}
-            className="p-2 text-gray-400 hover:bg-gray-100 rounded"
+            className="p-2 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
           >
             <X className="w-4 h-4" />
           </button>
@@ -941,7 +941,7 @@ export function DateField({ fieldId, assetId, config, readOnly = false, external
       ) : (
         <>
           <Calendar className="w-4 h-4 text-gray-400" />
-          <span className="text-sm text-gray-900">
+          <span className="text-sm text-gray-900 dark:text-white">
             {currentValue
               ? format(parseISO(currentValue), config?.showTime ? 'PPp' : 'PP')
               : 'Not set'}
@@ -952,7 +952,7 @@ export function DateField({ fieldId, assetId, config, readOnly = false, external
                 setInputValue(currentValue || '')
                 setIsEditing(true)
               }}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <Edit2 className="w-4 h-4" />
             </button>
@@ -1072,7 +1072,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           {showValue && (
-            <span className="text-lg font-semibold text-gray-900">
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">
               {value}{unit}
             </span>
           )}
@@ -1088,7 +1088,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
             style={{ width: `${percentage}%`, backgroundColor: currentColor }}
           />
         </div>
-        <div className="flex justify-between text-xs text-gray-500">
+        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
           <span>{config?.labels?.min || min}{unit}</span>
           <span>{config?.labels?.max || max}{unit}</span>
         </div>
@@ -1115,7 +1115,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
           </div>
         )}
         {note && (
-          <p className="text-sm text-gray-600 italic mt-2">"{note}"</p>
+          <p className="text-sm text-gray-600 italic mt-2 dark:text-gray-400">"{note}"</p>
         )}
       </div>
     )
@@ -1129,7 +1129,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
         <div className="flex flex-col items-center">
           <div className="relative w-32 h-16 overflow-hidden">
             {/* Gauge background arc */}
-            <div className="absolute inset-0 border-8 border-gray-200 rounded-t-full" />
+            <div className="absolute inset-0 border-8 border-gray-200 rounded-t-full dark:border-gray-700" />
             {/* Gauge colored arc */}
             <div
               className="absolute inset-0 border-8 rounded-t-full transition-all duration-300"
@@ -1147,11 +1147,11 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
             <div className="absolute bottom-0 left-1/2 w-4 h-4 -translate-x-1/2 translate-y-1/2 bg-gray-800 rounded-full" />
           </div>
           {showValue && (
-            <span className="text-xl font-bold text-gray-900 mt-2">
+            <span className="text-xl font-bold text-gray-900 mt-2 dark:text-white">
               {value}{unit}
             </span>
           )}
-          <div className="flex justify-between w-32 text-xs text-gray-500 mt-1">
+          <div className="flex justify-between w-32 text-xs text-gray-500 mt-1 dark:text-gray-400">
             <span>{config?.labels?.min || 'Low'}</span>
             <span>{config?.labels?.mid || 'Mid'}</span>
             <span>{config?.labels?.max || 'High'}</span>
@@ -1178,7 +1178,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
           </div>
         )}
         {note && (
-          <p className="text-sm text-gray-600 italic text-center">"{note}"</p>
+          <p className="text-sm text-gray-600 italic text-center dark:text-gray-400">"{note}"</p>
         )}
       </div>
     )
@@ -1188,7 +1188,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-4">
-        <span className="text-xs text-gray-500 w-16">
+        <span className="text-xs text-gray-500 w-16 dark:text-gray-400">
           {config?.labels?.min || min}{unit}
         </span>
         <div className="flex-1 relative">
@@ -1211,7 +1211,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
             </div>
           )}
         </div>
-        <span className="text-xs text-gray-500 w-16 text-right">
+        <span className="text-xs text-gray-500 w-16 text-right dark:text-gray-400">
           {config?.labels?.max || max}{unit}
         </span>
       </div>
@@ -1227,7 +1227,7 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
           </button>
           <button
             onClick={() => setShowNoteInput(!showNoteInput)}
-            className="p-1 text-gray-400 hover:text-gray-600"
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <MessageSquare className="w-4 h-4" />
           </button>
@@ -1240,12 +1240,12 @@ export function SliderField({ fieldId, assetId, config, readOnly = false, extern
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Add a note..."
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
         />
       )}
 
       {note && !showNoteInput && (
-        <p className="text-sm text-gray-600 italic">"{note}"</p>
+        <p className="text-sm text-gray-600 italic dark:text-gray-400">"{note}"</p>
       )}
 
       {metadata?.updatedAt && (
@@ -1414,12 +1414,12 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
         {criteria.map(criterion => (
           <div
             key={criterion.id}
-            className="p-3 bg-gray-50 rounded-lg space-y-2"
+            className="p-3 bg-gray-50 rounded-lg space-y-2 dark:bg-gray-900"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-900">{criterion.name}</span>
-                <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded">
+                <span className="font-medium text-gray-900 dark:text-white">{criterion.name}</span>
+                <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded dark:text-gray-400">
                   {criterion.weight}%
                 </span>
               </div>
@@ -1446,7 +1446,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
                     />
                   </button>
                 ))}
-                <span className="text-sm text-gray-500 ml-2">
+                <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">
                   {scores[criterion.id]?.score ?? 0}/{maxScore}
                 </span>
               </div>
@@ -1454,7 +1454,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
 
             {/* Notes */}
             {scores[criterion.id]?.notes && editingNote !== criterion.id && (
-              <p className="text-sm text-gray-600 italic pl-2 border-l-2 border-gray-300">
+              <p className="text-sm text-gray-600 italic pl-2 border-l-2 border-gray-300 dark:border-gray-600 dark:text-gray-400">
                 {scores[criterion.id].notes}
               </p>
             )}
@@ -1467,7 +1467,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder="Add a note..."
-                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
                   autoFocus
                 />
                 <button
@@ -1478,7 +1478,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
                 </button>
                 <button
                   onClick={() => { setEditingNote(null); setNoteText('') }}
-                  className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                  className="p-1 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1493,7 +1493,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
                     setEditingNote(criterion.id)
                     setNoteText(scores[criterion.id]?.notes || '')
                   }}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   {scores[criterion.id]?.notes ? 'Edit note' : 'Add note'}
                 </button>
@@ -1515,13 +1515,13 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
       {!readOnly && !config?.criteria && (
         <>
           {showAddCriterion ? (
-            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
               <input
                 type="text"
                 value={newCriterionName}
                 onChange={(e) => setNewCriterionName(e.target.value)}
                 placeholder="Criterion name..."
-                className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleAddCriterion()}
               />
@@ -1534,7 +1534,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
               </button>
               <button
                 onClick={() => { setShowAddCriterion(false); setNewCriterionName('') }}
-                className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                className="p-1 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1542,7 +1542,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
           ) : (
             <button
               onClick={() => setShowAddCriterion(true)}
-              className="w-full py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-gray-300 hover:border-primary-300"
+              className="w-full py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-gray-300 hover:border-primary-300 dark:border-gray-600 dark:text-gray-400"
             >
               <Plus className="w-4 h-4 inline mr-1" />
               Add Criterion
@@ -1553,9 +1553,9 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
 
       {/* Weighted total */}
       {showWeightedTotal && criteria.some(c => scores[c.id]?.score) && (
-        <div className="pt-4 border-t border-gray-200">
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-medium text-gray-900">Weighted Score</span>
+            <span className="font-medium text-gray-900 dark:text-white">Weighted Score</span>
             <span
               className="text-lg font-bold"
               style={{ color: getScoreColor(weightedTotal) }}
@@ -1572,7 +1572,7 @@ export function ScorecardField({ fieldId, assetId, config, readOnly = false, ext
               }}
             />
           </div>
-          <p className="text-xs text-gray-500 text-right mt-1">
+          <p className="text-xs text-gray-500 text-right mt-1 dark:text-gray-400">
             {weightedPercentage.toFixed(0)}%
           </p>
         </div>
@@ -1886,8 +1886,8 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
   if (scenarios.length === 0 && metrics.length === 0 && !readOnly) {
     return (
       <div className="space-y-4">
-        <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-          <p className="text-gray-500 mb-4">Create your scenario analysis by adding scenarios and metrics</p>
+        <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
+          <p className="text-gray-500 mb-4 dark:text-gray-400">Create your scenario analysis by adding scenarios and metrics</p>
           <div className="flex justify-center gap-4">
             <button
               onClick={() => setShowAddScenario(true)}
@@ -1898,7 +1898,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
             </button>
             <button
               onClick={() => setShowAddMetric(true)}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm dark:hover:bg-gray-800 dark:border-gray-600"
             >
               <Plus className="w-4 h-4 inline mr-1" />
               Add Metric
@@ -1908,7 +1908,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
 
         {/* Add Scenario Dialog */}
         {showAddScenario && (
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3 dark:border-gray-700 dark:bg-gray-900">
             <h4 className="font-medium text-sm">Add Scenario</h4>
             <div className="flex gap-2">
               <input
@@ -1916,7 +1916,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                 value={newScenarioName}
                 onChange={(e) => setNewScenarioName(e.target.value)}
                 placeholder="Scenario name (e.g., Bull Case)"
-                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                 autoFocus
               />
               <div className="flex gap-1">
@@ -1943,7 +1943,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
               </button>
               <button
                 onClick={() => { setShowAddScenario(false); setNewScenarioName('') }}
-                className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded"
+                className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -1953,7 +1953,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
 
         {/* Add Metric Dialog */}
         {showAddMetric && (
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3 dark:border-gray-700 dark:bg-gray-900">
             <h4 className="font-medium text-sm">Add Metric</h4>
             <div className="flex gap-2">
               <input
@@ -1961,13 +1961,13 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                 value={newMetricName}
                 onChange={(e) => setNewMetricName(e.target.value)}
                 placeholder="Metric name (e.g., Revenue Growth)"
-                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                 autoFocus
               />
               <select
                 value={newMetricType}
                 onChange={(e) => setNewMetricType(e.target.value as any)}
-                className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
               >
                 <option value="number">Number</option>
                 <option value="currency">Currency ($)</option>
@@ -1984,7 +1984,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
               </button>
               <button
                 onClick={() => { setShowAddMetric(false); setNewMetricName('') }}
-                className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded"
+                className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -2010,8 +2010,8 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-2 px-3 font-medium text-gray-700 w-32"></th>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="text-left py-2 px-3 font-medium text-gray-700 w-32 dark:text-gray-300"></th>
                 {scenarios.map(scenario => (
                   <th
                     key={scenario.id}
@@ -2035,12 +2035,12 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                           type="number"
                           value={scenario.probability}
                           onChange={(e) => handleProbabilityChange(scenario.id, Number(e.target.value))}
-                          className="w-12 text-center text-xs px-1 py-0.5 border border-gray-300 rounded"
+                          className="w-12 text-center text-xs px-1 py-0.5 border border-gray-300 rounded dark:border-gray-600"
                           min={0}
                           max={100}
                         />
                       ) : (
-                        <span className="text-xs text-gray-500">({scenario.probability}%)</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">({scenario.probability}%)</span>
                       )}
                       {!readOnly && <span className="text-xs text-gray-400">%</span>}
                     </div>
@@ -2058,7 +2058,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                   </th>
                 )}
                 {showProbabilityWeighted && scenarios.length > 0 && (
-                  <th className="text-center py-2 px-3 font-medium text-gray-700 bg-gray-50 min-w-[100px]">
+                  <th className="text-center py-2 px-3 font-medium text-gray-700 bg-gray-50 min-w-[100px] dark:text-gray-300 dark:bg-gray-900">
                     PW Avg
                   </th>
                 )}
@@ -2066,8 +2066,8 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
             </thead>
             <tbody>
               {metrics.map(metric => (
-                <tr key={metric.id} className="border-b border-gray-100 group">
-                  <td className="py-2 px-3 text-gray-700 font-medium">
+                <tr key={metric.id} className="border-b border-gray-100 group dark:border-gray-800">
+                  <td className="py-2 px-3 text-gray-700 font-medium dark:text-gray-300">
                     <div className="flex items-center gap-1">
                       {metric.name}
                       {!readOnly && (
@@ -2104,7 +2104,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                           className={clsx(
                             'px-2 py-1 rounded transition-colors',
                             !readOnly && 'hover:bg-gray-100',
-                            scenario.values[metric.id] !== undefined ? 'text-gray-900' : 'text-gray-400'
+                            scenario.values[metric.id] !== undefined ? 'text-gray-900 dark:text-white' : 'text-gray-400'
                           )}
                         >
                           {scenario.values[metric.id] !== undefined
@@ -2116,7 +2116,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                   ))}
                   {!readOnly && <td className="py-2 px-2 w-10"></td>}
                   {showProbabilityWeighted && scenarios.length > 0 && (
-                    <td className="py-2 px-3 text-center bg-gray-50 font-medium">
+                    <td className="py-2 px-3 text-center bg-gray-50 font-medium dark:bg-gray-900">
                       {pwValues[metric.id] !== undefined && pwValues[metric.id] !== 0
                         ? formatValue(pwValues[metric.id], metric.type)
                         : '-'}
@@ -2131,7 +2131,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
 
       {/* Add Scenario Dialog */}
       {showAddScenario && (
-        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3 dark:border-gray-700 dark:bg-gray-900">
           <h4 className="font-medium text-sm">Add Scenario</h4>
           <div className="flex gap-2">
             <input
@@ -2139,7 +2139,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
               value={newScenarioName}
               onChange={(e) => setNewScenarioName(e.target.value)}
               placeholder="Scenario name (e.g., Bull Case)"
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg"
+              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
               autoFocus
             />
             <div className="flex gap-1">
@@ -2166,7 +2166,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
             </button>
             <button
               onClick={() => { setShowAddScenario(false); setNewScenarioName('') }}
-              className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded"
+              className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
             >
               Cancel
             </button>
@@ -2178,7 +2178,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
       {!readOnly && (
         <>
           {showAddMetric ? (
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3 dark:border-gray-700 dark:bg-gray-900">
               <h4 className="font-medium text-sm">Add Metric</h4>
               <div className="flex gap-2">
                 <input
@@ -2186,13 +2186,13 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                   value={newMetricName}
                   onChange={(e) => setNewMetricName(e.target.value)}
                   placeholder="Metric name (e.g., Revenue Growth)"
-                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                   autoFocus
                 />
                 <select
                   value={newMetricType}
                   onChange={(e) => setNewMetricType(e.target.value as any)}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                 >
                   <option value="number">Number</option>
                   <option value="currency">Currency ($)</option>
@@ -2209,7 +2209,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                 </button>
                 <button
                   onClick={() => { setShowAddMetric(false); setNewMetricName('') }}
-                  className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded"
+                  className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -2218,7 +2218,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
           ) : (
             <button
               onClick={() => setShowAddMetric(true)}
-              className="text-sm text-gray-500 hover:text-primary-600"
+              className="text-sm text-gray-500 hover:text-primary-600 dark:text-gray-400"
             >
               <Plus className="w-4 h-4 inline mr-1" />
               Add Metric
@@ -2228,7 +2228,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
       )}
 
       {/* Scenario notes */}
-      <div className="space-y-2 pt-2 border-t border-gray-200">
+      <div className="space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700">
         {scenarios.map(scenario => (
           <div key={scenario.id}>
             {editingNote === scenario.id ? (
@@ -2241,7 +2241,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder={`${scenario.name} case thesis...`}
-                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                  className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
                   autoFocus
                 />
                 <button
@@ -2252,7 +2252,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                 </button>
                 <button
                   onClick={() => { setEditingNote(null); setNoteText('') }}
-                  className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                  className="p-1 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -2262,11 +2262,11 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
                 <span className="font-medium" style={{ color: scenario.color }}>
                   {scenario.name}:
                 </span>{' '}
-                <span className="text-gray-600">{scenario.notes}</span>
+                <span className="text-gray-600 dark:text-gray-400">{scenario.notes}</span>
                 {!readOnly && (
                   <button
                     onClick={() => { setEditingNote(scenario.id); setNoteText(scenario.notes || '') }}
-                    className="ml-2 text-gray-400 hover:text-gray-600"
+                    className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                   >
                     <Edit2 className="w-3 h-3 inline" />
                   </button>
@@ -2275,7 +2275,7 @@ export function ScenarioField({ fieldId, assetId, config, readOnly = false, exte
             ) : !readOnly && (
               <button
                 onClick={() => { setEditingNote(scenario.id); setNoteText('') }}
-                className="text-xs text-gray-400 hover:text-gray-600"
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <Plus className="w-3 h-3 inline mr-1" />
                 Add {scenario.name.toLowerCase()} case notes
@@ -2632,7 +2632,7 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
                 value={newColumnName}
                 onChange={(e) => setNewColumnName(e.target.value)}
                 placeholder="Column name..."
-                className="px-2 py-1 text-sm border border-gray-300 rounded"
+                className="px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()}
               />
@@ -2645,7 +2645,7 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
               </button>
               <button
                 onClick={() => { setShowAddColumn(false); setNewColumnName('') }}
-                className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                className="p-1 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2653,7 +2653,7 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
           ) : (
             <button
               onClick={() => setShowAddColumn(true)}
-              className="text-xs text-gray-500 hover:text-primary-600"
+              className="text-xs text-gray-500 hover:text-primary-600 dark:text-gray-400"
             >
               <Plus className="w-3 h-3 inline mr-1" />
               Add Column
@@ -2663,17 +2663,17 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
       )}
 
       {/* Spreadsheet table */}
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <div className="overflow-x-auto border border-gray-200 rounded-lg dark:border-gray-700">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+            <tr className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               {showRowNumbers && (
                 <th className="w-8 py-2 px-2 text-center text-gray-400 font-normal">#</th>
               )}
               {columns.map((col, colIndex) => (
                 <th
                   key={col.id}
-                  className="py-2 px-3 text-left font-medium text-gray-700 min-w-[100px] group"
+                  className="py-2 px-3 text-left font-medium text-gray-700 min-w-[100px] group dark:text-gray-300"
                 >
                   {editingColumnId === col.id ? (
                     <div className="flex items-center gap-1">
@@ -2681,7 +2681,7 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
                         type="text"
                         value={editingColumnName}
                         onChange={(e) => setEditingColumnName(e.target.value)}
-                        className="flex-1 px-1 py-0.5 text-sm border border-gray-300 rounded"
+                        className="flex-1 px-1 py-0.5 text-sm border border-gray-300 rounded dark:border-gray-600"
                         autoFocus
                         onBlur={handleColumnNameSave}
                         onKeyDown={(e) => e.key === 'Enter' && handleColumnNameSave()}
@@ -2720,7 +2720,7 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
           </thead>
           <tbody>
             {rows.map((row, rowIndex) => (
-              <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-800">
                 {showRowNumbers && (
                   <td className="py-2 px-2 text-center text-xs text-gray-400">{rowIndex + 1}</td>
                 )}
@@ -2779,7 +2779,7 @@ export function SpreadsheetField({ fieldId, assetId, config, readOnly = false, e
       {!readOnly && allowAddRows && rows.length < maxRows && (
         <button
           onClick={handleAddRow}
-          className="w-full py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-gray-300 hover:border-primary-300"
+          className="w-full py-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-gray-300 hover:border-primary-300 dark:border-gray-600 dark:text-gray-400"
         >
           <Plus className="w-4 h-4 inline mr-1" />
           Add Row
@@ -2839,13 +2839,13 @@ export function SingleSelectField({ fieldId, assetId, config, readOnly = false, 
             'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm text-left transition-colors',
             selected === opt
               ? 'bg-primary-50 border border-primary-300 text-primary-800'
-              : 'bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100',
+              : 'bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900',
             readOnly && 'cursor-default'
           )}
         >
           <div className={clsx(
             'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
-            selected === opt ? 'border-primary-500' : 'border-gray-300'
+            selected === opt ? 'border-primary-500' : 'border-gray-300 dark:border-gray-600'
           )}>
             {selected === opt && <div className="w-2 h-2 rounded-full bg-primary-500" />}
           </div>
@@ -2918,8 +2918,8 @@ export function MultiSelectField({ fieldId, assetId, config, readOnly = false, e
                 isSelected
                   ? 'bg-primary-100 border-primary-300 text-primary-800'
                   : atLimit
-                  ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100',
+                  ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed dark:border-gray-700 dark:bg-gray-900'
+                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900',
                 readOnly && 'cursor-default'
               )}
             >
@@ -2989,11 +2989,11 @@ export function BooleanField({ fieldId, assetId, config, readOnly = false, exter
         )}
       >
         <span className={clsx(
-          'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform',
+          'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform dark:bg-gray-800',
           value && 'translate-x-5'
         )} />
       </button>
-      <span className="text-sm font-medium text-gray-700">
+      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
         {value ? trueLabel : falseLabel}
       </span>
     </div>
@@ -3055,10 +3055,10 @@ export function PercentageField({ fieldId, assetId, config, readOnly = false, ex
           min={min}
           max={max}
           step={Math.pow(10, -decimals)}
-          className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium"
+          className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium dark:border-gray-600"
           autoFocus
         />
-        <span className="text-gray-500 text-lg">%</span>
+        <span className="text-gray-500 text-lg dark:text-gray-400">%</span>
         <button
           onClick={handleSave}
           disabled={isSaving}
@@ -3068,7 +3068,7 @@ export function PercentageField({ fieldId, assetId, config, readOnly = false, ex
         </button>
         <button
           onClick={() => setIsEditing(false)}
-          className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+          className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 dark:text-gray-300"
         >
           <X className="w-4 h-4" />
         </button>
@@ -3079,10 +3079,10 @@ export function PercentageField({ fieldId, assetId, config, readOnly = false, ex
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0
 
   return (
-    <div className="p-4 bg-gray-50 rounded-lg">
+    <div className="p-4 bg-gray-50 rounded-lg dark:bg-gray-900">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-2xl font-bold text-gray-900">{value.toFixed(decimals)}%</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">{value.toFixed(decimals)}%</div>
           <div className="w-40 h-2 bg-gray-200 rounded-full mt-2">
             <div className="h-full bg-primary-500 rounded-full transition-all" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
           </div>
@@ -3090,7 +3090,7 @@ export function PercentageField({ fieldId, assetId, config, readOnly = false, ex
         {!readOnly && (
           <button
             onClick={() => { setInputValue(value.toString()); setIsEditing(true) }}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg dark:hover:text-gray-300"
           >
             <Edit2 className="w-4 h-4" />
           </button>
@@ -3153,7 +3153,7 @@ export function CurrencyField({ fieldId, assetId, config, readOnly = false, exte
   if (isEditing) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-gray-500 text-lg">
+        <span className="text-gray-500 text-lg dark:text-gray-400">
           <DollarSign className="w-5 h-5" />
         </span>
         <input
@@ -3162,7 +3162,7 @@ export function CurrencyField({ fieldId, assetId, config, readOnly = false, exte
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setIsEditing(false) }}
           step={Math.pow(10, -decimals)}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium"
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-lg font-medium dark:border-gray-600"
           autoFocus
         />
         <button
@@ -3174,7 +3174,7 @@ export function CurrencyField({ fieldId, assetId, config, readOnly = false, exte
         </button>
         <button
           onClick={() => setIsEditing(false)}
-          className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+          className="p-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 dark:text-gray-300"
         >
           <X className="w-4 h-4" />
         </button>
@@ -3183,16 +3183,16 @@ export function CurrencyField({ fieldId, assetId, config, readOnly = false, exte
   }
 
   return (
-    <div className="p-4 bg-gray-50 rounded-lg">
+    <div className="p-4 bg-gray-50 rounded-lg dark:bg-gray-900">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-2xl font-bold text-gray-900">{formatCurrency(value)}</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(value)}</div>
           <div className="text-xs text-gray-400 mt-0.5">{currencyCode}</div>
         </div>
         {!readOnly && (
           <button
             onClick={() => { setInputValue(value.toString()); setIsEditing(true) }}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg dark:hover:text-gray-300"
           >
             <Edit2 className="w-4 h-4" />
           </button>
@@ -3258,15 +3258,15 @@ export function TableField({ fieldId, assetId, config, readOnly = false, externa
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <div className="overflow-x-auto border border-gray-200 rounded-lg dark:border-gray-700">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+            <tr className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               {columns.map(col => (
                 <th
                   key={col.key}
                   className={clsx(
-                    'px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider',
+                    'px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400',
                     col.type === 'number' ? 'text-right' : 'text-left'
                   )}
                 >
@@ -3278,7 +3278,7 @@ export function TableField({ fieldId, assetId, config, readOnly = false, externa
           </thead>
           <tbody>
             {rows.map((row, ri) => (
-              <tr key={ri} className="border-b border-gray-100 last:border-b-0 group">
+              <tr key={ri} className="border-b border-gray-100 last:border-b-0 group dark:border-gray-800">
                 {columns.map(col => (
                   <td key={col.key} className="px-3 py-1.5">
                     {readOnly ? (
@@ -3394,7 +3394,7 @@ export function ChartField({ fieldId, assetId, config, readOnly = false, externa
           <ChartRenderer dataPoints={dataPoints} chartType={chartType} color={color} metric={metric} />
         </div>
       ) : (
-        <div className="h-32 flex items-center justify-center border border-dashed border-gray-200 rounded-lg">
+        <div className="h-32 flex items-center justify-center border border-dashed border-gray-200 rounded-lg dark:border-gray-700">
           <p className="text-sm text-gray-400 italic">Add data points to see chart</p>
         </div>
       )}
@@ -3403,20 +3403,20 @@ export function ChartField({ fieldId, assetId, config, readOnly = false, externa
       {!readOnly && (
         <div className="space-y-1.5">
           {dataPoints.length > 0 && (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-3 py-1.5 text-xs font-medium text-gray-500 text-left">Label</th>
-                    <th className="px-3 py-1.5 text-xs font-medium text-gray-500 text-right">{metric}</th>
+                  <tr className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                    <th className="px-3 py-1.5 text-xs font-medium text-gray-500 text-left dark:text-gray-400">Label</th>
+                    <th className="px-3 py-1.5 text-xs font-medium text-gray-500 text-right dark:text-gray-400">{metric}</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
                 <tbody>
                   {dataPoints.map((pt, i) => (
-                    <tr key={i} className="border-b border-gray-100 last:border-b-0 group">
-                      <td className="px-3 py-1 text-sm text-gray-700">{pt.label}</td>
-                      <td className="px-3 py-1 text-sm text-gray-700 text-right">{pt.value}</td>
+                    <tr key={i} className="border-b border-gray-100 last:border-b-0 group dark:border-gray-800">
+                      <td className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300">{pt.label}</td>
+                      <td className="px-3 py-1 text-sm text-gray-700 text-right dark:text-gray-300">{pt.value}</td>
                       <td className="px-1">
                         <button
                           onClick={() => removePoint(i)}
@@ -3437,7 +3437,7 @@ export function ChartField({ fieldId, assetId, config, readOnly = false, externa
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               placeholder="Label"
-              className="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              className="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:border-primary-400 focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
               onKeyDown={(e) => e.key === 'Enter' && addPoint()}
             />
             <input
@@ -3445,7 +3445,7 @@ export function ChartField({ fieldId, assetId, config, readOnly = false, externa
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               placeholder={metric}
-              className="w-24 px-2 py-1 text-sm border border-gray-200 rounded text-right focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              className="w-24 px-2 py-1 text-sm border border-gray-200 rounded text-right focus:border-primary-400 focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
               onKeyDown={(e) => e.key === 'Enter' && addPoint()}
             />
             <button

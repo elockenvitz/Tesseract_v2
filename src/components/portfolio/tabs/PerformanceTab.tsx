@@ -50,7 +50,7 @@ function fmtPct(value: number, opts?: { sign?: boolean }) {
 function clr(v: number) {
   if (v > 0) return 'text-emerald-600'
   if (v < 0) return 'text-red-600'
-  return 'text-gray-500'
+  return 'text-gray-500 dark:text-gray-400'
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +363,7 @@ export function PerformanceTab({
 
       {/* ─── HEADER + TIMEFRAME ───────────────────────────── */}
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Performance Analysis</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Performance Analysis</span>
         <div className="flex items-center gap-0.5">
           {TIMEFRAMES.map(tf => (
             <button
@@ -372,7 +372,7 @@ export function PerformanceTab({
               className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors ${
                 timeframe === tf
                   ? 'bg-gray-900 text-white'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
               }`}
             >
               {tf === 'ALL' ? 'All' : tf}
@@ -382,9 +382,9 @@ export function PerformanceTab({
       </div>
 
       {/* ─── KPI STRIP ────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+      <div className="grid grid-cols-4 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         {/* Period Return */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             {timeframeLabel} Return
           </p>
@@ -397,7 +397,7 @@ export function PerformanceTab({
         </div>
 
         {/* Period P&L */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             {timeframeLabel} P&L
           </p>
@@ -410,7 +410,7 @@ export function PerformanceTab({
         </div>
 
         {/* Benchmark Return — scaffold */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             Benchmark
           </p>
@@ -419,7 +419,7 @@ export function PerformanceTab({
         </div>
 
         {/* Excess Return — scaffold */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             Excess Return
           </p>
@@ -429,9 +429,9 @@ export function PerformanceTab({
       </div>
 
       {/* ─── CUMULATIVE RETURN CHART ──────────────────────── */}
-      <div className="border border-gray-200 rounded overflow-hidden">
-        <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+      <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+        <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200 flex items-center justify-between dark:border-gray-700 dark:bg-gray-900">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Cumulative Return — {timeframeLabel}
           </span>
           {hasPriceHistory && (
@@ -490,7 +490,7 @@ export function PerformanceTab({
                 <p className="text-[11px] text-gray-400">No positions to analyze</p>
               ) : (
                 <>
-                  <p className="text-[11px] text-gray-500">Historical price data not yet available</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">Historical price data not yet available</p>
                   <p className="text-[10px] text-gray-400">
                     Once daily prices are cached, this chart will show cumulative return for the selected period.
                   </p>
@@ -513,14 +513,14 @@ export function PerformanceTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
 
         {/* Period Contributors & Detractors */}
-        <div className="border border-gray-200 rounded overflow-hidden">
-          <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+        <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+          <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
               {timeframeLabel} Attribution
             </span>
           </div>
           {holdingMetrics.length > 0 ? (
-            <div className="grid grid-cols-2 divide-x divide-gray-100">
+            <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-gray-800">
               {/* Contributors */}
               <div className="px-2.5 py-1.5">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-500 mb-0.5">Contributors</p>
@@ -533,8 +533,8 @@ export function PerformanceTab({
                 )}
                 {contributors.length > 0 ? contributors.map(h => (
                   <div key={h.symbol} className="flex items-center py-px">
-                    <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums">{h.symbol}</span>
-                    <span className="text-[10px] text-gray-500 tabular-nums ml-auto">
+                    <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums dark:text-white">{h.symbol}</span>
+                    <span className="text-[10px] text-gray-500 tabular-nums ml-auto dark:text-gray-400">
                       {h.contribPct.toFixed(0)}%
                     </span>
                     <span className="text-[10px] font-semibold text-emerald-600 tabular-nums w-16 text-right">
@@ -558,8 +558,8 @@ export function PerformanceTab({
                 )}
                 {detractors.length > 0 ? detractors.map(h => (
                   <div key={h.symbol} className="flex items-center py-px">
-                    <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums">{h.symbol}</span>
-                    <span className="text-[10px] text-gray-500 tabular-nums ml-auto">
+                    <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums dark:text-white">{h.symbol}</span>
+                    <span className="text-[10px] text-gray-500 tabular-nums ml-auto dark:text-gray-400">
                       {Math.abs(h.contribPct).toFixed(0)}%
                     </span>
                     <span className="text-[10px] font-semibold text-red-500 tabular-nums w-16 text-right">
@@ -577,16 +577,16 @@ export function PerformanceTab({
             </div>
           )}
           {!periodMetrics.hasData && holdingMetrics.length > 0 && (
-            <div className="px-2.5 py-1 border-t border-gray-100">
+            <div className="px-2.5 py-1 border-t border-gray-100 dark:border-gray-800">
               <p className="text-[8px] text-gray-400 italic">Inception-to-date · historical attribution requires price data</p>
             </div>
           )}
         </div>
 
         {/* Sector Attribution */}
-        <div className="border border-gray-200 rounded overflow-hidden">
-          <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+        <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+          <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Sector Attribution
             </span>
           </div>
@@ -594,14 +594,14 @@ export function PerformanceTab({
             <div>
               {sectorAttribution.map(s => (
                 <div key={s.sector} className="flex items-center gap-1.5 px-2.5 py-[5px]">
-                  <span className="text-[11px] text-gray-700 truncate flex-1 min-w-0">{s.sector}</span>
-                  <div className="w-14 h-[3px] bg-gray-100 rounded-full overflow-hidden shrink-0">
+                  <span className="text-[11px] text-gray-700 truncate flex-1 min-w-0 dark:text-gray-300">{s.sector}</span>
+                  <div className="w-14 h-[3px] bg-gray-100 rounded-full overflow-hidden shrink-0 dark:bg-gray-800">
                     <div
                       className={`h-full rounded-full ${s.contrib >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
                       style={{ width: `${Math.min(s.weight, 100)}%` }}
                     />
                   </div>
-                  <span className="text-[10px] font-medium text-gray-500 w-10 text-right tabular-nums shrink-0">
+                  <span className="text-[10px] font-medium text-gray-500 w-10 text-right tabular-nums shrink-0 dark:text-gray-400">
                     {s.weight.toFixed(1)}%
                   </span>
                   <span className={`text-[10px] font-semibold w-14 text-right tabular-nums shrink-0 ${clr(s.contrib)}`}>
@@ -617,12 +617,12 @@ export function PerformanceTab({
       </div>
 
       {/* ─── RISK METRICS ─────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+      <div className="grid grid-cols-3 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         {/* Volatility */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Volatility (ann.)</p>
           {riskMetrics.volatility !== null ? (
-            <p className="text-[17px] font-semibold text-gray-900 mt-1 tabular-nums leading-none">
+            <p className="text-[17px] font-semibold text-gray-900 mt-1 tabular-nums leading-none dark:text-white">
               {riskMetrics.volatility.toFixed(1)}%
             </p>
           ) : (
@@ -634,7 +634,7 @@ export function PerformanceTab({
         </div>
 
         {/* Max Drawdown */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Max Drawdown</p>
           {riskMetrics.maxDD !== null ? (
             <p className="text-[17px] font-semibold text-red-600 mt-1 tabular-nums leading-none">
@@ -649,7 +649,7 @@ export function PerformanceTab({
         </div>
 
         {/* Sharpe Ratio */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Sharpe Ratio</p>
           {riskMetrics.sharpe !== null ? (
             <p className={`text-[17px] font-semibold mt-1 tabular-nums leading-none ${clr(riskMetrics.sharpe)}`}>

@@ -120,7 +120,7 @@ export function RelatedProjects({
         <>
           {!hideCreateButton && (
             <div className="flex items-center justify-between">
-              <span className="text-[12px] font-medium text-gray-500">
+              <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
                 {relatedProjects.length} project{relatedProjects.length !== 1 ? 's' : ''}
               </span>
               <Button size="sm" variant="outline" onClick={() => setShowCreateModal(true)}>
@@ -129,7 +129,7 @@ export function RelatedProjects({
               </Button>
             </div>
           )}
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {relatedProjects.map((project) => {
               const progress = calculateDeliverableProgress(project)
               const isOverdue = project.due_date && new Date(project.due_date) < new Date()

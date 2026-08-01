@@ -755,13 +755,13 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm">
-          <div className="font-semibold text-gray-900 mb-2">
+        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm dark:border-gray-600 dark:bg-gray-800">
+          <div className="font-semibold text-gray-900 mb-2 dark:text-white">
             {new Date(label).toLocaleDateString()}
           </div>
           {payload.map((entry: any, index: number) => (
             <div key={index} className="flex justify-between gap-4">
-              <span className="text-gray-600">{entry.name}:</span>
+              <span className="text-gray-600 dark:text-gray-400">{entry.name}:</span>
               <span className="font-medium" style={{ color: entry.color }}>
                 {formatValue(entry.value)}
               </span>
@@ -792,7 +792,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
   return (
     <div className={`w-full space-y-4 ${className}`}>
       {/* Advanced Chart Controls */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-4">
           {/* Left Controls */}
           <div className="flex items-center space-x-4">
@@ -807,32 +807,32 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
               </button>
 
               {showSeriesDropdown && (
-                <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg w-72">
+                <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg w-72 dark:border-gray-600 dark:bg-gray-800">
                   <div className="p-3">
                     <input
                       type="text"
                       value={seriesSearchTerm}
                       onChange={(e) => setSeriesSearchTerm(e.target.value)}
                       placeholder="Search series..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3 dark:border-gray-600"
                     />
                     <div className="max-h-60 overflow-y-auto">
                       {filteredSeries.map(series => (
-                        <label key={series.id} className="flex items-center space-x-2 py-2 px-2 hover:bg-gray-50 cursor-pointer">
+                        <label key={series.id} className="flex items-center space-x-2 py-2 px-2 hover:bg-gray-50 cursor-pointer dark:hover:bg-gray-800">
                           <input
                             type="checkbox"
                             checked={activeSeries.includes(series.id)}
                             onChange={() => toggleSeries(series.id)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
                           />
                           <div className="flex-1">
                             <span className="text-sm font-medium">{series.name}</span>
-                            <div className="text-xs text-gray-500">{series.description}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{series.description}</div>
                           </div>
                         </label>
                       ))}
                       {filteredSeries.length === 0 && (
-                        <div className="text-gray-500 text-sm py-2 px-2">No series found</div>
+                        <div className="text-gray-500 text-sm py-2 px-2 dark:text-gray-400">No series found</div>
                       )}
                     </div>
                   </div>
@@ -841,24 +841,24 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
             </div>
 
             {/* Chart Type Selector */}
-            <div className="flex items-center space-x-1 border-r border-gray-300 pr-3">
+            <div className="flex items-center space-x-1 border-r border-gray-300 pr-3 dark:border-gray-600">
               <button
                 onClick={() => setChartType('line')}
-                className={`p-2 rounded ${chartType === 'line' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+                className={`p-2 rounded ${chartType === 'line' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'}`}
                 title="Line Chart"
               >
                 <Activity className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setChartType('area')}
-                className={`p-2 rounded ${chartType === 'area' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+                className={`p-2 rounded ${chartType === 'area' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'}`}
                 title="Area Chart"
               >
                 <BarChart3 className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setChartType('bar')}
-                className={`p-2 rounded ${chartType === 'bar' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+                className={`p-2 rounded ${chartType === 'bar' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'}`}
                 title="Bar Chart"
               >
                 <BarChart3 className="h-4 w-4" />
@@ -874,7 +874,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
                   className={`px-3 py-1 rounded text-sm ${
                     dateRange === range
                       ? 'bg-gray-900 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                   }`}
                 >
                   {range}
@@ -889,7 +889,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
                   className={`px-3 py-1 rounded text-sm ${
                     dateRange === 'CUSTOM'
                       ? 'bg-gray-900 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                   }`}
                 >
                   Custom ▼
@@ -897,35 +897,35 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
 
                 {/* Custom Date Dropdown */}
                 {showCustomDatePicker && (
-                  <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-4 min-w-80">
+                  <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-4 min-w-80 dark:border-gray-600 dark:bg-gray-800">
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Start Date</label>
                           <input
                             type="date"
                             value={customDateRange.start}
                             onChange={(e) => setCustomDateRange(prev => ({ ...prev, start: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">End Date</label>
                           <input
                             type="date"
                             value={customDateRange.end}
                             onChange={(e) => setCustomDateRange(prev => ({ ...prev, end: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                           />
                         </div>
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Frequency</label>
                         <select
                           value={customDateRange.frequency}
                           onChange={(e) => setCustomDateRange(prev => ({ ...prev, frequency: e.target.value as 'daily' | 'weekly' | 'monthly' }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                         >
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
@@ -936,7 +936,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
                       <div className="flex justify-end space-x-2 pt-2">
                         <button
                           onClick={() => setShowCustomDatePicker(false)}
-                          className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800"
+                          className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400"
                         >
                           Cancel
                         </button>
@@ -957,21 +957,21 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
             <div className="relative indicators-dropdown">
               <button
                 onClick={() => setShowIndicatorsDropdown(!showIndicatorsDropdown)}
-                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 flex items-center"
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 flex items-center dark:hover:bg-gray-800 dark:border-gray-600"
                 title="Add Indicators"
               >
                 Indicators ▼
               </button>
 
               {showIndicatorsDropdown && (
-                <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg w-80">
+                <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 rounded-lg shadow-lg w-80 dark:border-gray-600 dark:bg-gray-800">
                   <div className="p-3">
                     <input
                       type="text"
                       value={indicatorsSearchTerm}
                       onChange={(e) => setIndicatorsSearchTerm(e.target.value)}
                       placeholder="Search indicators..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3 dark:border-gray-600"
                     />
                     <div className="max-h-60 overflow-y-auto">
                       {filteredIndicators.reduce((acc, indicator) => {
@@ -979,18 +979,18 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
                         if (!acc.categories.includes(category)) {
                           acc.categories.push(category);
                           acc.items.push(
-                            <div key={category} className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-3 first:mt-0">
+                            <div key={category} className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-3 first:mt-0 dark:text-gray-400">
                               {category}
                             </div>
                           );
                         }
                         acc.items.push(
-                          <label key={indicator.id} className="flex items-center space-x-2 py-2 px-2 hover:bg-gray-50 cursor-pointer">
+                          <label key={indicator.id} className="flex items-center space-x-2 py-2 px-2 hover:bg-gray-50 cursor-pointer dark:hover:bg-gray-800">
                             <input
                               type="checkbox"
                               checked={selectedTechnicalIndicators.includes(indicator.id)}
                               onChange={() => toggleIndicator(indicator.id)}
-                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
                             />
                             <span className="text-sm">{indicator.name}</span>
                           </label>
@@ -998,7 +998,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
                         return acc;
                       }, { categories: [], items: [] }).items}
                       {filteredIndicators.length === 0 && (
-                        <div className="text-gray-500 text-sm py-2 px-2">No indicators found</div>
+                        <div className="text-gray-500 text-sm py-2 px-2 dark:text-gray-400">No indicators found</div>
                       )}
                     </div>
                   </div>
@@ -1012,14 +1012,14 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
             {/* View Controls */}
             <button
               onClick={resetView}
-              className="p-2 rounded text-gray-600 hover:bg-gray-100"
+              className="p-2 rounded text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400"
               title="Reset View"
             >
               <Maximize2 className="h-4 w-4" />
             </button>
 
             {/* Annotation Tools */}
-            <div className="flex items-center space-x-1 border-l border-gray-300 pl-3">
+            <div className="flex items-center space-x-1 border-l border-gray-300 pl-3 dark:border-gray-600">
               <button
                 onClick={() => enterAnnotationMode('horizontal')}
                 className={`p-2 rounded text-gray-600 hover:bg-gray-100 ${annotationTool === 'horizontal' ? 'bg-blue-100 text-blue-600' : ''}`}
@@ -1055,12 +1055,12 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
 
       {/* Active Technical Indicators */}
       {selectedTechnicalIndicators.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-3">Active Indicators</h4>
+        <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+          <h4 className="font-medium text-gray-900 mb-3 dark:text-white">Active Indicators</h4>
           <div className="flex flex-wrap gap-2">
             {selectedTechnicalIndicators.map(indicator => (
-              <div key={indicator} className="flex items-center bg-gray-100 rounded px-2 py-1">
-                <span className="text-xs text-gray-700">{indicator.toUpperCase()}</span>
+              <div key={indicator} className="flex items-center bg-gray-100 rounded px-2 py-1 dark:bg-gray-800">
+                <span className="text-xs text-gray-700 dark:text-gray-300">{indicator.toUpperCase()}</span>
                 <button
                   onClick={() => removeTechnicalIndicator(indicator)}
                   className="ml-1 text-red-500 hover:text-red-700"
@@ -1076,8 +1076,8 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
 
       {/* Series Manager */}
       {showSeriesManager && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-3">Manage Series</h4>
+        <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+          <h4 className="font-medium text-gray-900 mb-3 dark:text-white">Manage Series</h4>
 
           {/* Add New Series */}
           <div className="flex items-center space-x-2 mb-3">
@@ -1086,7 +1086,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
               value={newSeriesSymbol}
               onChange={(e) => setNewSeriesSymbol(e.target.value.toUpperCase())}
               placeholder="Enter symbol (e.g., AAPL)"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               onKeyPress={(e) => e.key === 'Enter' && addSeries(newSeriesSymbol)}
             />
             <button
@@ -1100,13 +1100,13 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
           {/* Active Series List */}
           <div className="space-y-2">
             {activeSeries.map((seriesId) => (
-              <div key={seriesId} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2">
+              <div key={seriesId} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 dark:bg-gray-900">
                 <div className="flex items-center space-x-2">
                   <div
                     className="w-4 h-4 rounded"
                     style={{ backgroundColor: seriesColors[seriesId] || '#6b7280' }}
                   />
-                  <span className="font-medium text-gray-900">{getSeriesName(seriesId)}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{getSeriesName(seriesId)}</span>
                 </div>
                 {activeSeries.length > 1 && (
                   <button
@@ -1125,14 +1125,14 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
       {/* Interactive Chart */}
       <div
         ref={containerRef}
-        className="bg-white border border-gray-200 rounded-lg p-4 cursor-move select-none"
+        className="bg-white border border-gray-200 rounded-lg p-4 cursor-move select-none dark:border-gray-700 dark:bg-gray-800"
         style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <div className="mb-4 text-sm text-gray-600">
+        <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
           <div className="flex justify-between">
             <span>💡 Drag axes to scale • Drag chart to pan • Use controls above</span>
             <span>Zoom: {zoom.start.toFixed(0)}% - {zoom.end.toFixed(0)}%</span>
@@ -1394,10 +1394,10 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
       </div>
 
       {/* Statistics Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg dark:bg-gray-900">
         {statistics.filter(stat => stat.visible).map(stat => (
           <div key={stat.id} className="text-center">
-            <div className="text-xs text-gray-600 uppercase tracking-wide">{stat.name}</div>
+            <div className="text-xs text-gray-600 uppercase tracking-wide dark:text-gray-400">{stat.name}</div>
             <div className="text-lg font-semibold" style={{ color: stat.color }}>
               {stat.value}
             </div>
@@ -1407,17 +1407,17 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
 
       {/* Annotations Manager */}
       {annotations.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-3">Annotations ({annotations.length})</h4>
+        <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+          <h4 className="font-medium text-gray-900 mb-3 dark:text-white">Annotations ({annotations.length})</h4>
           <div className="space-y-2">
             {annotations.map(annotation => (
-              <div key={annotation.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2">
+              <div key={annotation.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 dark:bg-gray-900">
                 <div className="flex items-center space-x-3">
                   <div
                     className="w-3 h-3 rounded"
                     style={{ backgroundColor: annotation.color }}
                   />
-                  <span className="text-sm text-gray-700 capitalize">
+                  <span className="text-sm text-gray-700 capitalize dark:text-gray-300">
                     {annotation.type} {annotation.text && `- ${annotation.text}`}
                   </span>
                   <button
@@ -1425,7 +1425,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
                     className={`text-xs px-2 py-1 rounded ${
                       annotation.isVisible
                         ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-500'
+                        : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                     }`}
                   >
                     {annotation.isVisible ? 'Visible' : 'Hidden'}

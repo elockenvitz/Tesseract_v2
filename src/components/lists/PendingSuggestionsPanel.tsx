@@ -78,7 +78,7 @@ export function PendingSuggestionsPanel({
     return (
       <div
         key={suggestion.id}
-        className="border border-gray-200 rounded-lg p-4 bg-white"
+        className="border border-gray-200 rounded-lg p-4 bg-white dark:border-gray-700 dark:bg-gray-800"
       >
         {/* Header with suggestion type and user */}
         <div className="flex items-start justify-between mb-3">
@@ -98,10 +98,10 @@ export function PendingSuggestionsPanel({
               )}
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
                 {suggestion.suggestion_type === 'add' ? 'Add' : 'Remove'} suggestion
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {isIncoming ? (
                   <>From {getUserDisplayName(suggestion.suggester)}</>
                 ) : (
@@ -116,16 +116,16 @@ export function PendingSuggestionsPanel({
         </div>
 
         {/* Asset info */}
-        <div className="bg-gray-50 rounded-lg p-3 mb-3">
-          <p className="font-semibold text-gray-900">{suggestion.asset?.symbol}</p>
-          <p className="text-sm text-gray-600">{suggestion.asset?.company_name}</p>
+        <div className="bg-gray-50 rounded-lg p-3 mb-3 dark:bg-gray-900">
+          <p className="font-semibold text-gray-900 dark:text-white">{suggestion.asset?.symbol}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">{suggestion.asset?.company_name}</p>
         </div>
 
         {/* Notes */}
         {suggestion.notes && (
           <div className="mb-3 flex items-start gap-2">
             <MessageSquare className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-gray-600 italic">"{suggestion.notes}"</p>
+            <p className="text-sm text-gray-600 italic dark:text-gray-400">"{suggestion.notes}"</p>
           </div>
         )}
 
@@ -142,7 +142,7 @@ export function PendingSuggestionsPanel({
               }
               placeholder="Add a response (optional)..."
               rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none dark:border-gray-700"
             />
           </div>
         )}
@@ -154,14 +154,14 @@ export function PendingSuggestionsPanel({
               {showResponseInput !== suggestion.id ? (
                 <button
                   onClick={() => setShowResponseInput(suggestion.id)}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Add response...
                 </button>
               ) : (
                 <button
                   onClick={() => setShowResponseInput(null)}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Hide
                 </button>
@@ -227,15 +227,15 @@ export function PendingSuggestionsPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm pt-20">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[70vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[70vh] overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Pending Suggestions
           </h3>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
@@ -249,7 +249,7 @@ export function PendingSuggestionsPanel({
           ) : incomingSuggestions.length === 0 && outgoingSuggestions.length === 0 ? (
             <div className="text-center py-12 px-4">
               <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No pending suggestions</p>
+              <p className="text-gray-500 dark:text-gray-400">No pending suggestions</p>
               <p className="text-sm text-gray-400 mt-1">
                 Suggestions you send or receive will appear here
               </p>
@@ -263,10 +263,10 @@ export function PendingSuggestionsPanel({
                     onClick={() =>
                       setExpandedSection(expandedSection === 'incoming' ? null : 'incoming')
                     }
-                    className="flex items-center justify-between w-full px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center justify-between w-full px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700">For You</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">For You</span>
                       <Badge variant="primary" size="sm">
                         {incomingSuggestions.length}
                       </Badge>
@@ -292,10 +292,10 @@ export function PendingSuggestionsPanel({
                     onClick={() =>
                       setExpandedSection(expandedSection === 'outgoing' ? null : 'outgoing')
                     }
-                    className="flex items-center justify-between w-full px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center justify-between w-full px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700">From You</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">From You</span>
                       <Badge variant="secondary" size="sm">
                         {outgoingSuggestions.length}
                       </Badge>

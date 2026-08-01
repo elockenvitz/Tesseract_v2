@@ -87,11 +87,11 @@ export function CommunicationPane({
           </div>
         )
       case 'direct-messages':
-        return <Mail className="h-5 w-5 text-gray-600" />
+        return <Mail className="h-5 w-5 text-gray-600 dark:text-gray-400" />
       case 'notifications':
-        return <Bell className="h-5 w-5 text-gray-600" />
+        return <Bell className="h-5 w-5 text-gray-600 dark:text-gray-400" />
       case 'profile':
-        return <User className="h-5 w-5 text-gray-600" />
+        return <User className="h-5 w-5 text-gray-600 dark:text-gray-400" />
       case 'thoughts':
         return <Lightbulb className="h-5 w-5 text-amber-500" />
       default:
@@ -154,7 +154,7 @@ export function CommunicationPane({
         )
       default:
         return (
-          <div className="p-6 text-center text-gray-500">
+          <div className="p-6 text-center text-gray-500 dark:text-gray-400">
             <p>Select a view from the tabs above</p>
           </div>
         )
@@ -163,31 +163,31 @@ export function CommunicationPane({
 
   return (
     <div className={clsx(
-      'fixed bg-white shadow-lg transform transition-transform duration-300 ease-in-out z-30',
+      'fixed bg-white shadow-lg transform transition-transform duration-300 ease-in-out z-30 dark:bg-gray-800',
       // Phone: a bottom sheet that rises over the content, leaving the header
       // reachable. Desktop: the original right rail.
       isMobile
         ? clsx(
-            'inset-x-0 bottom-0 top-16 w-full rounded-t-2xl border-t border-gray-200',
+            'inset-x-0 bottom-0 top-16 w-full rounded-t-2xl border-t border-gray-200 dark:border-gray-700',
             isOpen ? 'translate-y-0' : 'translate-y-full'
           )
         : clsx(
-            'right-0 top-16 bottom-0 border-l border-gray-200',
+            'right-0 top-16 bottom-0 border-l border-gray-200 dark:border-gray-700',
             isFullscreen ? 'left-0' : 'w-96',
             isOpen ? 'translate-x-0' : 'translate-x-full'
           )
     )}>
       <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center space-x-3">
             {getViewIcon()}
-            <h3 className="text-lg font-semibold text-gray-900">{getViewTitle()}</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{getViewTitle()}</h3>
           </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={onToggleFullscreen}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {isFullscreen ? (
@@ -198,7 +198,7 @@ export function CommunicationPane({
             </button>
             <button
               onClick={onToggle}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
               title="Close communication panel"
             >
               <X className="h-4 w-4" />

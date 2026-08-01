@@ -159,12 +159,12 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Request Access</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Request Access</h2>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -172,7 +172,7 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
 
         {loadingPendingRequest ? (
           <div className="py-8 text-center">
-            <div className="text-gray-500">Loading...</div>
+            <div className="text-gray-500 dark:text-gray-400">Loading...</div>
           </div>
         ) : pendingRequest ? (
           <div className="py-4">
@@ -183,28 +183,28 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
                 </div>
               </div>
               <div className="flex-1">
-                <h3 className="text-base font-medium text-gray-900 mb-1">
+                <h3 className="text-base font-medium text-gray-900 mb-1 dark:text-white">
                   Access request pending
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   You have already requested {pendingRequest.requested_permission} access to this workflow.
                 </p>
               </div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+            <div className="bg-gray-50 rounded-lg p-4 mb-4 dark:bg-gray-900">
               <div className="space-y-2">
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Requested Permission:</span>
-                  <p className="text-sm text-gray-900 capitalize">{pendingRequest.requested_permission}</p>
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Requested Permission:</span>
+                  <p className="text-sm text-gray-900 capitalize dark:text-white">{pendingRequest.requested_permission}</p>
                 </div>
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Your Reason:</span>
-                  <p className="text-sm text-gray-900">{pendingRequest.reason}</p>
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Your Reason:</span>
+                  <p className="text-sm text-gray-900 dark:text-white">{pendingRequest.reason}</p>
                 </div>
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Requested:</span>
-                  <p className="text-sm text-gray-900">
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Requested:</span>
+                  <p className="text-sm text-gray-900 dark:text-white">
                     {new Date(pendingRequest.created_at).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
@@ -228,7 +228,7 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
               </div>
             ) : (
               <div className="mb-4">
-                <p className="text-xs text-gray-500 mb-3">
+                <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                   Your request is waiting for admin approval. You can send a reminder to notify them again.
                 </p>
                 <Button
@@ -255,10 +255,10 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
               </div>
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                 Access request sent successfully!
               </h3>
-              <p className="text-sm text-gray-600 mb-6">
+              <p className="text-sm text-gray-600 mb-6 dark:text-gray-400">
                 Workflow admins will be notified and will review your request.
               </p>
               <Button onClick={handleClose} className="w-full">
@@ -269,10 +269,10 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
         ) : (
           <>
             <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">
+              <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">
                 Request higher access level for "{workflowName}"
               </p>
-              <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+              <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded dark:text-gray-400 dark:bg-gray-900">
                 Current permission: <span className="font-medium capitalize">{currentPermission}</span>
               </div>
             </div>
@@ -280,13 +280,13 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Requested Permission Level
                   </label>
                   <select
                     value={requestedPermission}
                     onChange={(e) => setRequestedPermission(e.target.value as 'write' | 'admin')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                   >
                     <option value="write">Write Access - Edit checklist items and workflow content</option>
                     <option value="admin">Admin Access - Full workflow management permissions</option>
@@ -294,17 +294,17 @@ export function AccessRequestModal({ workflowId, workflowName, currentPermission
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Reason for Request
                   </label>
                   <textarea
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-24 resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-24 resize-none dark:border-gray-600"
                     placeholder="Please explain why you need this access level..."
                     required
                   />
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                     This request will be sent to the workflow administrators for approval.
                   </div>
                 </div>

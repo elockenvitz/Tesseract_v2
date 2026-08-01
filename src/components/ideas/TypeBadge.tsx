@@ -51,8 +51,8 @@ export const typeConfig: Record<ItemType, {
   message: {
     icon: MessageSquare,
     label: 'Message',
-    color: 'text-gray-600',
-    bg: 'bg-gray-50',
+    color: 'text-gray-600 dark:text-gray-400',
+    bg: 'bg-gray-50 dark:bg-gray-900',
     iconColor: 'text-gray-400'
   }
 }

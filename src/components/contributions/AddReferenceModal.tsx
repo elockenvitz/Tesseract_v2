@@ -54,7 +54,7 @@ const CATEGORY_OPTIONS: { value: ReferenceCategory; label: string }[] = [
 const IMPORTANCE_OPTIONS: { value: ReferenceImportance; label: string; icon?: React.ElementType; color: string }[] = [
   { value: 'critical', label: 'Critical', icon: AlertTriangle, color: 'text-red-600' },
   { value: 'high', label: 'High', icon: Star, color: 'text-amber-600' },
-  { value: 'normal', label: 'Normal', color: 'text-gray-600' },
+  { value: 'normal', label: 'Normal', color: 'text-gray-600 dark:text-gray-400' },
   { value: 'low', label: 'Low', color: 'text-gray-400' }
 ]
 
@@ -306,20 +306,20 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Add Key Reference</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Key Reference</h2>
           <button
             onClick={handleClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200">
+        <div className="flex border-b border-gray-200 dark:border-gray-700">
           {[
             { id: 'notes', label: 'Notes', icon: FileText },
             { id: 'models', label: 'Models', icon: FileSpreadsheet },
@@ -333,7 +333,7 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                 'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab.id
                   ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
               )}
             >
               <tab.icon className="w-4 h-4" />
@@ -355,18 +355,18 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                   placeholder="Search notes..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 />
               </div>
 
               {/* Notes list */}
               {notesLoading ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-500 dark:text-gray-400">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                   Loading notes...
                 </div>
               ) : filteredNotes.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-500 dark:text-gray-400">
                   No notes found
                 </div>
               ) : (
@@ -383,20 +383,20 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                         className={clsx(
                           'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
                           alreadyAdded
-                            ? 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed'
+                            ? 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed dark:border-gray-700 dark:bg-gray-900'
                             : isSelected
                               ? 'bg-primary-50 border-primary-300'
-                              : 'bg-white border-gray-200 hover:border-gray-300'
+                              : 'bg-white border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800'
                         )}
                       >
                         {/* Checkbox */}
                         <div className={clsx(
                           'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0',
                           alreadyAdded
-                            ? 'bg-gray-200 border-gray-300'
+                            ? 'bg-gray-200 border-gray-300 dark:border-gray-600'
                             : isSelected
                               ? 'bg-primary-600 border-primary-600'
-                              : 'border-gray-300'
+                              : 'border-gray-300 dark:border-gray-600'
                         )}>
                           {(isSelected || alreadyAdded) && (
                             <Check className="w-3 h-3 text-white" />
@@ -405,10 +405,10 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
 
                         {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
+                          <div className="text-sm font-medium text-gray-900 truncate dark:text-white">
                             {note.title}
                           </div>
-                          <div className="text-xs text-gray-500 flex items-center gap-2">
+                          <div className="text-xs text-gray-500 flex items-center gap-2 dark:text-gray-400">
                             {!isOwner && note.user && (
                               <span>
                                 {note.user.first_name} {note.user.last_name}
@@ -442,13 +442,13 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                   placeholder="Search models..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 />
               </div>
 
               {/* Models list */}
               {filteredModels.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-500 dark:text-gray-400">
                   No models found
                 </div>
               ) : (
@@ -465,20 +465,20 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                         className={clsx(
                           'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
                           alreadyAdded
-                            ? 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed'
+                            ? 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed dark:border-gray-700 dark:bg-gray-900'
                             : isSelected
                               ? 'bg-primary-50 border-primary-300'
-                              : 'bg-white border-gray-200 hover:border-gray-300'
+                              : 'bg-white border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800'
                         )}
                       >
                         {/* Checkbox */}
                         <div className={clsx(
                           'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0',
                           alreadyAdded
-                            ? 'bg-gray-200 border-gray-300'
+                            ? 'bg-gray-200 border-gray-300 dark:border-gray-600'
                             : isSelected
                               ? 'bg-primary-600 border-primary-600'
-                              : 'border-gray-300'
+                              : 'border-gray-300 dark:border-gray-600'
                         )}>
                           {(isSelected || alreadyAdded) && (
                             <Check className="w-3 h-3 text-white" />
@@ -492,10 +492,10 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
 
                         {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
+                          <div className="text-sm font-medium text-gray-900 truncate dark:text-white">
                             {model.name}
                           </div>
-                          <div className="text-xs text-gray-500 flex items-center gap-2">
+                          <div className="text-xs text-gray-500 flex items-center gap-2 dark:text-gray-400">
                             <span>v{model.version}</span>
                             <span>·</span>
                             {!isOwner && model.user && (
@@ -530,21 +530,21 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                 'flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
                 uploadedFile
                   ? 'border-primary-300 bg-primary-50'
-                  : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                  : 'border-gray-300 hover:border-gray-400 bg-gray-50 dark:border-gray-600 dark:bg-gray-900'
               )}>
                 {uploadedFile ? (
                   <>
                     <FileText className="w-10 h-10 text-primary-500 mb-2" />
-                    <span className="text-sm font-medium text-gray-900">{uploadedFile.name}</span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{uploadedFile.name}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
                     </span>
                   </>
                 ) : (
                   <>
                     <Upload className="w-10 h-10 text-gray-400 mb-2" />
-                    <span className="text-sm font-medium text-gray-700">Click to upload</span>
-                    <span className="text-xs text-gray-500">or drag and drop</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Click to upload</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">or drag and drop</span>
                     <span className="text-xs text-gray-400 mt-1">
                       PDF, Word, Excel, PowerPoint, Images
                     </span>
@@ -567,7 +567,7 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
               {/* Title for upload */}
               {uploadedFile && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Reference Title
                   </label>
                   <input
@@ -575,7 +575,7 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
                     placeholder="Enter a title for this document"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                   />
                 </div>
               )}
@@ -586,7 +586,7 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
           {activeTab === 'external' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   URL
                 </label>
                 <input
@@ -594,12 +594,12 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                   value={externalUrl}
                   onChange={(e) => setExternalUrl(e.target.value)}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Title
                 </label>
                 <input
@@ -607,18 +607,18 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                   value={externalTitle}
                   onChange={(e) => setExternalTitle(e.target.value)}
                   placeholder="Enter a title for this link"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Source
                 </label>
                 <select
                   value={externalProvider}
                   onChange={(e) => setExternalProvider(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 >
                   {EXTERNAL_PROVIDERS.map(p => (
                     <option key={p.value} value={p.value}>{p.label}</option>
@@ -629,17 +629,17 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
           )}
 
           {/* Common options (show for all tabs) */}
-          <div className="mt-6 pt-6 border-t border-gray-200 space-y-4">
+          <div className="mt-6 pt-6 border-t border-gray-200 space-y-4 dark:border-gray-700">
             <div className="grid grid-cols-2 gap-4">
               {/* Importance */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Importance
                 </label>
                 <select
                   value={importance}
                   onChange={(e) => setImportance(e.target.value as ReferenceImportance)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 >
                   {IMPORTANCE_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -650,13 +650,13 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
               {/* Category (not shown for models tab) */}
               {activeTab !== 'models' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Category
                   </label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value as ReferenceCategory)}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                   >
                     {CATEGORY_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -668,7 +668,7 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
 
             {/* Annotation */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Annotation <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <textarea
@@ -676,15 +676,15 @@ export function AddReferenceModal({ isOpen, onClose, assetId }: AddReferenceModa
                 onChange={(e) => setAnnotation(e.target.value)}
                 placeholder="Why is this important to your investment case?"
                 rows={2}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none dark:border-gray-700"
               />
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <div className="text-sm text-gray-500">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
             {activeTab === 'notes' && selectedNotes.size > 0 && (
               <span>{selectedNotes.size} note{selectedNotes.size > 1 ? 's' : ''} selected</span>
             )}

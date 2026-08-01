@@ -326,14 +326,14 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
   // ============================================================================
 
   const renderViewToggle = () => (
-    <div className="flex space-x-1 bg-gray-100 rounded-lg p-0.5">
+    <div className="flex space-x-1 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
       <button
         onClick={() => setView('discovery')}
         className={clsx(
           'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
           view === 'discovery'
-            ? 'bg-white text-primary-700 shadow-sm'
-            : 'text-gray-600 hover:text-gray-900'
+            ? 'bg-white text-primary-700 shadow-sm dark:bg-gray-800'
+            : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
         )}
       >
         <Shuffle className="w-4 h-4" />
@@ -344,8 +344,8 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
         className={clsx(
           'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
           view === 'feed'
-            ? 'bg-white text-primary-700 shadow-sm'
-            : 'text-gray-600 hover:text-gray-900'
+            ? 'bg-white text-primary-700 shadow-sm dark:bg-gray-800'
+            : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
         )}
       >
         <Activity className="w-4 h-4" />
@@ -366,7 +366,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
               'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors',
               scope === option.value
                 ? 'bg-primary-100 text-primary-700'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             )}
           >
             <Icon className="h-3 w-3" />
@@ -385,7 +385,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
         {(assetId || portfolioId || themeId) && (
           <button
             onClick={clearContextFilters}
-            className="text-xs text-gray-500 hover:text-gray-700"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
           >
             Clear context
           </button>
@@ -405,7 +405,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
           {/* Header */}
           <div className="flex items-center justify-between flex-shrink-0 mb-3">
             <div className="flex items-center gap-4">
-              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 dark:text-white">
                 <Lightbulb className="w-6 h-6 text-primary-600" />
                 <span>Ideas</span>
               </h1>
@@ -452,7 +452,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 dark:text-white">
               <Lightbulb className="w-6 h-6 text-primary-600" />
               <span>Ideas</span>
             </h1>
@@ -464,7 +464,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
               variant="outline"
               size="sm"
               onClick={() => setShowFilters(!showFilters)}
-              className={clsx(showFilters && 'bg-gray-100')}
+              className={clsx(showFilters && 'bg-gray-100 dark:bg-gray-800')}
             >
               <Filter className="w-4 h-4 mr-1" />
               Filters
@@ -493,12 +493,12 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
               placeholder="Search ideas..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -507,10 +507,10 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
 
           {/* Filter Pills */}
           {showFilters && (
-            <div className="flex flex-wrap gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className="flex flex-wrap gap-3 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
               {/* Type filter */}
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-500">Type:</span>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Type:</span>
                 {filterOptions.map(option => (
                   <button
                     key={option.value}
@@ -519,7 +519,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
                       'px-3 py-1 rounded-full text-xs font-medium transition-colors',
                       typeFilter === option.value
                         ? 'bg-primary-100 text-primary-700'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     )}
                   >
                     {option.label}
@@ -531,7 +531,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
 
               {/* Time filter */}
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-500">Time:</span>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Time:</span>
                 {timeRangeOptions.map(option => (
                   <button
                     key={option.value}
@@ -540,7 +540,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
                       'px-3 py-1 rounded-full text-xs font-medium transition-colors',
                       timeRange === option.value
                         ? 'bg-primary-100 text-primary-700'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     )}
                   >
                     {option.label}
@@ -553,7 +553,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
                 <>
                   <div className="w-px h-6 bg-gray-300" />
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-gray-500">Scope:</span>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Scope:</span>
                     {renderScopeSelector()}
                   </div>
                 </>
@@ -568,7 +568,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
                   <div className="w-px h-6 bg-gray-300" />
                   <button
                     onClick={resetFilters}
-                    className="px-3 py-1 rounded-full text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-200 transition-colors"
+                    className="px-3 py-1 rounded-full text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-200 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                   >
                     Clear all
                   </button>
@@ -579,7 +579,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
 
           {/* Results count */}
           {searchQuery && (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Found {filteredItems.length} {filteredItems.length === 1 ? 'result' : 'results'}
               {searchQuery && ` for "${searchQuery}"`}
             </p>
@@ -629,10 +629,10 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
         {!isLoading && filteredItems.length === 0 && (
           <div className="text-center py-12">
             <Lightbulb className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">
               {searchQuery ? 'No results found' : isQuickThoughtsView ? 'No Quick Thoughts yet' : 'No ideas yet'}
             </h3>
-            <p className="text-gray-600 mb-4">
+            <p className="text-gray-600 mb-4 dark:text-gray-400">
               {searchQuery
                 ? `No ideas match your search for "${searchQuery}"`
                 : isQuickThoughtsView
@@ -671,15 +671,15 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
               setItemForNewIdea(null)
             }}
           />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Create New Idea</h3>
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Idea</h3>
               <button
                 onClick={() => {
                   setCreateIdeaModalOpen(false)
                   setItemForNewIdea(null)
                 }}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>

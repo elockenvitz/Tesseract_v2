@@ -59,15 +59,15 @@ const IMPORTANCE_CONFIG: Record<ReferenceImportance, {
   },
   normal: {
     label: 'Normal',
-    color: 'text-gray-600',
-    bgColor: 'bg-white',
-    borderColor: 'border-gray-200'
+    color: 'text-gray-600 dark:text-gray-400',
+    bgColor: 'bg-white dark:bg-gray-800',
+    borderColor: 'border-gray-200 dark:border-gray-700'
   },
   low: {
     label: 'Low',
     color: 'text-gray-400',
-    bgColor: 'bg-gray-50',
-    borderColor: 'border-gray-100'
+    bgColor: 'bg-gray-50 dark:bg-gray-900',
+    borderColor: 'border-gray-100 dark:border-gray-800'
   }
 }
 
@@ -198,7 +198,7 @@ export function ReferenceCard({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-900 truncate">
+            <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
               {reference.title}
             </span>
             {reference.is_pinned && (
@@ -209,7 +209,7 @@ export function ReferenceCard({
             )}
           </div>
           {reference.description && (
-            <p className="text-xs text-gray-500 truncate mt-0.5">
+            <p className="text-xs text-gray-500 truncate mt-0.5 dark:text-gray-400">
               {reference.description}
             </p>
           )}
@@ -228,7 +228,7 @@ export function ReferenceCard({
               e.stopPropagation()
               setShowMenu(!showMenu)
             }}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <MoreVertical className="w-4 h-4" />
           </button>
@@ -272,7 +272,7 @@ export function ReferenceCard({
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <h4 className="text-sm font-medium text-gray-900 truncate">
+              <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">
                 {reference.title}
               </h4>
               {reference.is_pinned && (
@@ -284,7 +284,7 @@ export function ReferenceCard({
             </div>
 
             {/* Metadata row */}
-            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               {isExternal && reference.external_provider && (
                 <span className="capitalize">{reference.external_provider.replace('_', ' ')}</span>
               )}
@@ -320,14 +320,14 @@ export function ReferenceCard({
                   value={annotationText}
                   onChange={(e) => setAnnotationText(e.target.value)}
                   placeholder="Why is this important to your thesis?"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none dark:border-gray-600"
                   rows={2}
                   autoFocus
                 />
                 <div className="flex justify-end gap-2 mt-2">
                   <button
                     onClick={handleCancelAnnotation}
-                    className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                    className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                   >
                     Cancel
                   </button>
@@ -345,7 +345,7 @@ export function ReferenceCard({
                   e.stopPropagation()
                   setIsEditingAnnotation(true)
                 }}
-                className="mt-2 text-sm text-gray-600 italic border-l-2 border-gray-200 pl-3 cursor-text hover:bg-gray-50 rounded-r py-1"
+                className="mt-2 text-sm text-gray-600 italic border-l-2 border-gray-200 pl-3 cursor-text hover:bg-gray-50 rounded-r py-1 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
               >
                 "{reference.description}"
               </p>
@@ -355,7 +355,7 @@ export function ReferenceCard({
                   e.stopPropagation()
                   setIsEditingAnnotation(true)
                 }}
-                className="mt-2 text-xs text-gray-400 hover:text-gray-600 italic"
+                className="mt-2 text-xs text-gray-400 hover:text-gray-600 italic dark:hover:text-gray-300"
               >
                 + Add annotation
               </button>
@@ -372,7 +372,7 @@ export function ReferenceCard({
                   setShowImportanceMenu(!showImportanceMenu)
                 }}
                 className={clsx(
-                  'p-1.5 rounded hover:bg-gray-100',
+                  'p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700',
                   importanceConfig.color
                 )}
                 title="Set importance"
@@ -385,7 +385,7 @@ export function ReferenceCard({
               </button>
 
               {showImportanceMenu && (
-                <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
                   {(Object.entries(IMPORTANCE_CONFIG) as [ReferenceImportance, typeof IMPORTANCE_CONFIG.critical][]).map(([key, config]) => (
                     <button
                       key={key}
@@ -395,8 +395,8 @@ export function ReferenceCard({
                         setShowImportanceMenu(false)
                       }}
                       className={clsx(
-                        'w-full px-3 py-1.5 text-sm text-left flex items-center gap-2 hover:bg-gray-50',
-                        reference.importance === key && 'bg-gray-50'
+                        'w-full px-3 py-1.5 text-sm text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800',
+                        reference.importance === key && 'bg-gray-50 dark:bg-gray-900'
                       )}
                     >
                       {config.icon ? (
@@ -421,13 +421,13 @@ export function ReferenceCard({
                   e.stopPropagation()
                   setShowMenu(!showMenu)
                 }}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <MoreVertical className="w-4 h-4" />
               </button>
 
               {showMenu && (
-                <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
                   {onTogglePin && (
                     <button
                       onClick={(e) => {
@@ -435,9 +435,9 @@ export function ReferenceCard({
                         onTogglePin(reference.id)
                         setShowMenu(false)
                       }}
-                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50"
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
-                      <Pin className="w-4 h-4 text-gray-500" />
+                      <Pin className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                       {reference.is_pinned ? 'Unpin' : 'Pin to top'}
                     </button>
                   )}
@@ -449,9 +449,9 @@ export function ReferenceCard({
                         window.open(reference.external_url!, '_blank')
                         setShowMenu(false)
                       }}
-                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50"
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
-                      <ExternalLink className="w-4 h-4 text-gray-500" />
+                      <ExternalLink className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                       Open link
                     </button>
                   )}
@@ -463,9 +463,9 @@ export function ReferenceCard({
                         onViewHistory()
                         setShowMenu(false)
                       }}
-                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50"
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
-                      <History className="w-4 h-4 text-gray-500" />
+                      <History className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                       Version history
                     </button>
                   )}
@@ -476,9 +476,9 @@ export function ReferenceCard({
                       setIsEditingAnnotation(true)
                       setShowMenu(false)
                     }}
-                    className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50"
+                    className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                   >
-                    <Edit3 className="w-4 h-4 text-gray-500" />
+                    <Edit3 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     Edit annotation
                   </button>
 
@@ -489,7 +489,7 @@ export function ReferenceCard({
                         onDelete(reference.id)
                         setShowMenu(false)
                       }}
-                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50 text-red-600"
+                      className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 hover:bg-gray-50 text-red-600 dark:hover:bg-gray-800"
                     >
                       <Trash2 className="w-4 h-4" />
                       Remove

@@ -80,7 +80,7 @@ const visibilityConfig = {
 const sentimentConfig: Record<Sentiment, { icon: typeof TrendingUp; label: string; color: string; bg: string }> = {
   bullish: { icon: TrendingUp, label: 'Bullish', color: 'text-green-600', bg: 'bg-green-50' },
   bearish: { icon: TrendingDown, label: 'Bearish', color: 'text-red-600', bg: 'bg-red-50' },
-  neutral: { icon: Minus, label: 'Neutral', color: 'text-gray-600', bg: 'bg-gray-100' },
+  neutral: { icon: Minus, label: 'Neutral', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
   curious: { icon: HelpCircle, label: 'Curious', color: 'text-blue-600', bg: 'bg-blue-50' },
   concerned: { icon: AlertTriangle, label: 'Concerned', color: 'text-amber-600', bg: 'bg-amber-50' },
   excited: { icon: Sparkles, label: 'Excited', color: 'text-purple-600', bg: 'bg-purple-50' },
@@ -238,8 +238,8 @@ export function QuickThoughtDetailPanel({
 
   // Container classes based on embedded mode
   const containerClasses = embedded
-    ? 'h-full bg-white flex flex-col'
-    : 'w-96 h-full bg-white border-l border-gray-200 flex flex-col'
+    ? 'h-full bg-white flex flex-col dark:bg-gray-800'
+    : 'w-96 h-full bg-white border-l border-gray-200 flex flex-col dark:border-gray-700 dark:bg-gray-800'
 
   // Loading state
   if (isLoading) {
@@ -254,17 +254,17 @@ export function QuickThoughtDetailPanel({
   if (!thought) {
     return (
       <div className={containerClasses}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Quick Thought</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Quick Thought</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
         <div className="flex-1 flex items-center justify-center p-4">
-          <p className="text-gray-500 text-center">Quick thought not found</p>
+          <p className="text-gray-500 text-center dark:text-gray-400">Quick thought not found</p>
         </div>
       </div>
     )
@@ -282,7 +282,7 @@ export function QuickThoughtDetailPanel({
         {/* Unified Metadata Row - combines type indicator, sentiment, visibility, timestamp */}
         <div className="px-4 pt-3 pb-2">
           {/* Primary metadata line: Signal · Visibility · Type */}
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 flex-wrap dark:text-gray-400">
             {/* Sentiment with icon */}
             {sentimentStyle ? (
               <span className={clsx('inline-flex items-center gap-0.5', sentimentStyle.color)}>
@@ -345,7 +345,7 @@ export function QuickThoughtDetailPanel({
 
           {/* Secondary metadata line: Author · Timestamp */}
           <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {thought.author.full_name || thought.author.email?.split('@')[0] || 'Unknown'}
             </span>
             <span className="text-gray-300 text-[10px]">·</span>
@@ -373,7 +373,7 @@ export function QuickThoughtDetailPanel({
                 </span>
               )}
               {thought.portfolio && (
-                <span className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-medium text-gray-600 bg-gray-100 rounded">
+                <span className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-medium text-gray-600 bg-gray-100 rounded dark:text-gray-400 dark:bg-gray-800">
                   {thought.portfolio.name}
                 </span>
               )}
@@ -387,7 +387,7 @@ export function QuickThoughtDetailPanel({
         )}
 
         {/* Content Section */}
-        <div className="px-4 py-3 border-t border-gray-100">
+        <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
           {isEditing ? (
             /* ============================================================
                EDIT MODE
@@ -399,7 +399,7 @@ export function QuickThoughtDetailPanel({
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="w-full min-h-[100px] p-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 resize-y"
+                className="w-full min-h-[100px] p-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 resize-y dark:border-gray-700 dark:text-gray-100"
                 autoFocus
                 placeholder="What's on your mind?"
               />
@@ -419,7 +419,7 @@ export function QuickThoughtDetailPanel({
                         'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] transition-colors',
                         isSelected
                           ? `${config.bg} ${config.color}`
-                          : 'text-gray-500 hover:bg-gray-100'
+                          : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                       )}
                     >
                       <TIcon className="h-3 w-3" />
@@ -444,7 +444,7 @@ export function QuickThoughtDetailPanel({
                         'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] transition-colors',
                         isSelected
                           ? `${config.bg} ${config.color}`
-                          : 'text-gray-500 hover:bg-gray-100'
+                          : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                       )}
                     >
                       <SIcon className="h-3 w-3" />
@@ -466,8 +466,8 @@ export function QuickThoughtDetailPanel({
                       className={clsx(
                         'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] transition-colors',
                         editVisibility === v
-                          ? 'bg-gray-200 text-gray-700'
-                          : 'text-gray-500 hover:bg-gray-100'
+                          ? 'bg-gray-200 text-gray-700 dark:text-gray-300'
+                          : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                       )}
                     >
                       <VIcon className="h-3 w-3" />
@@ -489,7 +489,7 @@ export function QuickThoughtDetailPanel({
                 </button>
                 <button
                   onClick={handleCancelEdit}
-                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -511,7 +511,7 @@ export function QuickThoughtDetailPanel({
                 <div className="flex items-center justify-end mb-1">
                   <button
                     onClick={handleEnterEditMode}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                   >
                     <Edit2 className="h-3 w-3" />
                     Edit
@@ -519,7 +519,7 @@ export function QuickThoughtDetailPanel({
                 </div>
               )}
               {/* Content as plain text */}
-              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed dark:text-gray-100">
                 {thought.content}
               </p>
             </div>
@@ -529,7 +529,7 @@ export function QuickThoughtDetailPanel({
         {/* Social Section - only show for non-private or if creator */}
         {/* Tighter spacing: py-2 instead of py-3, space-y-3 instead of space-y-4 */}
         {(thought.visibility !== 'private' || isCreator) && (
-          <div className="px-4 py-2 border-t border-gray-100 space-y-3">
+          <div className="px-4 py-2 border-t border-gray-100 space-y-3 dark:border-gray-800">
             {/* Reactions + Bookmark - action row */}
             <div className="flex items-center justify-between">
               <IdeaReactions
@@ -555,7 +555,7 @@ export function QuickThoughtDetailPanel({
       </div>
 
       {/* Footer Actions */}
-      <div className="px-4 py-3 border-t border-gray-200 flex-shrink-0">
+      <div className="px-4 py-3 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
         {isPromoted ? (
           <button
             onClick={() => onNavigateToTradeIdea?.(thought.promoted_to_trade_idea_id!)}

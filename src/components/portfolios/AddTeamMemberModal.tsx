@@ -222,13 +222,13 @@ export function AddTeamMemberModal({
 
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-6">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-6 dark:bg-gray-800">
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               {editingMember ? 'Edit Team Member' : `Add Team Member to ${portfolioName}`}
             </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -263,7 +263,7 @@ export function AddTeamMemberModal({
             {/* Focus multi-select pills */}
             {role && getFocusOptionsForRole(role).length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Focus (select multiple)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Focus (select multiple)</label>
                 <div className="flex flex-wrap gap-1.5">
                   {getFocusOptionsForRole(role).map(f => {
                     const currentFocuses = focus ? focus.split(', ').filter(Boolean) : []
@@ -284,7 +284,7 @@ export function AddTeamMemberModal({
                         className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
                           isSelected
                             ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                         }`}
                       >
                         {f}

@@ -990,7 +990,7 @@ export function AddTradeIdeaModal({
             type="button"
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -1619,7 +1619,7 @@ export function AddTradeIdeaModal({
                                 "font-semibold",
                                 activeWeight > 0 ? "text-green-600 dark:text-green-400" :
                                 activeWeight < 0 ? "text-red-600 dark:text-red-400" :
-                                "text-gray-500"
+                                "text-gray-500 dark:text-gray-400"
                               )}>
                                 {activeWeight !== 0 ? (activeWeight > 0 ? '+' : '') + activeWeight.toFixed(2) + '%' : '—'}
                               </span>
@@ -1879,10 +1879,10 @@ export function AddTradeIdeaModal({
                           <div className="flex items-center gap-3 text-[9px]">
                             <span className="flex items-center gap-1">
                               <span className="w-2.5 h-2.5 rounded bg-blue-100 border border-blue-500"></span>
-                              <span className="text-gray-500">Your input</span>
+                              <span className="text-gray-500 dark:text-gray-400">Your input</span>
                             </span>
                             <span className="flex items-center gap-1">
-                              <span className="w-2.5 h-2.5 rounded bg-gray-100 border border-gray-300"></span>
+                              <span className="w-2.5 h-2.5 rounded bg-gray-100 border border-gray-300 dark:border-gray-600 dark:bg-gray-800"></span>
                               <span className="text-gray-400 italic">Calculated</span>
                             </span>
                           </div>

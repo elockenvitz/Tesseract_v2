@@ -134,19 +134,19 @@ export function AddStakeholderModal({ workflowId, workflowName, scopeType, onClo
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Add Stakeholders</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Stakeholders</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="mb-4">
-          <p className="text-sm text-gray-600 mb-1">
+          <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">
             Add stakeholders to "{workflowName}"
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Stakeholders are notified on run activity but cannot edit.
           </p>
         </div>
@@ -154,11 +154,11 @@ export function AddStakeholderModal({ workflowId, workflowName, scopeType, onClo
         <form onSubmit={handleSubmit}>
           <div className="space-y-3">
             <div ref={containerRef} className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Search users
               </label>
               <div
-                className="flex flex-wrap gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-md focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 min-h-[38px] cursor-text"
+                className="flex flex-wrap gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-md focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 min-h-[38px] cursor-text dark:border-gray-600"
                 onClick={() => inputRef.current?.focus()}
               >
                 {selectedUsers.map(user => (
@@ -189,16 +189,16 @@ export function AddStakeholderModal({ workflowId, workflowName, scopeType, onClo
               </div>
 
               {showDropdown && filteredUsers.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto dark:border-gray-600 dark:bg-gray-800">
                   {filteredUsers.slice(0, 10).map((user) => (
                     <button
                       key={user.id}
                       type="button"
                       onClick={() => handleUserSelect(user)}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:hover:bg-gray-700"
                     >
-                      <div className="font-medium text-sm text-gray-900">{user.name}</div>
-                      <div className="text-xs text-gray-500">{user.email}</div>
+                      <div className="font-medium text-sm text-gray-900 dark:text-white">{user.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
                     </button>
                   ))}
                 </div>

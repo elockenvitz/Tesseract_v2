@@ -141,7 +141,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
                 <p className="text-sm text-red-600 dark:text-red-400 mt-1">{error instanceof Error ? error.message : 'Unknown error'}</p>
               </div>
             </div>
-            <button onClick={() => refetch()} className="mt-4 px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50">Try again</button>
+            <button onClick={() => refetch()} className="mt-4 px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 dark:bg-gray-800">Try again</button>
           </div>
         </div>
       </div>
@@ -174,7 +174,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
             )}
             <button onClick={() => refetch()} disabled={isFetching}
               className={clsx('p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors', isFetching && 'opacity-50')}>
-              <RefreshCw className={clsx('w-4 h-4 text-gray-500', isFetching && 'animate-spin')} />
+              <RefreshCw className={clsx('w-4 h-4 text-gray-500 dark:text-gray-400', isFetching && 'animate-spin')} />
             </button>
           </div>
         </div>

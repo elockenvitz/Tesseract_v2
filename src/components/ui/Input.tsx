@@ -37,8 +37,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
           ref={ref}
           id={inputId}
           className={clsx(
-            'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 shadow-sm transition-colors cursor-text',
-            'bg-white text-gray-900',
+            'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 shadow-sm transition-colors cursor-text dark:border-gray-600',
+            'bg-white text-gray-900 dark:text-white dark:bg-gray-800',
             'dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-500',
             'focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500',
             'disabled:bg-gray-50 dark:disabled:bg-gray-900',

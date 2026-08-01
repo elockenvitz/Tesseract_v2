@@ -93,16 +93,16 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pt-20">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden dark:bg-gray-800">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Create Run</h2>
-              <p className="text-sm text-gray-500 mt-1">Create a new run of "{workflowName}"</p>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Run</h2>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Create a new run of "{workflowName}"</p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-5 h-5" />
             </button>
@@ -111,21 +111,21 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Run Suffix
             </label>
             <input
               type="text"
               value={branchSuffix}
               onChange={(e) => setBranchSuffix(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               placeholder="e.g., Nov 2025 or Q4 2025"
               required
             />
 
             {/* Quick suffix options */}
             <div className="mt-3">
-              <p className="text-xs text-gray-500 mb-2">Quick options:</p>
+              <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">Quick options:</p>
               <div className="grid grid-cols-2 gap-2">
                 {QUICK_SUFFIX_OPTIONS.map((option) => {
                   const Icon = option.icon
@@ -138,15 +138,15 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                       className={`flex items-center space-x-2 px-3 py-2 rounded-lg border text-left transition-all ${
                         isSelected
                           ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                       }`}
                     >
                       <Icon className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
                       <div className="flex-1 min-w-0">
-                        <div className={`text-xs font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                        <div className={`text-xs font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900 dark:text-white'}`}>
                           {processDynamicSuffix(option.format)}
                         </div>
-                        <div className={`text-xs ${isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
+                        <div className={`text-xs ${isSelected ? 'text-blue-600' : 'text-gray-500 dark:text-gray-400'}`}>
                           {option.label}
                         </div>
                       </div>
@@ -156,22 +156,22 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
               </div>
             </div>
 
-            <p className="text-xs text-gray-500 mt-3">
+            <p className="text-xs text-gray-500 mt-3 dark:text-gray-400">
               Or use placeholders: {'{MONTH}'}, {'{YEAR}'}, {'{QUARTER}'}, {'{DATE}'}
             </p>
 
             {branchSuffix.trim() && (
-              <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  <span className="text-gray-500">Branch name:</span>{' '}
-                  <span className="font-medium text-gray-900">{fullBranchName}</span>
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <span className="text-gray-500 dark:text-gray-400">Branch name:</span>{' '}
+                  <span className="font-medium text-gray-900 dark:text-white">{fullBranchName}</span>
                 </p>
               </div>
             )}
           </div>
 
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Run Source
             </label>
 
@@ -180,7 +180,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
               className={`border-2 rounded-lg p-3 cursor-pointer transition-all ${
                 branchSource === 'template'
                   ? 'border-indigo-500 bg-indigo-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               }`}
               onClick={() => {
                 setBranchSource('template')
@@ -202,11 +202,11 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                 <div className="flex-1">
                   <div className="flex items-center space-x-2">
                     <Orbit className="w-4 h-4 text-indigo-600" />
-                    <label htmlFor="sourceTemplate" className="text-sm font-medium text-gray-900 cursor-pointer">
+                    <label htmlFor="sourceTemplate" className="text-sm font-medium text-gray-900 cursor-pointer dark:text-white">
                       Create clean branch from template
                     </label>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 ml-6">
+                  <p className="text-xs text-gray-500 mt-1 ml-6 dark:text-gray-400">
                     Start fresh with the original workflow template (no existing progress)
                   </p>
                 </div>
@@ -218,7 +218,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
               className={`border-2 rounded-lg p-3 cursor-pointer transition-all ${
                 branchSource === 'branch'
                   ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               }`}
               onClick={() => setBranchSource('branch')}
             >
@@ -234,11 +234,11 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                 <div className="flex-1">
                   <div className="flex items-center space-x-2">
                     <Network className="w-4 h-4 text-blue-600" />
-                    <label htmlFor="sourceBranch" className="text-sm font-medium text-gray-900 cursor-pointer">
+                    <label htmlFor="sourceBranch" className="text-sm font-medium text-gray-900 cursor-pointer dark:text-white">
                       Copy data from existing branch
                     </label>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 ml-6">
+                  <p className="text-xs text-gray-500 mt-1 ml-6 dark:text-gray-400">
                     Create a new branch with copied progress from an existing branch
                   </p>
                 </div>
@@ -248,13 +248,13 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
             {/* Branch Selection Dropdown - Only shown when branching from existing branch */}
             {branchSource === 'branch' && (
               <div className="ml-6 mt-3">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Select Branch to Copy From
                 </label>
                 <select
                   value={sourceBranchId}
                   onChange={(e) => setSourceBranchId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                   required={branchSource === 'branch'}
                 >
                   <option value="">Select a branch...</option>
@@ -265,7 +265,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                   ))}
                 </select>
                 {existingBranches.length === 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                     No existing runs to copy from
                   </p>
                 )}
@@ -276,18 +276,18 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
           {/* Run Ending */}
           {endingRules.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                 Run Ending
               </label>
               <div className="space-y-2">
                 {/* No auto-end option */}
                 <label className={`flex items-start px-3 py-2.5 rounded-lg cursor-pointer transition-all border ${
-                  !selectedEndingRuleId ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                  !selectedEndingRuleId ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                 }`}>
                   <input type="radio" checked={!selectedEndingRuleId} onChange={() => setSelectedEndingRuleId('')}
                     className="mt-0.5 mr-2.5 accent-blue-600" />
                   <div>
-                    <div className="text-sm font-medium text-gray-900">End manually</div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">End manually</div>
                     <p className="text-xs text-gray-400 mt-0.5">You'll end this run yourself when it's done.</p>
                   </div>
                 </label>
@@ -299,14 +299,14 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
                   const Icon = icon
                   return (
                     <label key={rule.id} className={`flex items-start px-3 py-2.5 rounded-lg cursor-pointer transition-all border ${
-                      isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                     }`}>
                       <input type="radio" checked={isSelected} onChange={() => setSelectedEndingRuleId(rule.id)}
                         className="mt-0.5 mr-2.5 accent-blue-600" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
-                          <span className="text-sm font-medium text-gray-900">{rule.name}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{rule.name}</span>
                         </div>
                         <p className="text-xs text-gray-400 mt-0.5">{rule.description}</p>
                       </div>
@@ -317,7 +317,7 @@ export function CreateBranchModal({ workflowId, workflowName, existingBranches, 
             </div>
           )}
 
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>

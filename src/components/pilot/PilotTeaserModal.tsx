@@ -39,7 +39,7 @@ export function PilotTeaserModal({
             <div className="flex items-center gap-2">
               <div className={clsx(
                 'w-8 h-8 rounded-lg flex items-center justify-center',
-                reason === 'preview' ? 'bg-primary-100 text-primary-600' : 'bg-gray-200 text-gray-600'
+                reason === 'preview' ? 'bg-primary-100 text-primary-600' : 'bg-gray-200 text-gray-600 dark:text-gray-400'
               )}>
                 {reason === 'preview' ? <Sparkles className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
               </div>
@@ -52,7 +52,7 @@ export function PilotTeaserModal({
                 </h3>
               </div>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0">
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0 dark:hover:text-gray-300">
               <X className="w-4 h-4" />
             </button>
           </div>

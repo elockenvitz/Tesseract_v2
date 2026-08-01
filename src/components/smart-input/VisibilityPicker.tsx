@@ -57,7 +57,7 @@ export function VisibilityPicker({
 
   return (
     <div className="p-2">
-      <div className="text-xs font-medium text-gray-500 mb-2 px-2">
+      <div className="text-xs font-medium text-gray-500 mb-2 px-2 dark:text-gray-400">
         Set visibility restriction
       </div>
       <div className="space-y-1">
@@ -83,7 +83,7 @@ export function VisibilityPicker({
         })}
       </div>
       {filteredOptions.length === 0 && (
-        <div className="text-sm text-gray-500 text-center py-2">
+        <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">
           No matching options
         </div>
       )}

@@ -256,17 +256,17 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pt-20">
-      <Card className="w-full max-w-4xl h-[75vh] overflow-hidden flex flex-col bg-white">
+      <Card className="w-full max-w-4xl h-[75vh] overflow-hidden flex flex-col bg-white dark:bg-gray-800">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white flex-shrink-0">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white flex-shrink-0 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-semibold text-gray-900">Universe Preview</h3>
-              <p className="text-sm text-gray-500 mt-1">Assets that match your universe rules</p>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Universe Preview</h3>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Assets that match your universe rules</p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-6 h-6" />
             </button>
@@ -332,19 +332,19 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
                     placeholder="Search by symbol, company name, or sector..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                   />
                   {searchTerm && (
                     <button
                       onClick={() => setSearchTerm('')}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   )}
                 </div>
                 {searchTerm && (
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                     Showing {filteredAssets.length} of {matchingAssets.length} assets
                   </p>
                 )}
@@ -357,7 +357,7 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
                     className={`p-4 border rounded-lg transition-colors ${
                       asset._manuallyAdded
                         ? 'border-green-300 bg-green-50 hover:bg-green-100'
-                        : 'border-gray-200 hover:bg-blue-50'
+                        : 'border-gray-200 hover:bg-blue-50 dark:border-gray-700'
                     }`}
                   >
                     <div className="flex items-start space-x-3">
@@ -370,14 +370,14 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2">
-                          <div className="font-semibold text-sm text-gray-900">{asset.symbol}</div>
+                          <div className="font-semibold text-sm text-gray-900 dark:text-white">{asset.symbol}</div>
                           {asset._manuallyAdded && (
                             <div className="flex items-center space-x-1" title="Manually added override">
                               <UserPlus className="w-3 h-3 text-green-600" />
                             </div>
                           )}
                         </div>
-                        <div className="text-xs text-gray-600 truncate">{asset.company_name}</div>
+                        <div className="text-xs text-gray-600 truncate dark:text-gray-400">{asset.company_name}</div>
                         <div className="flex items-center space-x-2 mt-1 flex-wrap gap-1">
                           {asset._manuallyAdded && (
                             <Badge variant="success" size="xs" className="text-xs">
@@ -398,10 +398,10 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             </div>
           ) : (
             <div className="p-8 text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-3 dark:bg-gray-800">
                 <Search className="w-6 h-6 text-gray-400" />
               </div>
-              <p className="text-sm font-medium text-gray-700 mb-2">No matching assets found</p>
+              <p className="text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">No matching assets found</p>
 
               {/* Provide helpful context based on rule configuration */}
               {diagnostics && diagnostics.rulesWithAnd > 0 ? (
@@ -415,8 +415,8 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
                     </p>
                   </div>
                   <div className="space-y-2 text-left">
-                    <p className="text-xs font-medium text-gray-700">Try these solutions:</p>
-                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Try these solutions:</p>
+                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside dark:text-gray-400">
                       <li>Change some AND combinators to OR to broaden your criteria</li>
                       <li>Remove or modify filters that may be too restrictive</li>
                       <li>Choose filters with overlapping asset pools</li>
@@ -425,12 +425,12 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
                 </div>
               ) : (
                 <div className="max-w-md mx-auto">
-                  <p className="text-xs text-gray-500 mb-3">
+                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                     No assets match your current filter criteria.
                   </p>
                   <div className="space-y-2 text-left">
-                    <p className="text-xs font-medium text-gray-700">Suggestions:</p>
-                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside">
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Suggestions:</p>
+                    <ul className="text-xs text-gray-600 space-y-1 list-disc list-inside dark:text-gray-400">
                       <li>Try different filter values</li>
                       <li>Add more rules with OR logic to expand coverage</li>
                       <li>Verify that assets exist matching these criteria</li>

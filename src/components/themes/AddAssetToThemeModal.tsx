@@ -123,18 +123,18 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
       
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto transform transition-all max-h-[90vh] overflow-hidden">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto transform transition-all max-h-[90vh] overflow-hidden dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Add Assets to Theme</h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Assets to Theme</h3>
+              <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">
                 Add related assets to "{themeName}"
               </p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="h-5 w-5" />
             </button>
@@ -149,7 +149,7 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
                 placeholder="Search assets by symbol or company name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
 
@@ -157,12 +157,12 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
             {selectedAssets.length > 0 && (
               <Card>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
                     {selectedAssets.length} asset{selectedAssets.length !== 1 ? 's' : ''} selected
                   </span>
                   <button
                     onClick={() => setSelectedAssets([])}
-                    className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                    className="text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                   >
                     Clear selection
                   </button>
@@ -172,21 +172,21 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
 
             {/* Notes for the relationship */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                 Notes (optional)
               </label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add notes about why these assets relate to this theme..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                 rows={3}
               />
             </div>
 
             {/* Assets List */}
             <div>
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Available Assets</h4>
+              <h4 className="text-sm font-medium text-gray-900 mb-3 dark:text-white">Available Assets</h4>
               {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(5)].map((_, i) => (
@@ -221,11 +221,11 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
                           type="checkbox"
                           checked={selectedAssets.includes(asset.id)}
                           onChange={() => toggleAssetSelection(asset.id)}
-                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2 mb-1">
-                            <h4 className="font-semibold text-gray-900">{asset.symbol}</h4>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">{asset.symbol}</h4>
                             {asset.priority && (
                               <PriorityBadge priority={asset.priority} />
                             )}
@@ -235,14 +235,14 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-gray-600 truncate">{asset.company_name}</p>
+                          <p className="text-sm text-gray-600 truncate dark:text-gray-400">{asset.company_name}</p>
                           {asset.sector && (
-                            <p className="text-xs text-gray-500">{asset.sector}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{asset.sector}</p>
                           )}
                         </div>
                         <div className="text-right">
                           {asset.current_price && (
-                            <p className="text-sm font-semibold text-gray-900">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
                               ${asset.current_price}
                             </p>
                           )}
@@ -252,7 +252,7 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   <TrendingUp className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-sm">
                     {searchQuery ? 'No assets found matching your search' : 'All assets are already added to this theme'}
@@ -263,7 +263,7 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>

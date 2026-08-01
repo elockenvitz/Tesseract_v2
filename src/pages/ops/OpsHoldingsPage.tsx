@@ -71,7 +71,7 @@ const HEALTH_CONFIG = {
   good: { label: 'Healthy', cls: 'text-green-600 bg-green-50', icon: CheckCircle2 },
   stale: { label: 'Stale', cls: 'text-amber-600 bg-amber-50', icon: Clock },
   error: { label: 'Errors', cls: 'text-red-600 bg-red-50', icon: AlertTriangle },
-  none: { label: 'No Data', cls: 'text-gray-400 bg-gray-50', icon: Database },
+  none: { label: 'No Data', cls: 'text-gray-400 bg-gray-50 dark:bg-gray-900', icon: Database },
 }
 
 const INTEGRATION_ICONS = { sftp: Server, api: Key, manual: Upload }
@@ -313,11 +313,11 @@ export function OpsHoldingsPage() {
       <div className="max-w-5xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <button onClick={() => { setView('overview'); setSelectedOrgId(null) }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+          <button onClick={() => { setView('overview'); setSelectedOrgId(null) }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 dark:text-white">
               <Building2 className="w-5 h-5 text-indigo-600" />
               {selectedOrg?.org.name || 'Client'} — Holdings Integrations
             </h1>
@@ -335,8 +335,8 @@ export function OpsHoldingsPage() {
 
         {/* New Integration Form */}
         {showNewIntegration && (
-          <div className="bg-white border border-indigo-200 rounded-xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-gray-800">Configure New Integration</h3>
+          <div className="bg-white border border-indigo-200 rounded-xl p-5 space-y-4 dark:bg-gray-800">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Configure New Integration</h3>
 
             {/* Type selector */}
             <div className="flex gap-2">
@@ -350,7 +350,7 @@ export function OpsHoldingsPage() {
                       'flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all',
                       newConfig.integration_type === type
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400'
                     )}
                   >
                     <Icon className="w-4 h-4" />
@@ -363,29 +363,29 @@ export function OpsHoldingsPage() {
             {/* Common fields */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Integration Name</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Integration Name</label>
                 <input
                   type="text"
                   placeholder="e.g., State Street Daily Feed"
                   value={newConfig.name}
                   onChange={e => setNewConfig(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Schedule (cron)</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Schedule (cron)</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     placeholder="0 6 * * *"
                     value={newConfig.schedule_cron}
                     onChange={e => setNewConfig(prev => ({ ...prev, schedule_cron: e.target.value }))}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                   />
                   <select
                     value={newConfig.timezone}
                     onChange={e => setNewConfig(prev => ({ ...prev, timezone: e.target.value }))}
-                    className="px-2 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="px-2 py-2 border border-gray-300 rounded-lg text-sm dark:border-gray-600"
                   >
                     <option value="America/New_York">ET</option>
                     <option value="America/Chicago">CT</option>
@@ -401,26 +401,26 @@ export function OpsHoldingsPage() {
 
             {/* SFTP fields */}
             {newConfig.integration_type === 'sftp' && (
-              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4">
+              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">SFTP Host</label>
-                  <input type="text" placeholder="sftp.custodian.com" value={newConfig.sftp_host} onChange={e => setNewConfig(prev => ({ ...prev, sftp_host: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">SFTP Host</label>
+                  <input type="text" placeholder="sftp.custodian.com" value={newConfig.sftp_host} onChange={e => setNewConfig(prev => ({ ...prev, sftp_host: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Port</label>
-                  <input type="text" placeholder="22" value={newConfig.sftp_port} onChange={e => setNewConfig(prev => ({ ...prev, sftp_port: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Port</label>
+                  <input type="text" placeholder="22" value={newConfig.sftp_port} onChange={e => setNewConfig(prev => ({ ...prev, sftp_port: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Remote Path</label>
-                  <input type="text" placeholder="/outbound/holdings/" value={newConfig.sftp_path} onChange={e => setNewConfig(prev => ({ ...prev, sftp_path: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Remote Path</label>
+                  <input type="text" placeholder="/outbound/holdings/" value={newConfig.sftp_path} onChange={e => setNewConfig(prev => ({ ...prev, sftp_path: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
-                  <input type="text" placeholder="tesseract_feed" value={newConfig.sftp_username} onChange={e => setNewConfig(prev => ({ ...prev, sftp_username: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Username</label>
+                  <input type="text" placeholder="tesseract_feed" value={newConfig.sftp_username} onChange={e => setNewConfig(prev => ({ ...prev, sftp_username: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600" />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">File Pattern</label>
-                  <input type="text" placeholder="*.csv" value={newConfig.sftp_file_pattern} onChange={e => setNewConfig(prev => ({ ...prev, sftp_file_pattern: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">File Pattern</label>
+                  <input type="text" placeholder="*.csv" value={newConfig.sftp_file_pattern} onChange={e => setNewConfig(prev => ({ ...prev, sftp_file_pattern: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600" />
                   <p className="text-[10px] text-gray-400 mt-0.5">Glob pattern to match files in the remote directory</p>
                 </div>
               </div>
@@ -428,15 +428,15 @@ export function OpsHoldingsPage() {
 
             {/* API info */}
             {newConfig.integration_type === 'api' && (
-              <div className="border-t border-gray-100 pt-4">
-                <p className="text-xs text-gray-500">An API key will be generated after creation. The client's IT team can use it to push holdings data via the REST endpoint.</p>
+              <div className="border-t border-gray-100 pt-4 dark:border-gray-800">
+                <p className="text-xs text-gray-500 dark:text-gray-400">An API key will be generated after creation. The client's IT team can use it to push holdings data via the REST endpoint.</p>
               </div>
             )}
 
             {/* Manual info */}
             {newConfig.integration_type === 'manual' && (
-              <div className="border-t border-gray-100 pt-4">
-                <p className="text-xs text-gray-500">Manual integration — you'll upload CSV files for this client through the ops portal or the client detail page.</p>
+              <div className="border-t border-gray-100 pt-4 dark:border-gray-800">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Manual integration — you'll upload CSV files for this client through the ops portal or the client detail page.</p>
               </div>
             )}
 
@@ -448,16 +448,16 @@ export function OpsHoldingsPage() {
               >
                 {createIntegration.isPending ? <><Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />Creating...</> : 'Create Integration'}
               </button>
-              <button onClick={() => setShowNewIntegration(false)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={() => setShowNewIntegration(false)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">Cancel</button>
             </div>
           </div>
         )}
 
         {/* Integration list */}
         {integrations.length === 0 && !showNewIntegration ? (
-          <div className="text-center py-12 bg-white border border-gray-200 rounded-xl">
+          <div className="text-center py-12 bg-white border border-gray-200 rounded-xl dark:border-gray-700 dark:bg-gray-800">
             <Database className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">No integrations configured for this client</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No integrations configured for this client</p>
             <button onClick={() => setShowNewIntegration(true)} className="mt-3 text-sm text-indigo-600 hover:text-indigo-700 font-medium">Add one</button>
           </div>
         ) : (
@@ -466,20 +466,20 @@ export function OpsHoldingsPage() {
               const TypeIcon = INTEGRATION_ICONS[config.integration_type]
               const configRuns = recentRuns.filter(r => r.config_id === config.id)
               return (
-                <div key={config.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div key={config.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
                   {/* Config header */}
                   <div className="px-5 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center', config.is_active ? 'bg-indigo-50' : 'bg-gray-100')}>
+                      <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center', config.is_active ? 'bg-indigo-50' : 'bg-gray-100 dark:bg-gray-800')}>
                         <TypeIcon className={clsx('w-4 h-4', config.is_active ? 'text-indigo-600' : 'text-gray-400')} />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-gray-900">{config.name}</p>
-                          <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', config.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">{config.name}</p>
+                          <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', config.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800')}>
                             {config.is_active ? 'Active' : 'Paused'}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium uppercase">{config.integration_type}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium uppercase dark:text-gray-400 dark:bg-gray-800">{config.integration_type}</span>
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
                           {config.schedule_cron && <span>Schedule: {config.schedule_cron} ({config.timezone})</span>}
@@ -491,7 +491,7 @@ export function OpsHoldingsPage() {
                       <button
                         onClick={() => toggleIntegration.mutate({ id: config.id, is_active: !config.is_active })}
                         title={config.is_active ? 'Pause' : 'Activate'}
-                        className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                        className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                       >
                         {config.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                       </button>
@@ -505,14 +505,14 @@ export function OpsHoldingsPage() {
                   </div>
 
                   {/* Status row */}
-                  <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50/50 flex items-center gap-6 text-xs">
+                  <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50/50 flex items-center gap-6 text-xs dark:border-gray-800">
                     <div>
                       <span className="text-gray-400">Last run: </span>
-                      <span className="text-gray-600">{config.last_run_at ? new Date(config.last_run_at).toLocaleString() : 'Never'}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{config.last_run_at ? new Date(config.last_run_at).toLocaleString() : 'Never'}</span>
                     </div>
                     <div>
                       <span className="text-gray-400">Last success: </span>
-                      <span className="text-gray-600">{config.last_success_at ? new Date(config.last_success_at).toLocaleString() : 'Never'}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{config.last_success_at ? new Date(config.last_success_at).toLocaleString() : 'Never'}</span>
                     </div>
                     {config.last_error && (
                       <div className="text-red-600 flex items-center gap-1">
@@ -527,7 +527,7 @@ export function OpsHoldingsPage() {
 
                   {/* Run history */}
                   {configRuns.length > 0 && (
-                    <div className="border-t border-gray-100">
+                    <div className="border-t border-gray-100 dark:border-gray-800">
                       <div className="px-5 py-2 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Recent Runs</div>
                       {configRuns.slice(0, 5).map(run => (
                         <div key={run.id} className="px-5 py-2 flex items-center justify-between border-t border-gray-50 text-xs">
@@ -540,7 +540,7 @@ export function OpsHoldingsPage() {
                             )}>
                               {run.status}
                             </span>
-                            {run.file_name && <span className="text-gray-500 font-mono">{run.file_name}</span>}
+                            {run.file_name && <span className="text-gray-500 font-mono dark:text-gray-400">{run.file_name}</span>}
                             {run.positions_count != null && <span className="text-gray-400">{run.positions_count} positions</span>}
                           </div>
                           <div className="text-gray-400">
@@ -560,8 +560,8 @@ export function OpsHoldingsPage() {
         {/* API Keys Section */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
-              <Key className="w-4 h-4 text-gray-500" />
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5 dark:text-gray-100">
+              <Key className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               API Keys
             </h3>
             <button
@@ -581,7 +581,7 @@ export function OpsHoldingsPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
               <p className="text-xs font-semibold text-amber-800">Copy this API key now — it won't be shown again</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs bg-white px-3 py-2 rounded border border-amber-300 font-mono break-all select-all">
+                <code className="flex-1 text-xs bg-white px-3 py-2 rounded border border-amber-300 font-mono break-all select-all dark:bg-gray-800">
                   {generatedKey}
                 </code>
                 <button
@@ -598,16 +598,16 @@ export function OpsHoldingsPage() {
           )}
 
           {apiKeys.length === 0 && !generatedKey ? (
-            <div className="bg-white border border-gray-200 rounded-xl p-5 text-center text-sm text-gray-400">
+            <div className="bg-white border border-gray-200 rounded-xl p-5 text-center text-sm text-gray-400 dark:border-gray-700 dark:bg-gray-800">
               No API keys. Generate one for the client's IT team to push holdings programmatically.
             </div>
           ) : (
-            <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
               {apiKeys.map((key: any) => (
                 <div key={key.id} className="px-5 py-3 flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-900">{key.name}</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{key.name}</span>
                       <code className="text-xs text-gray-400 font-mono">{key.key_prefix}...</code>
                       <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', key.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
                         {key.is_active ? 'Active' : 'Revoked'}
@@ -632,13 +632,13 @@ export function OpsHoldingsPage() {
           )}
 
           {/* API usage instructions */}
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-500 space-y-1">
-            <p className="font-medium text-gray-700">API Endpoint</p>
-            <code className="block bg-white px-2 py-1 rounded border text-[11px] font-mono">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-500 space-y-1 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
+            <p className="font-medium text-gray-700 dark:text-gray-300">API Endpoint</p>
+            <code className="block bg-white px-2 py-1 rounded border text-[11px] font-mono dark:bg-gray-800">
               POST {window.location.origin.replace('localhost:5173', '<your-supabase-url>')}/functions/v1/holdings-api/upload
             </code>
-            <p className="mt-2">Headers: <code className="bg-white px-1 rounded">Authorization: Bearer hk_...</code></p>
-            <p>Body: <code className="bg-white px-1 rounded">{`{"positions": [{"symbol": "AAPL", "shares": 1000, "price": 180.50}]}`}</code></p>
+            <p className="mt-2">Headers: <code className="bg-white px-1 rounded dark:bg-gray-800">Authorization: Bearer hk_...</code></p>
+            <p>Body: <code className="bg-white px-1 rounded dark:bg-gray-800">{`{"positions": [{"symbol": "AAPL", "shares": 1000, "price": 180.50}]}`}</code></p>
           </div>
         </div>
       </div>
@@ -650,26 +650,26 @@ export function OpsHoldingsPage() {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Holdings</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Holdings integration status across all clients</p>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Holdings</h1>
+        <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Holdings integration status across all clients</p>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500">Total Clients</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{clientHoldings.length}</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-xs text-gray-500 dark:text-gray-400">Total Clients</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1 dark:text-white">{clientHoldings.length}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500">With Holdings</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-xs text-gray-500 dark:text-gray-400">With Holdings</p>
           <p className="text-2xl font-bold text-green-600 mt-1">{clientHoldings.filter(c => c.health !== 'none').length}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500">Stale ({'>'} 3 days)</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-xs text-gray-500 dark:text-gray-400">Stale ({'>'} 3 days)</p>
           <p className="text-2xl font-bold text-amber-600 mt-1">{clientHoldings.filter(c => c.health === 'stale').length}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500">Errors</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-xs text-gray-500 dark:text-gray-400">Errors</p>
           <p className="text-2xl font-bold text-red-600 mt-1">{clientHoldings.filter(c => c.health === 'error').length}</p>
         </div>
       </div>
@@ -678,20 +678,20 @@ export function OpsHoldingsPage() {
       {isLoading ? (
         <div className="text-center py-12 text-sm text-gray-400">Loading holdings data...</div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <tr>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">Client</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">Status</th>
-                <th className="px-5 py-3 text-right text-xs font-medium text-gray-500">Portfolios</th>
-                <th className="px-5 py-3 text-right text-xs font-medium text-gray-500">Positions</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">Last Upload</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500">Integration</th>
-                <th className="px-5 py-3 text-right text-xs font-medium text-gray-500"></th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Client</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Status</th>
+                <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Portfolios</th>
+                <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Positions</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Last Upload</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Integration</th>
+                <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {clientHoldings.map((client) => {
                 const healthCfg = HEALTH_CONFIG[client.health]
                 const HealthIcon = healthCfg.icon
@@ -701,7 +701,7 @@ export function OpsHoldingsPage() {
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-gray-400" />
                         <div>
-                          <p className="font-medium text-gray-900">{client.org.name}</p>
+                          <p className="font-medium text-gray-900 dark:text-white">{client.org.name}</p>
                           <p className="text-xs text-gray-400">{client.org.slug}</p>
                         </div>
                       </div>
@@ -712,9 +712,9 @@ export function OpsHoldingsPage() {
                         {healthCfg.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-right text-gray-600">{client.totalPortfolios || '—'}</td>
-                    <td className="px-5 py-3 text-right text-gray-600">{client.totalPositions || '—'}</td>
-                    <td className="px-5 py-3 text-gray-600">{client.latestDate || '—'}</td>
+                    <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-400">{client.totalPortfolios || '—'}</td>
+                    <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-400">{client.totalPositions || '—'}</td>
+                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{client.latestDate || '—'}</td>
                     <td className="px-5 py-3">
                       {client.integrationTypes.length > 0 ? (
                         <div className="flex gap-1">
@@ -729,7 +729,7 @@ export function OpsHoldingsPage() {
                     <td className="px-5 py-3 text-right">
                       <button
                         onClick={() => { setSelectedOrgId(client.org.id); setView('client-detail') }}
-                        className="px-2.5 py-1 text-xs font-medium rounded border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center gap-1 ml-auto"
+                        className="px-2.5 py-1 text-xs font-medium rounded border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center gap-1 ml-auto dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
                       >
                         <Settings className="w-3 h-3" />
                         Configure

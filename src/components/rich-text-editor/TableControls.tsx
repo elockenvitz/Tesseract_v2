@@ -234,7 +234,7 @@ export function TableControls({ editor }: TableControlsProps) {
         'flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm rounded transition-colors',
         variant === 'danger'
           ? 'text-red-600 hover:bg-red-50'
-          : 'text-gray-700 hover:bg-gray-100'
+          : 'text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300'
       )}
     >
       <Icon className="w-4 h-4" />
@@ -270,8 +270,8 @@ export function TableControls({ editor }: TableControlsProps) {
               {/* Column grip - always visible */}
               <div
                 className={clsx(
-                  "h-5 flex items-center justify-center cursor-pointer border-x border-t border-gray-300 first:rounded-tl last:rounded-tr transition-colors",
-                  hoveredCol === index ? "bg-indigo-100 border-indigo-300" : "bg-gray-100 hover:bg-gray-200"
+                  "h-5 flex items-center justify-center cursor-pointer border-x border-t border-gray-300 first:rounded-tl last:rounded-tr transition-colors dark:border-gray-600",
+                  hoveredCol === index ? "bg-indigo-100 border-indigo-300" : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800"
                 )}
                 onClick={() => selectColumn(index)}
               >
@@ -281,7 +281,7 @@ export function TableControls({ editor }: TableControlsProps) {
               {/* Column action buttons - show on hover */}
               {hoveredCol === index && (
                 <div
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-50"
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-50 dark:border-gray-700 dark:bg-gray-800"
                   onMouseEnter={() => handleColEnter(index)}
                   onMouseLeave={handleColLeave}
                 >
@@ -290,7 +290,7 @@ export function TableControls({ editor }: TableControlsProps) {
                     className="p-1.5 hover:bg-indigo-50 rounded transition-colors"
                     title="Add column left"
                   >
-                    <ArrowLeft className="w-3.5 h-3.5 text-gray-600" />
+                    <ArrowLeft className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                   </button>
                   <button
                     onClick={() => { selectColumn(index); editor.chain().focus().deleteColumn().run() }}
@@ -304,7 +304,7 @@ export function TableControls({ editor }: TableControlsProps) {
                     className="p-1.5 hover:bg-indigo-50 rounded transition-colors"
                     title="Add column right"
                   >
-                    <ArrowRight className="w-3.5 h-3.5 text-gray-600" />
+                    <ArrowRight className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                   </button>
                 </div>
               )}
@@ -333,8 +333,8 @@ export function TableControls({ editor }: TableControlsProps) {
               {/* Row grip - always visible */}
               <div
                 className={clsx(
-                  "w-5 h-full flex items-center justify-center cursor-pointer border-y border-l border-gray-300 first:rounded-tl last:rounded-bl transition-colors",
-                  hoveredRow === index ? "bg-indigo-100 border-indigo-300" : "bg-gray-100 hover:bg-gray-200"
+                  "w-5 h-full flex items-center justify-center cursor-pointer border-y border-l border-gray-300 first:rounded-tl last:rounded-bl transition-colors dark:border-gray-600",
+                  hoveredRow === index ? "bg-indigo-100 border-indigo-300" : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800"
                 )}
                 onClick={() => selectRow(index)}
               >
@@ -344,7 +344,7 @@ export function TableControls({ editor }: TableControlsProps) {
               {/* Row action buttons - show on hover */}
               {hoveredRow === index && (
                 <div
-                  className="absolute left-full top-1/2 -translate-y-1/2 ml-1 flex flex-col items-center gap-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-50"
+                  className="absolute left-full top-1/2 -translate-y-1/2 ml-1 flex flex-col items-center gap-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-50 dark:border-gray-700 dark:bg-gray-800"
                   onMouseEnter={() => handleRowEnter(index)}
                   onMouseLeave={handleRowLeave}
                 >
@@ -353,7 +353,7 @@ export function TableControls({ editor }: TableControlsProps) {
                     className="p-1.5 hover:bg-indigo-50 rounded transition-colors"
                     title="Add row above"
                   >
-                    <ArrowUp className="w-3.5 h-3.5 text-gray-600" />
+                    <ArrowUp className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                   </button>
                   <button
                     onClick={() => { selectRow(index); editor.chain().focus().deleteRow().run() }}
@@ -367,7 +367,7 @@ export function TableControls({ editor }: TableControlsProps) {
                     className="p-1.5 hover:bg-indigo-50 rounded transition-colors"
                     title="Add row below"
                   >
-                    <ArrowDown className="w-3.5 h-3.5 text-gray-600" />
+                    <ArrowDown className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
                   </button>
                 </div>
               )}
@@ -380,7 +380,7 @@ export function TableControls({ editor }: TableControlsProps) {
       {activeTable && columnPositions.length > 0 && (
         <button
           onClick={() => editor.chain().focus().addColumnAfter().run()}
-          className="fixed z-40 w-5 flex items-center justify-center bg-gray-50 border border-gray-300 border-l-0 rounded-r hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+          className="fixed z-40 w-5 flex items-center justify-center bg-gray-50 border border-gray-300 border-l-0 rounded-r hover:bg-indigo-50 hover:border-indigo-300 transition-colors dark:border-gray-600 dark:bg-gray-900"
           style={{
             left: `${activeTable.rect.right}px`,
             top: `${activeTable.rect.top - 24}px`,
@@ -388,7 +388,7 @@ export function TableControls({ editor }: TableControlsProps) {
           }}
           title="Add column"
         >
-          <Plus className="w-3 h-3 text-gray-500" />
+          <Plus className="w-3 h-3 text-gray-500 dark:text-gray-400" />
         </button>
       )}
 
@@ -396,7 +396,7 @@ export function TableControls({ editor }: TableControlsProps) {
       {activeTable && rowPositions.length > 0 && (
         <button
           onClick={() => editor.chain().focus().addRowAfter().run()}
-          className="fixed z-40 h-5 flex items-center justify-center bg-gray-50 border border-gray-300 border-t-0 rounded-b hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+          className="fixed z-40 h-5 flex items-center justify-center bg-gray-50 border border-gray-300 border-t-0 rounded-b hover:bg-indigo-50 hover:border-indigo-300 transition-colors dark:border-gray-600 dark:bg-gray-900"
           style={{
             left: `${activeTable.rect.left - 24}px`,
             top: `${activeTable.rect.bottom}px`,
@@ -404,7 +404,7 @@ export function TableControls({ editor }: TableControlsProps) {
           }}
           title="Add row"
         >
-          <Plus className="w-3 h-3 text-gray-500" />
+          <Plus className="w-3 h-3 text-gray-500 dark:text-gray-400" />
         </button>
       )}
 
@@ -412,13 +412,13 @@ export function TableControls({ editor }: TableControlsProps) {
       {contextMenu.visible && (
         <div
           ref={menuRef}
-          className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px]"
+          className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px] dark:border-gray-700 dark:bg-gray-800"
           style={{
             left: `${contextMenu.x}px`,
             top: `${contextMenu.y}px`
           }}
         >
-          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
             Column
           </div>
           <MenuItem
@@ -440,7 +440,7 @@ export function TableControls({ editor }: TableControlsProps) {
 
           <Divider />
 
-          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
             Row
           </div>
           <MenuItem
@@ -462,7 +462,7 @@ export function TableControls({ editor }: TableControlsProps) {
 
           <Divider />
 
-          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
             Cell
           </div>
           <MenuItem
@@ -478,7 +478,7 @@ export function TableControls({ editor }: TableControlsProps) {
 
           <Divider />
 
-          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
             Table
           </div>
           <MenuItem

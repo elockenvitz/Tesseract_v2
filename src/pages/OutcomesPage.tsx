@@ -73,13 +73,13 @@ function FilterBar({ filters, onChange }: {
   return (
     <div className="flex flex-wrap items-center gap-3">
       {/* Date range */}
-      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
         {[7, 30, 90].map(d => (
           <button
             key={d}
             onClick={() => setDays(d)}
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-              activeDays === d ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              activeDays === d ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
             }`}
           >
             {d}d
@@ -88,7 +88,7 @@ function FilterBar({ filters, onChange }: {
       </div>
 
       {/* Category */}
-      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
         {[
           { key: 'all', label: 'All' },
           { key: 'acted', label: 'Acted' },
@@ -98,7 +98,7 @@ function FilterBar({ filters, onChange }: {
             key={c.key}
             onClick={() => onChange({ ...filters, category: c.key as any })}
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-              (filters.category || 'all') === c.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+              (filters.category || 'all') === c.key ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
             }`}
           >
             {c.label}
@@ -110,7 +110,7 @@ function FilterBar({ filters, onChange }: {
       <select
         value={filters.portfolioIds?.[0] || ''}
         onChange={e => onChange({ ...filters, portfolioIds: e.target.value ? [e.target.value] : [] })}
-        className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800"
       >
         <option value="">All Portfolios</option>
         {portfolios.map(p => (
@@ -122,7 +122,7 @@ function FilterBar({ filters, onChange }: {
       <select
         value={filters.ownerUserIds?.[0] || ''}
         onChange={e => onChange({ ...filters, ownerUserIds: e.target.value ? [e.target.value] : [] })}
-        className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800"
       >
         <option value="">All Users</option>
         {users.map(u => (
@@ -138,7 +138,7 @@ function FilterBar({ filters, onChange }: {
           placeholder="Search ticker..."
           value={filters.assetSearch || ''}
           onChange={e => onChange({ ...filters, assetSearch: e.target.value })}
-          className="pl-8 pr-3 py-1 text-xs border border-gray-200 rounded-lg w-36 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="pl-8 pr-3 py-1 text-xs border border-gray-200 rounded-lg w-36 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800"
         />
       </div>
     </div>
@@ -207,10 +207,10 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
             ) : (
               <DirIcon className={`w-4 h-4 ${dir.color}`} />
             )}
-            <span className={`text-xs font-semibold uppercase ${isPassed ? 'text-gray-500' : dir.color}`}>
+            <span className={`text-xs font-semibold uppercase ${isPassed ? 'text-gray-500 dark:text-gray-400' : dir.color}`}>
               {isPassed ? (decision.passed_reason === 'deferred' ? 'Deferred' : 'Passed') : decision.direction}
             </span>
-            <span className="font-bold text-gray-900 text-sm">{decision.asset_symbol || '—'}</span>
+            <span className="font-bold text-gray-900 text-sm dark:text-white">{decision.asset_symbol || '—'}</span>
             {decision.sizing_input && (
               <span className="text-xs text-gray-400 font-mono">{decision.sizing_input}</span>
             )}
@@ -224,7 +224,7 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
           )}
           {isPassed && (
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-              decision.passed_reason === 'deferred' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+              decision.passed_reason === 'deferred' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
             }`}>
               {decision.passed_reason === 'deferred' ? 'Deferred' : 'Rejected'}
             </span>
@@ -238,7 +238,7 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
 
         {/* Narrative — the why */}
         {narrative && (
-          <p className="text-sm text-gray-700 leading-relaxed line-clamp-3 mb-3">
+          <p className="text-sm text-gray-700 leading-relaxed line-clamp-3 mb-3 dark:text-gray-300">
             {narrative}
           </p>
         )}
@@ -252,7 +252,7 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
         )}
 
         {/* Footer: who, when, where */}
-        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-100">
+        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
               <Calendar className="w-3 h-3" />
@@ -294,14 +294,14 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
 
       {/* Reflections thread */}
       {showReflections && (
-        <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3">
+        <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 dark:border-gray-800">
           {decision.reflections.length > 0 && (
             <div className="space-y-2 mb-3">
               {decision.reflections.map(r => (
                 <div key={r.id} className="flex gap-2">
                   <CornerDownRight className="w-3 h-3 text-gray-300 mt-1 flex-shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-sm text-gray-700">{r.content}</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{r.content}</p>
                     <p className="text-[10px] text-gray-400 mt-0.5">
                       {r.user_name} &middot; {format(new Date(r.created_at), 'MMM d')}
                     </p>
@@ -320,7 +320,7 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
               value={draft}
               onChange={e => setDraft(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
-              className="flex-1 px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400"
+              className="flex-1 px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-800"
             />
             <button
               onClick={handleSubmit}
@@ -350,9 +350,9 @@ function DecisionsView() {
       {/* Summary + refresh */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-gray-900">Decision Ledger</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Decision Ledger</h2>
           <div className="flex items-center gap-2 text-xs">
-            <span className="px-2 py-0.5 bg-gray-100 rounded-md font-medium text-gray-700">
+            <span className="px-2 py-0.5 bg-gray-100 rounded-md font-medium text-gray-700 dark:text-gray-300 dark:bg-gray-800">
               {summary.total} total
             </span>
             {summary.acted > 0 && (
@@ -361,7 +361,7 @@ function DecisionsView() {
               </span>
             )}
             {summary.passed > 0 && (
-              <span className="px-2 py-0.5 bg-gray-100 rounded-md font-medium text-gray-600">
+              <span className="px-2 py-0.5 bg-gray-100 rounded-md font-medium text-gray-600 dark:text-gray-400 dark:bg-gray-800">
                 {summary.passed} passed
               </span>
             )}
@@ -380,7 +380,7 @@ function DecisionsView() {
 
         <button
           onClick={() => refetch()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors dark:text-gray-400 dark:bg-gray-800"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
@@ -395,7 +395,7 @@ function DecisionsView() {
           <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-emerald-600" />
         </div>
       ) : isError ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-3 text-red-600">
             <AlertCircle className="w-5 h-5" />
             <span className="text-sm">Failed to load decisions.</span>
@@ -403,13 +403,13 @@ function DecisionsView() {
           </div>
         </div>
       ) : decisions.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8">
+        <div className="bg-white rounded-lg border border-gray-200 p-8 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex flex-col items-center text-center py-4">
-            <div className="p-3 bg-gray-100 rounded-full mb-3">
+            <div className="p-3 bg-gray-100 rounded-full mb-3 dark:bg-gray-800">
               <Target className="w-7 h-7 text-gray-400" />
             </div>
-            <h3 className="font-medium text-gray-900 mb-1">No decisions yet</h3>
-            <p className="text-sm text-gray-500 max-w-sm">
+            <h3 className="font-medium text-gray-900 mb-1 dark:text-white">No decisions yet</h3>
+            <p className="text-sm text-gray-500 max-w-sm dark:text-gray-400">
               Committed trades and explicit pass/reject decisions will appear here.
             </p>
           </div>
@@ -440,17 +440,17 @@ function ScorecardsView() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Award className="w-5 h-5 text-indigo-500" />
-          <h2 className="text-lg font-semibold text-gray-900">Analyst Scorecards</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Analyst Scorecards</h2>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
             {(['all_time', 'yearly', 'quarterly', 'monthly'] as PeriodType[]).map(pt => (
               <button
                 key={pt}
                 onClick={() => setPeriodType(pt)}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  periodType === pt ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                  periodType === pt ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
                 }`}
               >
                 {pt === 'all_time' ? 'All Time' : pt.charAt(0).toUpperCase() + pt.slice(1)}
@@ -461,7 +461,7 @@ function ScorecardsView() {
           <select
             value={selectedAnalystId || ''}
             onChange={e => setSelectedAnalystId(e.target.value || null)}
-            className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800"
           >
             <option value="">All Analysts</option>
             {users.map(u => (
@@ -477,7 +477,7 @@ function ScorecardsView() {
         <div className="space-y-6">
           <PerformanceLeaderboard limit={20} />
           <div>
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2 dark:text-gray-400">
               <Users className="w-3.5 h-3.5" />
               Individual Performance
             </div>
@@ -507,17 +507,17 @@ export function OutcomesPage() {
   const [activeTab, setActiveTab] = useState<OutcomesSubTab>('decisions')
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-100 rounded-lg">
               <Target className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-gray-900">Outcomes</h1>
-              <p className="text-sm text-gray-500">Every decision — what you did, what you passed on, and what you learned</p>
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Outcomes</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Every decision — what you did, what you passed on, and what you learned</p>
             </div>
           </div>
         </div>
@@ -528,7 +528,7 @@ export function OutcomesPage() {
             className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
               activeTab === 'decisions'
                 ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
             }`}
           >
             <span className="flex items-center gap-2">
@@ -541,7 +541,7 @@ export function OutcomesPage() {
             className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
               activeTab === 'scorecards'
                 ? 'border-indigo-500 text-indigo-700 bg-indigo-50/50'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
             }`}
           >
             <span className="flex items-center gap-2">

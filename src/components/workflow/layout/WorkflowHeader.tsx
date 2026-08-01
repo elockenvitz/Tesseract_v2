@@ -62,7 +62,7 @@ export function WorkflowHeader({
   return (
     <>
       {/* Workflow Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center space-x-4">
           {isTemplateEditMode ? (
             <>
@@ -72,8 +72,8 @@ export function WorkflowHeader({
               />
               <div className="flex-1 flex items-center justify-between">
                 <div>
-                  <h1 className="text-xl font-bold text-gray-900">{workflow.name}</h1>
-                  <p className="text-gray-600 text-sm">{workflow.description}</p>
+                  <h1 className="text-xl font-bold text-gray-900 dark:text-white">{workflow.name}</h1>
+                  <p className="text-gray-600 text-sm dark:text-gray-400">{workflow.description}</p>
                   <p className="text-xs text-amber-600 mt-1">
                     Template Edit Mode - Make your changes then Save & Version
                   </p>
@@ -131,8 +131,8 @@ export function WorkflowHeader({
               <div className="flex-1 flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div>
-                    <h1 className="text-xl font-bold text-gray-900">{workflow.name}</h1>
-                    <p className="text-gray-600 text-sm">{workflow.description}</p>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">{workflow.name}</h1>
+                    <p className="text-gray-600 text-sm dark:text-gray-400">{workflow.description}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
@@ -155,7 +155,7 @@ export function WorkflowHeader({
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 bg-white">
+      <div className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <nav className="flex space-x-8 px-6">
           {TABS.map((tab) => {
             const Icon = tab.icon
@@ -166,7 +166,7 @@ export function WorkflowHeader({
                 className={`flex items-center space-x-2 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
                   activeView === tab.id
                     ? 'border-primary-500 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                 }`}
               >
                 <Icon className="w-4 h-4" />

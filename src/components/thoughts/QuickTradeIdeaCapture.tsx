@@ -83,7 +83,7 @@ function renderExistingIdeaRow(
         )}>
           {idea.action}
         </span>
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 capitalize flex-shrink-0">
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 capitalize flex-shrink-0 dark:text-gray-300 dark:bg-gray-800">
           {stageLabel}
         </span>
         {idea.pair_id && (
@@ -96,13 +96,13 @@ function renderExistingIdeaRow(
         </span>
       </div>
       <div className="flex items-center gap-1.5 w-full min-w-0 text-[11px]">
-        <span className="text-gray-700 font-medium truncate flex-shrink min-w-0">
+        <span className="text-gray-700 font-medium truncate flex-shrink min-w-0 dark:text-gray-300">
           {creatorName}
         </span>
         {portfolio && (
           <>
             <span className="text-gray-300 flex-shrink-0">·</span>
-            <span className="text-gray-500 truncate flex-1 min-w-0">
+            <span className="text-gray-500 truncate flex-1 min-w-0 dark:text-gray-400">
               {portfolio.name}
             </span>
           </>
@@ -137,7 +137,7 @@ function PerLegDuplicateWarning({
             <button
               type="button"
               onClick={() => openExistingIdea(idea.id)}
-              className="w-full flex items-center gap-2 px-2 py-1 bg-white border border-amber-200 rounded text-xs hover:border-amber-400 hover:bg-amber-50/60 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-2 py-1 bg-white border border-amber-200 rounded text-xs hover:border-amber-400 hover:bg-amber-50/60 transition-colors text-left dark:bg-gray-800"
             >
               {renderExistingIdeaRow(idea, portfolios)}
             </button>
@@ -1098,18 +1098,18 @@ export function QuickTradeIdeaCapture({
   return (
     <>
     <div className={clsx(
-      "bg-white rounded-lg border border-gray-200 shadow-sm",
+      "bg-white rounded-lg border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800",
       compact ? "p-3" : "p-4"
     )}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-green-600" />
-          <span className="text-sm font-medium text-gray-700">Trade Idea</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Idea</span>
         </div>
 
         {/* Trade type toggle */}
-        <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+        <div className="flex items-center bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
           <button
             type="button"
             onClick={() => {
@@ -1126,8 +1126,8 @@ export function QuickTradeIdeaCapture({
             className={clsx(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-all",
               tradeType === 'single'
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800"
+                : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
             )}
           >
             Single
@@ -1146,8 +1146,8 @@ export function QuickTradeIdeaCapture({
             className={clsx(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1",
               tradeType === 'pair'
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800"
+                : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
             )}
           >
             <ArrowLeftRight className="h-3 w-3" />
@@ -1171,10 +1171,10 @@ export function QuickTradeIdeaCapture({
         <>
           <div className="relative mb-3">
             {selectedAsset ? (
-              <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg bg-gray-50">
+              <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                 <div>
-                  <span className="font-semibold text-gray-900">{selectedAsset.symbol}</span>
-                  <span className="text-sm text-gray-500 ml-2">{selectedAsset.company_name}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{selectedAsset.symbol}</span>
+                  <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{selectedAsset.company_name}</span>
                 </div>
                 <button
                   type="button"
@@ -1201,10 +1201,10 @@ export function QuickTradeIdeaCapture({
                   }}
                   onFocus={() => setShowAssetDropdown(true)}
                   onKeyDown={handleAssetSearchKeyDown}
-                  className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                 />
                 {showAssetDropdown && assets && assets.length > 0 && (
-                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                     {assets.map((asset, idx) => {
                       const inPipeline = assetIdsInPipeline?.has(asset.id) ?? false
                       const isHighlighted = idx === highlightedAssetIndex
@@ -1220,8 +1220,8 @@ export function QuickTradeIdeaCapture({
                           )}
                         >
                           <span className="min-w-0 truncate">
-                            <span className="font-medium text-gray-900">{asset.symbol}</span>
-                            <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                            <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                            <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                           </span>
                           {inPipeline && (
                             <span
@@ -1265,7 +1265,7 @@ export function QuickTradeIdeaCapture({
                     <button
                       type="button"
                       onClick={() => openExistingIdea(idea.id)}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 bg-white border border-amber-200 rounded text-xs hover:border-amber-400 hover:bg-amber-50/60 transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-2 py-1.5 bg-white border border-amber-200 rounded text-xs hover:border-amber-400 hover:bg-amber-50/60 transition-colors text-left dark:bg-gray-800"
                     >
                       {renderExistingIdeaRow(idea, portfolios)}
                     </button>
@@ -1290,7 +1290,7 @@ export function QuickTradeIdeaCapture({
                     ? a === 'buy'
                       ? "border-green-500 bg-green-50 text-green-700"
                       : "border-red-500 bg-red-50 text-red-700"
-                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
                 )}
               >
                 {a === 'buy' ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
@@ -1358,10 +1358,10 @@ export function QuickTradeIdeaCapture({
                 }}
                 onFocus={() => setShowLongDropdown(true)}
                 onKeyDown={handleLongSearchKeyDown}
-                className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent dark:border-gray-700"
               />
               {showLongDropdown && visibleLongResults.length > 0 && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                   {visibleLongResults.map((asset, idx) => {
                     const inPipeline = assetIdsInPipelineLong?.has(asset.id) ?? false
                     const isHighlighted = idx === highlightedLongIndex
@@ -1377,8 +1377,8 @@ export function QuickTradeIdeaCapture({
                         )}
                       >
                         <span className="min-w-0 truncate">
-                          <span className="font-medium text-gray-900">{asset.symbol}</span>
-                          <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                          <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                         </span>
                         {inPipeline && (
                           <span
@@ -1450,10 +1450,10 @@ export function QuickTradeIdeaCapture({
                 }}
                 onFocus={() => setShowShortDropdown(true)}
                 onKeyDown={handleShortSearchKeyDown}
-                className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:border-gray-700"
               />
               {showShortDropdown && visibleShortResults.length > 0 && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                   {visibleShortResults.map((asset, idx) => {
                     const inPipeline = assetIdsInPipelineShort?.has(asset.id) ?? false
                     const isHighlighted = idx === highlightedShortIndex
@@ -1469,8 +1469,8 @@ export function QuickTradeIdeaCapture({
                         )}
                       >
                         <span className="min-w-0 truncate">
-                          <span className="font-medium text-gray-900">{asset.symbol}</span>
-                          <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                          <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                         </span>
                         {inPipeline && (
                           <span
@@ -1521,15 +1521,15 @@ export function QuickTradeIdeaCapture({
                   <button
                     type="button"
                     onClick={() => openExistingIdea(firstLeg.id)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 bg-white border border-red-200 rounded text-xs hover:border-red-400 hover:bg-red-50/60 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 bg-white border border-red-200 rounded text-xs hover:border-red-400 hover:bg-red-50/60 transition-colors text-left dark:bg-gray-800"
                   >
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 flex-shrink-0">
                       pair
                     </span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 capitalize flex-shrink-0">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 capitalize flex-shrink-0 dark:text-gray-300 dark:bg-gray-800">
                       {stageLabel}
                     </span>
-                    <span className="text-gray-700 truncate flex-1 min-w-0">
+                    <span className="text-gray-700 truncate flex-1 min-w-0 dark:text-gray-300">
                       {longLegs.length} long / {shortLegs.length} short
                     </span>
                     <span className="text-gray-400 whitespace-nowrap flex-shrink-0">
@@ -1552,7 +1552,7 @@ export function QuickTradeIdeaCapture({
         onKeyDown={handleKeyDown}
         placeholder="Why now? What's the catalyst or risk? (optional)"
         maxLength={300}
-        className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 caret-gray-900 min-h-[60px]"
+        className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 caret-gray-900 min-h-[60px] dark:border-gray-700 dark:text-white"
         rows={2}
       />
       <div className="mt-1 mb-3 text-[10px] text-gray-400 tabular-nums text-right">
@@ -1571,12 +1571,12 @@ export function QuickTradeIdeaCapture({
               "w-full flex items-center justify-between px-3 py-2 text-sm border rounded-lg transition-colors",
               showPortfolioMenu
                 ? "border-primary-300 bg-primary-50/40 ring-2 ring-primary-100"
-                : "border-gray-200 hover:bg-gray-50"
+                : "border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700"
             )}
           >
             <div className="flex items-center gap-2">
               <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
-              <span className="text-gray-700">
+              <span className="text-gray-700 dark:text-gray-300">
                 {selectedPortfolioIds.length === 0
                   ? 'No specific portfolio'
                   : selectedPortfolioIds.length === 1
@@ -1590,7 +1590,7 @@ export function QuickTradeIdeaCapture({
           {showPortfolioMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowPortfolioMenu(false)} />
-              <div className="absolute z-20 w-full bottom-full mb-1.5 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden flex flex-col">
+              <div className="absolute z-20 w-full bottom-full mb-1.5 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden flex flex-col dark:border-gray-700 dark:bg-gray-800">
                 {/* Scrollable options */}
                 <div className="max-h-56 overflow-y-auto py-1">
                   {/* No portfolio option */}
@@ -1598,20 +1598,20 @@ export function QuickTradeIdeaCapture({
                     type="button"
                     onClick={() => setSelectedPortfolioIds([])}
                     className={clsx(
-                      "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm",
+                      "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm dark:hover:bg-gray-800",
                       selectedPortfolioIds.length === 0 && "bg-primary-50"
                     )}
                   >
                     <div className={clsx(
                       "h-4 w-4 rounded border flex items-center justify-center flex-shrink-0",
-                      selectedPortfolioIds.length === 0 ? "bg-primary-500 border-primary-500" : "border-gray-300"
+                      selectedPortfolioIds.length === 0 ? "bg-primary-500 border-primary-500" : "border-gray-300 dark:border-gray-600"
                     )}>
                       {selectedPortfolioIds.length === 0 && <span className="text-white text-xs leading-none">✓</span>}
                     </div>
-                    <span className="text-gray-600">No specific portfolio</span>
+                    <span className="text-gray-600 dark:text-gray-400">No specific portfolio</span>
                   </button>
 
-                  <div className="border-t border-gray-100 my-1" />
+                  <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
 
                   {/* Portfolio options */}
                   {portfolios.map(p => {
@@ -1629,17 +1629,17 @@ export function QuickTradeIdeaCapture({
                           }
                         }}
                         className={clsx(
-                          "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm",
+                          "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm dark:hover:bg-gray-800",
                           isSelected && "bg-primary-50"
                         )}
                       >
                         <div className={clsx(
                           "h-4 w-4 rounded border flex items-center justify-center flex-shrink-0",
-                          isSelected ? "bg-primary-500 border-primary-500" : "border-gray-300"
+                          isSelected ? "bg-primary-500 border-primary-500" : "border-gray-300 dark:border-gray-600"
                         )}>
                           {isSelected && <span className="text-white text-xs leading-none">✓</span>}
                         </div>
-                        <span className="text-gray-700 flex-1 truncate">{p.name}</span>
+                        <span className="text-gray-700 flex-1 truncate dark:text-gray-300">{p.name}</span>
                         {holdsAsset && (
                           <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded flex-shrink-0">
                             Held
@@ -1651,8 +1651,8 @@ export function QuickTradeIdeaCapture({
                 </div>
 
                 {/* Sticky footer: selection count + Done */}
-                <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-t border-gray-100 bg-gray-50">
-                  <span className="text-[11px] text-gray-500">
+                <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-t border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
                     {selectedPortfolioIds.length === 0
                       ? 'No portfolio'
                       : selectedPortfolioIds.length === 1
@@ -1674,13 +1674,13 @@ export function QuickTradeIdeaCapture({
       )}
 
       {/* Footer with visibility and submit */}
-      <div className="pt-3 border-t border-gray-100">
+      <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
           {/* Visibility selector */}
           <div className="relative">
           <button
             onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
-            className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-2.5 py-1.5 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-2.5 py-1.5 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
           >
             {getVisibilityIcon()}
             <span>{getVisibilityLabel()}</span>
@@ -1690,31 +1690,31 @@ export function QuickTradeIdeaCapture({
           {showVisibilityMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowVisibilityMenu(false)} />
-              <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-max max-w-[280px] z-20">
+              <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-max max-w-[280px] z-20 dark:border-gray-700 dark:bg-gray-800">
                 <button
                   onClick={() => handleVisibilitySelect('private')}
                   className={clsx(
-                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                    visibility === 'private' && "bg-gray-50"
+                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800",
+                    visibility === 'private' && "bg-gray-50 dark:bg-gray-900"
                   )}
                 >
-                  <Lock className="h-4 w-4 text-gray-500" />
+                  <Lock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">Private</div>
-                    <div className="text-xs text-gray-500">Only visible to you</div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">Private</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Only visible to you</div>
                   </div>
                 </button>
                 <button
                   onClick={() => handleVisibilitySelect('portfolio')}
                   className={clsx(
-                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                    visibility === 'portfolio' && "bg-gray-50"
+                    "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800",
+                    visibility === 'portfolio' && "bg-gray-50 dark:bg-gray-900"
                   )}
                 >
                   <Users className="h-4 w-4 text-blue-500" />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">Portfolio</div>
-                    <div className="text-xs text-gray-500 whitespace-nowrap">Portfolio members can see</div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">Portfolio</div>
+                    <div className="text-xs text-gray-500 whitespace-nowrap dark:text-gray-400">Portfolio members can see</div>
                   </div>
                 </button>
               </div>
@@ -1727,7 +1727,7 @@ export function QuickTradeIdeaCapture({
             {onCancel && (
               <button
                 onClick={onCancel}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -1744,7 +1744,7 @@ export function QuickTradeIdeaCapture({
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
                 ((tradeType === 'single' && selectedAsset) || (tradeType === 'pair' && longAssets.length > 0 && shortAssets.length > 0 && !hasExactPairDuplicate))
                   ? "bg-green-600 text-white hover:bg-green-700 shadow-sm"
-                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800"
               )}
             >
               {createTradeIdea.isPending ? (
@@ -1779,8 +1779,8 @@ export function QuickTradeIdeaCapture({
 
     {/* Portfolio Context - show weight info for selected asset in each portfolio */}
     {tradeType === 'single' && selectedAsset && selectedPortfolioIds.length > 0 && portfolioContextData && portfolioContextData.length > 0 && (
-      <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="text-xs font-medium text-gray-600 mb-2">Portfolio Context</div>
+      <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+        <div className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Portfolio Context</div>
         <div className="space-y-2">
           {portfolioContextData.map(context => {
             const portfolio = portfolios?.find(p => p.id === context.portfolioId)
@@ -1789,16 +1789,16 @@ export function QuickTradeIdeaCapture({
             return (
               <div
                 key={context.portfolioId}
-                className="p-2 rounded-md bg-white border border-gray-200"
+                className="p-2 rounded-md bg-white border border-gray-200 dark:border-gray-700 dark:bg-gray-800"
               >
                 {/* Portfolio name and held badge */}
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-800">{portfolio.name}</span>
+                  <span className="text-xs font-medium text-gray-800 dark:text-gray-100">{portfolio.name}</span>
                   <span className={clsx(
                     "text-[10px] px-1.5 py-0.5 rounded",
                     context.isOwned
                       ? "bg-blue-100 text-blue-700"
-                      : "bg-gray-100 text-gray-500"
+                      : "bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800"
                   )}>
                     {context.isOwned ? 'Held' : 'Not Held'}
                   </span>
@@ -1808,13 +1808,13 @@ export function QuickTradeIdeaCapture({
                 <div className="flex items-center gap-4 text-xs">
                   <div>
                     <div className="text-gray-400 text-[10px]">Portfolio</div>
-                    <div className="font-medium text-gray-700">{context.portfolioWeight.toFixed(2)}%</div>
+                    <div className="font-medium text-gray-700 dark:text-gray-300">{context.portfolioWeight.toFixed(2)}%</div>
                   </div>
                   {context.benchmarkWeight !== null && (
                     <>
                       <div>
                         <div className="text-gray-400 text-[10px]">Benchmark</div>
-                        <div className="font-medium text-gray-700">{context.benchmarkWeight.toFixed(2)}%</div>
+                        <div className="font-medium text-gray-700 dark:text-gray-300">{context.benchmarkWeight.toFixed(2)}%</div>
                       </div>
                       <div>
                         <div className="text-gray-400 text-[10px]">Active</div>
@@ -1824,7 +1824,7 @@ export function QuickTradeIdeaCapture({
                             ? "text-green-600"
                             : context.activeWeight !== null && context.activeWeight < 0
                               ? "text-red-600"
-                              : "text-gray-700"
+                              : "text-gray-700 dark:text-gray-300"
                         )}>
                           {context.activeWeight !== null
                             ? `${context.activeWeight >= 0 ? '+' : ''}${context.activeWeight.toFixed(2)}%`

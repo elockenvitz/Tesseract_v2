@@ -150,23 +150,23 @@ export function CreateAIColumnModal({
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editColumn ? 'Edit AI Column' : 'Create AI Column'}
               </h2>
-              <p className="text-sm text-gray-500">Define a custom AI-powered column</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Define a custom AI-powered column</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700"
           >
             <X className="h-5 w-5 text-gray-400" />
           </button>
@@ -176,7 +176,7 @@ export function CreateAIColumnModal({
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
           {/* Name */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
               Column Name
             </label>
             <input
@@ -184,14 +184,14 @@ export function CreateAIColumnModal({
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="e.g., Key Risks"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 dark:border-gray-700"
               disabled={isLoading}
             />
           </div>
 
           {/* Description */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
               Description <span className="text-gray-400 font-normal">(optional)</span>
             </label>
             <input
@@ -199,14 +199,14 @@ export function CreateAIColumnModal({
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Brief description of what this column shows"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 dark:border-gray-700"
               disabled={isLoading}
             />
           </div>
 
           {/* Prompt */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
               AI Prompt
             </label>
             <textarea
@@ -214,20 +214,20 @@ export function CreateAIColumnModal({
               onChange={e => setPrompt(e.target.value)}
               placeholder="What should the AI analyze? e.g., 'Summarize the key investment risks in 2-3 bullet points.'"
               rows={4}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none dark:border-gray-700"
               disabled={isLoading}
             />
 
             {/* Prompt hints */}
             <div className="mt-2">
-              <p className="text-xs text-gray-500 mb-1.5">Try one of these:</p>
+              <p className="text-xs text-gray-500 mb-1.5 dark:text-gray-400">Try one of these:</p>
               <div className="flex flex-wrap gap-1.5">
                 {PROMPT_HINTS.slice(0, 3).map((hint, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleUseHint(hint)}
-                    className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md transition-colors"
+                    className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md transition-colors dark:text-gray-400 dark:bg-gray-800"
                     disabled={isLoading}
                   >
                     {hint.length > 40 ? hint.slice(0, 40) + '...' : hint}
@@ -239,12 +239,12 @@ export function CreateAIColumnModal({
 
           {/* Context Options */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Context to Include
             </label>
-            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
               <Info className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Select what data the AI should consider when generating content
               </p>
             </div>
@@ -263,7 +263,7 @@ export function CreateAIColumnModal({
                     'px-3 py-2 text-sm rounded-lg border transition-colors',
                     contextConfig[option.key]
                       ? 'bg-blue-50 border-blue-200 text-blue-700'
-                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                   )}
                   disabled={isLoading}
                 >
@@ -275,7 +275,7 @@ export function CreateAIColumnModal({
 
           {/* Icon */}
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Icon
             </label>
             <div className="flex gap-2">
@@ -288,7 +288,7 @@ export function CreateAIColumnModal({
                     'w-10 h-10 rounded-lg border flex items-center justify-center transition-colors',
                     icon === option.value
                       ? 'bg-purple-100 border-purple-300'
-                      : 'bg-white border-gray-200 hover:bg-gray-50'
+                      : 'bg-white border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800'
                   )}
                   title={option.label}
                   disabled={isLoading}

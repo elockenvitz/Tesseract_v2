@@ -1385,18 +1385,18 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
     // Input border: neutral by default, amber for warning, red only after continue attempt
     const inputBorderClass = nameValidation
-      ? nameValidation.level === 'error' ? 'border-red-300 bg-red-50/20' : 'border-gray-300'
-      : 'border-gray-300'
+      ? nameValidation.level === 'error' ? 'border-red-300 bg-red-50/20' : 'border-gray-300 dark:border-gray-600'
+      : 'border-gray-300 dark:border-gray-600'
 
     return (
       <div className="space-y-5">
         {/* ─── Identity ─────────────────────────────────────── */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2.5">Identity</h3>
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2.5 dark:text-gray-400">Identity</h3>
 
           {/* Process Name */}
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
               Process Name <span className="text-red-400">*</span>
             </label>
             <input
@@ -1414,7 +1414,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             />
             {/* Warning state (pre-submit) */}
             {nameValidation?.level === 'warning' && (
-              <p className="mt-1.5 text-xs text-gray-500 flex items-center space-x-1.5">
+              <p className="mt-1.5 text-xs text-gray-500 flex items-center space-x-1.5 dark:text-gray-400">
                 <AlertCircle className="w-3 h-3 text-amber-500 flex-shrink-0" />
                 <span>{nameValidation.message}</span>
               </p>
@@ -1440,7 +1440,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             <button
               type="button"
               onClick={() => setDescExpanded(!descExpanded)}
-              className="flex items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              className="flex items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
             >
               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${descExpanded ? '' : '-rotate-90'}`} />
               <span>{descExpanded ? 'Description' : 'Add a description'}</span>
@@ -1453,7 +1453,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 <textarea
                   value={basicInfo.description}
                   onChange={(e) => setBasicInfo({ ...basicInfo, description: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                   rows={2}
                   placeholder="What is the purpose of this process? Who should use it?"
                 />
@@ -1469,7 +1469,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
         {/* ─── Applies To ───────────────────────────────────── */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Applies To</h3>
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1 dark:text-gray-400">Applies To</h3>
           <p className="text-xs text-gray-400 mb-2.5">Determines where runs appear and how work is tracked.</p>
           <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Process scope type">
             {SCOPE_OPTIONS.map((opt) => {
@@ -1485,16 +1485,16 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   className={`flex flex-col items-start p-3 rounded-lg border-2 transition-all text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                     isSelected
                       ? 'border-blue-500 bg-blue-50/50 shadow-sm ring-1 ring-blue-200'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                      : 'border-gray-200 hover:border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800'
                   }`}
                 >
                   <div className="flex items-center space-x-2 mb-0.5">
                     <Icon className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
-                    <span className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                    <span className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700 dark:text-gray-300'}`}>
                       {opt.label}
                     </span>
                   </div>
-                  <span className={`text-xs leading-snug ${isSelected ? 'text-blue-600/70' : 'text-gray-500'}`}>{opt.description}</span>
+                  <span className={`text-xs leading-snug ${isSelected ? 'text-blue-600/70' : 'text-gray-500 dark:text-gray-400'}`}>{opt.description}</span>
                 </button>
               )
             })}
@@ -1504,11 +1504,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
         {/* ─── Summary + scheduling framing ──────────────────── */}
         {basicInfo.name.trim().length >= 3 && !isNameBlocked(basicInfo.name) && (
-          <div className="pt-2 border-t border-gray-100 space-y-1">
-            <p className="text-sm text-gray-500">
+          <div className="pt-2 border-t border-gray-100 space-y-1 dark:border-gray-800">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               This will create {article}{' '}
-              <span className="font-medium text-gray-700">{scopeSummary}-scoped</span> process named{' '}
-              &ldquo;<span className="font-medium text-gray-900">{basicInfo.name.trim()}</span>.&rdquo;
+              <span className="font-medium text-gray-700 dark:text-gray-300">{scopeSummary}-scoped</span> process named{' '}
+              &ldquo;<span className="font-medium text-gray-900 dark:text-white">{basicInfo.name.trim()}</span>.&rdquo;
             </p>
             <p className="text-xs text-gray-400">Scheduling and triggers are configured in the Rules step.</p>
           </div>
@@ -1549,13 +1549,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       <div className="space-y-4">
         {/* Header */}
         <div>
-          <h3 className="text-lg font-medium text-gray-900">Process Governance</h3>
-          <p className="text-sm text-gray-500 mt-0.5">Define who can manage this process and who can follow its progress.</p>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Process Governance</h3>
+          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Define who can manage this process and who can follow its progress.</p>
         </div>
 
         {/* ─── Owner ────────────────────────────────────────── */}
         <section>
-          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Owner</h4>
+          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Owner</h4>
           <div className="flex items-center justify-between px-3 py-2 bg-blue-50/30 rounded-lg border border-blue-100/80">
             <div className="flex items-center space-x-2.5 min-w-0">
               <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -1563,7 +1563,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   {((user as any)?.first_name?.[0] || user?.email?.[0] || 'Y').toUpperCase()}
                 </span>
               </div>
-              <span className="text-sm font-medium text-gray-900 truncate">
+              <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
                 {[(user as any)?.first_name, (user as any)?.last_name].filter(Boolean).join(' ') || user?.email || 'You'}
               </span>
             </div>
@@ -1583,14 +1583,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         {/* ─── Two-Panel Team Selector ─────────────────────── */}
         <section className="space-y-3">
           <div>
-            <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Team Members</h4>
+            <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Team Members</h4>
             <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Add people who can manage this process or follow its progress.</p>
           </div>
 
           {/* ── Assigned Panel (fixed height) ───────────────── */}
-          <div className="rounded-lg border border-gray-200 bg-gray-50/40">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-              <span className="text-[11px] font-medium text-gray-500">
+          <div className="rounded-lg border border-gray-200 bg-gray-50/40 dark:border-gray-700">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+              <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
                 Assigned{team.length > 0 ? ` (${team.length})` : ''}
               </span>
               {team.length > 0 && (
@@ -1605,7 +1605,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   {team.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between px-2.5 py-1.5 rounded-md group hover:bg-white transition-colors"
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-md group hover:bg-white transition-colors dark:hover:bg-gray-800"
                     >
                       <div className="flex items-center space-x-2 min-w-0">
                         <div className={`w-[22px] h-[22px] rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -1617,7 +1617,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                             {member.name.charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <span className="text-sm font-medium text-gray-800 truncate">{member.name}</span>
+                        <span className="text-sm font-medium text-gray-800 truncate dark:text-gray-100">{member.name}</span>
                       </div>
                       <div className="flex items-center space-x-1.5 flex-shrink-0 ml-2">
                         <button
@@ -1654,9 +1654,9 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
 
           {/* ── Available Users Panel (fixed height) ────────── */}
-          <div className="rounded-lg border border-gray-200 overflow-hidden">
+          <div className="rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700">
             {/* Search bar — always visible at top */}
-            <div className="flex items-center border-b border-gray-200 bg-white">
+            <div className="flex items-center border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
@@ -1667,14 +1667,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   placeholder="Search by name or email..."
                 />
               </div>
-              <div className="border-l border-gray-200" />
+              <div className="border-l border-gray-200 dark:border-gray-700" />
               <div className="flex items-center space-x-1.5 px-2.5 flex-shrink-0">
                 <span className="text-[11px] text-gray-400 whitespace-nowrap">Add as:</span>
                 <select
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value as 'admin' | 'stakeholder')}
                   aria-label="Default role for new members"
-                  className="px-1.5 py-1 border border-gray-200 rounded text-[11px] focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="px-1.5 py-1 border border-gray-200 rounded text-[11px] focus:ring-2 focus:ring-blue-500 bg-white dark:border-gray-700 dark:bg-gray-800"
                 >
                   <option value="admin">Admin</option>
                   <option value="stakeholder">Stakeholder</option>
@@ -1692,13 +1692,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                     onClick={() => handleAddUser(u.id)}
                     className="w-full flex items-center px-3 py-1.5 text-left border-b border-gray-50 last:border-b-0 hover:bg-blue-50/30 transition-colors group/row"
                   >
-                    <div className="w-[22px] h-[22px] rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mr-2.5">
-                      <span className="font-semibold text-[10px] text-gray-500">
+                    <div className="w-[22px] h-[22px] rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mr-2.5 dark:bg-gray-800">
+                      <span className="font-semibold text-[10px] text-gray-500 dark:text-gray-400">
                         {u.name.charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div className="min-w-0 flex-1 flex items-center">
-                      <span className="font-medium text-sm text-gray-900 truncate">{u.name}</span>
+                      <span className="font-medium text-sm text-gray-900 truncate dark:text-white">{u.name}</span>
                       <span className="text-[11px] text-gray-400 ml-2 truncate">{u.email}</span>
                     </div>
                     <Plus className="w-3.5 h-3.5 text-gray-300 group-hover/row:text-blue-500 flex-shrink-0 ml-2 transition-colors" />
@@ -1720,7 +1720,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Role Permissions</h4>
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <p className="text-xs font-semibold text-gray-600 mb-1">Admin</p>
+              <p className="text-xs font-semibold text-gray-600 mb-1 dark:text-gray-400">Admin</p>
               <ul className="space-y-0.5 text-[11px] text-gray-400 leading-relaxed">
                 <li>Edit process structure and rules</li>
                 <li>Manage access and team</li>
@@ -1728,7 +1728,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               </ul>
             </div>
             <div>
-              <p className="text-xs font-semibold text-gray-600 mb-1">Stakeholder</p>
+              <p className="text-xs font-semibold text-gray-600 mb-1 dark:text-gray-400">Stakeholder</p>
               <ul className="space-y-0.5 text-[11px] text-gray-400 leading-relaxed">
                 <li>View process progress</li>
                 <li>Receive notifications</li>
@@ -1741,7 +1741,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         </div>
 
         {/* ─── Governance summary ────────────────────────────── */}
-        <div className="pt-1.5 border-t border-gray-100">
+        <div className="pt-1.5 border-t border-gray-100 dark:border-gray-800">
           <p className="text-[11px] text-gray-400">
             Admins {adminCount} (including you) &middot; Stakeholders {stakeholderCount}
           </p>
@@ -1767,15 +1767,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h3 className="text-lg font-medium text-gray-900">Eligibility Rules</h3>
-        <p className="text-sm text-gray-500 mt-0.5">Define which assets will be included in every run of this process.</p>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Eligibility Rules</h3>
+        <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Define which assets will be included in every run of this process.</p>
       </div>
 
       {/* ─── Rule Canvas ───────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-200 bg-gray-50/40">
+      <div className="rounded-lg border border-gray-200 bg-gray-50/40 dark:border-gray-700">
         {/* Canvas header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200/80">
-          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Rules</h4>
+          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Rules</h4>
           {filters.length > 0 && (
             <div className="flex items-center space-x-3">
               <Button
@@ -1809,7 +1809,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             <div className="flex items-start space-x-3 py-2">
               <Info className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-gray-500">No eligibility rules defined</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No eligibility rules defined</p>
                 <p className="text-[11px] text-gray-400 mt-0.5">All assets will be included in this process.</p>
               </div>
             </div>
@@ -1824,15 +1824,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 return (
                   <div
                     key={filter.id}
-                    className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-150 hover:border-gray-300 transition-colors group"
+                    className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-150 hover:border-gray-300 transition-colors group dark:bg-gray-800"
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
                       <Icon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                      <span className="text-sm font-medium text-gray-700 flex-shrink-0">{definition.name}</span>
+                      <span className="text-sm font-medium text-gray-700 flex-shrink-0 dark:text-gray-300">{definition.name}</span>
                       <span className={`text-xs flex-shrink-0 ${filter.operator === 'excludes' ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
                         {OPERATOR_LABELS[filter.operator]}
                       </span>
-                      <span className="text-sm text-gray-900 truncate">{formatFilterValue(filter)}</span>
+                      <span className="text-sm text-gray-900 truncate dark:text-white">{formatFilterValue(filter)}</span>
                     </div>
                     <div className="flex items-center space-x-1 flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
@@ -1861,9 +1861,9 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
         {/* Logic Builder — only when 2+ rules */}
         {filters.length >= 2 && (
-          <div className="mx-4 mb-3 bg-white border border-gray-200 rounded-lg p-3">
+          <div className="mx-4 mb-3 bg-white border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Filter Logic</h4>
+              <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Filter Logic</h4>
               <div className="flex items-center gap-2">
                 {selectedTokens.size >= 2 && (
                   <>
@@ -1877,20 +1877,20 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                     <button
                       type="button"
                       onClick={clearSelection}
-                      className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-200 rounded"
+                      className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-200 rounded dark:text-gray-400"
                     >
                       Clear
                     </button>
                   </>
                 )}
                 {selectedTokens.size < 2 && selectedTokens.size > 0 && (
-                  <span className="text-xs text-gray-500">Select more to group</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Select more to group</span>
                 )}
               </div>
             </div>
 
             {/* Logic Expression Display */}
-            <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-gray-50 border border-gray-100 rounded min-h-[40px]">
+            <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-gray-50 border border-gray-100 rounded min-h-[40px] dark:border-gray-800 dark:bg-gray-900">
               {logicExpression.map((token, index) => {
                 const isSelected = selectedTokens.has(index)
 
@@ -2001,7 +2001,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
       {/* ─── Add rule blocks ───────────────────────────────── */}
       <section>
-        <p className="text-[11px] font-medium text-gray-500 mb-2">Add another rule:</p>
+        <p className="text-[11px] font-medium text-gray-500 mb-2 dark:text-gray-400">Add another rule:</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {['analyst', 'list', 'theme', 'portfolio', 'sector', 'priority', 'financial_metric', 'country'].map((ft) => {
             const definition = getFilterDefinition(ft)
@@ -2013,11 +2013,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 key={ft}
                 type="button"
                 onClick={() => openNewFilterModal(ft)}
-                className="flex items-start space-x-2.5 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50/50 transition-colors text-left group"
+                className="flex items-start space-x-2.5 p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50/50 transition-colors text-left group dark:border-gray-700"
               >
                 <Icon className="w-4 h-4 text-gray-400 group-hover:text-blue-500 flex-shrink-0 mt-0.5 transition-colors" />
                 <div className="min-w-0">
-                  <span className="font-medium text-gray-700 text-sm block leading-tight">{definition.name}</span>
+                  <span className="font-medium text-gray-700 text-sm block leading-tight dark:text-gray-300">{definition.name}</span>
                   <span className="text-[10px] text-gray-400 leading-tight block mt-0.5">{RULE_DESCRIPTORS[ft]}</span>
                 </div>
               </button>
@@ -2029,12 +2029,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       {/* Filter Modal */}
       {showFilterModal && filterType && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col dark:bg-gray-800">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editingFilter ? 'Edit Filter' : 'Add Filter'}: {getFilterDefinition(filterType)?.name}
               </h3>
-              <button onClick={() => setShowFilterModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowFilterModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2042,7 +2042,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             <div className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Operator Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Condition</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Condition</label>
                 <div className="flex flex-wrap gap-2">
                   {getFilterDefinition(filterType)?.availableOperators.map((op) => (
                     <button
@@ -2052,7 +2052,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                       className={`px-4 py-2 rounded-lg border text-sm font-medium ${
                         filterOperator === op
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
+                          : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                       }`}
                     >
                       {OPERATOR_LABELS[op]}
@@ -2066,11 +2066,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 <div className="space-y-4">
                   {/* Metric Selector */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Metric</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Select Metric</label>
                     <select
                       value={filterValues?.metric || ''}
                       onChange={(e) => setFilterValues({ ...filterValues, metric: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     >
                       <option value="">Choose a metric...</option>
                       <option value="market_cap">Market Cap</option>
@@ -2086,48 +2086,48 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                     <>
                       {filterOperator === 'greater_than' && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Value</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Minimum Value</label>
                           <input
                             type="number"
                             placeholder="Enter minimum"
                             value={filterValues?.min || ''}
                             onChange={(e) => setFilterValues({ ...filterValues, min: parseFloat(e.target.value) || null })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600"
                           />
                         </div>
                       )}
                       {filterOperator === 'less_than' && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Value</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Maximum Value</label>
                           <input
                             type="number"
                             placeholder="Enter maximum"
                             value={filterValues?.max || ''}
                             onChange={(e) => setFilterValues({ ...filterValues, max: parseFloat(e.target.value) || null })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600"
                           />
                         </div>
                       )}
                       {filterOperator === 'between' && (
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Min</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Min</label>
                             <input
                               type="number"
                               placeholder="Min"
                               value={filterValues?.min || ''}
                               onChange={(e) => setFilterValues({ ...filterValues, min: parseFloat(e.target.value) || null })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600"
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Max</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Max</label>
                             <input
                               type="number"
                               placeholder="Max"
                               value={filterValues?.max || ''}
                               onChange={(e) => setFilterValues({ ...filterValues, max: parseFloat(e.target.value) || null })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600"
                             />
                           </div>
                         </div>
@@ -2137,21 +2137,21 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                 </div>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Values</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Select Values</label>
                   <input
                     type="text"
                     placeholder="Search..."
                     value={filterSearchTerm}
                     onChange={(e) => setFilterSearchTerm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 dark:border-gray-600"
                   />
-                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1 dark:border-gray-700">
                     {getOptionsForFilter(filterType)
                       .filter(opt => opt.label && opt.label.toLowerCase().includes(filterSearchTerm.toLowerCase()))
                       .map((option) => (
                         <label
                           key={option.value}
-                          className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                          className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer dark:hover:bg-gray-800"
                         >
                           <input
                             type="checkbox"
@@ -2166,18 +2166,18 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                             }}
                             className="rounded text-blue-600"
                           />
-                          <span className="text-sm text-gray-700">{option.label}</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{option.label}</span>
                         </label>
                       ))}
                   </div>
                   {Array.isArray(filterValues) && filterValues.length > 0 && (
-                    <p className="text-sm text-gray-500 mt-2">{filterValues.length} selected</p>
+                    <p className="text-sm text-gray-500 mt-2 dark:text-gray-400">{filterValues.length} selected</p>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3 dark:border-gray-700">
               <Button variant="outline" onClick={() => setShowFilterModal(false)}>Cancel</Button>
               <Button
                 onClick={saveFilter}
@@ -2198,15 +2198,15 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       {/* Preview Modal */}
       {showPreviewModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col dark:bg-gray-800">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Next run snapshot (preview)</h3>
-                <p className="text-sm text-gray-500">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Next run snapshot (preview)</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {isLoadingPreview ? 'Loading...' : previewAssets.length > 0 ? `${previewAssets.length}${previewAssets.length === 100 ? '+' : ''} assets would be included if a run started now` : 'No matching assets'}
                 </p>
               </div>
-              <button onClick={() => setShowPreviewModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowPreviewModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2215,7 +2215,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               {isLoadingPreview ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                  <span className="ml-3 text-gray-600">Fetching matching assets...</span>
+                  <span className="ml-3 text-gray-600 dark:text-gray-400">Fetching matching assets...</span>
                 </div>
               ) : previewError ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -2227,27 +2227,27 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               ) : previewAssets.length === 0 ? (
                 <div className="text-center py-12">
                   <Filter className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">No Matching Assets</h4>
-                  <p className="text-sm text-gray-500">No assets match your current filter criteria</p>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No Matching Assets</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No assets match your current filter criteria</p>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-100 rounded-t-lg text-xs font-medium text-gray-600 uppercase tracking-wide">
+                  <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-100 rounded-t-lg text-xs font-medium text-gray-600 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-800">
                     <div className="col-span-2">Symbol</div>
                     <div className="col-span-7">Company Name</div>
                     <div className="col-span-3">Sector</div>
                   </div>
-                  <div className="divide-y divide-gray-100 border border-gray-200 rounded-b-lg max-h-[400px] overflow-y-auto">
+                  <div className="divide-y divide-gray-100 border border-gray-200 rounded-b-lg max-h-[400px] overflow-y-auto dark:border-gray-700 dark:divide-gray-800">
                     {previewAssets.map((asset) => (
-                      <div key={asset.id} className="grid grid-cols-12 gap-2 px-3 py-2.5 hover:bg-gray-50 text-sm">
-                        <div className="col-span-2 font-medium text-gray-900">{asset.symbol}</div>
-                        <div className="col-span-7 text-gray-700 truncate" title={asset.company_name}>{asset.company_name}</div>
-                        <div className="col-span-3 text-gray-500 truncate">{asset.sector || '-'}</div>
+                      <div key={asset.id} className="grid grid-cols-12 gap-2 px-3 py-2.5 hover:bg-gray-50 text-sm dark:hover:bg-gray-800">
+                        <div className="col-span-2 font-medium text-gray-900 dark:text-white">{asset.symbol}</div>
+                        <div className="col-span-7 text-gray-700 truncate dark:text-gray-300" title={asset.company_name}>{asset.company_name}</div>
+                        <div className="col-span-3 text-gray-500 truncate dark:text-gray-400">{asset.sector || '-'}</div>
                       </div>
                     ))}
                   </div>
                   {previewAssets.length === 100 && (
-                    <p className="text-xs text-gray-500 text-center mt-3">
+                    <p className="text-xs text-gray-500 text-center mt-3 dark:text-gray-400">
                       Showing first 100 results. More assets may match your criteria.
                     </p>
                   )}
@@ -2255,7 +2255,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               )}
             </div>
 
-            <div className="px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-3 border-t border-gray-200 flex items-center justify-between dark:border-gray-700">
               <p className="text-[10px] text-gray-300">Starting scope is locked per run; any additions or removals are logged.</p>
               <Button variant="outline" onClick={() => setShowPreviewModal(false)}>Close</Button>
             </div>
@@ -2275,14 +2275,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
   const renderPortfolioStep = () => (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-gray-900">Select Portfolios</h3>
-        <p className="text-sm text-gray-500 mt-1">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Select Portfolios</h3>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Choose which portfolios this process will track. Each portfolio will progress through stages independently.
         </p>
       </div>
 
       {allPortfolios.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <Briefcase className="w-8 h-8 mx-auto mb-2 text-gray-300" />
           <p className="text-sm">No portfolios available.</p>
         </div>
@@ -2294,11 +2294,11 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               type="text"
               value={portfolioSearchTerm}
               onChange={(e) => setPortfolioSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
               placeholder="Search portfolios..."
             />
           </div>
-          <div className="space-y-1 max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg">
+          <div className="space-y-1 max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg dark:border-gray-700">
             {filteredPortfolios.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-gray-400">
                 No portfolios match "{portfolioSearchTerm}"
@@ -2327,9 +2327,9 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                           return next
                         })
                       }}
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600"
                     />
-                    <span className={`ml-3 text-sm ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
+                    <span className={`ml-3 text-sm ${isSelected ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
                       {portfolio.name}
                     </span>
                   </label>
@@ -2341,7 +2341,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       )}
 
       {selectedPortfolioIds.size > 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           {selectedPortfolioIds.size} portfolio{selectedPortfolioIds.size !== 1 ? 's' : ''} selected
         </p>
       )}
@@ -2359,8 +2359,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Workflow Structure</h3>
-            <p className="text-sm text-gray-500 mt-0.5">Define how work progresses in each run.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow Structure</h3>
+            <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Define how work progresses in each run.</p>
           </div>
           {showBuilder && (
             <Button size="sm" variant="outline" onClick={handleAddStage} className="text-xs">
@@ -2376,7 +2376,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             {/* Template confirmation banner */}
             {activeTemplateMeta && (
               <div className="flex items-center justify-between px-3 py-2 mb-3 rounded-md bg-blue-50/40 border border-blue-100/60">
-                <p className="text-[11px] text-gray-600">
+                <p className="text-[11px] text-gray-600 dark:text-gray-400">
                   Using <span className="font-semibold">{activeTemplateMeta.label}</span> template ({activeTemplateMeta.count} stages)
                 </p>
                 <button
@@ -2406,7 +2406,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                         <button
                           type="button"
                           onClick={() => handleAddStageAt(index)}
-                          className="w-5 h-5 rounded-full border border-gray-200 bg-white flex items-center justify-center text-gray-300 hover:text-blue-500 hover:border-blue-300 transition-colors"
+                          className="w-5 h-5 rounded-full border border-gray-200 bg-white flex items-center justify-center text-gray-300 hover:text-blue-500 hover:border-blue-300 transition-colors dark:border-gray-700 dark:bg-gray-800"
                           title="Insert stage here"
                         >
                           <Plus className="w-3 h-3" />
@@ -2417,7 +2417,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                   )}
 
                   {/* Stage card */}
-                  <div className="bg-white border border-gray-150 rounded-lg hover:border-gray-250 transition-colors">
+                  <div className="bg-white border border-gray-150 rounded-lg hover:border-gray-250 transition-colors dark:bg-gray-800">
                     {/* ── Header row (always visible) ──────────── */}
                     <div
                       className="flex items-center px-3.5 py-2.5 cursor-pointer select-none"
@@ -2434,16 +2434,16 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                             value={stage.stage_label}
                             onChange={(e) => handleUpdateStage(stage.stage_key, { stage_label: e.target.value })}
                             onClick={(e) => e.stopPropagation()}
-                            className="font-semibold text-[15px] text-gray-900 bg-transparent border-0 border-b border-transparent focus:border-blue-400 focus:ring-0 px-0 py-0 w-full max-w-xs placeholder:text-gray-300"
+                            className="font-semibold text-[15px] text-gray-900 bg-transparent border-0 border-b border-transparent focus:border-blue-400 focus:ring-0 px-0 py-0 w-full max-w-xs placeholder:text-gray-300 dark:text-white"
                             placeholder="Stage name..."
                           />
                         ) : (
-                          <span className="font-semibold text-[15px] text-gray-900 truncate">
+                          <span className="font-semibold text-[15px] text-gray-900 truncate dark:text-white">
                             {stage.stage_label || <span className="text-gray-300 font-normal italic text-sm">Untitled stage</span>}
                           </span>
                         )}
                         {isLast && stages.length > 1 && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">Final</span>
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0 dark:text-gray-400 dark:bg-gray-800">Final</span>
                         )}
                         {stage.checklist_items.length > 0 && !isExpanded && (
                           <span className="text-[10px] text-gray-400 flex-shrink-0">{stage.checklist_items.length} criteria</span>
@@ -2464,7 +2464,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
                     {/* ── Expanded body ────────────────────────── */}
                     {isExpanded && (
-                      <div className="px-3.5 pb-3.5 pt-0 ml-[52px] space-y-3 border-t border-gray-100">
+                      <div className="px-3.5 pb-3.5 pt-0 ml-[52px] space-y-3 border-t border-gray-100 dark:border-gray-800">
                         {/* Description */}
                         <div className="pt-3">
                           <label className="block text-[11px] font-medium text-gray-400 mb-1">Description</label>
@@ -2472,7 +2472,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                             type="text"
                             value={stage.stage_description}
                             onChange={(e) => handleUpdateStage(stage.stage_key, { stage_description: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 placeholder:text-gray-300"
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 placeholder:text-gray-300 dark:border-gray-700 dark:text-gray-300"
                             placeholder="What happens in this stage?"
                           />
                         </div>
@@ -2487,7 +2487,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                                 min="1"
                                 value={stage.standard_deadline_days ?? ''}
                                 onChange={(e) => handleUpdateStage(stage.stage_key, { standard_deadline_days: e.target.value ? parseInt(e.target.value) : null })}
-                                className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 placeholder:text-gray-300"
+                                className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 placeholder:text-gray-300 dark:border-gray-700 dark:text-gray-300"
                                 placeholder="—"
                               />
                               <span className="text-xs text-gray-400 shrink-0">days</span>
@@ -2504,7 +2504,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                                   default_assignee_value: null,
                                 })
                               }}
-                              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 bg-white"
+                              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 bg-white dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                             >
                               <option value="none">None</option>
                               <option value="role">By Role</option>
@@ -2515,7 +2515,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                           <select
                             value={stage.default_assignee_value || ''}
                             onChange={(e) => handleUpdateStage(stage.stage_key, { default_assignee_value: e.target.value || null })}
-                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 bg-white"
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-400 text-sm text-gray-700 bg-white dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                           >
                             <option value="">Select a role...</option>
                             <option value="primary_analyst">Primary Analyst</option>
@@ -2546,7 +2546,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                                     className={`flex items-center gap-0.5 px-1 py-0 text-[9px] font-semibold rounded border flex-shrink-0 transition-colors ${
                                       itemType(item) === 'thinking'
                                         ? 'bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100'
-                                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                                     }`}
                                     title={`Click to switch to ${itemType(item) === 'thinking' ? 'Task' : 'Analysis'}`}
                                   >
@@ -2561,7 +2561,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                                       updated[itemIdx] = { text: e.target.value, item_type: itemType(item) }
                                       handleUpdateStage(stage.stage_key, { checklist_items: updated })
                                     }}
-                                    className="flex-1 px-2 py-1 border border-gray-150 rounded text-sm text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-400 placeholder:text-gray-300"
+                                    className="flex-1 px-2 py-1 border border-gray-150 rounded text-sm text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-400 placeholder:text-gray-300 dark:text-gray-300"
                                     placeholder={itemType(item) === 'thinking' ? "What question needs answering?" : "What task needs to be done?"}
                                   />
                                   <button
@@ -2611,7 +2611,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               <button
                 type="button"
                 onClick={handleAddStage}
-                className="flex items-center space-x-1.5 text-xs text-gray-400 hover:text-blue-600 transition-colors py-2 px-4 rounded-lg border border-dashed border-gray-200 hover:border-blue-300 hover:bg-blue-50/30"
+                className="flex items-center space-x-1.5 text-xs text-gray-400 hover:text-blue-600 transition-colors py-2 px-4 rounded-lg border border-dashed border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 dark:border-gray-700"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add stage</span>
@@ -2628,9 +2628,9 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
         ) : showCustomEmpty ? (
           /* ─── Custom workflow empty state ─────────────────── */
-          <div className="rounded-lg border border-gray-100 bg-gray-50/20 px-5 py-8 text-center">
+          <div className="rounded-lg border border-gray-100 bg-gray-50/20 px-5 py-8 text-center dark:border-gray-800">
             <Layers className="w-7 h-7 text-gray-300 mx-auto mb-2" />
-            <h4 className="text-sm font-semibold text-gray-800 mb-1">Start Designing Your Workflow</h4>
+            <h4 className="text-sm font-semibold text-gray-800 mb-1 dark:text-gray-100">Start Designing Your Workflow</h4>
             <p className="text-[11px] text-gray-400 mb-4">Add stages to define how work progresses.</p>
             <Button size="sm" onClick={handleAddStage}>
               <Plus className="w-3.5 h-3.5 mr-1" />
@@ -2640,7 +2640,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               <button
                 type="button"
                 onClick={() => setCustomWorkflowMode(false)}
-                className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
               >
                 Back to templates
               </button>
@@ -2648,22 +2648,22 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
         ) : (
           /* ─── Template / custom selection ─────────────────── */
-          <div className="rounded-lg border border-gray-100 bg-gray-50/20 px-5 py-4">
+          <div className="rounded-lg border border-gray-100 bg-gray-50/20 px-5 py-4 dark:border-gray-800">
             {/* Templates section — recommended path */}
             <div className="mb-4">
               <div className="flex items-center space-x-2 mb-2.5">
-                <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Templates</h4>
+                <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Templates</h4>
                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 uppercase tracking-wide">Recommended</span>
               </div>
               <div className="space-y-2">
                 {TEMPLATE_OPTIONS.map(t => (
                   <div
                     key={t.id}
-                    className="flex items-center justify-between px-3.5 py-3 rounded-lg border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all group"
+                    className="flex items-center justify-between px-3.5 py-3 rounded-lg border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{t.label}</span>
+                        <span className="text-sm font-semibold text-gray-800 group-hover:text-blue-700 transition-colors dark:text-gray-100">{t.label}</span>
                         <span className="text-[10px] text-gray-400">{t.count} stages</span>
                       </div>
                       <div className="flex items-center space-x-1 mt-1">
@@ -2699,21 +2699,21 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             <button
               type="button"
               onClick={() => setCustomWorkflowMode(true)}
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 transition-colors group"
+              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 transition-colors group dark:border-gray-700"
             >
               <Plus className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
               <div className="text-left">
-                <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 transition-colors">Create custom workflow</span>
+                <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 transition-colors dark:text-gray-300">Create custom workflow</span>
                 <span className="text-[10px] text-gray-400 block">Design stages manually.</span>
               </div>
             </button>
 
             {/* Required guardrail */}
-            <div className="mt-4 pt-3 border-t border-gray-100">
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
               <div className="flex items-start space-x-2">
                 <Info className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-medium text-gray-500">At least one stage is required</p>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">At least one stage is required</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">Select a template or create a custom workflow to continue.</p>
                 </div>
               </div>
@@ -2876,7 +2876,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           <button
             type="button"
             onClick={handleExitRuleBuilder}
-            className="flex items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors -mb-1"
+            className="flex items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors -mb-1 dark:hover:text-gray-200 dark:text-gray-400"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back to Automation</span>
@@ -2885,7 +2885,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           {/* Context badge */}
           <div className="flex items-center space-x-2">
             <categoryMeta.Icon className={`w-4 h-4 text-${categoryMeta.color}-500`} />
-            <span className="text-[13px] font-semibold text-gray-900">New {categoryMeta.label} Rule</span>
+            <span className="text-[13px] font-semibold text-gray-900 dark:text-white">New {categoryMeta.label} Rule</span>
           </div>
 
           {/* Embedded form */}
@@ -2931,8 +2931,8 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Automation & Triggers</h3>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Automation & Triggers</h3>
+          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
             {scopeType === 'asset'
               ? 'Define when runs start, how assets are added, and when runs complete.'
               : 'Define when runs start and when they complete.'}
@@ -2940,13 +2940,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         </div>
 
         {/* ─── Run Creation Rules ───────────────────────────── */}
-        <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden">
+        <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden dark:bg-gray-800">
           <div className="border-l-[3px] border-l-purple-400">
             <div className="flex items-center justify-between px-5 py-3.5">
               <div className="flex items-center space-x-2.5">
                 <GitBranch className="w-4 h-4 text-purple-500" />
                 <div>
-                  <h4 className="text-[13px] font-semibold text-gray-900">Run Creation</h4>
+                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Run Creation</h4>
                   <p className="text-[11px] text-gray-400">Controls how new runs are created.</p>
                 </div>
               </div>
@@ -2963,14 +2963,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             {branchRules.length > 0 ? (
               <div className="px-5 pb-3.5 space-y-1">
                 {branchRules.map((rule) => (
-                  <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors">
+                  <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                     <div className="min-w-0">
-                      <div className="text-[13px] font-medium text-gray-900">{rule.name}</div>
+                      <div className="text-[13px] font-medium text-gray-900 dark:text-white">{rule.name}</div>
                       <div className="text-[11px] text-gray-400 mt-0.5">{getRuleDescription(rule)}</div>
                     </div>
                     <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
                       {!rule.isActive && (
-                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Inactive</span>
+                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">Inactive</span>
                       )}
                       <button
                         type="button"
@@ -2994,13 +2994,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
         {/* ─── Asset Population Rules ──────────────────────── */}
         {scopeType === 'asset' && (
-          <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden">
+          <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden dark:bg-gray-800">
             <div className="border-l-[3px] border-l-blue-400">
               <div className="flex items-center justify-between px-5 py-3.5">
                 <div className="flex items-center space-x-2.5">
                   <Users className="w-4 h-4 text-blue-500" />
                   <div>
-                    <h4 className="text-[13px] font-semibold text-gray-900">Asset Population</h4>
+                    <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Asset Population</h4>
                     <p className="text-[11px] text-gray-400">Controls how assets enter each run.</p>
                   </div>
                 </div>
@@ -3017,14 +3017,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
               {assetRules.length > 0 ? (
                 <div className="px-5 pb-3.5 space-y-1">
                   {assetRules.map((rule) => (
-                    <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors">
+                    <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                       <div className="min-w-0">
-                        <div className="text-[13px] font-medium text-gray-900">{rule.name}</div>
+                        <div className="text-[13px] font-medium text-gray-900 dark:text-white">{rule.name}</div>
                         <div className="text-[11px] text-gray-400 mt-0.5">{getRuleDescription(rule)}</div>
                       </div>
                       <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
                         {!rule.isActive && (
-                          <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Inactive</span>
+                          <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">Inactive</span>
                         )}
                         <button
                           type="button"
@@ -3048,13 +3048,13 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         )}
 
         {/* ─── Run Ending Rules ────────────────────────────── */}
-        <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden">
+        <div className="rounded-lg border border-gray-200/80 bg-white overflow-hidden dark:bg-gray-800">
           <div className="border-l-[3px] border-l-rose-400">
             <div className="flex items-center justify-between px-5 py-3.5">
               <div className="flex items-center space-x-2.5">
                 <XCircle className="w-4 h-4 text-rose-500" />
                 <div>
-                  <h4 className="text-[13px] font-semibold text-gray-900">Run Ending</h4>
+                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Run Ending</h4>
                   <p className="text-[11px] text-gray-400">Controls how and when runs close.</p>
                 </div>
               </div>
@@ -3071,14 +3071,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
             {endingRules.length > 0 ? (
               <div className="px-5 pb-3.5 space-y-1">
                 {endingRules.map((rule) => (
-                  <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors">
+                  <div key={rule.id} className="flex items-center justify-between px-3 py-2.5 rounded-md group hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                     <div className="min-w-0">
-                      <div className="text-[13px] font-medium text-gray-900">{rule.name}</div>
+                      <div className="text-[13px] font-medium text-gray-900 dark:text-white">{rule.name}</div>
                       <div className="text-[11px] text-gray-400 mt-0.5">{getRuleDescription(rule)}</div>
                     </div>
                     <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
                       {!rule.isActive && (
-                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Inactive</span>
+                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">Inactive</span>
                       )}
                       <button
                         type="button"
@@ -3112,12 +3112,12 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
 
   return (
     <div className="fixed inset-x-0 top-24 bottom-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[calc(100vh-10rem)] overflow-hidden flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0 dark:border-gray-700">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Define New Process</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Define New Process</h2>
+            <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
               {currentStep === 0
                 ? 'Define the structural foundation of this process.'
                 : `Step ${currentStep + 1} of ${STEPS.length}`}
@@ -3125,14 +3125,14 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* Progress Steps */}
-        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex-shrink-0 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center justify-between">
             {STEPS.map((step, index) => {
               const Icon = step.icon
@@ -3156,7 +3156,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                         ? 'bg-blue-100 text-blue-700'
                         : isCompleted
                           ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                          : 'text-gray-400 hover:text-gray-600'
+                          : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
                     } ${index > currentStep ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
                   >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
@@ -3164,7 +3164,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
                         ? 'bg-blue-600 text-white'
                         : isCompleted
                           ? 'bg-green-600 text-white'
-                          : 'bg-gray-200 text-gray-600'
+                          : 'bg-gray-200 text-gray-600 dark:text-gray-400'
                     }`}>
                       {isCompleted ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
                     </div>
@@ -3190,7 +3190,7 @@ export function CreateWorkflowWizard({ onClose, onComplete }: CreateWorkflowWiza
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
+        <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           {/* Error Message */}
           {submitError && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">

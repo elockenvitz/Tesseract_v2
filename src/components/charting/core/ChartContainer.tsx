@@ -375,7 +375,7 @@ export function ChartContainer({
       <div className="absolute top-2 right-2 z-10 flex items-center space-x-1">
         <button
           onClick={zoomIn}
-          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors"
+          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
           title="Zoom In"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -384,7 +384,7 @@ export function ChartContainer({
         </button>
         <button
           onClick={zoomOut}
-          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors"
+          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
           title="Zoom Out"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,7 +393,7 @@ export function ChartContainer({
         </button>
         <button
           onClick={resetZoom}
-          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors"
+          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
           title="Reset Zoom"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -407,7 +407,7 @@ export function ChartContainer({
         <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-20">
           <div className="flex items-center space-x-2">
             <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-600">Loading chart data...</span>
+            <span className="text-gray-600 dark:text-gray-400">Loading chart data...</span>
           </div>
         </div>
       )}
@@ -419,7 +419,7 @@ export function ChartContainer({
             <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="text-gray-500">{error}</p>
+            <p className="text-gray-500 dark:text-gray-400">{error}</p>
           </div>
         </div>
       )}

@@ -30,8 +30,8 @@ export function DesktopOnlyCard({ type, title, onOpenSurface }: DesktopOnlyCardP
   return (
     <div className="h-full overflow-y-auto px-5 py-8">
       <div className="mx-auto w-full max-w-md">
-        <div className={clsx('w-14 h-14 rounded-2xl flex items-center justify-center mb-5', surface?.bg ?? 'bg-gray-100')}>
-          <Icon className={clsx('h-7 w-7', surface?.color ?? 'text-gray-500')} />
+        <div className={clsx('w-14 h-14 rounded-2xl flex items-center justify-center mb-5', surface?.bg ?? 'bg-gray-100 dark:bg-gray-800')}>
+          <Icon className={clsx('h-7 w-7', surface?.color ?? 'text-gray-500 dark:text-gray-400')} />
         </div>
 
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">

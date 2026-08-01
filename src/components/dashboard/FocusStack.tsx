@@ -285,7 +285,7 @@ function FocusNextList({
               {action && !item.meta?.isPairTrade && (
                 <span className={clsx(
                   'shrink-0 text-[12px] font-bold',
-                  ACTION_COLOR[action] ?? 'text-gray-500',
+                  ACTION_COLOR[action] ?? 'text-gray-500 dark:text-gray-400',
                 )}>
                   {action}
                 </span>

@@ -80,33 +80,33 @@ function TableOfContentsView({ editor, node, updateAttributes, selected }: NodeV
     <NodeViewWrapper className="toc-wrapper my-4" data-drag-handle>
       <div
         className={clsx(
-          'rounded-lg border bg-gray-50 overflow-hidden',
-          selected ? 'ring-2 ring-primary-500 border-primary-300' : 'border-gray-200'
+          'rounded-lg border bg-gray-50 overflow-hidden dark:bg-gray-900',
+          selected ? 'ring-2 ring-primary-500 border-primary-300' : 'border-gray-200 dark:border-gray-700'
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2 bg-gray-100 border-b border-gray-200">
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-100 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-2">
-            <List className="w-4 h-4 text-gray-600" />
+            <List className="w-4 h-4 text-gray-600 dark:text-gray-400" />
             <input
               type="text"
               value={title}
               onChange={(e) => updateAttributes({ title: e.target.value })}
-              className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none"
+              className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none dark:text-gray-100"
               placeholder="Table of Contents"
             />
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={extractHeadings}
-              className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded"
+              className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded dark:hover:text-gray-200 dark:text-gray-400"
               title="Refresh"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded"
+              className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded dark:hover:text-gray-200 dark:text-gray-400"
               title={isCollapsed ? 'Expand' : 'Collapse'}
             >
               <ChevronRight className={clsx('w-3.5 h-3.5 transition-transform', !isCollapsed && 'rotate-90')} />
@@ -118,7 +118,7 @@ function TableOfContentsView({ editor, node, updateAttributes, selected }: NodeV
         {!isCollapsed && (
           <div className="px-4 py-3">
             {tocItems.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">
+              <p className="text-sm text-gray-500 italic dark:text-gray-400">
                 No headings found. Add headings (H1, H2, H3) to your document.
               </p>
             ) : (
@@ -132,9 +132,9 @@ function TableOfContentsView({ editor, node, updateAttributes, selected }: NodeV
                       onClick={() => scrollToHeading(item.id)}
                       className={clsx(
                         'text-left text-sm hover:text-primary-600 hover:underline transition-colors w-full truncate',
-                        item.level === 1 && 'font-semibold text-gray-900',
-                        item.level === 2 && 'font-medium text-gray-800',
-                        item.level === 3 && 'text-gray-600'
+                        item.level === 1 && 'font-semibold text-gray-900 dark:text-white',
+                        item.level === 2 && 'font-medium text-gray-800 dark:text-gray-100',
+                        item.level === 3 && 'text-gray-600 dark:text-gray-400'
                       )}
                     >
                       {getNumbering(index, item.level)}{item.text}
@@ -148,13 +148,13 @@ function TableOfContentsView({ editor, node, updateAttributes, selected }: NodeV
 
         {/* Options */}
         {!isCollapsed && (
-          <div className="px-4 py-2 bg-gray-100 border-t border-gray-200 flex items-center gap-4">
-            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+          <div className="px-4 py-2 bg-gray-100 border-t border-gray-200 flex items-center gap-4 dark:border-gray-700 dark:bg-gray-800">
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer dark:text-gray-400">
               <input
                 type="checkbox"
                 checked={showNumbers}
                 onChange={(e) => updateAttributes({ showNumbers: e.target.checked })}
-                className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
               />
               Show numbers
             </label>

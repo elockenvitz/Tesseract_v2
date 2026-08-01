@@ -43,7 +43,7 @@ export function ThemeProcessesPanel({ themeId }: ThemeProcessesPanelProps) {
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse" />)}
+        {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse dark:bg-gray-800" />)}
       </div>
     )
   }
@@ -53,8 +53,8 @@ export function ThemeProcessesPanel({ themeId }: ThemeProcessesPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Process</h2>
-          <p className="text-xs text-gray-500">Recurring workflows applied to this theme.</p>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Process</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Recurring workflows applied to this theme.</p>
         </div>
         <Button size="sm" onClick={() => setShowPicker(true)} disabled={unjoined.length === 0}>
           <Plus className="w-4 h-4 mr-1" />
@@ -63,10 +63,10 @@ export function ThemeProcessesPanel({ themeId }: ThemeProcessesPanelProps) {
       </div>
 
       {joined.length === 0 ? (
-        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-8 text-center">
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600 dark:bg-gray-900">
           <ListChecks className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-700 font-medium">No processes yet</p>
-          <p className="text-xs text-gray-500 mt-1 mb-4">
+          <p className="text-sm text-gray-700 font-medium dark:text-gray-300">No processes yet</p>
+          <p className="text-xs text-gray-500 mt-1 mb-4 dark:text-gray-400">
             Attach a recurring process to run repeatedly against this theme (e.g., monthly refresh, catalyst review).
           </p>
           {unjoined.length > 0 ? (
@@ -75,7 +75,7 @@ export function ThemeProcessesPanel({ themeId }: ThemeProcessesPanelProps) {
               Add a process
             </Button>
           ) : (
-            <p className="text-xs text-gray-500 italic">
+            <p className="text-xs text-gray-500 italic dark:text-gray-400">
               No theme-scoped processes yet. Create one in <span className="font-medium">Processes</span> (top nav) with scope "Theme".
             </p>
           )}
@@ -137,16 +137,16 @@ function ThemeProcessCard({
   return (
     <div
       className={clsx(
-        'bg-white border border-gray-200 rounded-lg border-l-4 overflow-hidden transition-all',
+        'bg-white border border-gray-200 rounded-lg border-l-4 overflow-hidden transition-all dark:border-gray-700 dark:bg-gray-800',
         'hover:shadow-sm'
       )}
       style={{ borderLeftColor: workflow.color || '#3b82f6' }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 gap-3">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 gap-3 dark:border-gray-800">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">{workflow.name}</h3>
+            <h3 className="text-sm font-semibold text-gray-900 truncate dark:text-white">{workflow.name}</h3>
             {workflow.cadence_timeframe && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-700">
                 <Repeat className="w-2.5 h-2.5" /> {workflow.cadence_timeframe}
@@ -161,13 +161,13 @@ function ThemeProcessCard({
                 In progress
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800">
                 Not started
               </span>
             )}
           </div>
           {workflow.description && (
-            <p className="text-xs text-gray-500 truncate mt-0.5">{workflow.description}</p>
+            <p className="text-xs text-gray-500 truncate mt-0.5 dark:text-gray-400">{workflow.description}</p>
           )}
           {progress?.started_at && !isCompleted && (
             <p className="text-[11px] text-gray-400 mt-0.5">
@@ -251,7 +251,7 @@ function StageTile({
         'group shrink-0 min-w-[8rem] max-w-[12rem] border rounded-lg px-3 py-2 text-left transition-all',
         isActive && 'bg-primary-50 border-primary-300 ring-1 ring-primary-200',
         isCompleted && 'bg-emerald-50 border-emerald-200',
-        isUpcoming && 'bg-white border-gray-200 hover:border-gray-300',
+        isUpcoming && 'bg-white border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800',
       )}
       style={isActive && stage.stage_color ? { borderColor: stage.stage_color } : undefined}
     >
@@ -262,14 +262,14 @@ function StageTile({
           <div
             className={clsx(
               'w-3.5 h-3.5 rounded-full border-2 shrink-0',
-              isActive ? 'border-primary-500 bg-white' : 'border-gray-300'
+              isActive ? 'border-primary-500 bg-white dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600'
             )}
             style={isActive && stage.stage_color ? { borderColor: stage.stage_color } : undefined}
           />
         )}
         <span className={clsx(
           'text-xs font-medium truncate',
-          isActive ? 'text-primary-700' : isCompleted ? 'text-emerald-700' : 'text-gray-700'
+          isActive ? 'text-primary-700' : isCompleted ? 'text-emerald-700' : 'text-gray-700 dark:text-gray-300'
         )}>
           {label}
         </span>
@@ -308,13 +308,13 @@ function ProcessPickerModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full dark:bg-gray-800">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Add process to theme</h2>
-              <p className="text-xs text-gray-500">Pick a theme-scoped process to start running on this theme.</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add process to theme</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Pick a theme-scoped process to start running on this theme.</p>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -326,13 +326,13 @@ function ProcessPickerModal({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search processes..."
-                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-300 dark:border-gray-700 dark:bg-gray-800"
                 autoFocus
               />
             </div>
 
             {filtered.length === 0 ? (
-              <div className="text-center py-8 text-sm text-gray-500">
+              <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
                 {candidates.length === 0 ? (
                   <>
                     No theme-scoped processes available.{' '}
@@ -344,7 +344,7 @@ function ProcessPickerModal({
                 ) : 'No matches.'}
               </div>
             ) : (
-              <ul className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+              <ul className="divide-y divide-gray-100 max-h-80 overflow-y-auto dark:divide-gray-800">
                 {filtered.map(w => (
                   <li key={w.id} className="flex items-center gap-3 py-2">
                     <div
@@ -352,9 +352,9 @@ function ProcessPickerModal({
                       style={{ backgroundColor: w.color || '#3b82f6' }}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{w.name}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{w.name}</p>
                       {w.description && (
-                        <p className="text-xs text-gray-500 truncate">{w.description}</p>
+                        <p className="text-xs text-gray-500 truncate dark:text-gray-400">{w.description}</p>
                       )}
                     </div>
                     <Button size="sm" onClick={() => onPick(w.id)}>

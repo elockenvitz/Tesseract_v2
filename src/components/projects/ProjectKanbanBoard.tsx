@@ -12,7 +12,7 @@ interface ProjectKanbanBoardProps {
 }
 
 const STATUSES: { id: ProjectStatus; label: string; icon: any; color: string }[] = [
-  { id: 'planning', label: 'Planning', icon: Circle, color: 'bg-gray-100 text-gray-700' },
+  { id: 'planning', label: 'Planning', icon: Circle, color: 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800' },
   { id: 'in_progress', label: 'In Progress', icon: Clock, color: 'bg-blue-100 text-blue-700' },
   { id: 'blocked', label: 'Blocked', icon: AlertCircle, color: 'bg-red-100 text-red-700' },
   { id: 'completed', label: 'Completed', icon: CheckCircle, color: 'bg-green-100 text-green-700' }

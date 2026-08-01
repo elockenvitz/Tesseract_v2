@@ -72,8 +72,8 @@ export function StatCard({
             <Icon className={`w-6 h-6 ${colors.iconColor}`} />
           </div>
           <div className="ml-4">
-            <div className="text-2xl font-bold text-gray-900">{value}</div>
-            <div className="text-sm text-gray-500">{label}</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">{label}</div>
           </div>
         </div>
         {description && (

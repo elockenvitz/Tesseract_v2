@@ -44,7 +44,7 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
               </Badge>
               <button
                 onClick={() => setShowHistory(true)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors dark:hover:text-gray-300"
                 title={`View ${caseType} case history`}
               >
                 <History className="h-4 w-4" />
@@ -53,35 +53,35 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
             
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Price Target</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Price Target</label>
                 <EditableField
                   value={priceTarget?.price || ''}
                   onSave={(value) => onPriceTargetSave(caseType, 'price', value)}
                   placeholder="Set price"
                   type="number"
                   prefix="$"
-                  displayClassName="text-2xl font-bold text-gray-900 text-center"
-                  inputClassName="text-2xl font-bold text-gray-900 text-center"
+                  displayClassName="text-2xl font-bold text-gray-900 text-center dark:text-white"
+                  inputClassName="text-2xl font-bold text-gray-900 text-center dark:text-white"
                 />
               </div>
               
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Time Horizon</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Time Horizon</label>
                 <TimeHorizonSelector
                   value={priceTarget?.timeframe || ''}
                   onSave={(value) => onPriceTargetSave(caseType, 'timeframe', value)}
-                  displayClassName="text-sm text-gray-500 text-center"
+                  displayClassName="text-sm text-gray-500 text-center dark:text-gray-400"
                 />
               </div>
               
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Reasoning</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Reasoning</label>
                 <EditableField
                   value={priceTarget?.reasoning || ''}
                   onSave={(value) => onPriceTargetSave(caseType, 'reasoning', value)}
                   placeholder="Add reasoning..."
-                  displayClassName="text-xs text-gray-600 text-center min-h-[40px] flex items-center justify-center"
-                  inputClassName="text-xs text-gray-600 text-center min-h-[40px]"
+                  displayClassName="text-xs text-gray-600 text-center min-h-[40px] flex items-center justify-center dark:text-gray-400"
+                  inputClassName="text-xs text-gray-600 text-center min-h-[40px] dark:text-gray-400"
                 />
               </div>
             </div>
@@ -95,16 +95,16 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
         showHistory ? "transform translate-x-0" : "transform translate-x-full"
       )}>
         <div className="h-full flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-2">
               <Badge variant={getCaseVariant(caseType)} size="sm">
                 {getCaseLabel(caseType)}
               </Badge>
-              <span className="text-sm font-medium text-gray-700">History</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">History</span>
             </div>
             <button
               onClick={() => setShowHistory(false)}
-              className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors dark:hover:text-gray-300"
               title="Back to price target"
             >
               <ArrowLeft className="h-4 w-4" />

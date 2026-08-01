@@ -85,7 +85,7 @@ export function ListUserFilter({
           'flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors',
           isOpen
             ? 'border-blue-300 bg-blue-50 text-blue-700'
-            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
         )}
       >
         <Users className="h-4 w-4" />
@@ -97,7 +97,7 @@ export function ListUserFilter({
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+        <div className="absolute left-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
           {/* All Users option */}
           <button
             onClick={() => {
@@ -105,7 +105,7 @@ export function ListUserFilter({
               setIsOpen(false)
             }}
             className={clsx(
-              'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50',
+              'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800',
               selectedUserId === 'all' && 'bg-blue-50 text-blue-700'
             )}
           >
@@ -113,7 +113,7 @@ export function ListUserFilter({
             <span>All Users</span>
           </button>
 
-          <div className="border-t border-gray-100 my-1" />
+          <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
 
           {/* Individual user options */}
           {sortedUsers.map((user) => {
@@ -128,7 +128,7 @@ export function ListUserFilter({
                   setIsOpen(false)
                 }}
                 className={clsx(
-                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50',
+                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                   isSelected && 'bg-blue-50 text-blue-700'
                 )}
               >

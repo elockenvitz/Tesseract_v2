@@ -1303,7 +1303,7 @@ function PairPortfolioGroupRow({
           </button>
           <button
             onClick={() => { setRejectingLegId(null); setLegRejectReason('') }}
-            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 shrink-0"
+            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 shrink-0 dark:hover:text-gray-200 dark:text-gray-400"
           >
             Cancel
           </button>
@@ -1336,7 +1336,7 @@ function PairPortfolioGroupRow({
           ))}
           <button
             onClick={() => setDeferringLegId(null)}
-            className="ml-auto px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 shrink-0"
+            className="ml-auto px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 shrink-0 dark:hover:text-gray-200 dark:text-gray-400"
           >
             Cancel
           </button>
@@ -1490,7 +1490,7 @@ function PairPortfolioGroupRow({
           ))}
           <button
             onClick={() => setDeferringTile(false)}
-            className="ml-auto px-1.5 py-0.5 text-[11px] text-gray-500 hover:text-gray-700 shrink-0"
+            className="ml-auto px-1.5 py-0.5 text-[11px] text-gray-500 hover:text-gray-700 shrink-0 dark:hover:text-gray-200 dark:text-gray-400"
           >
             Cancel
           </button>
@@ -1815,7 +1815,7 @@ function PortfolioRow({
             })}
           </div>
         ) : (
-          <p className="text-xs text-gray-500 italic flex items-center gap-1.5">
+          <p className="text-xs text-gray-500 italic flex items-center gap-1.5 dark:text-gray-400">
             <span>{actionLabel}</span>
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <span>{portfolioName}</span>
@@ -1941,7 +1941,7 @@ function PortfolioRow({
             </button>
             <button
               onClick={() => setAcceptMode(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:bg-white/80 dark:hover:bg-gray-700 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:bg-white/80 dark:hover:bg-gray-700 transition-colors dark:text-gray-400"
             >
               Cancel
             </button>
@@ -1987,7 +1987,7 @@ function PortfolioRow({
             </button>
             <button
               onClick={() => setRejectMode(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:bg-white/80 dark:hover:bg-gray-700 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:bg-white/80 dark:hover:bg-gray-700 transition-colors dark:text-gray-400"
             >
               Cancel
             </button>

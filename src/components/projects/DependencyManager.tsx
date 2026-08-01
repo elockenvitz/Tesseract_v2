@@ -211,7 +211,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
 
   const getStatusIcon = (status: ProjectStatus) => {
     switch (status) {
-      case 'planning': return <Circle className="w-4 h-4 text-gray-500" />
+      case 'planning': return <Circle className="w-4 h-4 text-gray-500 dark:text-gray-400" />
       case 'in_progress': return <Clock className="w-4 h-4 text-blue-500" />
       case 'blocked': return <AlertCircle className="w-4 h-4 text-red-500" />
       case 'completed': return <CheckCircle className="w-4 h-4 text-green-500" />
@@ -345,7 +345,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                     {dep.depends_on_deliverable?.title}
                   </p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                   from {dep.depends_on_deliverable?.project?.title}
                 </p>
               </div>
@@ -370,7 +370,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                 removeDependency(dep.id)
               }}
               className={clsx(
-                isBlocker && !isComplete ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : 'text-gray-500 hover:text-red-600'
+                isBlocker && !isComplete ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : 'text-gray-500 hover:text-red-600 dark:text-gray-400'
               )}
               disabled={isRemovingDependency}
             >
@@ -392,7 +392,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Blocked By
             </h3>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
               ({blockedBy.length})
             </span>
             <span className="text-sm text-gray-400 dark:text-gray-500">
@@ -434,7 +434,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Blocking
           </h3>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
             ({blocking.length})
           </span>
           <span className="text-sm text-gray-400 dark:text-gray-500">
@@ -495,7 +495,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Related
             </h3>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
               ({related.length})
             </span>
             <span className="text-sm text-gray-400 dark:text-gray-500">
@@ -638,9 +638,9 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                               className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                             >
                               {isExpanded ? (
-                                <ChevronDown className="w-4 h-4 text-gray-500" />
+                                <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                               ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                                <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                               )}
                             </button>
                           ) : (
@@ -760,9 +760,9 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                               className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                             >
                               {isExpanded ? (
-                                <ChevronDown className="w-4 h-4 text-gray-500" />
+                                <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                               ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                                <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                               )}
                             </button>
                             <FolderKanban className="w-4 h-4 text-gray-400" />
@@ -826,7 +826,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
                     })}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   {searchQuery
                     ? 'No projects or deliverables match your search'
                     : 'No available projects or deliverables to link'}

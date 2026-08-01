@@ -47,7 +47,7 @@ const OUTCOME_ICON: Record<string, { icon: React.ElementType; color: string }> =
   executed: { icon: CheckCircle2, color: 'text-emerald-600' },
   accepted: { icon: CheckCircle2, color: 'text-emerald-600' },
   rejected: { icon: XCircle, color: 'text-red-500' },
-  deferred: { icon: Clock, color: 'text-gray-500' },
+  deferred: { icon: Clock, color: 'text-gray-500 dark:text-gray-400' },
 }
 
 function getInitials(creator: { first_name: string | null; last_name: string | null } | null): string {

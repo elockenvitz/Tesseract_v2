@@ -168,34 +168,34 @@ export function ProjectsFilterToolbar({
   const hasPriorityFilter = priorityFilter !== 'all'
 
   return (
-    <div className="flex-shrink-0 border-b border-gray-200 bg-white sticky top-0 z-10">
+    <div className="flex-shrink-0 border-b border-gray-200 bg-white sticky top-0 z-10 dark:border-gray-700 dark:bg-gray-800">
       {/* Row 1: Title + assignment + view mode + create */}
       <div className="px-4 pt-3 pb-1.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
               onClick={onToggleSidebar}
-              className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
               title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
             >
               {showSidebar
                 ? <ChevronLeft className="w-4 h-4 text-gray-400" />
                 : <ChevronRight className="w-4 h-4 text-gray-400" />}
             </button>
-            <h1 className="text-[15px] font-semibold text-gray-900">Projects</h1>
+            <h1 className="text-[15px] font-semibold text-gray-900 dark:text-white">Projects</h1>
             <span className="text-[11px] text-gray-400 tabular-nums">({projectCount})</span>
           </div>
 
           <div className="flex items-center gap-2">
             {/* Assignment toggle */}
-            <div className="flex items-center bg-gray-100 rounded-md p-0.5 text-[12px] font-medium">
+            <div className="flex items-center bg-gray-100 rounded-md p-0.5 text-[12px] font-medium dark:bg-gray-800">
               <button
                 onClick={() => onAssignmentFilterChange('all')}
                 className={clsx(
                   'px-2.5 py-1 rounded transition-colors',
                   assignmentFilter === 'all'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
               >
                 All
@@ -205,8 +205,8 @@ export function ProjectsFilterToolbar({
                 className={clsx(
                   'px-2.5 py-1 rounded transition-colors',
                   assignmentFilter === 'created'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
               >
                 My Projects
@@ -216,8 +216,8 @@ export function ProjectsFilterToolbar({
                 className={clsx(
                   'px-2.5 py-1 rounded transition-colors flex items-center gap-1',
                   assignmentFilter === 'assigned'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
               >
                 <User className="w-3 h-3" />
@@ -226,7 +226,7 @@ export function ProjectsFilterToolbar({
             </div>
 
             {/* View mode */}
-            <div className="flex items-center bg-gray-100 rounded-md p-0.5">
+            <div className="flex items-center bg-gray-100 rounded-md p-0.5 dark:bg-gray-800">
               {([
                 { mode: 'list' as ViewMode, icon: LayoutList, title: 'List view' },
                 { mode: 'board' as ViewMode, icon: LayoutGrid, title: 'Board view' },
@@ -237,8 +237,8 @@ export function ProjectsFilterToolbar({
                   className={clsx(
                     'p-1.5 rounded transition-colors',
                     viewMode === mode && assignmentFilter !== 'assigned'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-400 hover:text-gray-600'
+                      ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                      : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
                   )}
                   title={title}
                 >
@@ -265,15 +265,15 @@ export function ProjectsFilterToolbar({
               className={clsx(
                 'flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] border rounded-md transition-colors',
                 hasStatusFilter
-                  ? 'text-gray-800 border-gray-300 bg-gray-50'
-                  : 'text-gray-500 border-gray-200 hover:text-gray-700'
+                  ? 'text-gray-800 border-gray-300 bg-gray-50 dark:border-gray-600 dark:text-gray-100 dark:bg-gray-900'
+                  : 'text-gray-500 border-gray-200 hover:text-gray-700 dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400'
               )}
             >
               {currentStatusLabel}
               <ChevronDown className={clsx('w-3 h-3 transition-transform', openDd === 'status' && 'rotate-180')} />
             </button>
             {openDd === 'status' && (
-              <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[150px]">
+              <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[150px] dark:border-gray-700 dark:bg-gray-800">
                 {STATUS_OPTIONS.map(opt => {
                   const isArchived = opt.viewFilter === 'archived'
                   const isActive = isArchived
@@ -289,8 +289,8 @@ export function ProjectsFilterToolbar({
                       className={clsx(
                         'w-full px-3 py-[6px] text-left text-[12px] transition-colors',
                         (isActive || isAllActive)
-                          ? 'bg-gray-50 text-gray-900 font-medium'
-                          : 'text-gray-600 hover:bg-gray-50'
+                          ? 'bg-gray-50 text-gray-900 font-medium dark:text-white dark:bg-gray-900'
+                          : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
                       )}
                     >
                       {opt.label}
@@ -309,22 +309,22 @@ export function ProjectsFilterToolbar({
             className={clsx(
               'flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] border rounded-md transition-colors',
               hasPriorityFilter
-                ? 'text-gray-800 border-gray-300 bg-gray-50'
-                : 'text-gray-500 border-gray-200 hover:text-gray-700'
+                ? 'text-gray-800 border-gray-300 bg-gray-50 dark:border-gray-600 dark:text-gray-100 dark:bg-gray-900'
+                : 'text-gray-500 border-gray-200 hover:text-gray-700 dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400'
             )}
           >
             {currentPriorityLabel}
             <ChevronDown className={clsx('w-3 h-3 transition-transform', openDd === 'priority' && 'rotate-180')} />
           </button>
           {openDd === 'priority' && (
-            <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]">
+            <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px] dark:border-gray-700 dark:bg-gray-800">
               <button
                 onClick={() => handlePrioritySelect('all')}
                 className={clsx(
                   'w-full px-3 py-[6px] text-left text-[12px] transition-colors',
                   priorityFilter === 'all'
-                    ? 'bg-gray-50 text-gray-900 font-medium'
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? 'bg-gray-50 text-gray-900 font-medium dark:text-white dark:bg-gray-900'
+                    : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
                 )}
               >
                 All priorities
@@ -336,8 +336,8 @@ export function ProjectsFilterToolbar({
                   className={clsx(
                     'w-full px-3 py-[6px] text-left text-[12px] transition-colors',
                     priorityFilter === p.id
-                      ? 'bg-gray-50 text-gray-900 font-medium'
-                      : 'text-gray-600 hover:bg-gray-50'
+                      ? 'bg-gray-50 text-gray-900 font-medium dark:text-white dark:bg-gray-900'
+                      : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
                   )}
                 >
                   {p.label}
@@ -351,13 +351,13 @@ export function ProjectsFilterToolbar({
         <div className="relative flex-shrink-0">
           <button
             onClick={() => toggleDd('sort')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md transition-colors dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400"
           >
             {selectedSort.label}
             <ChevronDown className={clsx('w-3 h-3 transition-transform', openDd === 'sort' && 'rotate-180')} />
           </button>
           {openDd === 'sort' && (
-            <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[170px]">
+            <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[170px] dark:border-gray-700 dark:bg-gray-800">
               {SORT_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
@@ -365,8 +365,8 @@ export function ProjectsFilterToolbar({
                   className={clsx(
                     'w-full px-3 py-[6px] text-left text-[12px] transition-colors',
                     sortValue === opt.value
-                      ? 'bg-gray-50 text-gray-900 font-medium'
-                      : 'text-gray-600 hover:bg-gray-50'
+                      ? 'bg-gray-50 text-gray-900 font-medium dark:text-white dark:bg-gray-900'
+                      : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
                   )}
                 >
                   {opt.label}
@@ -388,12 +388,12 @@ export function ProjectsFilterToolbar({
             placeholder="Search...  /"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-[12px] bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 placeholder:text-gray-400"
+            className="w-full pl-8 pr-3 py-1.5 text-[12px] bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900"
           />
           {searchQuery && (
             <button
               onClick={() => onSearchQueryChange('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <span className="sr-only">Clear</span>
               <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">

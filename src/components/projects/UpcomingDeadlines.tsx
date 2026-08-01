@@ -80,7 +80,7 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
       case 'this_week':
         return { label: `Due ${format(date, 'EEEE')}`, color: 'text-primary-600 bg-primary-50', icon: Calendar }
       default:
-        return { label: `Due ${format(date, 'MMM d')}`, color: 'text-gray-600 bg-gray-50', icon: Calendar }
+        return { label: `Due ${format(date, 'MMM d')}`, color: 'text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-900', icon: Calendar }
     }
   }
 
@@ -100,8 +100,8 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
     return (
       <Card>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Upcoming Deadlines</h2>
-          <p className="text-sm text-gray-500">Projects due soon</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Upcoming Deadlines</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Projects due soon</p>
         </div>
         <div className="animate-pulse space-y-3">
           <div className="h-16 bg-gray-200 rounded"></div>
@@ -119,8 +119,8 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
       <div className="mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Upcoming Deadlines</h2>
-            <p className="text-sm text-gray-500">Projects due soon</p>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Upcoming Deadlines</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Projects due soon</p>
           </div>
           {totalUpcoming > 0 && (
             <Badge variant="primary">{totalUpcoming}</Badge>
@@ -159,12 +159,12 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
                       <div
                         key={project.id}
                         onClick={() => onProjectSelect?.(project)}
-                        className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                        className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
                       >
                         <div className="flex items-start justify-between mb-1">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
-                              <span className="font-semibold text-gray-900 truncate text-sm">
+                              <span className="font-semibold text-gray-900 truncate text-sm dark:text-white">
                                 {project.title}
                               </span>
                               <Badge variant={getPriorityColor(project.priority)} size="sm">
@@ -172,7 +172,7 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
                               </Badge>
                             </div>
                             {project.description && (
-                              <p className="text-xs text-gray-600 line-clamp-1 mt-1">
+                              <p className="text-xs text-gray-600 line-clamp-1 mt-1 dark:text-gray-400">
                                 {project.description}
                               </p>
                             )}
@@ -180,7 +180,7 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
                         </div>
 
                         <div className="flex items-center justify-between text-xs mt-2">
-                          <div className="flex items-center space-x-2 text-gray-600">
+                          <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400">
                             <Clock className="h-3 w-3" />
                             <span>
                               {project.due_date && formatDistanceToNow(new Date(project.due_date), { addSuffix: true })}
@@ -188,7 +188,7 @@ export function UpcomingDeadlines({ onProjectSelect }: UpcomingDeadlinesProps) {
                           </div>
 
                           {totalDeliverables > 0 && (
-                            <div className="text-gray-600">
+                            <div className="text-gray-600 dark:text-gray-400">
                               {completedDeliverables}/{totalDeliverables} tasks
                             </div>
                           )}

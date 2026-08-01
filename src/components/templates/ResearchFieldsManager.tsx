@@ -279,7 +279,7 @@ const WIDGET_TYPE_COLORS: Record<string, { bg: string; border: string; accent: s
   date:          { bg: 'bg-cyan-50/60',     border: 'border-l-cyan-400',    accent: 'text-cyan-600' },
   chart:         { bg: 'bg-indigo-50/60',   border: 'border-l-indigo-400',  accent: 'text-indigo-600' },
 }
-const DEFAULT_WIDGET_COLORS = { bg: 'bg-gray-50/60', border: 'border-l-gray-400', accent: 'text-gray-600' }
+const DEFAULT_WIDGET_COLORS = { bg: 'bg-gray-50/60', border: 'border-l-gray-400', accent: 'text-gray-600 dark:text-gray-400' }
 
 /** Static preview mockup for each widget type — mirrors real renderer visuals */
 function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<string, unknown> }) {
@@ -290,7 +290,7 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
           <div className="h-2 bg-gray-200 rounded w-full" />
           <div className="h-2 bg-gray-200 rounded w-[90%]" />
           <div className="h-2 bg-gray-200 rounded w-[75%]" />
-          <div className="h-2 bg-gray-100 rounded w-[60%]" />
+          <div className="h-2 bg-gray-100 rounded w-[60%] dark:bg-gray-800" />
         </div>
       )
     case 'checklist':
@@ -298,10 +298,10 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
         <div className="space-y-1 px-1">
           {['Due diligence review', 'Management call', 'Model update'].map((t, i) => (
             <div key={i} className="flex items-center gap-1.5">
-              <div className={clsx('w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center', i === 0 ? 'bg-green-500 border-green-500' : 'border-gray-300')}>
+              <div className={clsx('w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center', i === 0 ? 'bg-green-500 border-green-500' : 'border-gray-300 dark:border-gray-600')}>
                 {i === 0 && <Check className="w-2 h-2 text-white" />}
               </div>
-              <span className={clsx('text-[10px]', i === 0 ? 'line-through text-gray-400' : 'text-gray-600')}>{t}</span>
+              <span className={clsx('text-[10px]', i === 0 ? 'line-through text-gray-400' : 'text-gray-600 dark:text-gray-400')}>{t}</span>
             </div>
           ))}
         </div>
@@ -309,14 +309,14 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
     case 'numeric':
       return (
         <div className="flex items-center gap-2 px-1">
-          <span className="text-lg font-bold text-gray-800">8.5</span>
+          <span className="text-lg font-bold text-gray-800 dark:text-gray-100">8.5</span>
           <span className="text-[10px] text-gray-400">x</span>
         </div>
       )
     case 'metric':
       return (
-        <div className="p-1.5 bg-gray-50 rounded">
-          <div className="text-lg font-bold text-gray-800">24.3%</div>
+        <div className="p-1.5 bg-gray-50 rounded dark:bg-gray-900">
+          <div className="text-lg font-bold text-gray-800 dark:text-gray-100">24.3%</div>
           <div className="flex items-center gap-1 mt-0.5">
             <TrendingUp className="w-3 h-3 text-green-500" />
             <span className="text-[10px] text-green-600">+2.1%</span>
@@ -325,8 +325,8 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       )
     case 'percentage':
       return (
-        <div className="p-1.5 bg-gray-50 rounded">
-          <div className="text-lg font-bold text-gray-800">65.0%</div>
+        <div className="p-1.5 bg-gray-50 rounded dark:bg-gray-900">
+          <div className="text-lg font-bold text-gray-800 dark:text-gray-100">65.0%</div>
           <div className="w-full h-1.5 bg-gray-200 rounded-full mt-1">
             <div className="h-full bg-primary-500 rounded-full" style={{ width: '65%' }} />
           </div>
@@ -334,8 +334,8 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       )
     case 'currency':
       return (
-        <div className="p-1.5 bg-gray-50 rounded">
-          <div className="text-lg font-bold text-gray-800">$150.00</div>
+        <div className="p-1.5 bg-gray-50 rounded dark:bg-gray-900">
+          <div className="text-lg font-bold text-gray-800 dark:text-gray-100">$150.00</div>
           <span className="text-[10px] text-gray-400">{(config?.currency_code as string) || 'USD'}</span>
         </div>
       )
@@ -343,7 +343,7 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       return (
         <div className="flex items-center gap-1.5 px-1">
           <Calendar className="w-3.5 h-3.5 text-gray-400" />
-          <span className="text-sm text-gray-700">Feb 28, 2026</span>
+          <span className="text-sm text-gray-700 dark:text-gray-300">Feb 28, 2026</span>
         </div>
       )
     case 'timeline':
@@ -363,8 +363,8 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       return (
         <div className="space-y-1 px-1">
           {opts.slice(0, 3).map((opt, i) => (
-            <div key={i} className={clsx('flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px]', i === 0 ? 'bg-primary-50 border border-primary-200 text-primary-700' : 'bg-gray-50 border border-gray-200 text-gray-500')}>
-              <div className={clsx('w-2.5 h-2.5 rounded-full border-2 flex items-center justify-center flex-shrink-0', i === 0 ? 'border-primary-500' : 'border-gray-300')}>
+            <div key={i} className={clsx('flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px]', i === 0 ? 'bg-primary-50 border border-primary-200 text-primary-700' : 'bg-gray-50 border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900')}>
+              <div className={clsx('w-2.5 h-2.5 rounded-full border-2 flex items-center justify-center flex-shrink-0', i === 0 ? 'border-primary-500' : 'border-gray-300 dark:border-gray-600')}>
                 {i === 0 && <div className="w-1 h-1 rounded-full bg-primary-500" />}
               </div>
               {opt}
@@ -378,7 +378,7 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       return (
         <div className="flex flex-wrap gap-1 px-1">
           {opts.slice(0, 4).map((opt, i) => (
-            <span key={i} className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', i < 2 ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500')}>
+            <span key={i} className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium', i < 2 ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800')}>
               {opt}
             </span>
           ))}
@@ -389,9 +389,9 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       return (
         <div className="flex items-center gap-2 px-1">
           <div className="relative w-8 h-4 rounded-full bg-primary-500">
-            <span className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full translate-x-4" />
+            <span className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full translate-x-4 dark:bg-gray-800" />
           </div>
-          <span className="text-[11px] font-medium text-gray-700">{(config?.true_label as string) || 'Yes'}</span>
+          <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300">{(config?.true_label as string) || 'Yes'}</span>
         </div>
       )
     case 'rating':
@@ -408,7 +408,7 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
         <div className="px-1 py-1">
           <div className="w-full h-1.5 bg-gray-200 rounded-full relative">
             <div className="h-full bg-primary-500 rounded-full" style={{ width: '60%' }} />
-            <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-2 border-primary-500 rounded-full" style={{ left: 'calc(60% - 6px)' }} />
+            <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white border-2 border-primary-500 rounded-full dark:bg-gray-800" style={{ left: 'calc(60% - 6px)' }} />
           </div>
           <div className="flex justify-between mt-0.5">
             <span className="text-[9px] text-gray-400">0</span>
@@ -420,14 +420,14 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       const cols = (config?.columns as { key: string; label: string }[]) ?? [{ key: 'c1', label: 'Column 1' }, { key: 'c2', label: 'Column 2' }]
       return (
         <div className="px-1 overflow-hidden">
-          <div className="border border-gray-200 rounded text-[9px]">
-            <div className="flex bg-gray-50 border-b border-gray-200">
+          <div className="border border-gray-200 rounded text-[9px] dark:border-gray-700">
+            <div className="flex bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               {cols.slice(0, 3).map((c, i) => (
-                <div key={i} className="flex-1 px-1.5 py-0.5 font-medium text-gray-600 truncate">{c.label}</div>
+                <div key={i} className="flex-1 px-1.5 py-0.5 font-medium text-gray-600 truncate dark:text-gray-400">{c.label}</div>
               ))}
             </div>
             {[0, 1].map(r => (
-              <div key={r} className={clsx('flex', r === 0 && 'border-b border-gray-100')}>
+              <div key={r} className={clsx('flex', r === 0 && 'border-b border-gray-100 dark:border-gray-800')}>
                 {cols.slice(0, 3).map((_, i) => (
                   <div key={i} className="flex-1 px-1.5 py-0.5 text-gray-400">—</div>
                 ))}
@@ -441,15 +441,15 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
       const scenarios = (config?.scenarios as { label: string }[]) ?? [{ label: 'Bear' }, { label: 'Base' }, { label: 'Bull' }]
       return (
         <div className="px-1 overflow-hidden">
-          <div className="border border-gray-200 rounded text-[9px]">
-            <div className="flex bg-gray-50 border-b border-gray-200">
-              <div className="w-12 px-1 py-0.5 font-medium text-gray-500" />
+          <div className="border border-gray-200 rounded text-[9px] dark:border-gray-700">
+            <div className="flex bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <div className="w-12 px-1 py-0.5 font-medium text-gray-500 dark:text-gray-400" />
               {scenarios.slice(0, 3).map((s, i) => (
-                <div key={i} className="flex-1 px-1 py-0.5 font-medium text-gray-600 text-center truncate">{s.label}</div>
+                <div key={i} className="flex-1 px-1 py-0.5 font-medium text-gray-600 text-center truncate dark:text-gray-400">{s.label}</div>
               ))}
             </div>
-            <div className="flex border-b border-gray-100">
-              <div className="w-12 px-1 py-0.5 text-gray-500">Price</div>
+            <div className="flex border-b border-gray-100 dark:border-gray-800">
+              <div className="w-12 px-1 py-0.5 text-gray-500 dark:text-gray-400">Price</div>
               {scenarios.slice(0, 3).map((_, i) => (
                 <div key={i} className="flex-1 px-1 py-0.5 text-gray-400 text-center">—</div>
               ))}
@@ -463,7 +463,7 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
         <div className="space-y-1 px-1">
           {['Management', 'Moat'].map((label, i) => (
             <div key={i} className="flex items-center justify-between">
-              <span className="text-[10px] text-gray-600">{label}</span>
+              <span className="text-[10px] text-gray-600 dark:text-gray-400">{label}</span>
               <div className="flex gap-0.5">
                 {Array.from({ length: 5 }, (_, j) => (
                   <div key={j} className={clsx('w-2 h-2 rounded-sm', j < (i === 0 ? 4 : 3) ? 'bg-primary-400' : 'bg-gray-200')} />
@@ -476,15 +476,15 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
     case 'spreadsheet':
       return (
         <div className="px-1">
-          <div className="border border-gray-200 rounded text-[9px]">
-            <div className="grid grid-cols-3 bg-gray-50 border-b border-gray-200">
+          <div className="border border-gray-200 rounded text-[9px] dark:border-gray-700">
+            <div className="grid grid-cols-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               {['A', 'B', 'C'].map(c => (
-                <div key={c} className="px-1.5 py-0.5 font-medium text-gray-500 text-center border-r border-gray-200 last:border-r-0">{c}</div>
+                <div key={c} className="px-1.5 py-0.5 font-medium text-gray-500 text-center border-r border-gray-200 last:border-r-0 dark:border-gray-700 dark:text-gray-400">{c}</div>
               ))}
             </div>
             <div className="grid grid-cols-3">
               {['100', '200', '=SUM'].map((v, i) => (
-                <div key={i} className="px-1.5 py-0.5 text-gray-400 text-center border-r border-gray-100 last:border-r-0">{v}</div>
+                <div key={i} className="px-1.5 py-0.5 text-gray-400 text-center border-r border-gray-100 last:border-r-0 dark:border-gray-800">{v}</div>
               ))}
             </div>
           </div>
@@ -515,7 +515,7 @@ function WidgetPreviewMockup({ type, config }: { type: string; config?: Record<s
     default:
       return (
         <div className="px-1">
-          <div className="h-2 bg-gray-100 rounded w-3/4" />
+          <div className="h-2 bg-gray-100 rounded w-3/4 dark:bg-gray-800" />
         </div>
       )
   }
@@ -538,25 +538,25 @@ function BuilderWidgetCell({ widget, isSelected, isHovered, onSelect, onRemove, 
         'h-full rounded-lg border-2 border-l-4 flex flex-col cursor-pointer group/cell transition-all',
         isLinked ? 'border-l-primary-400' : colors.border,
         isSelected
-          ? 'border-primary-400 bg-white shadow-lg shadow-primary-100'
+          ? 'border-primary-400 bg-white shadow-lg shadow-primary-100 dark:bg-gray-800'
           : isHovered
             ? 'border-primary-300 bg-primary-50/20 shadow-md'
-            : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm hover:shadow-md'
+            : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm hover:shadow-md dark:border-gray-700 dark:bg-gray-800'
       )}
     >
       {/* Header bar with grip + label */}
       <div className={clsx(
         'flex items-center gap-1.5 px-2 py-1 border-b flex-shrink-0 rounded-t-md',
-        isSelected ? 'bg-primary-50/50 border-primary-100' : 'bg-gray-50/80 border-gray-100'
+        isSelected ? 'bg-primary-50/50 border-primary-100' : 'bg-gray-50/80 border-gray-100 dark:border-gray-800'
       )}>
         {isLinked ? (
           <Link2 className="w-3 h-3 flex-shrink-0 text-primary-400" />
         ) : (
           <FieldTypeIcon type={widget.type} className={clsx('w-3 h-3 flex-shrink-0', colors.accent)} />
         )}
-        <span className="text-[11px] font-semibold text-gray-800 truncate flex-1">{widget.label}</span>
+        <span className="text-[11px] font-semibold text-gray-800 truncate flex-1 dark:text-gray-100">{widget.label}</span>
         {layoutItem && (
-          <span className="text-[8px] font-mono text-gray-400 bg-gray-100 px-1 py-0.5 rounded flex-shrink-0">
+          <span className="text-[8px] font-mono text-gray-400 bg-gray-100 px-1 py-0.5 rounded flex-shrink-0 dark:bg-gray-800">
             {layoutItem.w}&times;{layoutItem.h}
           </span>
         )}
@@ -611,7 +611,7 @@ const BUILDER_GRID_STYLES = `
 function PresetLayoutPreview({ preset }: { preset: typeof CONTAINER_PRESETS[number] }) {
   const maxY = preset.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0)
   return (
-    <div className="relative w-full bg-gray-100 rounded overflow-hidden" style={{ height: 32, marginTop: 4 }}>
+    <div className="relative w-full bg-gray-100 rounded overflow-hidden dark:bg-gray-800" style={{ height: 32, marginTop: 4 }}>
       {preset.layout.map((l, i) => {
         const colors = WIDGET_TYPE_COLORS[preset.widgets[i]?.type] ?? DEFAULT_WIDGET_COLORS
         return (
@@ -671,7 +671,7 @@ function SortableField({ field, sectionId, isVisible, readOnly, onToggleVisibili
       style={style}
       className={clsx(
         'flex items-center min-h-[36px] py-[7px] group transition-colors',
-        'border-b border-gray-100 last:border-b-0',
+        'border-b border-gray-100 last:border-b-0 dark:border-gray-800',
         isDragging && 'bg-primary-50/20',
         readOnly
           ? 'hover:bg-gray-50/50'
@@ -702,7 +702,7 @@ function SortableField({ field, sectionId, isVisible, readOnly, onToggleVisibili
             'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-1',
             isVisible
               ? 'border-primary-500 bg-primary-500'
-              : 'border-gray-300 bg-white hover:border-gray-400'
+              : 'border-gray-300 bg-white hover:border-gray-400 dark:border-gray-600 dark:bg-gray-800'
           )}
         >
           {isVisible && <Check className="w-2.5 h-2.5 text-white" />}
@@ -720,7 +720,7 @@ function SortableField({ field, sectionId, isVisible, readOnly, onToggleVisibili
       {/* Field name */}
       <span className={clsx(
         'text-[13px] truncate ml-2.5 flex-1 min-w-0',
-        isVisible || readOnly ? 'text-gray-800' : 'text-gray-400'
+        isVisible || readOnly ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400'
       )}>{field.field_name}</span>
 
       {/* Custom badge */}
@@ -731,7 +731,7 @@ function SortableField({ field, sectionId, isVisible, readOnly, onToggleVisibili
       )}
 
       {/* Type pill */}
-      <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded flex-shrink-0 mr-1">
+      <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded flex-shrink-0 mr-1 dark:text-gray-400 dark:bg-gray-800">
         {formatFieldType(field.field_type)}
       </span>
 
@@ -755,15 +755,15 @@ function SortableField({ field, sectionId, isVisible, readOnly, onToggleVisibili
 
 function FieldDragOverlay({ field }: { field: FieldConfig }) {
   return (
-    <div className="flex items-center min-h-[36px] py-[7px] bg-white shadow-lg shadow-black/8 border border-gray-200 rounded-md">
+    <div className="flex items-center min-h-[36px] py-[7px] bg-white shadow-lg shadow-black/8 border border-gray-200 rounded-md dark:border-gray-700 dark:bg-gray-800">
       <div className="w-7 flex items-center justify-center text-primary-400 flex-shrink-0">
         <GripVertical className="w-3.5 h-3.5" />
       </div>
       <div className="w-4 h-4 rounded border border-primary-500 bg-primary-500 flex items-center justify-center flex-shrink-0">
         <Check className="w-2.5 h-2.5 text-white" />
       </div>
-      <span className="text-[13px] text-gray-800 truncate ml-2.5 flex-1 min-w-0">{field.field_name}</span>
-      <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded flex-shrink-0 mr-2">
+      <span className="text-[13px] text-gray-800 truncate ml-2.5 flex-1 min-w-0 dark:text-gray-100">{field.field_name}</span>
+      <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded flex-shrink-0 mr-2 dark:text-gray-400 dark:bg-gray-800">
         {formatFieldType(field.field_type)}
       </span>
     </div>
@@ -776,13 +776,13 @@ function FieldDragOverlay({ field }: { field: FieldConfig }) {
 
 function SectionDragOverlay({ section }: { section: SectionConfig }) {
   return (
-    <div className="rounded-lg bg-white shadow-lg shadow-black/8 border border-gray-200 overflow-hidden">
-      <div className="flex items-center h-10 px-3 bg-gray-50 border-b border-gray-100">
+    <div className="rounded-lg bg-white shadow-lg shadow-black/8 border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex items-center h-10 px-3 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
         <div className="text-primary-400 mr-2 flex-shrink-0">
           <GripVertical className="w-4 h-4" />
         </div>
         <ChevronRight className="w-3.5 h-3.5 text-gray-400 mr-1.5 flex-shrink-0" />
-        <span className="text-[13px] font-semibold text-gray-700">{section.section_name}</span>
+        <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-300">{section.section_name}</span>
         <span className="text-[11px] text-gray-400 ml-auto">
           {section.fields.length} field{section.fields.length !== 1 ? 's' : ''}
         </span>
@@ -872,15 +872,15 @@ function SortableSection({
       ref={setNodeRef}
       style={style}
       className={clsx(
-        'rounded-lg border border-gray-200 bg-white overflow-hidden transition-shadow',
-        isDragging && 'shadow-md border-gray-300'
+        'rounded-lg border border-gray-200 bg-white overflow-hidden transition-shadow dark:border-gray-700 dark:bg-gray-800',
+        isDragging && 'shadow-md border-gray-300 dark:border-gray-600'
       )}
     >
       {/* Section Header */}
       <div className={clsx(
         'flex items-center h-10 group',
         'bg-gray-50/80',
-        isExpanded && 'border-b border-gray-200'
+        isExpanded && 'border-b border-gray-200 dark:border-gray-700'
       )}>
         {/* Drag handle */}
         {!readOnly ? (
@@ -924,7 +924,7 @@ function SortableSection({
                 type="text"
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
-                className="px-2 py-0.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="px-2 py-0.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                 autoFocus
                 onBlur={() => {
                   if (renameValue.trim() && renameValue.trim() !== section.section_name) {
@@ -941,7 +941,7 @@ function SortableSection({
               />
             </form>
           ) : (
-            <span className="text-[13px] font-semibold text-gray-700">{section.section_name}</span>
+            <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-300">{section.section_name}</span>
           )}
           {!section.is_system && (
             <span className="text-[10px] font-medium bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">Custom</span>
@@ -1047,10 +1047,10 @@ function SortableSection({
 // ============================================================================
 
 const SCOPE_CONFIG: Record<LayoutScope, { label: string; icon: typeof Building2; bg: string; text: string }> = {
-  system: { label: 'System', icon: Shield, bg: 'bg-gray-100', text: 'text-gray-600' },
+  system: { label: 'System', icon: Shield, bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-400' },
   org:    { label: 'Org', icon: Building2, bg: 'bg-purple-50', text: 'text-purple-700' },
   team:   { label: 'Team', icon: Users, bg: 'bg-blue-50', text: 'text-blue-700' },
-  personal: { label: 'Personal', icon: User, bg: 'bg-gray-50', text: 'text-gray-500' },
+  personal: { label: 'Personal', icon: User, bg: 'bg-gray-50 dark:bg-gray-900', text: 'text-gray-500 dark:text-gray-400' },
 }
 
 function ScopeBadge({ scope }: { scope: LayoutScope }) {
@@ -1112,10 +1112,10 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
   const borderStyle = card.isMyDefault
     ? 'border-primary-300 bg-primary-50/30 ring-1 ring-primary-200/60'
     : card.isSystemDefault
-    ? 'border-gray-300 bg-gray-50/40 ring-1 ring-gray-200/60'
+    ? 'border-gray-300 bg-gray-50/40 ring-1 ring-gray-200/60 dark:border-gray-600'
     : card.permission !== 'owner'
     ? 'border-blue-200 bg-blue-50/20 hover:border-blue-300'
-    : 'border-gray-200 hover:border-gray-300 bg-white'
+    : 'border-gray-200 hover:border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800'
 
   return (
     <div
@@ -1127,7 +1127,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
     >
       {/* Row 1: Title + kebab — shared hover tint */}
       <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-1 -mb-1 rounded-t-lg transition-colors group-hover:bg-gray-50/60">
-        <h3 className="font-medium text-gray-900 truncate leading-6">{card.name}</h3>
+        <h3 className="font-medium text-gray-900 truncate leading-6 dark:text-white">{card.name}</h3>
 
         {/* Kebab menu — baseline-aligned with title */}
         <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
@@ -1136,8 +1136,8 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
             className={clsx(
               'p-1 rounded transition-colors',
               menuOpen
-                ? 'text-gray-600 bg-gray-100'
-                : 'text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-600 hover:bg-gray-100'
+                ? 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
+                : 'text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
             )}
             title="Actions"
           >
@@ -1147,14 +1147,14 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-7 z-20 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+              <div className="absolute right-0 top-7 z-20 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1 dark:border-gray-700 dark:bg-gray-800">
                 {!card.isSystemDefault && (
                   <button
                     onClick={() => { if (card.canEdit) { setMenuOpen(false); onEdit() } }}
                     disabled={!card.canEdit}
                     className={clsx(
                       'w-full px-3 py-2 text-left text-sm flex items-center gap-2',
-                      card.canEdit ? 'text-gray-700 hover:bg-gray-50' : 'text-gray-400 cursor-not-allowed'
+                      card.canEdit ? 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300' : 'text-gray-400 cursor-not-allowed'
                     )}
                     title={editReason || undefined}
                   >
@@ -1164,7 +1164,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
                 {onDuplicate && (
                   <button
                     onClick={() => { setMenuOpen(false); onDuplicate() }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <Copy className="w-3.5 h-3.5" /> Duplicate
                   </button>
@@ -1175,7 +1175,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
                     disabled={!card.canShare}
                     className={clsx(
                       'w-full px-3 py-2 text-left text-sm flex items-center gap-2',
-                      card.canShare ? 'text-gray-700 hover:bg-gray-50' : 'text-gray-400 cursor-not-allowed'
+                      card.canShare ? 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300' : 'text-gray-400 cursor-not-allowed'
                     )}
                     title={shareReason || undefined}
                   >
@@ -1185,14 +1185,14 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
                 {onSetDefault && !card.isMyDefault && !card.isSystemDefault && (
                   <button
                     onClick={() => { setMenuOpen(false); onSetDefault() }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <Star className="w-3.5 h-3.5" /> Set as default
                   </button>
                 )}
                 {!card.isSystemDefault && onDelete && (
                   <>
-                    <div className="my-1 border-t border-gray-100" />
+                    <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
                     <button
                       onClick={() => { if (card.canDelete) { setMenuOpen(false); onDelete() } }}
                       disabled={!card.canDelete}
@@ -1224,7 +1224,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
           </span>
         )}
         {defaultIndicator === 'Default for me' && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800">
             <Check className="w-3 h-3" />
             Default for me
           </span>
@@ -1232,7 +1232,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
         {permissionLabel && (
           <span className={clsx(
             'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-            permissionLabel === 'Editable' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+            permissionLabel === 'Editable' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
           )}>
             {permissionLabel}
           </span>
@@ -1243,7 +1243,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
       {(card.description || card.createdByName || card.sharedByName) && (
         <div className="mt-2 px-4">
           {card.description && (
-            <p className="text-sm text-gray-500 line-clamp-1">{card.description}</p>
+            <p className="text-sm text-gray-500 line-clamp-1 dark:text-gray-400">{card.description}</p>
           )}
           {(card.createdByName || card.sharedByName) && (
             <p className="text-xs text-gray-400 mt-0.5">
@@ -1265,7 +1265,7 @@ function LayoutCard({ card, onEdit, onView, onDelete, onSetDefault, onDuplicate,
         </span>
         {card.usedByAssetsCount > 0 && (
           <button
-            className="flex items-center gap-1 text-gray-500 hover:text-primary-600 transition-colors"
+            className="flex items-center gap-1 text-gray-500 hover:text-primary-600 transition-colors dark:text-gray-400"
             title={`${card.usedByAssetsCount} asset${card.usedByAssetsCount !== 1 ? 's' : ''} assigned to this template — click to view`}
             onClick={e => { e.stopPropagation(); onUsedByClick?.() }}
           >
@@ -1342,23 +1342,23 @@ function AffectedAssetsDrawer({ kind, layoutId, layoutName, onClose, onOpenAsset
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col">
+      <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">{drawerTitle}</h2>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{drawerTitle}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{relevantAssets.length} asset{relevantAssets.length !== 1 ? 's' : ''}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Search + Copy */}
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 dark:border-gray-800">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
@@ -1366,14 +1366,14 @@ function AffectedAssetsDrawer({ kind, layoutId, layoutName, onClose, onOpenAsset
               placeholder="Search by ticker or name..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 dark:border-gray-700 dark:bg-gray-800"
               autoFocus
             />
           </div>
           {relevantAssets.length > 0 && (
             <button
               onClick={handleCopyTickers}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
               title="Copy all tickers to clipboard"
             >
               <Copy className="w-3.5 h-3.5" />
@@ -1396,8 +1396,8 @@ function AffectedAssetsDrawer({ kind, layoutId, layoutName, onClose, onOpenAsset
             </div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <thead className="bg-gray-50 sticky top-0 dark:bg-gray-900">
+                <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                   <th className="px-5 py-2.5">Ticker</th>
                   <th className="px-3 py-2.5">Name</th>
                   <th className="px-3 py-2.5">Layout</th>
@@ -1405,16 +1405,16 @@ function AffectedAssetsDrawer({ kind, layoutId, layoutName, onClose, onOpenAsset
                   <th className="px-3 py-2.5">Updated</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {relevantAssets.map(asset => (
                   <tr
                     key={asset.asset_id}
                     className="hover:bg-gray-50 cursor-pointer transition-colors"
                     onClick={() => onOpenAsset(asset.asset_id, asset.symbol)}
                   >
-                    <td className="px-5 py-2.5 font-medium text-gray-900 whitespace-nowrap">{asset.symbol}</td>
-                    <td className="px-3 py-2.5 text-gray-600 truncate max-w-[180px]">{asset.company_name}</td>
-                    <td className="px-3 py-2.5 text-gray-500 truncate max-w-[120px]">{asset.layout_name || '—'}</td>
+                    <td className="px-5 py-2.5 font-medium text-gray-900 whitespace-nowrap dark:text-white">{asset.symbol}</td>
+                    <td className="px-3 py-2.5 text-gray-600 truncate max-w-[180px] dark:text-gray-400">{asset.company_name}</td>
+                    <td className="px-3 py-2.5 text-gray-500 truncate max-w-[120px] dark:text-gray-400">{asset.layout_name || '—'}</td>
                     {kind === 'custom_layouts' && (
                       <td className="px-3 py-2.5">
                         {asset.has_overrides
@@ -1479,10 +1479,10 @@ function AddSectionModal({ isOpen, onClose, onAddCustom, onAddFromLibrary, exist
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Add Section</h3>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Section</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -1495,7 +1495,7 @@ function AddSectionModal({ isOpen, onClose, onAddCustom, onAddFromLibrary, exist
               'flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors',
               mode === 'library'
                 ? 'bg-primary-100 text-primary-700'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             )}
           >
             <Library className="w-4 h-4 inline mr-1" />
@@ -1507,7 +1507,7 @@ function AddSectionModal({ isOpen, onClose, onAddCustom, onAddFromLibrary, exist
               'flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors',
               mode === 'custom'
                 ? 'bg-primary-100 text-primary-700'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             )}
           >
             <Plus className="w-4 h-4 inline mr-1" />
@@ -1518,7 +1518,7 @@ function AddSectionModal({ isOpen, onClose, onAddCustom, onAddFromLibrary, exist
         {mode === 'library' ? (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {sectionsNotInLayout.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">All available sections are already in your layout</p>
+              <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">All available sections are already in your layout</p>
             ) : (
               sectionsNotInLayout.map(section => (
                 <button
@@ -1527,12 +1527,12 @@ function AddSectionModal({ isOpen, onClose, onAddCustom, onAddFromLibrary, exist
                     onAddFromLibrary(section)
                     onClose()
                   }}
-                  className="w-full p-3 border border-gray-200 rounded-lg text-left hover:border-primary-300 hover:bg-primary-50/50 transition-colors"
+                  className="w-full p-3 border border-gray-200 rounded-lg text-left hover:border-primary-300 hover:bg-primary-50/50 transition-colors dark:border-gray-700"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="font-medium text-gray-900">{section.section_name}</span>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <span className="font-medium text-gray-900 dark:text-white">{section.section_name}</span>
+                      <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                         {section.fields.length} field{section.fields.length !== 1 ? 's' : ''}
                       </p>
                     </div>
@@ -1545,13 +1545,13 @@ function AddSectionModal({ isOpen, onClose, onAddCustom, onAddFromLibrary, exist
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Section Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Section Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => { setName(e.target.value); setError('') }}
                 placeholder="e.g., Valuation Analysis"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleSubmitCustom()}
               />
@@ -1576,7 +1576,7 @@ function FieldTypePreview({ type }: { type: string }) {
   switch (type) {
     case 'rich_text':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="h-2.5 bg-gray-400 rounded w-3/4" />
           <div className="h-2 bg-gray-300 rounded w-full" />
           <div className="h-2 bg-gray-300 rounded w-5/6" />
@@ -1585,26 +1585,26 @@ function FieldTypePreview({ type }: { type: string }) {
       )
     case 'checklist':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-green-500 bg-green-500 rounded flex items-center justify-center">
               <Check className="w-3 h-3 text-white" />
             </div>
-            <span className="text-gray-700">Completed item</span>
+            <span className="text-gray-700 dark:text-gray-300">Completed item</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-gray-300 rounded" />
-            <span className="text-gray-500">Pending item</span>
+            <div className="w-4 h-4 border-2 border-gray-300 rounded dark:border-gray-600" />
+            <span className="text-gray-500 dark:text-gray-400">Pending item</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-gray-300 rounded" />
-            <span className="text-gray-500">Another task</span>
+            <div className="w-4 h-4 border-2 border-gray-300 rounded dark:border-gray-600" />
+            <span className="text-gray-500 dark:text-gray-400">Another task</span>
           </div>
         </div>
       )
     case 'timeline':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-start gap-3">
             <div className="flex flex-col items-center">
               <div className="w-3 h-3 bg-primary-500 rounded-full" />
@@ -1614,16 +1614,16 @@ function FieldTypePreview({ type }: { type: string }) {
               <div className="w-3 h-3 bg-gray-300 rounded-full" />
             </div>
             <div className="flex-1 space-y-4 pt-0.5">
-              <div className="text-gray-700">Q1 Earnings</div>
-              <div className="text-gray-500">Product Launch</div>
-              <div className="text-gray-500">Investor Day</div>
+              <div className="text-gray-700 dark:text-gray-300">Q1 Earnings</div>
+              <div className="text-gray-500 dark:text-gray-400">Product Launch</div>
+              <div className="text-gray-500 dark:text-gray-400">Investor Day</div>
             </div>
           </div>
         </div>
       )
     case 'metric':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-end gap-1.5 h-12">
             <div className="w-6 bg-primary-300 rounded-t" style={{ height: '40%' }} />
             <div className="w-6 bg-primary-400 rounded-t" style={{ height: '60%' }} />
@@ -1631,31 +1631,31 @@ function FieldTypePreview({ type }: { type: string }) {
             <div className="w-6 bg-primary-600 rounded-t" style={{ height: '100%' }} />
             <div className="w-6 bg-primary-400 rounded-t" style={{ height: '70%' }} />
           </div>
-          <div className="text-gray-500 mt-2">Monthly trend</div>
+          <div className="text-gray-500 mt-2 dark:text-gray-400">Monthly trend</div>
         </div>
       )
     case 'numeric':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
-          <div className="text-2xl font-bold text-gray-800">42.5</div>
-          <div className="text-gray-500">Current value</div>
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100">42.5</div>
+          <div className="text-gray-500 dark:text-gray-400">Current value</div>
         </div>
       )
     case 'date':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-3">
             <Calendar className="w-5 h-5 text-primary-500" />
             <div>
-              <div className="text-gray-800 font-medium">January 15, 2025</div>
-              <div className="text-gray-500">Target date</div>
+              <div className="text-gray-800 font-medium dark:text-gray-100">January 15, 2025</div>
+              <div className="text-gray-500 dark:text-gray-400">Target date</div>
             </div>
           </div>
         </div>
       )
     case 'rating':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-3 border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs space-y-3 border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-3">
             <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold">BUY</span>
             <div className="flex gap-1">
@@ -1664,37 +1664,37 @@ function FieldTypePreview({ type }: { type: string }) {
               ))}
             </div>
           </div>
-          <div className="text-gray-600">High conviction · 4/5 stars</div>
+          <div className="text-gray-600 dark:text-gray-400">High conviction · 4/5 stars</div>
         </div>
       )
     case 'price_target':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-3 border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs space-y-3 border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex justify-between items-center text-sm">
             <span className="text-red-600 font-semibold">Bear: $80</span>
-            <span className="text-gray-700 font-semibold">Base: $120</span>
+            <span className="text-gray-700 font-semibold dark:text-gray-300">Base: $120</span>
             <span className="text-green-600 font-semibold">Bull: $160</span>
           </div>
           <div className="h-3 bg-gradient-to-r from-red-300 via-gray-300 to-green-300 rounded-full relative">
             <div className="absolute left-1/2 -translate-x-1/2 -top-0.5 w-4 h-4 bg-primary-500 rounded-full border-2 border-white shadow" />
           </div>
-          <div className="text-gray-500 text-center">Current: $115</div>
+          <div className="text-gray-500 text-center dark:text-gray-400">Current: $115</div>
         </div>
       )
     case 'estimates':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-gray-500 mb-1">Revenue</div>
-              <div className="text-lg font-semibold text-gray-800">$4.2B</div>
+              <div className="text-gray-500 mb-1 dark:text-gray-400">Revenue</div>
+              <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">$4.2B</div>
             </div>
             <div>
-              <div className="text-gray-500 mb-1">EPS</div>
-              <div className="text-lg font-semibold text-gray-800">$2.45</div>
+              <div className="text-gray-500 mb-1 dark:text-gray-400">EPS</div>
+              <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">$2.45</div>
             </div>
             <div>
-              <div className="text-gray-500 mb-1">Growth</div>
+              <div className="text-gray-500 mb-1 dark:text-gray-400">Growth</div>
               <div className="text-lg font-semibold text-green-600">+12%</div>
             </div>
           </div>
@@ -1702,48 +1702,48 @@ function FieldTypePreview({ type }: { type: string }) {
       )
     case 'single_select':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-1.5 border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs space-y-1.5 border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-2">
             <div className="w-3.5 h-3.5 rounded-full border-2 border-primary-500 flex items-center justify-center">
               <div className="w-1.5 h-1.5 rounded-full bg-primary-500" />
             </div>
-            <span className="text-gray-700">Selected option</span>
+            <span className="text-gray-700 dark:text-gray-300">Selected option</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300" />
-            <span className="text-gray-500">Another option</span>
+            <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+            <span className="text-gray-500 dark:text-gray-400">Another option</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300" />
-            <span className="text-gray-500">Third option</span>
+            <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+            <span className="text-gray-500 dark:text-gray-400">Third option</span>
           </div>
         </div>
       )
     case 'multi_select':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex flex-wrap gap-1.5">
             <span className="px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full">Growth</span>
             <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Value</span>
-            <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full border border-dashed border-gray-300">+ Add</span>
+            <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full border border-dashed border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800">+ Add</span>
           </div>
         </div>
       )
     case 'boolean':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-3">
             <div className="w-9 h-5 bg-primary-500 rounded-full relative">
-              <div className="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow" />
+              <div className="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow dark:bg-gray-800" />
             </div>
-            <span className="text-gray-700 font-medium">Yes</span>
+            <span className="text-gray-700 font-medium dark:text-gray-300">Yes</span>
           </div>
         </div>
       )
     case 'percentage':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
-          <div className="text-2xl font-bold text-gray-800">73.5%</div>
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="text-2xl font-bold text-gray-800 dark:text-gray-100">73.5%</div>
           <div className="w-full h-2 bg-gray-200 rounded-full mt-2">
             <div className="h-full bg-primary-500 rounded-full" style={{ width: '73.5%' }} />
           </div>
@@ -1751,32 +1751,32 @@ function FieldTypePreview({ type }: { type: string }) {
       )
     case 'currency':
       return (
-        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-baseline gap-1">
-            <span className="text-gray-500">$</span>
-            <span className="text-2xl font-bold text-gray-800">1,250.00</span>
+            <span className="text-gray-500 dark:text-gray-400">$</span>
+            <span className="text-2xl font-bold text-gray-800 dark:text-gray-100">1,250.00</span>
             <span className="text-gray-400 text-sm ml-1">USD</span>
           </div>
         </div>
       )
     case 'table':
       return (
-        <div className="bg-white rounded-lg p-3 text-xs border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-3 text-xs border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-gray-200">
-                <th className="py-1 pr-3 text-gray-500 font-medium">Metric</th>
-                <th className="py-1 text-gray-500 font-medium text-right">Value</th>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="py-1 pr-3 text-gray-500 font-medium dark:text-gray-400">Metric</th>
+                <th className="py-1 text-gray-500 font-medium text-right dark:text-gray-400">Value</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-gray-100">
-                <td className="py-1 pr-3 text-gray-700">Revenue</td>
-                <td className="py-1 text-gray-700 text-right">4,200</td>
+              <tr className="border-b border-gray-100 dark:border-gray-800">
+                <td className="py-1 pr-3 text-gray-700 dark:text-gray-300">Revenue</td>
+                <td className="py-1 text-gray-700 text-right dark:text-gray-300">4,200</td>
               </tr>
               <tr>
-                <td className="py-1 pr-3 text-gray-700">EBITDA</td>
-                <td className="py-1 text-gray-700 text-right">1,050</td>
+                <td className="py-1 pr-3 text-gray-700 dark:text-gray-300">EBITDA</td>
+                <td className="py-1 text-gray-700 text-right dark:text-gray-300">1,050</td>
               </tr>
             </tbody>
           </table>
@@ -1785,7 +1785,7 @@ function FieldTypePreview({ type }: { type: string }) {
     default:
       // Fallback preview for any unhandled field type
       return (
-        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-lg p-4 text-xs space-y-2 border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="h-2.5 bg-gray-400 rounded w-3/4" />
           <div className="h-2 bg-gray-300 rounded w-full" />
           <div className="h-2 bg-gray-300 rounded w-5/6" />
@@ -1873,7 +1873,7 @@ function SelectOptionsEditor({
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">Options</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Options</label>
       <div className="space-y-1.5">
         {options.map((opt, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -1885,7 +1885,7 @@ function SelectOptionsEditor({
                 next[i] = e.target.value
                 updateOptions(next)
               }}
-              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               placeholder={`Option ${i + 1}`}
             />
             {options.length > 1 && (
@@ -1911,7 +1911,7 @@ function SelectOptionsEditor({
             }
           }}
           placeholder="Add option..."
-          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
         />
         <button
           onClick={() => {
@@ -1920,14 +1920,14 @@ function SelectOptionsEditor({
               setNewOption('')
             }
           }}
-          className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded"
+          className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded dark:text-gray-400"
         >
           <Plus className="w-4 h-4" />
         </button>
       </div>
       {isMulti && (
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Max selections (optional)</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Max selections (optional)</label>
           <input
             type="number"
             min={1}
@@ -1936,7 +1936,7 @@ function SelectOptionsEditor({
               const val = e.target.value ? parseInt(e.target.value) : undefined
               onChange({ ...config, max_selections: val })
             }}
-            className="w-24 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-24 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
             placeholder="No limit"
           />
         </div>
@@ -1954,24 +1954,24 @@ function BooleanConfigEditor({
 }) {
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">Labels</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Labels</label>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">True label</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">True label</label>
           <input
             type="text"
             value={(config.true_label as string) ?? 'Yes'}
             onChange={(e) => onChange({ ...config, true_label: e.target.value })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">False label</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">False label</label>
           <input
             type="text"
             value={(config.false_label as string) ?? 'No'}
             onChange={(e) => onChange({ ...config, false_label: e.target.value })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
       </div>
@@ -1988,38 +1988,38 @@ function RatingConfigEditor({
 }) {
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">Rating Scale</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Rating Scale</label>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Min</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Min</label>
           <input
             type="number"
             min={0}
             value={(config.min as number) ?? 1}
             onChange={(e) => onChange({ ...config, min: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Max</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Max</label>
           <input
             type="number"
             min={1}
             max={10}
             value={(config.max as number) ?? 5}
             onChange={(e) => onChange({ ...config, max: parseInt(e.target.value) || 5 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Step</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Step</label>
           <input
             type="number"
             min={0.5}
             step={0.5}
             value={(config.step as number) ?? 1}
             onChange={(e) => onChange({ ...config, step: parseFloat(e.target.value) || 1 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
       </div>
@@ -2044,7 +2044,7 @@ function ScenarioConfigEditor({
     <div className="space-y-4">
       {/* Scenarios */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">Scenarios</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Scenarios</label>
         {scenarios.map((s, i) => (
           <div key={i} className="flex items-center gap-2">
             <input
@@ -2056,7 +2056,7 @@ function ScenarioConfigEditor({
                 next[i] = { ...s, label: e.target.value, key }
                 updateScenarios(next)
               }}
-              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               placeholder="Scenario name"
             />
             {scenarios.length > 1 && (
@@ -2083,7 +2083,7 @@ function ScenarioConfigEditor({
 
       {/* Metrics */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">Metrics</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Metrics</label>
         {metrics.map((m, i) => (
           <div key={i} className="flex items-center gap-2">
             <input
@@ -2095,7 +2095,7 @@ function ScenarioConfigEditor({
                 next[i] = { ...m, label: e.target.value, key }
                 updateMetrics(next)
               }}
-              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               placeholder="Metric name"
             />
             <select
@@ -2105,7 +2105,7 @@ function ScenarioConfigEditor({
                 next[i] = { ...m, type: e.target.value }
                 updateMetrics(next)
               }}
-              className="w-28 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-28 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
             >
               <option value="number">Number</option>
               <option value="percentage">Percent</option>
@@ -2151,11 +2151,11 @@ function ChartConfigEditor({
   return (
     <div className="space-y-3">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Chart Type</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Chart Type</label>
         <select
           value={chartType}
           onChange={(e) => onChange({ ...config, chart_type: e.target.value })}
-          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
         >
           <option value="line">Line</option>
           <option value="bar">Bar</option>
@@ -2163,23 +2163,23 @@ function ChartConfigEditor({
         </select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Metric Label</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Metric Label</label>
         <input
           type="text"
           value={metric}
           onChange={(e) => onChange({ ...config, metric: e.target.value })}
-          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           placeholder="e.g. Revenue, EPS, Price"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Color</label>
         <div className="flex items-center gap-2">
           <input
             type="color"
             value={color}
             onChange={(e) => onChange({ ...config, color: e.target.value })}
-            className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+            className="w-8 h-8 rounded border border-gray-300 cursor-pointer dark:border-gray-600"
           />
           <span className="text-xs text-gray-400 font-mono">{color}</span>
         </div>
@@ -2197,35 +2197,35 @@ function PercentageConfigEditor({
 }) {
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">Range &amp; Precision</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Range &amp; Precision</label>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Min</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Min</label>
           <input
             type="number"
             value={(config.min as number) ?? 0}
             onChange={(e) => onChange({ ...config, min: parseFloat(e.target.value) || 0 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Max</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Max</label>
           <input
             type="number"
             value={(config.max as number) ?? 100}
             onChange={(e) => onChange({ ...config, max: parseFloat(e.target.value) || 100 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Decimals</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Decimals</label>
           <input
             type="number"
             min={0}
             max={6}
             value={(config.decimals as number) ?? 1}
             onChange={(e) => onChange({ ...config, decimals: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
       </div>
@@ -2243,14 +2243,14 @@ function CurrencyConfigEditor({
   const currencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY']
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">Currency Settings</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Currency Settings</label>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Currency</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Currency</label>
           <select
             value={(config.currency_code as string) ?? 'USD'}
             onChange={(e) => onChange({ ...config, currency_code: e.target.value })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           >
             {currencies.map(c => (
               <option key={c} value={c}>{c}</option>
@@ -2258,14 +2258,14 @@ function CurrencyConfigEditor({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Decimals</label>
+          <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Decimals</label>
           <input
             type="number"
             min={0}
             max={6}
             value={(config.decimals as number) ?? 2}
             onChange={(e) => onChange({ ...config, decimals: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
       </div>
@@ -2291,7 +2291,7 @@ function TableColumnsEditor({
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">Columns</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Columns</label>
       <div className="space-y-2">
         {columns.map((col, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -2304,7 +2304,7 @@ function TableColumnsEditor({
                 next[i] = { ...col, label: e.target.value, key }
                 updateColumns(next)
               }}
-              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               placeholder="Column name"
             />
             <select
@@ -2314,7 +2314,7 @@ function TableColumnsEditor({
                 next[i] = { ...col, type: e.target.value as 'text' | 'number' }
                 updateColumns(next)
               }}
-              className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
             >
               <option value="text">Text</option>
               <option value="number">Number</option>
@@ -2960,7 +2960,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className={clsx(
-        "bg-white rounded-xl shadow-xl w-full mx-4 flex flex-col transition-all duration-200",
+        "bg-white rounded-xl shadow-xl w-full mx-4 flex flex-col transition-all duration-200 dark:bg-gray-800",
         fieldKind === 'multi' && createStep === 3
           ? 'max-w-[1400px] h-[90vh]'
           : 'max-w-3xl h-[85vh]',
@@ -2970,10 +2970,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
         <div className="px-6 pt-5 pb-0 flex-shrink-0">
           <div className="flex items-center justify-between mb-1">
             <div>
-              <h3 className="text-lg font-bold text-gray-900 tracking-tight">{modalTitle}</h3>
+              <h3 className="text-lg font-bold text-gray-900 tracking-tight dark:text-white">{modalTitle}</h3>
               <p className="text-[13px] text-gray-400 mt-0.5">{modalSubtitle}</p>
             </div>
-            <button onClick={() => { resetCustom(); onClose() }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <button onClick={() => { resetCustom(); onClose() }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -2982,19 +2982,19 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
           {sectionName && (
             <div className="mb-3 flex items-center gap-1.5 text-[12px] text-gray-400">
               <span>Adding to:</span>
-              <span className="font-medium text-gray-600">{sectionName}</span>
+              <span className="font-medium text-gray-600 dark:text-gray-400">{sectionName}</span>
             </div>
           )}
 
           {/* 2-tab navigation — underline style */}
-          <div className="flex border-b border-gray-200">
+          <div className="flex border-b border-gray-200 dark:border-gray-700">
             <button
               onClick={() => { if (mode !== 'addExisting') { resetCustom(); setMode('addExisting') } }}
               className={clsx(
                 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
                 mode === 'addExisting'
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'border-gray-900 text-gray-900 dark:text-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               <Library className="w-4 h-4" />
@@ -3005,8 +3005,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
               className={clsx(
                 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
                 mode === 'createField'
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'border-gray-900 text-gray-900 dark:text-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               <Plus className="w-4 h-4" />
@@ -3034,13 +3034,13 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         value={librarySearch}
                         onChange={(e) => { setLibrarySearch(e.target.value); setHighlightFieldId(null) }}
                         placeholder="Search fields by name..."
-                        className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                        className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm dark:border-gray-600"
                         autoFocus
                       />
                       {librarySearch && (
                         <button
                           onClick={() => setLibrarySearch('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -3049,7 +3049,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
 
                     {/* Filter pills + metadata */}
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
+                      <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5 flex-shrink-0 dark:bg-gray-800">
                         {(['all', 'system', 'custom'] as const).map(filter => (
                           <button
                             key={filter}
@@ -3057,8 +3057,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             className={clsx(
                               'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
                               libraryFilter === filter
-                                ? 'bg-white text-gray-900 shadow-sm'
-                                : 'text-gray-500 hover:text-gray-700'
+                                ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                             )}
                           >
                             {filter === 'all' ? 'All' : filter === 'system' ? 'System' : 'Custom'}
@@ -3135,7 +3135,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                       return sortedCategories.map(([category, { systemFields: catSystemFields, presets: catPresets }]) => (
                         <div key={category}>
                           <div className="flex items-center gap-2 mb-2.5 bg-gray-50/80 px-2 py-1.5 rounded-md">
-                            <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                            <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                               {category}
                             </h4>
                             <div className="flex-1 h-px bg-gray-200/60" />
@@ -3160,12 +3160,12 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     'flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left group min-w-0',
                                     'transition-all duration-150 ease-in-out',
                                     isAdded
-                                      ? 'border-gray-100 bg-gray-50/50 opacity-40 cursor-not-allowed'
+                                      ? 'border-gray-100 bg-gray-50/50 opacity-40 cursor-not-allowed dark:border-gray-800'
                                       : isSelected
                                         ? 'border-primary-400 bg-primary-50/50 shadow-md cursor-pointer border-l-[3px] border-l-primary-500 ring-1 ring-inset ring-primary-100'
                                         : isHighlighted
                                           ? 'border-emerald-300 bg-emerald-50/50 shadow-sm cursor-pointer ring-1 ring-emerald-200'
-                                          : 'border-gray-200 hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/40 cursor-pointer'
+                                          : 'border-gray-200 hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/40 cursor-pointer dark:border-gray-700'
                                   )}
                                 >
                                   {!isAdded ? (
@@ -3173,7 +3173,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                       'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
                                       isSelected
                                         ? 'border-primary-500 bg-primary-500'
-                                        : 'border-gray-300 group-hover:border-gray-400'
+                                        : 'border-gray-300 group-hover:border-gray-400 dark:border-gray-600'
                                     )}>
                                       {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
                                     </div>
@@ -3187,14 +3187,14 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     isAdded ? 'text-gray-300' : isSelected ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
                                   )} />
                                   <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium text-gray-900 block truncate">{field.name}</span>
+                                    <span className="text-sm font-medium text-gray-900 block truncate dark:text-white">{field.name}</span>
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-[11px] text-gray-400">{formatFieldType(field.type)}</span>
                                       <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-600 font-medium flex-shrink-0">System</span>
                                     </div>
                                   </div>
                                   {isAdded && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 text-gray-400 bg-gray-100">Added</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 text-gray-400 bg-gray-100 dark:bg-gray-800">Added</span>
                                   )}
                                 </div>
                               )
@@ -3217,10 +3217,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     'flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left group min-w-0',
                                     'transition-all duration-150 ease-in-out',
                                     isAdded
-                                      ? 'border-gray-100 bg-gray-50/50 opacity-40 cursor-not-allowed'
+                                      ? 'border-gray-100 bg-gray-50/50 opacity-40 cursor-not-allowed dark:border-gray-800'
                                       : isSelected
                                         ? 'border-primary-400 bg-primary-50/50 shadow-md cursor-pointer border-l-[3px] border-l-primary-500 ring-1 ring-inset ring-primary-100'
-                                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/40 cursor-pointer'
+                                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/40 cursor-pointer dark:border-gray-700'
                                   )}
                                 >
                                   {!isAdded ? (
@@ -3228,7 +3228,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                       'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
                                       isSelected
                                         ? 'border-primary-500 bg-primary-500'
-                                        : 'border-gray-300 group-hover:border-gray-400'
+                                        : 'border-gray-300 group-hover:border-gray-400 dark:border-gray-600'
                                     )}>
                                       {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
                                     </div>
@@ -3242,14 +3242,14 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     isAdded ? 'text-gray-300' : isSelected ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
                                   )} />
                                   <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium text-gray-900 block truncate">{preset.name}</span>
+                                    <span className="text-sm font-medium text-gray-900 block truncate dark:text-white">{preset.name}</span>
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-[11px] text-gray-400">{formatFieldType(preset.field_type)}</span>
                                       <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-600 font-medium flex-shrink-0">System</span>
                                     </div>
                                   </div>
                                   {isAdded && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 text-gray-400 bg-gray-100">Added</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 text-gray-400 bg-gray-100 dark:bg-gray-800">Added</span>
                                   )}
                                 </div>
                               )
@@ -3269,7 +3269,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                     ) : filteredCustomFields.length > 0 && (
                       <div>
                         <div className="flex items-center gap-2 mb-2.5 bg-gray-50/80 px-2 py-1.5 rounded-md">
-                          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                             Custom Fields
                           </h4>
                           <div className="flex-1 h-px bg-gray-200/60" />
@@ -3296,14 +3296,14 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     ? 'border-primary-400 bg-primary-50/50 shadow-md border-l-[3px] border-l-primary-500 ring-1 ring-inset ring-primary-100'
                                     : isHighlighted
                                       ? 'border-emerald-300 bg-emerald-50/50 shadow-sm ring-1 ring-emerald-200'
-                                      : 'border-gray-200 hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/40'
+                                      : 'border-gray-200 hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/40 dark:border-gray-700'
                                 )}
                               >
                                 <div className={clsx(
                                   'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
                                   isSelected
                                     ? 'border-primary-500 bg-primary-500'
-                                    : 'border-gray-300 group-hover:border-gray-400'
+                                    : 'border-gray-300 group-hover:border-gray-400 dark:border-gray-600'
                                 )}>
                                   {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
                                 </div>
@@ -3312,7 +3312,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                   isSelected ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
                                 )} />
                                 <div className="flex-1 min-w-0">
-                                  <span className="text-sm font-medium text-gray-900 block truncate">{field.name}</span>
+                                  <span className="text-sm font-medium text-gray-900 block truncate dark:text-white">{field.name}</span>
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-[11px] text-gray-400 truncate">
                                       {formatFieldType(field.field_type)}
@@ -3332,7 +3332,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                   {/* Empty states */}
                   {libraryFilter === 'custom' && filteredCustomFields.length === 0 && !customFieldsLoading && (
                     <div className="text-center py-8">
-                      <p className="text-sm text-gray-500 mb-2">No custom fields found.</p>
+                      <p className="text-sm text-gray-500 mb-2 dark:text-gray-400">No custom fields found.</p>
                       <p className="text-xs text-gray-400 mb-3">
                         {searchLower ? 'Try a different search term or ' : ''}Create a new field to get started.
                       </p>
@@ -3344,13 +3344,13 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                   )}
 
                   {libraryFilter === 'system' && filteredSystemFields.length === 0 && Object.keys(presetsByCategory).length === 0 && !isLoading && (
-                    <p className="text-sm text-gray-500 text-center py-8">
+                    <p className="text-sm text-gray-500 text-center py-8 dark:text-gray-400">
                       {searchLower ? 'No system fields match your search' : 'All system fields have been added'}
                     </p>
                   )}
 
                   {libraryFilter === 'all' && filteredSystemFields.length === 0 && filteredCustomFields.length === 0 && !isLoading && !customFieldsLoading && (
-                    <p className="text-sm text-gray-500 text-center py-8">
+                    <p className="text-sm text-gray-500 text-center py-8 dark:text-gray-400">
                       {searchLower ? 'No fields match your search' : 'All fields have been added to this section'}
                     </p>
                   )}
@@ -3358,17 +3358,17 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
               </div>
 
               {/* Sticky action bar */}
-              <div className="flex-shrink-0 py-3 border-t border-gray-200 bg-white">
+              <div className="flex-shrink-0 py-3 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex items-center justify-between gap-4 min-w-0">
                   <div className="flex items-center gap-3 min-w-0">
                     {selectedFields.size > 0 ? (
                       <>
-                        <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                        <span className="text-sm font-medium text-gray-700 whitespace-nowrap dark:text-gray-300">
                           {selectedFields.size} field{selectedFields.size !== 1 ? 's' : ''} selected
                         </span>
                         <button
                           onClick={clearSelection}
-                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap dark:hover:text-gray-300"
                         >
                           Clear
                         </button>
@@ -3439,13 +3439,13 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                               <div>
                                 <span className={clsx(
                                   'text-sm block leading-tight transition-colors',
-                                  isActive ? 'font-semibold text-gray-900' : isComplete ? 'font-medium text-gray-600' : 'font-medium text-gray-400/70'
+                                  isActive ? 'font-semibold text-gray-900 dark:text-white' : isComplete ? 'font-medium text-gray-600 dark:text-gray-400' : 'font-medium text-gray-400/70'
                                 )}>
                                   {label}
                                 </span>
                                 <span className={clsx(
                                   'text-[10px] leading-tight transition-colors',
-                                  isActive ? 'text-gray-500' : 'text-gray-400/60'
+                                  isActive ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400/60'
                                 )}>
                                   {hint}
                                 </span>
@@ -3471,7 +3471,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                 <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2">
                   <div className="max-w-lg mx-auto space-y-3 pt-1 pb-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Field Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">Field Name</label>
                       <input
                         type="text"
                         value={customName}
@@ -3481,7 +3481,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         maxLength={FIELD_NAME_MAX_LENGTH}
                         className={clsx(
                           'w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent',
-                          nameBlurred && !customName.trim() ? 'border-red-300' : 'border-gray-300'
+                          nameBlurred && !customName.trim() ? 'border-red-300' : 'border-gray-300 dark:border-gray-600'
                         )}
                         autoFocus
                       />
@@ -3513,9 +3513,9 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         </div>
                         <div className="space-y-1 ml-6">
                           {similarFields.map((f, i) => (
-                            <div key={i} className="flex items-center gap-2 bg-white rounded px-2 py-1.5 border border-gray-200">
-                              <span className="text-sm font-medium text-gray-900 truncate">{f.name}</span>
-                              <span className="text-[10px] text-gray-500 flex-shrink-0">{f.type.replace(/_/g, ' ')}</span>
+                            <div key={i} className="flex items-center gap-2 bg-white rounded px-2 py-1.5 border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                              <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{f.name}</span>
+                              <span className="text-[10px] text-gray-500 flex-shrink-0 dark:text-gray-400">{f.type.replace(/_/g, ' ')}</span>
                               {f.source === 'system' && (
                                 <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full flex-shrink-0">System</span>
                               )}
@@ -3539,16 +3539,16 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                               type="checkbox"
                               checked={createAnywayConfirmed}
                               onChange={(e) => setCreateAnywayConfirmed(e.target.checked)}
-                              className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                              className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                             />
-                            <span className="text-[11px] text-gray-500">I want to create a new field anyway</span>
+                            <span className="text-[11px] text-gray-500 dark:text-gray-400">I want to create a new field anyway</span>
                           </label>
                         )}
                       </div>
                     )}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                         Description <span className="text-gray-400 font-normal">(optional)</span>
                       </label>
                       <textarea
@@ -3556,7 +3556,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         onChange={(e) => setCustomDescription(e.target.value)}
                         placeholder="What does this field capture?"
                         rows={2}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-sm"
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-sm dark:border-gray-600"
                       />
                     </div>
                   </div>
@@ -3574,7 +3574,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                           'w-full p-4 rounded-xl border-2 text-left transition-all group',
                           fieldKind === 'single'
                             ? 'border-gray-900 bg-gray-50/80'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-700'
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -3585,8 +3585,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             <Hash className="w-5 h-5 text-blue-500" />
                           </div>
                           <div className="flex-1">
-                            <span className="text-sm font-semibold text-gray-900">Single value field</span>
-                            <p className="text-xs text-gray-500 mt-0.5">One data type per field — text, number, rating, etc.</p>
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">Single value field</span>
+                            <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">One data type per field — text, number, rating, etc.</p>
                           </div>
                           {fieldKind === 'single' ? (
                             <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0">
@@ -3604,7 +3604,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                           'w-full p-4 rounded-xl border-2 text-left transition-all group',
                           fieldKind === 'multi'
                             ? 'border-gray-900 bg-gray-50/80'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-700'
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -3615,8 +3615,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             <LayoutGrid className="w-5 h-5 text-violet-500" />
                           </div>
                           <div className="flex-1">
-                            <span className="text-sm font-semibold text-gray-900">Multi-widget field</span>
-                            <p className="text-xs text-gray-500 mt-0.5">Multiple fields in a resizable grid layout.</p>
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">Multi-widget field</span>
+                            <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Multiple fields in a resizable grid layout.</p>
                           </div>
                           {fieldKind === 'multi' ? (
                             <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0">
@@ -3651,11 +3651,11 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                           value={typeSearch}
                           onChange={(e) => { setTypeSearch(e.target.value); if (e.target.value) setAllTypesExpanded(true) }}
                           placeholder="Search field types..."
-                          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                           autoFocus={!customType}
                         />
                         {typeSearch && (
-                          <button onClick={() => setTypeSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600">
+                          <button onClick={() => setTypeSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                             <X className="w-3 h-3" />
                           </button>
                         )}
@@ -3690,7 +3690,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                           return (
                             <div className="flex flex-col items-center justify-center py-8 text-center">
                               <Search className="w-6 h-6 text-gray-300 mb-2" />
-                              <p className="text-sm text-gray-500">No field types match &ldquo;{typeSearch}&rdquo;</p>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">No field types match &ldquo;{typeSearch}&rdquo;</p>
                               <button onClick={() => setTypeSearch('')} className="mt-2 text-xs text-primary-600 hover:text-primary-700">Clear search</button>
                             </div>
                           )
@@ -3712,12 +3712,12 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                         className={clsx(
                                           'flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all',
                                           isSelected
-                                            ? 'border-gray-900 bg-gray-50 shadow-sm'
-                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                                            ? 'border-gray-900 bg-gray-50 shadow-sm dark:bg-gray-900'
+                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-700'
                                         )}
                                       >
-                                        <FieldTypeIcon type={item.value} className={clsx('w-4 h-4 flex-shrink-0', isSelected ? 'text-gray-700' : 'text-gray-400')} />
-                                        <span className={clsx('text-sm font-medium', isSelected ? 'text-gray-900' : 'text-gray-700')}>{item.label}</span>
+                                        <FieldTypeIcon type={item.value} className={clsx('w-4 h-4 flex-shrink-0', isSelected ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400')} />
+                                        <span className={clsx('text-sm font-medium', isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300')}>{item.label}</span>
                                       </button>
                                     )
                                   })}
@@ -3729,7 +3729,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             {!searchLc && customType && (
                               <button
                                 onClick={() => setAllTypesExpanded(!allTypesExpanded)}
-                                className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                                className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                               >
                                 {allTypesExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                                 {allTypesExpanded ? 'Hide all types' : 'Show all types'}
@@ -3750,17 +3750,17 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                         className={clsx(
                                           'w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-all group',
                                           isSelected
-                                            ? 'border-gray-900 bg-gray-50 shadow-sm'
-                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                                            ? 'border-gray-900 bg-gray-50 shadow-sm dark:bg-gray-900'
+                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-700'
                                         )}
                                       >
-                                        <FieldTypeIcon type={item.value} className={clsx('w-4 h-4 flex-shrink-0', isSelected ? 'text-gray-700' : 'text-gray-400 group-hover:text-gray-500')} />
+                                        <FieldTypeIcon type={item.value} className={clsx('w-4 h-4 flex-shrink-0', isSelected ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 group-hover:text-gray-500')} />
                                         <div className="flex-1 min-w-0">
-                                          <span className={clsx('text-sm font-medium block', isSelected ? 'text-gray-900' : 'text-gray-700')}>{item.label}</span>
+                                          <span className={clsx('text-sm font-medium block', isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300')}>{item.label}</span>
                                           <span className="text-xs text-gray-400">{item.description}</span>
                                         </div>
                                         {item.hasConfig && (
-                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 flex-shrink-0">configurable</span>
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 flex-shrink-0 dark:bg-gray-800">configurable</span>
                                         )}
                                       </button>
                                     )
@@ -3785,10 +3785,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         {(() => {
                           const gi = WIDGET_GALLERY_MAP[customType]
                           return (
-                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
-                              <FieldTypeIcon type={customType} className="w-5 h-5 text-gray-600" />
+                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
+                              <FieldTypeIcon type={customType} className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                               <div className="flex-1 min-w-0">
-                                <span className="text-sm font-semibold text-gray-900">{gi?.label ?? customType}</span>
+                                <span className="text-sm font-semibold text-gray-900 dark:text-white">{gi?.label ?? customType}</span>
                                 <p className="text-[11px] text-gray-400">{gi?.description}</p>
                               </div>
                               <button
@@ -3804,7 +3804,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         {/* Config editor */}
                         {isConfigurableFieldType(customType) && (
                           <div>
-                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Configuration</label>
+                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">Configuration</label>
                             <FieldConfigEditor
                               fieldType={customType}
                               config={customConfig}
@@ -3815,18 +3815,18 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
 
                         {/* Preview */}
                         <div>
-                          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Preview</label>
-                          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50/50">
+                          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">Preview</label>
+                          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50/50 dark:border-gray-700">
                             <FieldTypePreview type={customType} />
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                        <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-3">
+                        <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-3 dark:bg-gray-800">
                           <Eye className="w-5 h-5 text-gray-300" />
                         </div>
-                        <p className="text-sm font-medium text-gray-500 mb-1">Preview</p>
+                        <p className="text-sm font-medium text-gray-500 mb-1 dark:text-gray-400">Preview</p>
                         <p className="text-xs text-gray-400 max-w-[180px]">Select a field type to see a live preview and configuration options.</p>
                       </div>
                     )}
@@ -3857,7 +3857,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                       {/* ── Controls row ── */}
                       <div className="flex items-center gap-2 mb-2 flex-shrink-0">
                         {/* Column layout toggle */}
-                        <div className="inline-flex rounded-md border border-gray-200 overflow-hidden">
+                        <div className="inline-flex rounded-md border border-gray-200 overflow-hidden dark:border-gray-700">
                           <button
                             onClick={() => {
                               setContainerCols(1)
@@ -3865,7 +3865,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             }}
                             className={clsx(
                               'px-2 py-1 text-[11px] font-medium transition-colors',
-                              containerCols === 1 ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                              containerCols === 1 ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
                             )}
                             title="Single column layout"
                           >
@@ -3877,8 +3877,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                               if (containerAutoLayout) setCompositeLayout(recomputeAutoLayout(compositeWidgets, 2))
                             }}
                             className={clsx(
-                              'px-2 py-1 text-[11px] font-medium transition-colors border-l border-gray-200',
-                              containerCols === 2 ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                              'px-2 py-1 text-[11px] font-medium transition-colors border-l border-gray-200 dark:border-gray-700',
+                              containerCols === 2 ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
                             )}
                             title="Two column layout"
                           >
@@ -3897,7 +3897,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             'flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors border',
                             containerAutoLayout
                               ? 'bg-primary-50 border-primary-200 text-primary-700'
-                              : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                              : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                           )}
                           title={containerAutoLayout ? 'Auto-layout ON — widgets stack automatically' : 'Auto-layout OFF — drag to reposition'}
                         >
@@ -3939,7 +3939,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         {compositeWidgets.length === 0 ? (
                           <div className="flex flex-col items-center justify-center py-10 text-center">
                             <Layers className="w-8 h-8 text-gray-200 mb-3" />
-                            <p className="text-sm text-gray-500 mb-1">No widgets yet</p>
+                            <p className="text-sm text-gray-500 mb-1 dark:text-gray-400">No widgets yet</p>
                             <p className="text-xs text-gray-400 max-w-[220px] mb-4">Add widgets to compose your container field.</p>
                             <button
                               onClick={() => { setAddingContainerWidget(true); setLinkFieldSearch(''); setWidgetChooserTab('create') }}
@@ -3969,8 +3969,8 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     isSelected
                                       ? 'border-primary-400 bg-primary-50/50 shadow-sm ring-1 ring-primary-200'
                                       : isHovered
-                                        ? 'border-gray-300 bg-gray-50/80'
-                                        : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
+                                        ? 'border-gray-300 bg-gray-50/80 dark:border-gray-600'
+                                        : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800'
                                   )}
                                 >
                                   {/* Drag handle */}
@@ -3993,7 +3993,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                       <input
                                         autoFocus
                                         defaultValue={widget.label}
-                                        className="w-full text-[13px] font-medium text-gray-800 bg-white border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                        className="w-full text-[13px] font-medium text-gray-800 bg-white border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:text-gray-100 dark:bg-gray-800"
                                         onClick={(e) => e.stopPropagation()}
                                         onBlur={(e) => {
                                           const val = e.target.value.trim()
@@ -4010,7 +4010,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     ) : (
                                       <>
                                         <span
-                                          className="block text-[13px] font-medium text-gray-800 truncate leading-tight"
+                                          className="block text-[13px] font-medium text-gray-800 truncate leading-tight dark:text-gray-100"
                                           onDoubleClick={(e) => { e.stopPropagation(); setEditingWidgetLabel(widget.id) }}
                                           title="Double-click to rename"
                                         >
@@ -4038,7 +4038,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                   <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5 opacity-0 group-hover/widget:opacity-100 transition-opacity">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleDuplicateWidget(widget.id) }}
-                                      className="p-0.5 text-gray-300 hover:text-gray-600 rounded transition-colors"
+                                      className="p-0.5 text-gray-300 hover:text-gray-600 rounded transition-colors dark:hover:text-gray-300"
                                       title="Duplicate"
                                     >
                                       <Copy className="w-3 h-3" />
@@ -4073,7 +4073,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                       )}
 
                       {/* ── Sticky bottom bar: Add widget ── */}
-                      <div className="flex-shrink-0 pt-2 mt-1 border-t border-gray-100">
+                      <div className="flex-shrink-0 pt-2 mt-1 border-t border-gray-100 dark:border-gray-800">
                         {compositeWidgets.length === 0 ? null : (
                           <div className="flex items-center gap-2">
                             <button
@@ -4085,7 +4085,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             </button>
                             <button
                               onClick={() => { setAddingContainerWidget(true); setLinkFieldSearch(''); setWidgetChooserTab('reuse') }}
-                              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-[12px] font-medium hover:bg-gray-50 transition-colors"
+                              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-[12px] font-medium hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-400"
                             >
                               <Link2 className="w-3.5 h-3.5" />
                               Reuse field
@@ -4096,16 +4096,16 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
 
                       {/* ── Widget chooser overlay ── */}
                       {addingContainerWidget && (
-                        <div className="absolute inset-0 bg-white z-10 flex flex-col rounded-lg border border-gray-200 shadow-lg">
+                        <div className="absolute inset-0 bg-white z-10 flex flex-col rounded-lg border border-gray-200 shadow-lg dark:border-gray-700 dark:bg-gray-800">
                           {/* Header with tabs */}
-                          <div className="flex items-center border-b border-gray-200 flex-shrink-0">
+                          <div className="flex items-center border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
                             <button
                               onClick={() => setWidgetChooserTab('reuse')}
                               className={clsx(
                                 'flex-1 px-3 py-2 text-[12px] font-medium text-center transition-colors border-b-2',
                                 widgetChooserTab === 'reuse'
                                   ? 'border-primary-500 text-primary-700'
-                                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                               )}
                             >
                               Reuse existing field
@@ -4116,14 +4116,14 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                 'flex-1 px-3 py-2 text-[12px] font-medium text-center transition-colors border-b-2',
                                 widgetChooserTab === 'create'
                                   ? 'border-primary-500 text-primary-700'
-                                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                               )}
                             >
                               Create new widget
                             </button>
                             <button
                               onClick={() => setAddingContainerWidget(false)}
-                              className="p-1.5 mr-1 text-gray-400 hover:text-gray-600 rounded transition-colors flex-shrink-0"
+                              className="p-1.5 mr-1 text-gray-400 hover:text-gray-600 rounded transition-colors flex-shrink-0 dark:hover:text-gray-300"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -4139,7 +4139,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                   value={linkFieldSearch}
                                   onChange={(e) => setLinkFieldSearch(e.target.value)}
                                   placeholder="Search fields..."
-                                  className="w-full text-[12px] px-2.5 py-1.5 rounded-md border border-gray-200 focus:border-primary-400 focus:ring-0 focus:outline-none"
+                                  className="w-full text-[12px] px-2.5 py-1.5 rounded-md border border-gray-200 focus:border-primary-400 focus:ring-0 focus:outline-none dark:border-gray-700"
                                   autoFocus
                                 />
                                 {/* System fields */}
@@ -4163,7 +4163,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                             )}
                                           >
                                             <FieldTypeIcon type={f.fieldType} className={clsx('w-3.5 h-3.5 flex-shrink-0', colors.accent)} />
-                                            <span className="truncate flex-1 text-gray-700">{f.name}</span>
+                                            <span className="truncate flex-1 text-gray-700 dark:text-gray-300">{f.name}</span>
                                             {alreadyLinked && <span className="text-[9px] text-gray-400 flex-shrink-0">added</span>}
                                             <span className={clsx('text-[9px] px-1 py-0.5 rounded flex-shrink-0', colors.bg, colors.accent)}>
                                               {WIDGET_GALLERY_MAP[f.fieldType]?.label ?? f.fieldType}
@@ -4195,7 +4195,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                             )}
                                           >
                                             <FieldTypeIcon type={f.fieldType} className={clsx('w-3.5 h-3.5 flex-shrink-0', colors.accent)} />
-                                            <span className="truncate flex-1 text-gray-700">{f.name}</span>
+                                            <span className="truncate flex-1 text-gray-700 dark:text-gray-300">{f.name}</span>
                                             {alreadyLinked && <span className="text-[9px] text-gray-400 flex-shrink-0">added</span>}
                                             <span className={clsx('text-[9px] px-1 py-0.5 rounded flex-shrink-0', colors.bg, colors.accent)}>
                                               {WIDGET_GALLERY_MAP[f.fieldType]?.label ?? f.fieldType}
@@ -4224,10 +4224,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                         <button
                                           key={typeValue}
                                           onClick={() => { handleAddCompositeWidget(typeValue); setAddingContainerWidget(false) }}
-                                          className="flex items-center gap-1.5 px-2 py-1.5 rounded border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-left transition-all"
+                                          className="flex items-center gap-1.5 px-2 py-1.5 rounded border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-left transition-all dark:hover:bg-gray-800 dark:border-gray-700"
                                         >
                                           <FieldTypeIcon type={typeValue} className="w-3.5 h-3.5 text-gray-400" />
-                                          <span className="text-[11px] font-medium text-gray-700 truncate">{item.label}</span>
+                                          <span className="text-[11px] font-medium text-gray-700 truncate dark:text-gray-300">{item.label}</span>
                                         </button>
                                       )
                                     })}
@@ -4242,10 +4242,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                         <button
                                           key={item.value}
                                           onClick={() => { handleAddCompositeWidget(item.value); setAddingContainerWidget(false) }}
-                                          className="flex items-center gap-1.5 px-2 py-1.5 rounded border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-left transition-all"
+                                          className="flex items-center gap-1.5 px-2 py-1.5 rounded border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-left transition-all dark:hover:bg-gray-800 dark:border-gray-700"
                                         >
                                           <FieldTypeIcon type={item.value} className="w-3.5 h-3.5 text-gray-400" />
-                                          <span className="text-[11px] font-medium text-gray-700 truncate">{item.label}</span>
+                                          <span className="text-[11px] font-medium text-gray-700 truncate dark:text-gray-300">{item.label}</span>
                                         </button>
                                       ))}
                                     </div>
@@ -4267,10 +4267,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                       previewExpanded ? 'flex-1' : 'w-[340px]'
                     )}>
                       <div className="flex items-center justify-between mb-1 flex-shrink-0">
-                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Layout Preview</span>
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Layout Preview</span>
                         <button
                           onClick={() => setPreviewExpanded(!previewExpanded)}
-                          className="p-0.5 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                          className="p-0.5 text-gray-400 hover:text-gray-600 rounded transition-colors dark:hover:text-gray-300"
                           title={previewExpanded ? 'Collapse preview' : 'Expand preview'}
                         >
                           {previewExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -4279,7 +4279,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                       <style dangerouslySetInnerHTML={{ __html: BUILDER_GRID_STYLES }} />
                       <div
                         ref={gridContainerRef}
-                        className="flex-1 min-h-0 rounded-lg border border-gray-200 overflow-y-auto overflow-x-hidden"
+                        className="flex-1 min-h-0 rounded-lg border border-gray-200 overflow-y-auto overflow-x-hidden dark:border-gray-700"
                         style={{
                           backgroundImage: `repeating-linear-gradient(90deg, transparent, transparent calc(100%/12 - 1px), rgba(0,0,0,0.015) calc(100%/12 - 1px), rgba(0,0,0,0.015) calc(100%/12))`,
                           backgroundColor: '#fafbfc',
@@ -4355,12 +4355,12 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                             const gi = WIDGET_GALLERY_MAP[selectedWidget.type]
                             const colors = WIDGET_TYPE_COLORS[selectedWidget.type] ?? DEFAULT_WIDGET_COLORS
                             return (
-                              <div className="pb-2 border-b border-gray-100">
+                              <div className="pb-2 border-b border-gray-100 dark:border-gray-800">
                                 {editingWidgetLabel === selectedWidget.id ? (
                                   <input
                                     autoFocus
                                     defaultValue={selectedWidget.label}
-                                    className="w-full text-sm font-semibold text-gray-900 bg-white border border-primary-300 rounded px-1.5 py-1 mb-1.5 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                    className="w-full text-sm font-semibold text-gray-900 bg-white border border-primary-300 rounded px-1.5 py-1 mb-1.5 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:text-white dark:bg-gray-800"
                                     onBlur={(e) => {
                                       const val = e.target.value.trim()
                                       if (val && val !== selectedWidget.label) {
@@ -4377,7 +4377,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                   <div className="flex items-center gap-1.5 mb-1.5">
                                     <FieldTypeIcon type={selectedWidget.type} className={clsx('w-4 h-4 flex-shrink-0', colors.accent)} />
                                     <span
-                                      className="text-sm font-semibold text-gray-900 truncate flex-1 cursor-text hover:text-primary-700 transition-colors"
+                                      className="text-sm font-semibold text-gray-900 truncate flex-1 cursor-text hover:text-primary-700 transition-colors dark:text-white"
                                       onClick={() => setEditingWidgetLabel(selectedWidget.id)}
                                       title="Click to rename"
                                     >
@@ -4385,7 +4385,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                     </span>
                                     <button
                                       onClick={() => setEditingWidgetLabel(selectedWidget.id)}
-                                      className="p-0.5 text-gray-300 hover:text-gray-600 rounded transition-colors flex-shrink-0"
+                                      className="p-0.5 text-gray-300 hover:text-gray-600 rounded transition-colors flex-shrink-0 dark:hover:text-gray-300"
                                       title="Rename"
                                     >
                                       <Edit2 className="w-3 h-3" />
@@ -4398,7 +4398,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                   </span>
                                   <span className={clsx(
                                     'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-0.5',
-                                    selectedIsLinked ? 'bg-primary-50 text-primary-600' : 'bg-gray-100 text-gray-500'
+                                    selectedIsLinked ? 'bg-primary-50 text-primary-600' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                                   )}>
                                     {selectedIsLinked ? <><Link2 className="w-2.5 h-2.5" /> Linked</> : 'Standalone'}
                                   </span>
@@ -4440,7 +4440,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
 
                           {/* D2: Configuration section */}
                           <div>
-                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Configuration</label>
+                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Configuration</label>
                             {selectedIsLinked ? (
                               <p className="text-[11px] text-gray-400 leading-relaxed">
                                 Inherited from the linked field. Edit the source field to change configuration.
@@ -4458,7 +4458,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
 
                           {/* D3: Layout section */}
                           <div>
-                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Layout</label>
+                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Layout</label>
                             {containerAutoLayout ? (
                               <p className="text-[11px] text-gray-400">
                                 Managed by Auto layout ({containerCols === 1 ? '1 column' : '2 columns'}).
@@ -4469,7 +4469,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                               return (
                                 <div className="space-y-1.5">
                                   <div>
-                                    <span className="text-[10px] text-gray-500 block mb-1">Width</span>
+                                    <span className="text-[10px] text-gray-500 block mb-1 dark:text-gray-400">Width</span>
                                     <div className="flex gap-1">
                                       {[3, 4, 6, 12].map(w => (
                                         <button
@@ -4479,7 +4479,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                             'px-2 py-0.5 text-[10px] rounded border transition-colors',
                                             li.w === w
                                               ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                                              : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                                              : 'border-gray-200 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
                                           )}
                                         >
                                           {w}/12
@@ -4487,7 +4487,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                                       ))}
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                  <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                                     <span>Position: ({li.x}, {li.y})</span>
                                     <span className="text-gray-300">&middot;</span>
                                     <span>Height: {li.h}</span>
@@ -4499,17 +4499,17 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
 
                           {/* D4: Widget Preview */}
                           <div>
-                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Widget Preview</label>
-                            <div className="rounded-lg border border-gray-200 p-2.5 bg-gray-50/50">
+                            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Widget Preview</label>
+                            <div className="rounded-lg border border-gray-200 p-2.5 bg-gray-50/50 dark:border-gray-700">
                               <FieldTypePreview type={selectedWidget.type} />
                             </div>
                           </div>
 
                           {/* D5: Actions */}
-                          <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
+                          <div className="flex items-center gap-1 pt-2 border-t border-gray-100 dark:border-gray-800">
                             <button
                               onClick={() => handleDuplicateWidget(selectedWidget.id)}
-                              className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors"
+                              className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
                             >
                               <Copy className="w-3 h-3" /> Duplicate
                             </button>
@@ -4542,10 +4542,10 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                         </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center h-full text-center py-6">
-                          <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center mb-2">
+                          <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center mb-2 dark:bg-gray-800">
                             <Eye className="w-4 h-4 text-gray-300" />
                           </div>
-                          <p className="text-[12px] font-medium text-gray-500 mb-0.5">Inspector</p>
+                          <p className="text-[12px] font-medium text-gray-500 mb-0.5 dark:text-gray-400">Inspector</p>
                           <p className="text-[11px] text-gray-400 max-w-[160px]">Select a widget to view its configuration and preview.</p>
                         </div>
                       )}
@@ -4556,13 +4556,13 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
               )}
 
               {/* ── Sticky footer ── */}
-              <div className="flex-shrink-0 pt-3 pb-4 border-t border-gray-200 bg-white">
+              <div className="flex-shrink-0 pt-3 pb-4 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {createStep > 1 ? (
                       <button
                         onClick={() => setCreateStep((createStep - 1) as 1 | 2)}
-                        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                       >
                         <ChevronLeft className="w-4 h-4" />
                         Back
@@ -4586,7 +4586,7 @@ function AddFieldModal({ isOpen, onClose, onAddFromLibrary, onAddCustom, onAddSy
                           }
                           switchToUseExisting()
                         }}
-                        className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                        className="text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                       >
                         Cancel
                       </button>
@@ -4696,10 +4696,10 @@ function NewLayoutModal({ isOpen, onClose, onStartBlank, onCopyFrom, existingLay
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Create New Layout</h3>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Layout</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -4708,15 +4708,15 @@ function NewLayoutModal({ isOpen, onClose, onStartBlank, onCopyFrom, existingLay
           {/* Option 1: Start Blank */}
           <button
             onClick={onStartBlank}
-            className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-primary-400 hover:bg-primary-50/50 transition-colors text-left group"
+            className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-primary-400 hover:bg-primary-50/50 transition-colors text-left group dark:border-gray-600"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-100 group-hover:bg-primary-100 flex items-center justify-center">
-                <Plus className="w-5 h-5 text-gray-500 group-hover:text-primary-600" />
+              <div className="w-10 h-10 rounded-lg bg-gray-100 group-hover:bg-primary-100 flex items-center justify-center dark:bg-gray-800">
+                <Plus className="w-5 h-5 text-gray-500 group-hover:text-primary-600 dark:text-gray-400" />
               </div>
               <div>
-                <h4 className="font-medium text-gray-900">Start from scratch</h4>
-                <p className="text-sm text-gray-500">Begin with a blank canvas and add sections and fields</p>
+                <h4 className="font-medium text-gray-900 dark:text-white">Start from scratch</h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Begin with a blank canvas and add sections and fields</p>
               </div>
             </div>
           </button>
@@ -4743,28 +4743,28 @@ function NewLayoutModal({ isOpen, onClose, onStartBlank, onCopyFrom, existingLay
                     'w-full p-3 border rounded-lg text-left transition-colors',
                     isSelected
                       ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-200'
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                   )}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={clsx(
                         'w-8 h-8 rounded-lg flex items-center justify-center',
-                        isSelected ? 'bg-primary-100' : 'bg-gray-100'
+                        isSelected ? 'bg-primary-100' : 'bg-gray-100 dark:bg-gray-800'
                       )}>
-                        <Copy className={clsx('w-4 h-4', isSelected ? 'text-primary-600' : 'text-gray-500')} />
+                        <Copy className={clsx('w-4 h-4', isSelected ? 'text-primary-600' : 'text-gray-500 dark:text-gray-400')} />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{layout.name}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{layout.name}</span>
                           {layout.id === 'system-default' && (
-                            <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">System</span>
+                            <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">System</span>
                           )}
                           {layout.is_default && layout.id !== 'system-default' && (
                             <Star className="w-3 h-3 text-amber-500 fill-current" />
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {visibleCount} of {fieldCount} fields visible
                         </p>
                       </div>
@@ -5442,14 +5442,14 @@ function LayoutEditor({
       {/* Discard Changes Modal — only in edit mode */}
       {!readOnly && showDiscardModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6 dark:bg-gray-800">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-amber-100 rounded-full">
                 <Trash2 className="w-5 h-5 text-amber-600" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900">Discard changes?</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Discard changes?</h3>
             </div>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 mb-6 dark:text-gray-400">
               You have unsaved changes to this layout. Are you sure you want to discard them?
             </p>
             <div className="flex justify-end gap-3">
@@ -5472,9 +5472,9 @@ function LayoutEditor({
 
       {/* Read-only banner */}
       {readOnly && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-900">
           <Lock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <span className="text-sm font-medium text-gray-500">
+          <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
             System template &middot; Read-only
           </span>
           <span className="text-xs text-gray-400 ml-auto">
@@ -5487,15 +5487,15 @@ function LayoutEditor({
       <div className="flex items-center gap-3">
         <button
           onClick={handleBackClick}
-          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+          <h2 className="text-lg font-bold text-gray-900 tracking-tight dark:text-white">
             {readOnly ? layout?.name || 'System Default' : layout ? 'Edit Layout' : 'Create New Layout'}
           </h2>
-          <p className="text-[13px] text-gray-500 mt-0.5">
+          <p className="text-[13px] text-gray-500 mt-0.5 dark:text-gray-400">
             {readOnly
               ? `${visibleFields} field${visibleFields !== 1 ? 's' : ''} across ${sectionCount} section${sectionCount !== 1 ? 's' : ''}`
               : `${visibleFields} visible \u00b7 ${hiddenFields} hidden \u00b7 ${sectionCount} section${sectionCount !== 1 ? 's' : ''}`}
@@ -5518,7 +5518,7 @@ function LayoutEditor({
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border',
                   isDefault
                     ? 'bg-amber-50 text-amber-700 border-amber-200'
-                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 )}
               >
                 <Star className={clsx('w-3.5 h-3.5', isDefault && 'fill-current')} />
@@ -5541,11 +5541,11 @@ function LayoutEditor({
       </div>
 
       {/* Layout Details */}
-      <div className="bg-white border border-gray-200 rounded-lg px-4 py-3">
+      <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
         {readOnly ? (
           <div>
             <div className="flex items-center gap-2.5">
-              <h3 className="text-base font-semibold text-gray-900">{name}</h3>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">{name}</h3>
               {isDefault && (
                 <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary-50 text-primary-600">
                   Default for me
@@ -5553,7 +5553,7 @@ function LayoutEditor({
               )}
             </div>
             {description && (
-              <p className="text-sm text-gray-500 mt-1">{description}</p>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{description}</p>
             )}
           </div>
         ) : (
@@ -5563,14 +5563,14 @@ function LayoutEditor({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Layout name"
-              className="w-full text-base font-semibold text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-primary-500 focus:ring-0 px-0 py-1 placeholder:text-gray-400"
+              className="w-full text-base font-semibold text-gray-900 bg-transparent border-0 border-b border-gray-200 focus:border-primary-500 focus:ring-0 px-0 py-1 placeholder:text-gray-400 dark:border-gray-700 dark:text-white"
             />
             <input
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Add a description (optional)"
-              className="w-full text-sm text-gray-500 bg-transparent border-0 focus:ring-0 px-0 py-1.5 placeholder:text-gray-400"
+              className="w-full text-sm text-gray-500 bg-transparent border-0 focus:ring-0 px-0 py-1.5 placeholder:text-gray-400 dark:text-gray-400"
             />
           </div>
         )}
@@ -5578,7 +5578,7 @@ function LayoutEditor({
 
       {/* Sections and Fields */}
       <div className="space-y-2.5">
-        <div className="flex items-center justify-between pb-1 border-b border-gray-100">
+        <div className="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-800">
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Sections & Fields</h3>
           <div className="flex items-center gap-3">
             {/* Show hidden toggle — only when there are hidden fields */}
@@ -5587,7 +5587,7 @@ function LayoutEditor({
                 onClick={() => setShowHiddenFields(!showHiddenFields)}
                 className={clsx(
                   'flex items-center gap-1.5 text-xs font-medium transition-colors',
-                  showHiddenFields ? 'text-gray-500 hover:text-gray-700' : 'text-primary-600 hover:text-primary-700'
+                  showHiddenFields ? 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400' : 'text-primary-600 hover:text-primary-700'
                 )}
               >
                 <Eye className="w-3.5 h-3.5" />
@@ -5605,10 +5605,10 @@ function LayoutEditor({
 
         {/* Empty state for blank layouts — only in edit mode */}
         {!readOnly && sections.length === 0 && (
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
             <FolderPlus className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-            <h4 className="font-medium text-gray-900 mb-1">No sections yet</h4>
-            <p className="text-sm text-gray-500 mb-4">
+            <h4 className="font-medium text-gray-900 mb-1 dark:text-white">No sections yet</h4>
+            <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
               Add sections from the library or create custom ones to build your layout
             </p>
             <Button onClick={() => setShowAddSection(true)}>
@@ -5997,14 +5997,14 @@ export function ResearchFieldsManager() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-gray-900">Research Layouts</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Research Layouts</h2>
           <button
             onClick={() => setShowHelp(!showHelp)}
             className={clsx(
               'p-1 rounded-full transition-colors',
               showHelp
                 ? 'text-blue-600 bg-blue-100'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
             )}
             title="How layouts work"
           >
@@ -6033,7 +6033,7 @@ export function ResearchFieldsManager() {
       {/* Status Summary Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <button
-          className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-left cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all group"
+          className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-left cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
           onClick={() => {
             // Filter to show only the default template
             const defaultCard = cardModels.find(c => c.isMyDefault)
@@ -6044,33 +6044,33 @@ export function ResearchFieldsManager() {
           title="Click to find your default template"
         >
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">My Default</p>
-          <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate">{usageSummary.defaultTemplateName}</p>
+          <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate dark:text-white">{usageSummary.defaultTemplateName}</p>
         </button>
         <button
-          className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-left cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all group"
+          className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-left cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
           onClick={() => setDrawerKind('custom_layouts')}
         >
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Assets Using Custom Layouts</p>
-          <p className="text-sm font-semibold text-gray-900 mt-0.5">
+          <p className="text-sm font-semibold text-gray-900 mt-0.5 dark:text-white">
             {usageSummary.assetsUsingCustomTemplates} asset{usageSummary.assetsUsingCustomTemplates !== 1 ? 's' : ''}
           </p>
         </button>
         <button
-          className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-left cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all group"
+          className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-left cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
           onClick={() => setDrawerKind('overrides')}
           title="Overrides are asset-level layout changes layered on top of the assigned template"
         >
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Assets with Overrides</p>
-          <p className="text-sm font-semibold text-gray-900 mt-0.5">
+          <p className="text-sm font-semibold text-gray-900 mt-0.5 dark:text-white">
             {usageSummary.assetsWithOverrides} asset{usageSummary.assetsWithOverrides !== 1 ? 's' : ''}
           </p>
         </button>
         <button
           className={clsx(
-            'bg-white border rounded-lg px-4 py-3 text-left cursor-pointer hover:shadow-sm transition-all group',
+            'bg-white border rounded-lg px-4 py-3 text-left cursor-pointer hover:shadow-sm transition-all group dark:bg-gray-800',
             filters.usedByAssetsOnly && sortKey === 'most_used'
               ? 'border-primary-300 bg-primary-50/30'
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
           )}
           onClick={() => {
             if (filters.usedByAssetsOnly && sortKey === 'most_used') {
@@ -6084,7 +6084,7 @@ export function ResearchFieldsManager() {
           }}
         >
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Templates in Use</p>
-          <p className="text-sm font-semibold text-gray-900 mt-0.5">
+          <p className="text-sm font-semibold text-gray-900 mt-0.5 dark:text-white">
             {usageSummary.templatesInUseCount} template{usageSummary.templatesInUseCount !== 1 ? 's' : ''}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -6103,7 +6103,7 @@ export function ResearchFieldsManager() {
             placeholder="Search layouts..."
             value={filters.search}
             onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 dark:border-gray-700 dark:bg-gray-800"
           />
         </div>
 
@@ -6112,7 +6112,7 @@ export function ResearchFieldsManager() {
           <select
             value={filters.scopeFilter}
             onChange={e => setFilters(f => ({ ...f, scopeFilter: e.target.value as ScopeFilter }))}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400"
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 dark:border-gray-700 dark:bg-gray-800"
           >
             <option value="all">All scopes</option>
             <option value="personal">Personal</option>
@@ -6125,7 +6125,7 @@ export function ResearchFieldsManager() {
           <select
             value={sortKey}
             onChange={e => setSortKey(e.target.value as CardSortKey)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400"
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 dark:border-gray-700 dark:bg-gray-800"
           >
             <option value="name">Sort: Name</option>
             <option value="recently_updated">Sort: Recent</option>
@@ -6139,7 +6139,7 @@ export function ResearchFieldsManager() {
               'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border transition-colors',
               filters.usedByAssetsOnly
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
             )}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -6150,7 +6150,7 @@ export function ResearchFieldsManager() {
           {activeFilterCount > 0 && (
             <button
               onClick={() => { setFilters(DEFAULT_FILTER_STATE); setSortKey('name') }}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1"
+              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 dark:hover:text-gray-300"
             >
               Clear ({activeFilterCount})
             </button>
@@ -6172,7 +6172,7 @@ export function ResearchFieldsManager() {
               <div className="mb-3">
                 <div className="flex items-center gap-2">
                   <ScopeBadge scope={group.scope} />
-                  <h3 className="text-sm font-semibold text-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                     {group.label} ({group.cards.length})
                   </h3>
                 </div>
@@ -6203,9 +6203,9 @@ export function ResearchFieldsManager() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
+        <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg dark:border-gray-700">
           <Layers className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {activeFilterCount > 0
               ? 'No layouts match your filters.'
               : 'No layouts yet. Create one to get started.'}
@@ -6242,14 +6242,14 @@ export function ResearchFieldsManager() {
       {/* Delete Confirmation Modal — with impact awareness */}
       {layoutToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden dark:bg-gray-800">
             <div className="p-6">
               <div className="flex items-start gap-4">
                 <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
                   <Trash2 className="w-6 h-6 text-red-600" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Delete &ldquo;{layoutToDelete.name}&rdquo;?
                   </h3>
                   {deleteImpact.assetsAffected > 0 ? (
@@ -6267,14 +6267,14 @@ export function ResearchFieldsManager() {
                       </div>
                     </>
                   ) : (
-                    <p className="mt-2 text-sm text-gray-600">
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                       This layout is not used by any assets. It can be safely deleted.
                     </p>
                   )}
                 </div>
               </div>
             </div>
-            <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 dark:bg-gray-900">
               <Button
                 variant="outline"
                 onClick={() => setLayoutToDelete(null)}

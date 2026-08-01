@@ -70,17 +70,17 @@ function getSentimentTrajectoryConfig(trajectory: EvolutionStats['sentimentTraje
       return {
         icon: Minus,
         label: 'Stable',
-        color: 'text-gray-600',
-        bgColor: 'bg-gray-50',
-        borderColor: 'border-gray-200'
+        color: 'text-gray-600 dark:text-gray-400',
+        bgColor: 'bg-gray-50 dark:bg-gray-900',
+        borderColor: 'border-gray-200 dark:border-gray-700'
       }
     default:
       return {
         icon: Minus,
         label: 'Unknown',
         color: 'text-gray-400',
-        bgColor: 'bg-gray-50',
-        borderColor: 'border-gray-200'
+        bgColor: 'bg-gray-50 dark:bg-gray-900',
+        borderColor: 'border-gray-200 dark:border-gray-700'
       }
   }
 }
@@ -104,8 +104,8 @@ function StatCard({ icon: Icon, label, value, subValue, color }: StatCardProps) 
         <Icon className="w-4 h-4" />
       </div>
       <div>
-        <p className="text-lg font-bold text-gray-900">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-lg font-bold text-gray-900 dark:text-white">{value}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
         {subValue && <p className="text-xs text-gray-400">{subValue}</p>}
       </div>
     </div>
@@ -135,7 +135,7 @@ export function EvolutionOverview({
         className
       )}>
         <Edit3 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No revision history yet</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No revision history yet</p>
         <p className="text-xs text-gray-400 mt-1">Changes will be tracked as you edit</p>
       </div>
     )
@@ -151,11 +151,11 @@ export function EvolutionOverview({
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <Edit3 className="w-4 h-4 text-gray-500" />
+              <Edit3 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Change Intelligence</h3>
             </div>
             {lastEditor && (
-              <p className="text-xs text-gray-500 mt-0.5 ml-6">
+              <p className="text-xs text-gray-500 mt-0.5 ml-6 dark:text-gray-400">
                 Last updated by {lastEditor.name} · {format(lastEditor.date, 'MMM d, yyyy')}
               </p>
             )}
@@ -200,7 +200,7 @@ export function EvolutionOverview({
         {/* Sentiment Evolution Arrow (if we have both sentiments) */}
         {stats.initialSentiment && stats.currentSentiment && stats.initialSentiment !== stats.currentSentiment && (
           <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-            <p className="text-xs text-gray-500 mb-2">Sentiment Evolution</p>
+            <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">Sentiment Evolution</p>
             <div className="flex items-center gap-2">
               <SentimentBadge sentiment={stats.initialSentiment} />
               <ArrowRight className="w-4 h-4 text-gray-400" />
@@ -252,7 +252,7 @@ export function EvolutionOverview({
 function SentimentBadge({ sentiment }: { sentiment: Sentiment }) {
   const config = {
     bullish: { bg: 'bg-green-100', text: 'text-green-700', label: 'Bullish' },
-    neutral: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Neutral' },
+    neutral: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300', label: 'Neutral' },
     bearish: { bg: 'bg-red-100', text: 'text-red-700', label: 'Bearish' }
   }
 

@@ -161,7 +161,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
           {[1, 2, 3].map((i) => (
             <div
               key={i}
-              className="h-32 rounded-xl bg-gray-100 animate-pulse"
+              className="h-32 rounded-xl bg-gray-100 animate-pulse dark:bg-gray-800"
             />
           ))}
         </div>
@@ -188,7 +188,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
             </div>
             <button
               onClick={() => refetch()}
-              className="mt-4 px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+              className="mt-4 px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 transition-colors dark:bg-gray-800"
             >
               Try again
             </button>
@@ -204,8 +204,8 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">All Priorities</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Priorities</h1>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
               What needs attention right now
             </p>
           </div>
@@ -220,14 +220,14 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
               onClick={() => refetch()}
               disabled={isFetching}
               className={clsx(
-                'p-2 rounded-lg hover:bg-gray-100 transition-colors',
+                'p-2 rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-gray-700',
                 isFetching && 'opacity-50'
               )}
               title="Refresh"
             >
               <RefreshCw
                 className={clsx(
-                  'w-5 h-5 text-gray-500',
+                  'w-5 h-5 text-gray-500 dark:text-gray-400',
                   isFetching && 'animate-spin'
                 )}
               />
@@ -236,7 +236,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
         </div>
 
         {/* Filter tabs */}
-        <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+        <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
           {filterTabs.map(tab => {
             const Icon = tab.icon
             const isActive = filterType === tab.id
@@ -247,15 +247,15 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
                 className={clsx(
                   'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
                   isActive
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
                 )}
               >
                 <Icon className={clsx('h-4 w-4', isActive && 'text-primary-500')} />
                 <span>{tab.label}</span>
                 <span className={clsx(
                   'px-1.5 py-0.5 rounded-full text-xs font-semibold',
-                  isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-600'
+                  isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-600 dark:text-gray-400'
                 )}>
                   {tab.count}
                 </span>
@@ -266,14 +266,14 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
 
         {/* Empty state */}
         {!hasItems && (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-900">
             <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
               <Clock className="w-6 h-6 text-gray-400" />
             </div>
-            <h3 className="text-sm font-medium text-gray-900">
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white">
               All caught up!
             </h3>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
               No attention items at the moment. Check back later.
             </p>
           </div>

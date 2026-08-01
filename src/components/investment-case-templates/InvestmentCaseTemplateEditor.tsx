@@ -338,9 +338,9 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-[95vw] h-[90vh] max-w-7xl flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-[95vw] h-[90vh] max-w-7xl flex flex-col dark:bg-gray-800">
         {/* Header: Template Identity + Actions */}
-        <div className="flex items-start justify-between px-6 py-3 border-b border-gray-200 shrink-0">
+        <div className="flex items-start justify-between px-6 py-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
           <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center gap-3">
               <input
@@ -349,7 +349,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
                 onChange={e => setName(e.target.value)}
                 onBlur={() => setNameBlurred(true)}
                 className={clsx(
-                  'text-lg font-semibold text-gray-900 border-0 border-b-2 focus:ring-0 w-full max-w-sm bg-transparent',
+                  'text-lg font-semibold text-gray-900 border-0 border-b-2 focus:ring-0 w-full max-w-sm bg-transparent dark:text-white',
                   nameBlurred && !name.trim() ? 'border-red-400' : 'border-transparent focus:border-primary-500'
                 )}
                 placeholder="Template name"
@@ -365,11 +365,11 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
               type="text"
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="text-sm text-gray-500 border-0 focus:ring-0 w-full max-w-lg bg-transparent"
+              className="text-sm text-gray-500 border-0 focus:ring-0 w-full max-w-lg bg-transparent dark:text-gray-400"
               placeholder="Description (optional)"
             />
             <div className="flex items-center gap-4">
-              <span className="text-xs font-medium text-gray-500 shrink-0">Sharing</span>
+              <span className="text-xs font-medium text-gray-500 shrink-0 dark:text-gray-400">Sharing</span>
               <TemplateSharingControl
                 scope={shareScope}
                 onScopeChange={setShareScope}
@@ -384,16 +384,16 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
               <div className="relative" ref={moreMenuRef}>
                 <button
                   onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
                   title="More actions"
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
                 {moreMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10">
+                  <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 dark:border-gray-700 dark:bg-gray-800">
                     <button
                       onClick={() => { onDuplicate?.(); setMoreMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       <Copy className="w-4 h-4" />
                       Duplicate template
@@ -426,7 +426,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
             </Button>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <X className="w-5 h-5" />
             </button>
@@ -436,7 +436,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
         {/* Content */}
         <div className="flex-1 flex min-h-0">
           {/* Sidebar Tabs */}
-          <div className="w-48 border-r border-gray-200 bg-gray-50 p-2 space-y-1 shrink-0">
+          <div className="w-48 border-r border-gray-200 bg-gray-50 p-2 space-y-1 shrink-0 dark:border-gray-700 dark:bg-gray-900">
             {tabs.map(tab => (
               <button
                 key={tab.id}
@@ -445,7 +445,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
                   'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                   activeTab === tab.id
                     ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                 )}
               >
                 <tab.icon className="w-4 h-4" />
@@ -504,9 +504,9 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
 
           {/* Preview Panel */}
           {showPreview && (
-            <div className="w-1/2 border-l border-gray-200 bg-gray-100/80 flex flex-col min-h-0 shrink-0">
+            <div className="w-1/2 border-l border-gray-200 bg-gray-100/80 flex flex-col min-h-0 shrink-0 dark:border-gray-700">
               {/* Preview Context Bar */}
-              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 shrink-0">
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 shrink-0 dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[10px] text-gray-400">Sample data &mdash; AAPL &middot; {previewContext.asOfDate}</p>
@@ -528,7 +528,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
                         'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors',
                         highlightBranding
                           ? 'bg-primary-100 text-primary-700'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                       )}
                       title="Highlight branding elements"
                     >
@@ -574,18 +574,18 @@ function CollapsibleGroup({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="border border-gray-200 rounded-lg">
+    <div className="border border-gray-200 rounded-lg dark:border-gray-700">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50/80 rounded-lg"
         type="button"
       >
-        <span className="text-[13px] font-semibold text-gray-800 tracking-tight">{title}</span>
+        <span className="text-[13px] font-semibold text-gray-800 tracking-tight dark:text-gray-100">{title}</span>
         <ChevronRight className={clsx('w-4 h-4 text-gray-400 transition-transform', open && 'rotate-90')} />
       </button>
       {open && (
-        <div className="px-4 pb-3.5 space-y-3 border-t border-gray-100">
-          {hint && <p className="text-[11px] text-gray-500 pt-2">{hint}</p>}
+        <div className="px-4 pb-3.5 space-y-3 border-t border-gray-100 dark:border-gray-800">
+          {hint && <p className="text-[11px] text-gray-500 pt-2 dark:text-gray-400">{hint}</p>}
           {children}
         </div>
       )}
@@ -658,7 +658,7 @@ function OrgTreeCheckbox({
     <div>
       <label
         className={clsx(
-          'flex items-center gap-2 py-1.5 hover:bg-gray-50 cursor-pointer select-none',
+          'flex items-center gap-2 py-1.5 hover:bg-gray-50 cursor-pointer select-none dark:hover:bg-gray-800',
           checked && 'bg-primary-50/50'
         )}
         style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
@@ -667,7 +667,7 @@ function OrgTreeCheckbox({
           <button
             type="button"
             onClick={e => { e.preventDefault(); setExpanded(!expanded) }}
-            className="p-0.5 text-gray-400 hover:text-gray-600 shrink-0"
+            className="p-0.5 text-gray-400 hover:text-gray-600 shrink-0 dark:hover:text-gray-300"
           >
             <ChevronRight className={clsx('w-3 h-3 transition-transform', expanded && 'rotate-90')} />
           </button>
@@ -678,10 +678,10 @@ function OrgTreeCheckbox({
           type="checkbox"
           checked={checked}
           onChange={() => onToggle(node.id, node.name, 'department')}
-          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
+          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5 dark:border-gray-600"
         />
         <Building className={clsx('w-3.5 h-3.5 shrink-0', NODE_TYPE_ICON_CLASSES[node.node_type] || 'text-gray-400')} />
-        <span className="text-sm text-gray-700 truncate">{node.name}</span>
+        <span className="text-sm text-gray-700 truncate dark:text-gray-300">{node.name}</span>
       </label>
       {expanded && hasChildren && node.children.map(child => (
         <OrgTreeCheckbox
@@ -757,15 +757,15 @@ function TemplateSharingControl({
         <button
           type="button"
           onClick={() => setDropdownOpen(!dropdownOpen)}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
         >
-          <currentScope.icon className="w-3.5 h-3.5 text-gray-500" />
+          <currentScope.icon className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
           <span>{buttonLabel}</span>
           <ChevronDown className={clsx('w-3 h-3 text-gray-400 transition-transform', dropdownOpen && 'rotate-180')} />
         </button>
 
         {dropdownOpen && (
-          <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
+          <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-20 dark:border-gray-700 dark:bg-gray-800">
             {/* Scope options */}
             <div className="py-1">
               {SCOPE_OPTIONS.map(opt => (
@@ -774,7 +774,7 @@ function TemplateSharingControl({
                   type="button"
                   onClick={() => handleScopeSelect(opt.value)}
                   className={clsx(
-                    'w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50',
+                    'w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                     scope === opt.value && 'bg-primary-50'
                   )}
                 >
@@ -784,7 +784,7 @@ function TemplateSharingControl({
                   )} />
                   <span className={clsx(
                     'text-sm',
-                    scope === opt.value ? 'text-primary-700 font-medium' : 'text-gray-700'
+                    scope === opt.value ? 'text-primary-700 font-medium' : 'text-gray-700 dark:text-gray-300'
                   )}>
                     {opt.label}
                   </span>
@@ -795,7 +795,7 @@ function TemplateSharingControl({
             {/* Inline org tree when 'specific' is selected */}
             {scope === 'specific' && (
               <>
-                <div className="border-t border-gray-200" />
+                <div className="border-t border-gray-200 dark:border-gray-700" />
                 <div className="max-h-64 overflow-y-auto">
                   {entitiesLoading ? (
                     <div className="flex items-center justify-center py-6 text-sm text-gray-400">
@@ -832,7 +832,7 @@ function TemplateSharingControl({
                             <label
                               key={t.id}
                               className={clsx(
-                                'flex items-center gap-2 py-1.5 px-3 hover:bg-gray-50 cursor-pointer select-none',
+                                'flex items-center gap-2 py-1.5 px-3 hover:bg-gray-50 cursor-pointer select-none dark:hover:bg-gray-800',
                                 selectedIds.has(t.id) && 'bg-primary-50/50'
                               )}
                             >
@@ -840,10 +840,10 @@ function TemplateSharingControl({
                                 type="checkbox"
                                 checked={selectedIds.has(t.id)}
                                 onChange={() => handleToggle(t.id, t.name, 'team')}
-                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
+                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5 dark:border-gray-600"
                               />
                               <Users className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                              <span className="text-sm text-gray-700 truncate">{t.name}</span>
+                              <span className="text-sm text-gray-700 truncate dark:text-gray-300">{t.name}</span>
                             </label>
                           ))}
                         </>
@@ -859,7 +859,7 @@ function TemplateSharingControl({
                             <label
                               key={u.id}
                               className={clsx(
-                                'flex items-center gap-2 py-1.5 px-3 hover:bg-gray-50 cursor-pointer select-none',
+                                'flex items-center gap-2 py-1.5 px-3 hover:bg-gray-50 cursor-pointer select-none dark:hover:bg-gray-800',
                                 selectedIds.has(u.id) && 'bg-primary-50/50'
                               )}
                             >
@@ -867,12 +867,12 @@ function TemplateSharingControl({
                                 type="checkbox"
                                 checked={selectedIds.has(u.id)}
                                 onChange={() => handleToggle(u.id, u.full_name, 'user', u.email)}
-                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
+                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5 dark:border-gray-600"
                               />
-                              <div className="w-5 h-5 rounded-full bg-gray-100 shrink-0 flex items-center justify-center text-[9px] text-gray-500 font-medium">
+                              <div className="w-5 h-5 rounded-full bg-gray-100 shrink-0 flex items-center justify-center text-[9px] text-gray-500 font-medium dark:text-gray-400 dark:bg-gray-800">
                                 {u.full_name.charAt(0).toUpperCase()}
                               </div>
-                              <span className="text-sm text-gray-700 truncate">{u.full_name}</span>
+                              <span className="text-sm text-gray-700 truncate dark:text-gray-300">{u.full_name}</span>
                               <span className="text-[11px] text-gray-400 truncate ml-auto">{u.email}</span>
                             </label>
                           ))}
@@ -965,12 +965,12 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
 
   return (
     <div className="space-y-3">
-      <h3 className="text-base font-semibold text-gray-900">Cover Page</h3>
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white">Cover Page</h3>
 
       {/* 1. Title */}
       <CollapsibleGroup title="Title" defaultOpen>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Cover Title</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Cover Title</label>
           <div className="flex gap-2">
             <input
               ref={titleInputRef}
@@ -978,7 +978,7 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
               value={config.customTitle || ''}
               onChange={e => onChange({ ...config, customTitle: e.target.value || null })}
               placeholder={defaultTitle}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 font-mono"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 font-mono dark:border-gray-600"
             />
             <div className="relative" ref={variableRef}>
               <button
@@ -987,7 +987,7 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
                   'px-3 py-2 text-sm border rounded-lg whitespace-nowrap flex items-center gap-1.5',
                   variableDropdownOpen
                     ? 'border-primary-400 bg-primary-50 text-primary-700'
-                    : 'border-gray-300 hover:bg-gray-50 text-gray-600'
+                    : 'border-gray-300 hover:bg-gray-50 text-gray-600 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-400'
                 )}
                 type="button"
               >
@@ -996,15 +996,15 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
                 <ChevronDown className="w-3 h-3" />
               </button>
               {variableDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10">
-                  <div className="px-3 py-1.5 text-[10px] text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100">
+                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="px-3 py-1.5 text-[10px] text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
                     Insert at cursor
                   </div>
                   {TEMPLATE_VARIABLES.map(v => (
                     <button
                       key={v.key}
                       onClick={() => insertVariable(v.key)}
-                      className="w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 group"
+                      className="w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 group dark:hover:bg-gray-800"
                       type="button"
                     >
                       <span className="font-mono text-xs text-primary-600 group-hover:text-primary-700">{v.key}</span>
@@ -1023,7 +1023,7 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
                 Default: <span className="font-mono">Investment Case: {'{{symbol}}'}</span>
               </p>
             )}
-            <p className="text-[11px] text-gray-500 inline">
+            <p className="text-[11px] text-gray-500 inline dark:text-gray-400">
               Available: <span className="font-mono text-gray-400">{'{{symbol}}'}</span>, <span className="font-mono text-gray-400">{'{{company_name}}'}</span>, <span className="font-mono text-gray-400">{'{{as_of_date}}'}</span>
               {!showAllVars ? (
                 <button
@@ -1061,18 +1061,18 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Title Position</label>
-          <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit">
+          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Title Position</label>
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit dark:border-gray-600">
             {(['left', 'center', 'right'] as const).map(pos => (
               <button
                 key={pos}
                 onClick={() => onChange({ ...config, titlePosition: pos })}
                 className={clsx(
                   'px-4 py-1.5 text-sm capitalize',
-                  pos !== 'left' && 'border-l border-gray-300',
+                  pos !== 'left' && 'border-l border-gray-300 dark:border-gray-600',
                   config.titlePosition === pos
                     ? 'bg-primary-100 text-primary-700 font-medium'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
                 )}
                 type="button"
               >
@@ -1091,9 +1091,9 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
               type="checkbox"
               checked={config.useOrgBranding}
               onChange={e => onChange({ ...config, useOrgBranding: e.target.checked, showLogo: e.target.checked || config.showLogo })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Use org logo &amp; firm name</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Use org logo &amp; firm name</span>
           </label>
           {config.useOrgBranding && (
             <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-medium">Inherited from org</span>
@@ -1101,9 +1101,9 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
         </div>
 
         {config.useOrgBranding && orgBranding && (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-500 space-y-1">
-            <div><span className="font-medium text-gray-600">Firm:</span> {orgBranding.firmName || <span className="italic text-gray-400">Not set</span>}</div>
-            {orgBranding.logoUrl && <div><span className="font-medium text-gray-600">Logo:</span> Configured</div>}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-500 space-y-1 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
+            <div><span className="font-medium text-gray-600 dark:text-gray-400">Firm:</span> {orgBranding.firmName || <span className="italic text-gray-400">Not set</span>}</div>
+            {orgBranding.logoUrl && <div><span className="font-medium text-gray-600 dark:text-gray-400">Logo:</span> Configured</div>}
             {!orgBranding.firmName && !orgBranding.logoUrl && (
               <p className="text-amber-600">No org branding configured yet. Set it up in Organization &rarr; Settings.</p>
             )}
@@ -1112,10 +1112,10 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
 
         {(config.useOrgBranding || config.showLogo) && (
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">
               Logo Position
             </label>
-            <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit">
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden w-fit dark:border-gray-600">
               {([
                 { value: 'top-left' as const, label: 'Top Left' },
                 { value: 'top-right' as const, label: 'Top Right' },
@@ -1125,10 +1125,10 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
                   onClick={() => onChange({ ...config, logoPosition: opt.value })}
                   className={clsx(
                     'px-3 py-1.5 text-sm',
-                    idx > 0 && 'border-l border-gray-300',
+                    idx > 0 && 'border-l border-gray-300 dark:border-gray-600',
                     config.logoPosition === opt.value
                       ? 'bg-primary-100 text-primary-700 font-medium'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                      : 'bg-white text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
                   )}
                   type="button"
                 >
@@ -1144,9 +1144,9 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
             type="checkbox"
             checked={config.showCompanyName}
             onChange={e => onChange({ ...config, showCompanyName: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
           />
-          <span className="text-sm text-gray-700">
+          <span className="text-sm text-gray-700 dark:text-gray-300">
             Show company name <span className="text-gray-400">(e.g., Apple Inc.)</span>
           </span>
         </label>
@@ -1160,36 +1160,36 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
               type="checkbox"
               checked={config.showCurrentPrice}
               onChange={e => onChange({ ...config, showCurrentPrice: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Show current price</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Show current price</span>
           </label>
           <label className="flex items-center gap-2 select-none cursor-pointer">
             <input
               type="checkbox"
               checked={config.includeDate}
               onChange={e => onChange({ ...config, includeDate: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Include as-of date</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Include as-of date</span>
           </label>
           <label className="flex items-center gap-2 select-none cursor-pointer">
             <input
               type="checkbox"
               checked={config.includeAuthor}
               onChange={e => onChange({ ...config, includeAuthor: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Include author attribution</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Include author attribution</span>
           </label>
           <label className="flex items-center gap-2 select-none cursor-pointer">
             <input
               type="checkbox"
               checked={config.includeTimestamp}
               onChange={e => onChange({ ...config, includeTimestamp: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Include generated timestamp</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Include generated timestamp</span>
           </label>
         </div>
         <p className="text-[11px] text-gray-400">Captured at export time.</p>
@@ -1202,9 +1202,9 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
             type="checkbox"
             checked={config.includeDisclaimer}
             onChange={e => onChange({ ...config, includeDisclaimer: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
           />
-          <span className="text-sm text-gray-700">Include disclaimer on cover</span>
+          <span className="text-sm text-gray-700 dark:text-gray-300">Include disclaimer on cover</span>
         </label>
 
         {config.includeDisclaimer && (
@@ -1215,17 +1215,17 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
                   type="checkbox"
                   checked={config.useOrgDisclaimer}
                   onChange={e => onChange({ ...config, useOrgDisclaimer: e.target.checked })}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
-                <span className="text-sm text-gray-700">Use org default disclaimer</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Use org default disclaimer</span>
               </label>
               {config.useOrgDisclaimer && (
                 <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-medium">Inherited from org</span>
               )}
             </div>
             {config.useOrgDisclaimer ? (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p className="text-xs text-gray-500 italic leading-relaxed">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-900">
+                <p className="text-xs text-gray-500 italic leading-relaxed dark:text-gray-400">
                   {orgBranding?.defaultDisclaimer || config.disclaimerText || DEFAULT_COVER_CONFIG.disclaimerText}
                 </p>
                 <p className="text-[10px] text-gray-400 mt-1.5">
@@ -1237,12 +1237,12 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Custom Disclaimer</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Custom Disclaimer</label>
                 <textarea
                   value={config.disclaimerText}
                   onChange={e => onChange({ ...config, disclaimerText: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 />
                 <p className="text-[10px] text-amber-600 mt-1">Overrides org default.</p>
               </div>
@@ -1258,20 +1258,20 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
             type="checkbox"
             checked={tocConfig.enabled}
             onChange={e => onTocChange({ ...tocConfig, enabled: e.target.checked })}
-            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
           />
-          <span className="text-sm text-gray-700">Include table of contents</span>
+          <span className="text-sm text-gray-700 dark:text-gray-300">Include table of contents</span>
         </label>
 
         {tocConfig.enabled && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">TOC Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">TOC Title</label>
               <input
                 type="text"
                 value={tocConfig.title}
                 onChange={e => onTocChange({ ...tocConfig, title: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
               />
             </div>
             <label className="flex items-center gap-2 select-none cursor-pointer">
@@ -1279,9 +1279,9 @@ function CoverPageEditor({ config, onChange, tocConfig, onTocChange, brandingCon
                 type="checkbox"
                 checked={tocConfig.showPageNumbers}
                 onChange={e => onTocChange({ ...tocConfig, showPageNumbers: e.target.checked })}
-                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
               />
-              <span className="text-sm text-gray-700">Show page numbers</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Show page numbers</span>
             </label>
           </>
         )}
@@ -1373,13 +1373,13 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
       {/* ── Style Presets ── */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-semibold text-gray-800">Style Presets</h3>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Style Presets</h3>
           {/* Base Style Status indicator */}
-          <span className="text-[11px] text-gray-500">
-            Base: <span className="font-medium text-gray-700">{baseStatus.label}</span>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">
+            Base: <span className="font-medium text-gray-700 dark:text-gray-300">{baseStatus.label}</span>
           </span>
         </div>
-        <p className="text-[11px] text-gray-500 mb-3">Apply a complete style in one click. You can fine-tune after.</p>
+        <p className="text-[11px] text-gray-500 mb-3 dark:text-gray-400">Apply a complete style in one click. You can fine-tune after.</p>
         <div className="flex flex-wrap gap-2">
           {STYLE_PRESETS.map(preset => {
             const isActive = JSON.stringify(config) === JSON.stringify(preset.config)
@@ -1391,7 +1391,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                   'px-3 py-1.5 rounded-lg border text-sm transition-colors',
                   isActive
                     ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300'
                 )}
                 title={preset.description}
               >
@@ -1401,7 +1401,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
           })}
           <button
             onClick={() => applyPreset(STYLE_PRESETS[0])}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-500 hover:border-gray-300 hover:text-gray-700"
+            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400"
           >
             <RotateCcw className="w-3.5 h-3.5 inline mr-1 -mt-px" />
             Reset
@@ -1410,19 +1410,19 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
       </div>
 
       {/* ── Recommended Settings ── */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-gray-100">
-          <span className="text-[13px] font-semibold text-gray-800 tracking-tight">Recommended</span>
+      <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
+        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+          <span className="text-[13px] font-semibold text-gray-800 tracking-tight dark:text-gray-100">Recommended</span>
           <span className="ml-2 text-[11px] text-gray-400">Most users only need these controls</span>
         </div>
         <div className="px-4 pb-4 pt-3 space-y-5">
           {/* Page Format (orientation moved to Advanced) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Page Format</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Page Format</label>
             <select
               value={config.pageFormat}
               onChange={e => { onChange({ ...config, pageFormat: e.target.value as any }); emitHighlight('margins') }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
             >
               {PAGE_FORMATS.map(f => (
                 <option key={f.value} value={f.value}>{f.label}</option>
@@ -1433,15 +1433,15 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
           {/* Margin Size */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Margin Size</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Margin Size</label>
               <label className="inline-flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={showMarginGuides || false}
                   onChange={e => onShowMarginGuides?.(e.target.checked)}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-3.5 h-3.5 dark:border-gray-600"
                 />
-                <span className="text-[11px] text-gray-500">Show guides in preview</span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">Show guides in preview</span>
               </label>
             </div>
             <div className="flex gap-2">
@@ -1456,7 +1456,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                     'flex-1 px-3 py-1.5 rounded-lg border text-sm transition-colors',
                     currentMarginPreset === mp.key
                       ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400'
                   )}
                 >
                   {mp.label}
@@ -1473,8 +1473,8 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
 
           {/* Primary Brand Color */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Primary Brand Color</label>
-            <p className="text-[11px] text-gray-500 mb-2">Other color tokens are derived automatically.</p>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Primary Brand Color</label>
+            <p className="text-[11px] text-gray-500 mb-2 dark:text-gray-400">Other color tokens are derived automatically.</p>
             {/* Branding Lock — inherit from org */}
             {orgBranding?.primaryColor && (
               <label className="flex items-center gap-2 mb-3 p-2 bg-blue-50/60 border border-blue-200/60 rounded-lg cursor-pointer">
@@ -1486,7 +1486,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                       applyPrimaryColor(orgBranding.primaryColor)
                     }
                   }}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
                 <Lock className="w-3.5 h-3.5 text-blue-500" />
                 <span className="text-xs text-blue-700">Use org brand color ({orgBranding.primaryColor})</span>
@@ -1501,8 +1501,8 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                   className={clsx(
                     'flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs',
                     config.colors.primary === preset.primary
-                      ? 'border-gray-400 bg-gray-50 font-medium'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-gray-400 bg-gray-50 font-medium dark:bg-gray-900'
+                      : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                   )}
                 >
                   <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: preset.primary }} />
@@ -1516,7 +1516,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                   type="color"
                   value={config.colors.primary}
                   onChange={e => applyPrimaryColor(e.target.value)}
-                  className="w-8 h-8 rounded border border-gray-300 cursor-pointer shrink-0"
+                  className="w-8 h-8 rounded border border-gray-300 cursor-pointer shrink-0 dark:border-gray-600"
                 />
                 <input
                   type="text"
@@ -1526,13 +1526,13 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                     if (/^#[0-9a-fA-F]{6}$/.test(v)) applyPrimaryColor(v)
                     else onChange({ ...config, colors: { ...config.colors, primary: v } })
                   }}
-                  className="w-24 px-2 py-1 border border-gray-300 rounded text-xs font-mono"
+                  className="w-24 px-2 py-1 border border-gray-300 rounded text-xs font-mono dark:border-gray-600"
                 />
               </div>
               <div className="flex items-center gap-2">
                 {(['secondary', 'accent', 'mutedText'] as const).map(k => (
                   <div key={k} className="flex flex-col items-center">
-                    <span className="w-4 h-4 rounded-full border border-gray-200 shrink-0" style={{ backgroundColor: config.colors[k] }} />
+                    <span className="w-4 h-4 rounded-full border border-gray-200 shrink-0 dark:border-gray-700" style={{ backgroundColor: config.colors[k] }} />
                     <span className="text-[9px] text-gray-400 mt-0.5">{k === 'mutedText' ? 'Muted' : k.charAt(0).toUpperCase() + k.slice(1)}</span>
                   </div>
                 ))}
@@ -1548,10 +1548,10 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
 
           {/* Typography */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Typography</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Typography</label>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Font Family</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Font Family</label>
                 <select
                   value={config.fonts.body.family}
                   onChange={e => {
@@ -1567,7 +1567,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                     })
                     emitHighlight('body')
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 >
                   {FONT_FAMILIES.map(f => (
                     <option key={f.value} value={f.value}>{f.label}</option>
@@ -1575,7 +1575,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Text Scale</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Text Scale</label>
                 <div className="flex gap-2">
                   {([
                     { key: 'compact', label: 'Compact' },
@@ -1601,7 +1601,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                         'flex-1 px-3 py-1.5 rounded-lg border text-sm transition-colors',
                         currentTypoScale === s.key
                           ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400'
                       )}
                     >
                       {s.label}
@@ -1621,7 +1621,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
 
           {/* Layout Density */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Layout Density</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Layout Density</label>
             <div className="flex gap-2">
               {([
                 { key: 'compact' as LayoutDensity, label: 'Compact' },
@@ -1639,7 +1639,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                     'flex-1 px-3 py-1.5 rounded-lg border text-sm transition-colors',
                     currentDensity === d.key
                       ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400'
                   )}
                 >
                   {d.label}
@@ -1661,31 +1661,31 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
       </div>
 
       {/* ── Advanced Settings ── */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden" ref={advancedRef}>
+      <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700" ref={advancedRef}>
         <button
           onClick={() => setAdvancedOpen(!advancedOpen)}
           className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50/80 rounded-lg"
           type="button"
         >
           <div>
-            <span className="text-[13px] font-semibold text-gray-800 tracking-tight">Advanced</span>
+            <span className="text-[13px] font-semibold text-gray-800 tracking-tight dark:text-gray-100">Advanced</span>
             <span className="ml-2 text-[11px] text-gray-400">Page geometry, color system, typography, vertical rhythm</span>
           </div>
           <ChevronRight className={clsx('w-4 h-4 text-gray-400 transition-transform', advancedOpen && 'rotate-90')} />
         </button>
         {advancedOpen && (
-          <div className="px-4 pb-4 space-y-5 border-t border-gray-100 pt-4">
+          <div className="px-4 pb-4 space-y-5 border-t border-gray-100 pt-4 dark:border-gray-800">
 
             {/* ─── Page Geometry ─── */}
             <div className="bg-gray-50/60 rounded-lg p-3.5 space-y-3">
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Page Geometry</h4>
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">Page Geometry</h4>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Orientation</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Orientation</label>
                 <select
                   value={config.orientation}
                   onChange={e => { onChange({ ...config, orientation: e.target.value as any }); emitHighlight('margins') }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 >
                   <option value="portrait">Portrait</option>
                   <option value="landscape">Landscape</option>
@@ -1696,13 +1696,13 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Margins (mm)</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Margins (mm)</label>
                 <div className="grid grid-cols-4 gap-3">
                   {(['top', 'right', 'bottom', 'left'] as const).map(side => {
                     const w = warningFor(`margin-${side}`)
                     return (
                       <div key={side} className="min-w-0">
-                        <label className="block text-[10px] text-gray-500 mb-0.5 capitalize">{side}</label>
+                        <label className="block text-[10px] text-gray-500 mb-0.5 capitalize dark:text-gray-400">{side}</label>
                         <input
                           type="number"
                           value={config.margins[side]}
@@ -1711,7 +1711,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                           max={50}
                           className={clsx(
                             'w-full px-2.5 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500',
-                            w ? 'border-amber-400' : 'border-gray-300'
+                            w ? 'border-amber-400' : 'border-gray-300 dark:border-gray-600'
                           )}
                         />
                         {w && <p className="text-[10px] text-amber-600 mt-0.5">{w.message}</p>}
@@ -1724,7 +1724,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
 
             {/* ─── Color System ─── */}
             <div className="bg-gray-50/60 rounded-lg p-3.5 space-y-3" ref={colorSystemRef}>
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Color System</h4>
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">Color System</h4>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                 {([
                   { key: 'primary', label: 'Primary' },
@@ -1738,7 +1738,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                   return (
                     <div key={key} className="min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-medium text-gray-600 truncate">{label}</label>
+                        <label className="text-xs font-medium text-gray-600 truncate dark:text-gray-400">{label}</label>
                         {(key === 'text' || key === 'headingText' || key === 'mutedText' || key === 'primary') && (
                           <ContrastDot fg={config.colors[key]} />
                         )}
@@ -1748,13 +1748,13 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                           type="color"
                           value={config.colors[key]}
                           onChange={e => updateColors(key, e.target.value)}
-                          className="w-7 h-7 rounded border border-gray-300 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded border border-gray-300 cursor-pointer shrink-0 dark:border-gray-600"
                         />
                         <input
                           type="text"
                           value={config.colors[key]}
                           onChange={e => updateColors(key, e.target.value)}
-                          className="flex-1 min-w-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono"
+                          className="flex-1 min-w-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono dark:border-gray-600"
                         />
                       </div>
                       <p className="text-[10px] text-gray-400 mt-0.5 truncate">{COLOR_USAGE[key]}</p>
@@ -1767,7 +1767,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
 
             {/* ─── Typography System ─── */}
             <div className="bg-gray-50/60 rounded-lg p-3.5 space-y-3">
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Typography System</h4>
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">Typography System</h4>
               <div className="space-y-3">
                 {([
                   { key: 'title', label: 'Title' },
@@ -1781,11 +1781,11 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                     <div key={key}>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="min-w-0">
-                          <label className="block text-[10px] text-gray-500 mb-0.5 truncate">{label}</label>
+                          <label className="block text-[10px] text-gray-500 mb-0.5 truncate dark:text-gray-400">{label}</label>
                           <select
                             value={config.fonts[key].family}
                             onChange={e => updateFont(key, 'family', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                           >
                             {FONT_FAMILIES.map(f => (
                               <option key={f.value} value={f.value}>{f.label}</option>
@@ -1793,7 +1793,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                           </select>
                         </div>
                         <div className="min-w-0">
-                          <label className="block text-[10px] text-gray-500 mb-0.5">Size (pt)</label>
+                          <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Size (pt)</label>
                           <input
                             type="number"
                             value={config.fonts[key].size}
@@ -1802,16 +1802,16 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                             max={72}
                             className={clsx(
                               'w-full px-2 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500',
-                              w ? 'border-amber-400' : 'border-gray-300'
+                              w ? 'border-amber-400' : 'border-gray-300 dark:border-gray-600'
                             )}
                           />
                         </div>
                         <div className="min-w-0">
-                          <label className="block text-[10px] text-gray-500 mb-0.5">Weight</label>
+                          <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Weight</label>
                           <select
                             value={config.fonts[key].weight}
                             onChange={e => updateFont(key, 'weight', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                           >
                             <option value="normal">Normal</option>
                             <option value="bold">Bold</option>
@@ -1827,7 +1827,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
 
             {/* ─── Vertical Rhythm ─── */}
             <div className="bg-gray-50/60 rounded-lg p-3.5 space-y-3">
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Vertical Rhythm</h4>
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">Vertical Rhythm</h4>
               <div className="grid grid-cols-3 gap-3">
                 {([
                   { key: 'sectionGap', label: 'Section Gap', max: 30 },
@@ -1837,7 +1837,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                   const w = key === 'paragraphGap' ? warningFor('paragraph-gap') : null
                   return (
                     <div key={key} className="min-w-0">
-                      <label className="block text-[10px] text-gray-500 mb-0.5 truncate">{label} (mm)</label>
+                      <label className="block text-[10px] text-gray-500 mb-0.5 truncate dark:text-gray-400">{label} (mm)</label>
                       <input
                         type="number"
                         value={config.spacing[key]}
@@ -1849,7 +1849,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
                         max={max}
                         className={clsx(
                           'w-full px-2 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500',
-                          w ? 'border-amber-400' : 'border-gray-300'
+                          w ? 'border-amber-400' : 'border-gray-300 dark:border-gray-600'
                         )}
                       />
                       {w && <p className="text-[10px] text-amber-600 mt-0.5">{w.message}</p>}
@@ -1863,7 +1863,7 @@ function StyleEditor({ config, onChange, onHighlight, sectionCount = 6, orgBrand
             <div className="pt-1">
               <button
                 onClick={() => applyPreset(STYLE_PRESETS[0])}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400"
               >
                 <RotateCcw className="w-3 h-3" />
                 Revert to Professional Baseline
@@ -1937,7 +1937,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
       return <span className="text-[10px] px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded-full">Override</span>
     }
     if (orgValue) {
-      return <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full">Inherited</span>
+      return <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full dark:text-gray-400 dark:bg-gray-800">Inherited</span>
     }
     return null
   }
@@ -1961,10 +1961,10 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
       {orgBranding && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 mb-2">
-            <Building className="w-4 h-4 text-gray-500" />
-            <h3 className="text-sm font-semibold text-gray-800">Branding Source</h3>
+            <Building className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Branding Source</h3>
           </div>
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700">
             <button
               type="button"
               onClick={() => {
@@ -1976,7 +1976,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                 'flex-1 px-3 py-2 text-xs font-medium transition-colors',
                 useOrg
                   ? 'bg-primary-50 text-primary-700 border-r border-primary-200'
-                  : 'bg-white text-gray-500 hover:bg-gray-50 border-r border-gray-200'
+                  : 'bg-white text-gray-500 hover:bg-gray-50 border-r border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
               )}
             >
               Inherit from Organization
@@ -1992,7 +1992,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                 'flex-1 px-3 py-2 text-xs font-medium transition-colors',
                 !useOrg
                   ? 'bg-primary-50 text-primary-700'
-                  : 'bg-white text-gray-500 hover:bg-gray-50'
+                  : 'bg-white text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
               )}
             >
               Customize for Template
@@ -2012,7 +2012,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                   <div className="space-y-1.5 pl-5.5">
                     {hasOrgLogo && (
                       <div className="flex items-center gap-3">
-                        <div className="w-20 h-12 bg-white rounded border border-gray-200 flex items-center justify-center overflow-hidden shrink-0">
+                        <div className="w-20 h-12 bg-white rounded border border-gray-200 flex items-center justify-center overflow-hidden shrink-0 dark:border-gray-700 dark:bg-gray-800">
                           {orgBranding.logoUrl && !logoError ? (
                             <img
                               src={orgBranding.logoUrl}
@@ -2024,19 +2024,19 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                             <Image className="w-5 h-5 text-gray-300" />
                           )}
                         </div>
-                        <p className="text-[11px] text-gray-500">Organization Logo</p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">Organization Logo</p>
                       </div>
                     )}
                     {orgBranding.firmName && (
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-medium text-gray-500">Firm:</span>
-                        <span className="text-[11px] text-gray-700">{orgBranding.firmName}</span>
+                        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Firm:</span>
+                        <span className="text-[11px] text-gray-700 dark:text-gray-300">{orgBranding.firmName}</span>
                       </div>
                     )}
                     {orgBranding.tagline && (
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-medium text-gray-500">Tagline:</span>
-                        <span className="text-[11px] text-gray-700">{orgBranding.tagline}</span>
+                        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Tagline:</span>
+                        <span className="text-[11px] text-gray-700 dark:text-gray-300">{orgBranding.tagline}</span>
                       </div>
                     )}
                     <p className="text-[10px] text-primary-600">
@@ -2075,7 +2075,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
       {/* ── Firm Logo ── */}
       <div className={clsx(useOrg && 'opacity-60')}>
         <h3
-          className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2"
+          className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2 dark:text-gray-100"
           onMouseEnter={() => onHighlight?.('logo')}
           onMouseLeave={() => onHighlight?.(null)}
         >
@@ -2089,18 +2089,18 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
         <div className="space-y-4">
           {/* Draft logo preview (create mode with pending file) */}
           {draftLogoPreview ? (
-            <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg">
-              <div className="w-14 h-14 bg-gray-100 rounded flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg dark:border-gray-700">
+              <div className="w-14 h-14 bg-gray-100 rounded flex items-center justify-center shrink-0 overflow-hidden dark:bg-gray-800">
                 <img src={draftLogoPreview} alt="Draft logo" className="max-w-full max-h-full object-contain" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-600">Logo selected</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Logo selected</p>
                 <p className="text-xs text-gray-400">Will be uploaded on save</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => logoReplaceRef.current?.click()}
-                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400"
                   title="Replace logo"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -2115,18 +2115,18 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
               </div>
             </div>
           ) : config.logoPath ? (
-            <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg">
-              <div className="w-14 h-14 bg-gray-100 rounded flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg dark:border-gray-700">
+              <div className="w-14 h-14 bg-gray-100 rounded flex items-center justify-center shrink-0 dark:bg-gray-800">
                 <Image className="w-6 h-6 text-gray-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-600">Logo uploaded</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Logo uploaded</p>
                 <p className="text-xs text-gray-400 truncate">{config.logoPath}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => logoReplaceRef.current?.click()}
-                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400"
                   title="Replace logo"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -2141,13 +2141,13 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
               </div>
             </div>
           ) : (
-            <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer">
+            <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer dark:border-gray-600">
               {isUploading ? (
                 <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
               ) : (
                 <>
                   <Upload className="w-6 h-6 text-gray-400 mb-1" />
-                  <span className="text-sm text-gray-600">Click to upload logo</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Click to upload logo</span>
                   <span className="text-xs text-gray-400 mt-0.5">PNG, JPG up to 2MB</span>
                 </>
               )}
@@ -2171,7 +2171,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
 
           {/* Logo Size Presets */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Logo Size</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Logo Size</label>
             <div className="flex gap-1.5">
               {LOGO_SIZE_PRESETS.map(preset => (
                 <button
@@ -2185,7 +2185,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                     'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                     activeLogoPreset === preset.key && !customLogoSize
                       ? 'bg-primary-50 border-primary-300 text-primary-700'
-                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                   )}
                 >
                   {preset.label}
@@ -2198,7 +2198,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                   'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                   customLogoSize || (!activeLogoPreset && !customLogoSize)
                     ? 'bg-primary-50 border-primary-300 text-primary-700'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 )}
               >
                 Custom
@@ -2209,7 +2209,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
             {(customLogoSize || !activeLogoPreset) && (
               <div className="grid grid-cols-2 gap-3 mt-2">
                 <div>
-                  <label className="block text-[11px] text-gray-500 mb-0.5">Width (mm)</label>
+                  <label className="block text-[11px] text-gray-500 mb-0.5 dark:text-gray-400">Width (mm)</label>
                   <input
                     type="number"
                     value={config.logoWidth}
@@ -2219,11 +2219,11 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                     }}
                     min={10}
                     max={100}
-                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-gray-500 mb-0.5">Height (mm)</label>
+                  <label className="block text-[11px] text-gray-500 mb-0.5 dark:text-gray-400">Height (mm)</label>
                   <input
                     type="number"
                     value={config.logoHeight || ''}
@@ -2234,7 +2234,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                     placeholder="Auto"
                     min={10}
                     max={100}
-                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
               </div>
@@ -2249,9 +2249,9 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
       </div>
 
       {/* ── Firm Information ── */}
-      <div className={clsx('border-t border-gray-200 pt-6', useOrg && 'opacity-60')}>
+      <div className={clsx('border-t border-gray-200 pt-6 dark:border-gray-700', useOrg && 'opacity-60')}>
         <h3
-          className="text-sm font-semibold text-gray-800 mb-1"
+          className="text-sm font-semibold text-gray-800 mb-1 dark:text-gray-100"
           onMouseEnter={() => onHighlight?.('firmName')}
           onMouseLeave={() => onHighlight?.(null)}
         >
@@ -2260,7 +2260,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
 
         <div className="space-y-4">
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               Firm Name
               <OverrideBadge field="firmName" orgValue={!!orgBranding?.firmName} />
             </label>
@@ -2271,13 +2271,13 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
               placeholder={useOrg && orgBranding?.firmName ? orgBranding.firmName : 'e.g., Acme Capital Partners'}
               className={clsx(
                 'w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500',
-                useOrg && orgBranding?.firmName && !config.firmName ? 'border-gray-200 bg-gray-50 text-gray-400' : 'border-gray-300'
+                useOrg && orgBranding?.firmName && !config.firmName ? 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-900' : 'border-gray-300 dark:border-gray-600'
               )}
             />
           </div>
 
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               Tagline
               <OverrideBadge field="tagline" orgValue={!!orgBranding?.tagline} />
             </label>
@@ -2288,7 +2288,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
               placeholder={useOrg && orgBranding?.tagline ? orgBranding.tagline : 'e.g., Investing in Tomorrow\'s Leaders'}
               className={clsx(
                 'w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500',
-                useOrg && orgBranding?.tagline && !config.tagline ? 'border-gray-200 bg-gray-50 text-gray-400' : 'border-gray-300'
+                useOrg && orgBranding?.tagline && !config.tagline ? 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-900' : 'border-gray-300 dark:border-gray-600'
               )}
             />
           </div>
@@ -2296,9 +2296,9 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
       </div>
 
       {/* ── Watermark ── */}
-      <div className={clsx('border-t border-gray-200 pt-6', useOrg && 'opacity-60')}>
+      <div className={clsx('border-t border-gray-200 pt-6 dark:border-gray-700', useOrg && 'opacity-60')}>
         <h3
-          className="text-sm font-semibold text-gray-800 mb-4"
+          className="text-sm font-semibold text-gray-800 mb-4 dark:text-gray-100"
           onMouseEnter={() => onHighlight?.('watermark')}
           onMouseLeave={() => onHighlight?.(null)}
         >
@@ -2311,9 +2311,9 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
               type="checkbox"
               checked={config.watermarkEnabled}
               onChange={e => onChange({ ...config, watermarkEnabled: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Enable watermark</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Enable watermark</span>
           </label>
 
           {config.watermarkEnabled && (
@@ -2329,7 +2329,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                       'text-xs px-2.5 py-1 rounded-full border transition-colors',
                       config.watermarkText === preset
                         ? 'bg-primary-50 border-primary-300 text-primary-700'
-                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     )}
                   >
                     {preset}
@@ -2338,7 +2338,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Watermark Text
                 </label>
                 <input
@@ -2346,12 +2346,12 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                   value={config.watermarkText || ''}
                   onChange={e => onChange({ ...config, watermarkText: e.target.value || null })}
                   placeholder="e.g., CONFIDENTIAL"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Opacity ({Math.round(config.watermarkOpacity * 100)}%)
                 </label>
                 <input
@@ -2367,7 +2367,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
 
               {/* Watermark Position */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Position</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Position</label>
                 <div className="flex gap-1.5">
                   {WATERMARK_POSITIONS.map(pos => (
                     <button
@@ -2378,7 +2378,7 @@ function BrandingEditor({ config, onChange, onLogoUpload, onLogoDelete, isUpload
                         'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                         (config.watermarkPosition || 'diagonal') === pos.key
                           ? 'bg-primary-50 border-primary-300 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                       )}
                     >
                       {pos.label}
@@ -2461,8 +2461,8 @@ function SectionConfigEditor({ config, onChange, layoutSections }: SectionConfig
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Content Sections</h3>
-        <p className="text-sm text-gray-500 mb-4">
+        <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">Content Sections</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Select which sections and fields to include, and reorder them as needed.
         </p>
       </div>
@@ -2473,20 +2473,20 @@ function SectionConfigEditor({ config, onChange, layoutSections }: SectionConfig
           const enabledFieldsCount = section.fields.filter(f => f.enabled).length
 
           return (
-            <div key={section.id} className="border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-2 p-3 bg-gray-50">
+            <div key={section.id} className="border border-gray-200 rounded-lg dark:border-gray-700">
+              <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-900">
                 <div className="flex flex-col gap-1">
                   <button
                     onClick={() => moveSection(section.id, 'up')}
                     disabled={index === 0}
-                    className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                    className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
                   >
                     <ChevronDown className="w-3 h-3 rotate-180" />
                   </button>
                   <button
                     onClick={() => moveSection(section.id, 'down')}
                     disabled={index === config.length - 1}
-                    className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                    className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
                   >
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -2514,7 +2514,7 @@ function SectionConfigEditor({ config, onChange, layoutSections }: SectionConfig
                   )}
                   <span className={clsx(
                     'font-medium',
-                    section.enabled ? 'text-gray-900' : 'text-gray-400'
+                    section.enabled ? 'text-gray-900 dark:text-white' : 'text-gray-400'
                   )}>
                     {section.name}
                   </span>
@@ -2525,13 +2525,13 @@ function SectionConfigEditor({ config, onChange, layoutSections }: SectionConfig
               </div>
 
               {isExpanded && (
-                <div className="p-3 border-t border-gray-100 space-y-1">
+                <div className="p-3 border-t border-gray-100 space-y-1 dark:border-gray-800">
                   {section.fields.map(field => (
                     <button
                       key={field.id}
                       onClick={() => toggleField(section.id, field.id)}
                       className={clsx(
-                        'w-full flex items-center gap-2 px-3 py-2 text-sm rounded hover:bg-gray-50 text-left',
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm rounded hover:bg-gray-50 text-left dark:hover:bg-gray-800',
                         !section.enabled && 'opacity-50'
                       )}
                       disabled={!section.enabled}
@@ -2541,7 +2541,7 @@ function SectionConfigEditor({ config, onChange, layoutSections }: SectionConfig
                       ) : (
                         <Square className="w-4 h-4 text-gray-400" />
                       )}
-                      <span className={field.enabled ? 'text-gray-700' : 'text-gray-400'}>
+                      <span className={field.enabled ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400'}>
                         {field.name}
                       </span>
                     </button>
@@ -2554,9 +2554,9 @@ function SectionConfigEditor({ config, onChange, layoutSections }: SectionConfig
       </div>
 
       {config.length === 0 && (
-        <div className="text-center py-8 border border-dashed border-gray-300 rounded-lg">
+        <div className="text-center py-8 border border-dashed border-gray-300 rounded-lg dark:border-gray-600">
           <List className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             No sections configured. Sections will be loaded from your research layout.
           </p>
         </div>
@@ -2626,7 +2626,7 @@ function InsertVariableButton({ inputRef, onInsert }: { inputRef: React.RefObjec
         Insert Variable
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
+        <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
           {HF_VARIABLES.map(v => (
             <button
               key={v.key}
@@ -2635,7 +2635,7 @@ function InsertVariableButton({ inputRef, onInsert }: { inputRef: React.RefObjec
                 onInsert(v.key)
                 setOpen(false)
               }}
-              className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex justify-between items-center"
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex justify-between items-center dark:hover:bg-gray-800 dark:text-gray-300"
             >
               <span>{v.label}</span>
               <span className="text-[10px] text-gray-400 font-mono">{v.key}</span>
@@ -2701,7 +2701,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
       {/* ── Header ── */}
       <div>
         <h3
-          className="text-sm font-semibold text-gray-800 mb-4"
+          className="text-sm font-semibold text-gray-800 mb-4 dark:text-gray-100"
           onMouseEnter={() => onHighlight?.('header')}
           onMouseLeave={() => onHighlight?.(null)}
         >
@@ -2714,16 +2714,16 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
               type="checkbox"
               checked={config.header.enabled}
               onChange={e => updateHeader({ enabled: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Enable header</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Enable header</span>
           </label>
 
           {config.header.enabled && (
             <>
               {/* Quick presets */}
               <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1.5">Quick Presets</label>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1.5 dark:text-gray-400">Quick Presets</label>
                 <div className="flex flex-wrap gap-1.5">
                   {HEADER_PRESETS.map(p => (
                     <button
@@ -2734,7 +2734,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                         'text-xs px-2.5 py-1 rounded-full border transition-colors',
                         config.header.content === p.content
                           ? 'bg-primary-50 border-primary-300 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                       )}
                     >
                       {p.label}
@@ -2745,7 +2745,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
 
               {/* Alignment */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Layout</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Layout</label>
                 <div className="flex gap-1">
                   {ALIGNMENT_OPTIONS.map(opt => (
                     <button
@@ -2756,7 +2756,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                         'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                         hAlign === opt.key
                           ? 'bg-primary-50 border-primary-300 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                       )}
                       title={opt.label}
                     >
@@ -2772,7 +2772,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-medium text-gray-600">Left Content</label>
+                      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Left Content</label>
                       <InsertVariableButton
                         inputRef={headerLeftRef}
                         onInsert={token => insertAtCursor(headerLeftRef, config.header.leftContent, v => updateHeader({ leftContent: v || null }), token)}
@@ -2784,12 +2784,12 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                       value={config.header.leftContent || ''}
                       onChange={e => updateHeader({ leftContent: e.target.value || null })}
                       placeholder="e.g., {{firm_name}}"
-                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     />
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-medium text-gray-600">Right Content</label>
+                      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Right Content</label>
                       <InsertVariableButton
                         inputRef={headerRightRef}
                         onInsert={token => insertAtCursor(headerRightRef, config.header.rightContent, v => updateHeader({ rightContent: v || null }), token)}
@@ -2801,14 +2801,14 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                       value={config.header.rightContent || ''}
                       onChange={e => updateHeader({ rightContent: e.target.value || null })}
                       placeholder="e.g., {{as_of_date}}"
-                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     />
                   </div>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm font-medium text-gray-700">Header Content</label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Header Content</label>
                     <InsertVariableButton
                       inputRef={headerContentRef}
                       onInsert={token => insertAtCursor(headerContentRef, config.header.content, v => updateHeader({ content: v || null }), token)}
@@ -2820,14 +2820,14 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                     value={config.header.content || ''}
                     onChange={e => updateHeader({ content: e.target.value || null })}
                     placeholder="e.g., {{firm_name}} - Confidential"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
               )}
 
               {/* Cover behavior */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Cover Behavior</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Cover Behavior</label>
                 <div className="flex gap-1.5">
                   {COVER_BEHAVIOR_OPTIONS.map(opt => (
                     <button
@@ -2841,7 +2841,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                         'px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                         hCover === opt.key
                           ? 'bg-primary-50 border-primary-300 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50',
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
                         opt.key === 'custom' && 'opacity-50 cursor-not-allowed'
                       )}
                       disabled={opt.key === 'custom'}
@@ -2857,9 +2857,9 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                   type="checkbox"
                   checked={config.header.showPageNumber}
                   onChange={e => updateHeader({ showPageNumber: e.target.checked })}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
-                <span className="text-sm text-gray-700">Show page number in header</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Show page number in header</span>
               </label>
             </>
           )}
@@ -2867,9 +2867,9 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
       </div>
 
       {/* ── Footer ── */}
-      <div className="border-t border-gray-200 pt-6">
+      <div className="border-t border-gray-200 pt-6 dark:border-gray-700">
         <h3
-          className="text-sm font-semibold text-gray-800 mb-4"
+          className="text-sm font-semibold text-gray-800 mb-4 dark:text-gray-100"
           onMouseEnter={() => onHighlight?.('footer')}
           onMouseLeave={() => onHighlight?.(null)}
         >
@@ -2882,16 +2882,16 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
               type="checkbox"
               checked={config.footer.enabled}
               onChange={e => updateFooter({ enabled: e.target.checked })}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Enable footer</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Enable footer</span>
           </label>
 
           {config.footer.enabled && (
             <>
               {/* Quick presets */}
               <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1.5">Quick Presets</label>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1.5 dark:text-gray-400">Quick Presets</label>
                 <div className="flex flex-wrap gap-1.5">
                   {FOOTER_PRESETS.map(p => (
                     <button
@@ -2902,7 +2902,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                         'text-xs px-2.5 py-1 rounded-full border transition-colors',
                         config.footer.content === p.content
                           ? 'bg-primary-50 border-primary-300 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                       )}
                     >
                       {p.label}
@@ -2913,7 +2913,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
 
               {/* Alignment */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Layout</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Layout</label>
                 <div className="flex gap-1">
                   {ALIGNMENT_OPTIONS.map(opt => (
                     <button
@@ -2924,7 +2924,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                         'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                         fAlign === opt.key
                           ? 'bg-primary-50 border-primary-300 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                       )}
                       title={opt.label}
                     >
@@ -2940,7 +2940,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-medium text-gray-600">Left Content</label>
+                      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Left Content</label>
                       <InsertVariableButton
                         inputRef={footerLeftRef}
                         onInsert={token => insertAtCursor(footerLeftRef, config.footer.leftContent, v => updateFooter({ leftContent: v || null }), token)}
@@ -2952,12 +2952,12 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                       value={config.footer.leftContent || ''}
                       onChange={e => updateFooter({ leftContent: e.target.value || null })}
                       placeholder="e.g., For internal use only"
-                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     />
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-medium text-gray-600">Right Content</label>
+                      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Right Content</label>
                       <InsertVariableButton
                         inputRef={footerRightRef}
                         onInsert={token => insertAtCursor(footerRightRef, config.footer.rightContent, v => updateFooter({ rightContent: v || null }), token)}
@@ -2969,14 +2969,14 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                       value={config.footer.rightContent || ''}
                       onChange={e => updateFooter({ rightContent: e.target.value || null })}
                       placeholder="e.g., Page {page} of {total}"
-                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     />
                   </div>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm font-medium text-gray-700">Footer Content</label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Footer Content</label>
                     <InsertVariableButton
                       inputRef={footerContentRef}
                       onInsert={token => insertAtCursor(footerContentRef, config.footer.content, v => updateFooter({ content: v || null }), token)}
@@ -2988,7 +2988,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                     value={config.footer.content || ''}
                     onChange={e => updateFooter({ content: e.target.value || null })}
                     placeholder="e.g., For internal use only"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
               )}
@@ -2999,16 +2999,16 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                   type="checkbox"
                   checked={config.footer.showPageNumber}
                   onChange={e => updateFooter({ showPageNumber: e.target.checked })}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
-                <span className="text-sm text-gray-700">Show page number</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Show page number</span>
               </label>
 
               {config.footer.showPageNumber && (
                 <>
                   {/* Page number position */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Page Number Position</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Page Number Position</label>
                     <div className="flex gap-1.5">
                       {PAGE_NUMBER_POSITIONS.map(opt => (
                         <button
@@ -3019,7 +3019,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                             'px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
                             pnPos === opt.key
                               ? 'bg-primary-50 border-primary-300 text-primary-700'
-                              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                           )}
                         >
                           {opt.label}
@@ -3035,7 +3035,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
 
                   {/* Page number format */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                       Page Number Format
                     </label>
                     <input
@@ -3043,7 +3043,7 @@ function HeaderFooterEditor({ config, onChange, onHighlight }: HeaderFooterEdito
                       value={config.footer.pageNumberFormat}
                       onChange={e => updateFooter({ pageNumberFormat: e.target.value })}
                       placeholder="Page {page} of {total}"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     />
                     <p className="text-[11px] text-gray-400 mt-1">
                       Use {'{page}'} for current page and {'{total}'} for total pages

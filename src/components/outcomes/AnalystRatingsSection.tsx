@@ -127,7 +127,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
 
   if (isLoading || scalesLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
@@ -137,13 +137,13 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
 
   return (
     <div className={clsx(
-      'bg-white rounded-lg',
-      !embedded && 'border border-gray-200',
+      'bg-white rounded-lg dark:bg-gray-800',
+      !embedded && 'border border-gray-200 dark:border-gray-700',
       className
     )}>
       {!embedded && (
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-sm font-medium text-gray-900">Rating</h4>
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white">Rating</h4>
         </div>
       )}
 
@@ -151,7 +151,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
         {/* Consensus View — only in aggregated view */}
         {showConsensus && consensus.length > 0 && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <Users className="w-3.5 h-3.5" />
               <span>Firm Consensus ({ratings.length} analyst{ratings.length !== 1 ? 's' : ''})</span>
               {hasCrossViewDivergence && <DivergenceBadge breakdown={ratingBreakdown} />}
@@ -187,7 +187,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
 
         {/* My Rating */}
         {isEditable && (
-          <div className={clsx(showConsensus && consensus.length > 0 && 'border-t border-gray-100 pt-4')}>
+          <div className={clsx(showConsensus && consensus.length > 0 && 'border-t border-gray-100 pt-4 dark:border-gray-800')}>
             {isEditing ? (
               <div className="space-y-3">
                 {/* Scale and Rating inline */}
@@ -200,7 +200,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
                         setSelectedScaleId(e.target.value)
                         setSelectedValue('') // Reset value when scale changes
                       }}
-                      className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                     >
                       {scales.map(scale => (
                         <option key={scale.id} value={scale.id}>
@@ -235,7 +235,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
 
                 {/* Conviction level */}
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Conviction</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Conviction</span>
                   <div className="flex items-center gap-1">
                     {CONVICTION_OPTIONS.map(opt => (
                       <button
@@ -262,11 +262,11 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Notes (optional)"
-                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                   />
                   <button
                     onClick={cancelEditing}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                     title="Cancel"
                   >
                     <X className="w-4 h-4" />
@@ -318,7 +318,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
                 )}
                 <button
                   onClick={startEditing}
-                  className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
                   title="Edit rating"
                 >
                   <Edit2 className="w-4 h-4" />
@@ -328,7 +328,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
               // No rating yet — show "Set Rating" button
               <button
                 onClick={startEditing}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 border border-dashed border-gray-300 hover:border-gray-400 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 border border-dashed border-gray-300 hover:border-gray-400 rounded-lg transition-colors dark:hover:text-gray-200 dark:border-gray-600 dark:text-gray-400"
               >
                 <Edit2 className="w-3.5 h-3.5" />
                 Set Rating
@@ -340,14 +340,14 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
         {/* Other Analysts' Ratings */}
         {otherRatings.length > 0 && !isEditable && (
           <div className="space-y-2">
-            <span className="text-xs text-gray-500">Individual Ratings</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Individual Ratings</span>
             <div className="space-y-1">
               {otherRatings.map(rating => (
                 <div
                   key={rating.id}
                   className="flex items-center justify-between py-1"
                 >
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
                     {rating.user?.full_name || 'Unknown'}
                   </span>
                   <div className="flex items-center gap-2">
@@ -378,7 +378,7 @@ export function AnalystRatingsSection({ assetId, className, isEditable = false, 
 
         {/* Empty state */}
         {ratings.length === 0 && !isEditable && (
-          <p className="text-sm text-gray-500 text-center py-2">
+          <p className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">
             No ratings yet
           </p>
         )}

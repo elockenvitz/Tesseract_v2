@@ -319,8 +319,8 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       case 'asset': return 'text-blue-600 bg-blue-50'
       case 'portfolio': return 'text-green-600 bg-green-50'
       case 'theme': return 'text-amber-600 bg-amber-50'
-      case 'custom': return 'text-gray-600 bg-gray-100'
-      default: return 'text-gray-600 bg-gray-100'
+      case 'custom': return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
+      default: return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
     }
   }
 
@@ -501,7 +501,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   const SortHeader = ({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) => (
     <button
       onClick={() => handleSort(field)}
-      className={clsx('flex items-center gap-1 hover:text-gray-700 transition-colors', className)}
+      className={clsx('flex items-center gap-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200', className)}
     >
       {children}
       {sortBy === field ? (
@@ -517,8 +517,8 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Notes</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Notes</h1>
+          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
             {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
             {activeFilters.length > 0 && ` (filtered)`}
           </p>
@@ -536,8 +536,8 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           {showNewNotePicker && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowNewNotePicker(false)} />
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden">
-                <div className="p-2 border-b border-gray-100">
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+                <div className="p-2 border-b border-gray-100 dark:border-gray-800">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                     <input
@@ -546,7 +546,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                       placeholder="Search assets, portfolios, themes..."
                       value={pickerSearch}
                       onChange={(e) => setPickerSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700"
                     />
                   </div>
                 </div>
@@ -565,10 +565,10 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                             <button
                               key={item.id}
                               onClick={() => handlePickerSelect(item)}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm"
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm dark:hover:bg-gray-800"
                             >
                               <TrendingUp className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                              <span className="font-medium text-gray-700">{item.symbol}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300">{item.symbol}</span>
                               <span className="text-gray-400 truncate text-xs">{item.name !== item.symbol ? item.name : ''}</span>
                             </button>
                           ))}
@@ -582,10 +582,10 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                             <button
                               key={item.id}
                               onClick={() => handlePickerSelect(item)}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm"
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm dark:hover:bg-gray-800"
                             >
                               <Briefcase className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                              <span className="text-gray-700">{item.name}</span>
+                              <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
                             </button>
                           ))}
                         </>
@@ -598,10 +598,10 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                             <button
                               key={item.id}
                               onClick={() => handlePickerSelect(item)}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm"
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 text-sm dark:hover:bg-gray-800"
                             >
                               <Tag className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
-                              <span className="text-gray-700">{item.name}</span>
+                              <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
                             </button>
                           ))}
                         </>
@@ -629,12 +629,12 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
             placeholder="Search notes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <X className="h-4 w-4" />
             </button>
@@ -649,7 +649,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
               'flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors',
               selectedSourceTypes.length > 0
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
-                : 'border-gray-300 hover:bg-gray-50'
+                : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
             )}
           >
             <SlidersHorizontal className="h-4 w-4" />
@@ -662,15 +662,15 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           </button>
 
           {activeFilter === 'source' && (
-            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
               {SOURCE_TYPE_OPTIONS.map(option => (
                 <button
                   key={option.value}
                   onClick={() => toggleSourceType(option.value)}
-                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800"
                 >
                   <span className="flex items-center gap-2">
-                    <option.icon className="h-4 w-4 text-gray-500" />
+                    <option.icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     {option.label}
                   </span>
                   {selectedSourceTypes.includes(option.value) && (
@@ -690,7 +690,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
               'flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors',
               selectedNoteTypes.length > 0
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
-                : 'border-gray-300 hover:bg-gray-50'
+                : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
             )}
           >
             <FileText className="h-4 w-4" />
@@ -703,7 +703,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           </button>
 
           {activeFilter === 'type' && (
-            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
               {NOTE_TYPES_GROUPED.map(({ group, types }) => (
                 <div key={group}>
                   <div className="px-3 pt-2 pb-0.5">
@@ -713,7 +713,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                     <button
                       key={nt.id}
                       onClick={() => toggleNoteType(nt.id)}
-                      className="w-full px-3 py-1.5 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                      className="w-full px-3 py-1.5 text-sm text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
                       <span className="flex items-center gap-2">
                         <span className={clsx('h-2 w-2 rounded-full', nt.dotColor)} />
@@ -738,7 +738,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
               'flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors',
               sharedFilter !== 'all'
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
-                : 'border-gray-300 hover:bg-gray-50'
+                : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
             )}
           >
             <Share2 className="h-4 w-4" />
@@ -746,12 +746,12 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           </button>
 
           {activeFilter === 'shared' && (
-            <div className="absolute top-full left-0 mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+            <div className="absolute top-full left-0 mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
               {['all', 'shared', 'private'].map(option => (
                 <button
                   key={option}
                   onClick={() => { setSharedFilter(option as any); setActiveFilter(null) }}
-                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50"
+                  className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800"
                 >
                   {capitalizeFirst(option)}
                   {sharedFilter === option && (
@@ -767,7 +767,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       {/* Active Filters */}
       {activeFilters.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-gray-500">Active filters:</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">Active filters:</span>
           {activeFilters.map((filter, idx) => (
             <span
               key={`${filter.type}-${filter.value}-${idx}`}
@@ -784,7 +784,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           ))}
           <button
             onClick={clearAllFilters}
-            className="text-sm text-gray-500 hover:text-gray-700 ml-2"
+            className="text-sm text-gray-500 hover:text-gray-700 ml-2 dark:hover:text-gray-200 dark:text-gray-400"
           >
             Clear all
           </button>
@@ -801,28 +801,28 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           <div className="overflow-auto flex-1 min-h-0">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%]">
+                <tr className="border-b border-gray-200 bg-gray-50 sticky top-0 z-10 dark:border-gray-700 dark:bg-gray-900">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%] dark:text-gray-400">
                     <SortHeader field="title">Note</SortHeader>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%] dark:text-gray-400">
                     <SortHeader field="source_type">Source</SortHeader>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%] dark:text-gray-400">
                     <SortHeader field="source_name">Name</SortHeader>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%] dark:text-gray-400">
                     <SortHeader field="note_type">Type</SortHeader>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%]">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%] dark:text-gray-400">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[20%]">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[20%] dark:text-gray-400">
                     <SortHeader field="updated_at">Updated</SortHeader>
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredNotes.map((note) => (
                   <tr
                     key={`${note.source_type}-${note.id}`}
@@ -832,14 +832,14 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
                     {/* Note Title & Preview */}
                     <td className="px-4 py-3">
                       <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-primary-100 transition-colors">
-                          <FileText className="h-4 w-4 text-gray-500 group-hover:text-primary-600" />
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-primary-100 transition-colors dark:bg-gray-800">
+                          <FileText className="h-4 w-4 text-gray-500 group-hover:text-primary-600 dark:text-gray-400" />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-medium text-gray-900 truncate group-hover:text-primary-700">
+                          <p className="font-medium text-gray-900 truncate group-hover:text-primary-700 dark:text-white">
                             {note.title || 'Untitled'}
                           </p>
-                          <p className="text-sm text-gray-500 line-clamp-1 mt-0.5">
+                          <p className="text-sm text-gray-500 line-clamp-1 mt-0.5 dark:text-gray-400">
                             {getContentPreview(note.content || '', 80)}
                           </p>
                         </div>
@@ -859,7 +859,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
 
                     {/* Source Name */}
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-700 font-medium">
+                      <span className="text-sm text-gray-700 font-medium dark:text-gray-300">
                         {note.source_name}
                       </span>
                     </td>
@@ -887,7 +887,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
 
                     {/* Updated */}
                     <td className="px-4 py-3">
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(note.updated_at)}
                       </div>
                       <div className="text-xs text-gray-400 mt-0.5">

@@ -70,8 +70,8 @@ function StatusBadge({ status }: { status: ChartTarget['status'] }) {
     pending: { icon: Clock, color: 'text-amber-600 bg-amber-50', label: 'Active' },
     hit: { icon: CheckCircle, color: 'text-green-600 bg-green-50', label: 'Hit' },
     missed: { icon: AlertTriangle, color: 'text-red-600 bg-red-50', label: 'Missed' },
-    expired: { icon: AlertTriangle, color: 'text-gray-600 bg-gray-50', label: 'Expired' },
-    cancelled: { icon: Minus, color: 'text-gray-400 bg-gray-50', label: 'Cancelled' }
+    expired: { icon: AlertTriangle, color: 'text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-900', label: 'Expired' },
+    cancelled: { icon: Minus, color: 'text-gray-400 bg-gray-50 dark:bg-gray-900', label: 'Cancelled' }
   }
 
   const { icon: Icon, color, label } = config[status]
@@ -503,7 +503,7 @@ export function PriceTargetChart({
         <div className="text-center py-8 text-red-500">
           <AlertTriangle className="w-8 h-8 mx-auto mb-2" />
           <p>Failed to load chart data</p>
-          <p className="text-sm text-gray-500 mt-1">{error.message}</p>
+          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{error.message}</p>
         </div>
       </div>
     )

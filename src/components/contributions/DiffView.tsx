@@ -12,7 +12,7 @@ export function DiffView({ oldText, newText, className }: DiffViewProps) {
   // If no old text, this is the first version - just show the new text
   if (!oldText) {
     return (
-      <div className={clsx('text-gray-700 leading-relaxed', className)}>
+      <div className={clsx('text-gray-700 leading-relaxed dark:text-gray-300', className)}>
         <span className="bg-green-100 text-green-800">{newText}</span>
       </div>
     )
@@ -44,7 +44,7 @@ export function DiffView({ oldText, newText, className }: DiffViewProps) {
           )
         }
         return (
-          <span key={index} className="text-gray-700">
+          <span key={index} className="text-gray-700 dark:text-gray-300">
             {part.value}
           </span>
         )

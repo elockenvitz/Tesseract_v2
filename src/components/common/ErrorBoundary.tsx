@@ -83,8 +83,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
       // Default error UI
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 dark:bg-gray-900">
+          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 dark:bg-gray-800">
             {/* Error Icon */}
             <div className="flex justify-center mb-6">
               <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
@@ -94,23 +94,23 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
             {/* Error Message */}
             <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2 dark:text-white">
                 Oops! Something went wrong
               </h2>
-              <p className="text-gray-600">
+              <p className="text-gray-600 dark:text-gray-400">
                 We encountered an unexpected error. Don't worry, your data is safe.
               </p>
             </div>
 
             {/* Error Details (Development Only) */}
             {this.props.showDetails && this.state.error && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-xs font-mono text-gray-700 mb-2">
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                <p className="text-xs font-mono text-gray-700 mb-2 dark:text-gray-300">
                   <strong>Error:</strong> {this.state.error.message}
                 </p>
                 {this.state.errorInfo && (
-                  <details className="text-xs font-mono text-gray-600">
-                    <summary className="cursor-pointer text-gray-700 font-semibold mb-1">
+                  <details className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                    <summary className="cursor-pointer text-gray-700 font-semibold mb-1 dark:text-gray-300">
                       Stack Trace
                     </summary>
                     <pre className="whitespace-pre-wrap overflow-auto max-h-32 mt-2">
@@ -141,7 +141,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </div>
 
             {/* Help Text */}
-            <p className="text-xs text-gray-500 text-center mt-6">
+            <p className="text-xs text-gray-500 text-center mt-6 dark:text-gray-400">
               If this problem persists, please contact support.
             </p>
           </div>

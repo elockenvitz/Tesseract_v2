@@ -2412,7 +2412,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors',
                       !hasAnyPill
                         ? 'text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20'
-                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700',
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200',
                     )}
                   >
                     <Plus className="w-3 h-3" />
@@ -2518,7 +2518,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
               onClick={onClose}
               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
             >
-              <X className="h-5 w-5 text-gray-500" />
+              <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
 
@@ -2684,7 +2684,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               setEditedRationale('')
                             }}
                             disabled={updatePairRationaleMutation.isPending}
-                            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
                           >
                             Cancel
                           </button>
@@ -2771,7 +2771,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               <button
                                 onClick={() => { setIsEditingThesis(false); setEditedThesis('') }}
                                 disabled={updatePairThesisMutation.isPending}
-                                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
                               >
                                 Cancel
                               </button>
@@ -3040,7 +3040,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     className={clsx(
                                       "flex-1 py-1.5 px-3 text-xs font-medium rounded border transition-colors",
                                       editedPairConviction === level
-                                        ? level === 'low' ? "bg-gray-100 border-gray-400 text-gray-700"
+                                        ? level === 'low' ? "bg-gray-100 border-gray-400 text-gray-700 dark:text-gray-300 dark:bg-gray-800"
                                         : level === 'medium' ? "bg-blue-100 border-blue-400 text-blue-700"
                                         : "bg-green-100 border-green-400 text-green-700"
                                         : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -3219,7 +3219,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", workingLead === null && "bg-gray-100 dark:bg-gray-700")}
                                   >
                                     <XCircle className="h-4 w-4 text-gray-400" />
-                                    <span className="text-sm text-gray-500">Unassign</span>
+                                    <span className="text-sm text-gray-500 dark:text-gray-400">Unassign</span>
                                   </button>
                                   {teamMembers?.filter(m => m.id !== user?.id).map(member => {
                                     const isSelected = workingLead === member.id
@@ -3245,7 +3245,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 <div className="flex items-center justify-end gap-1.5 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                                   <button
                                     onClick={(e) => { e.stopPropagation(); closeAndReset() }}
-                                    className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                    className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
                                   >
                                     Cancel
                                   </button>
@@ -3287,7 +3287,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                         ) : null
                                       })}
                                       {pairTradeData.collaborators.length > 4 && (
-                                        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 text-gray-500 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800">
+                                        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 text-gray-500 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800 dark:text-gray-400">
                                           +{pairTradeData.collaborators.length - 4}
                                         </div>
                                       )}
@@ -3300,7 +3300,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       }
                                       setShowCollaboratorsDropdown(!showCollaboratorsDropdown)
                                     }}
-                                    className="flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                    className="flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors dark:text-gray-400"
                                   >
                                     <span>{pairTradeData.collaborators?.length > 0 ? 'Edit' : '+ Add'}</span>
                                     <ChevronDown className={clsx("h-3 w-3 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
@@ -3391,7 +3391,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     )
                                   })}
                                   {(!teamMembers || teamMembers.filter(m => m.id !== user?.id && m.id !== pairTradeData.assigned_to).length === 0) && (
-                                    <div className="px-3 py-2 text-sm text-gray-500">No team members available</div>
+                                    <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No team members available</div>
                                   )}
                                 </div>
                                 <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
@@ -3401,7 +3401,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   <div className="flex items-center gap-1.5">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); closeAndReset() }}
-                                      className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                      className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
                                     >
                                       Cancel
                                     </button>
@@ -3524,17 +3524,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       {showVisibilityDropdown && isPairTradeOwner && (
                         <div className="absolute left-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[200px]">
                           <button onClick={() => updatePairTradeVisibilityMutation.mutate('private')} disabled={updatePairTradeVisibilityMutation.isPending} className={clsx("w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", (!pairTradeData.sharing_visibility || pairTradeData.sharing_visibility === 'private') && "bg-gray-50 dark:bg-gray-700")}>
-                            <Lock className="h-4 w-4 text-gray-500" />
+                            <Lock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-900 dark:text-white">Private</div>
-                              <div className="text-xs text-gray-500">Only visible to you</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Only visible to you</div>
                             </div>
                           </button>
                           <button onClick={() => updatePairTradeVisibilityMutation.mutate('team')} disabled={updatePairTradeVisibilityMutation.isPending} className={clsx("w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", pairTradeData.sharing_visibility === 'team' && "bg-gray-50 dark:bg-gray-700")}>
                             <Users className="h-4 w-4 text-blue-500" />
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-900 dark:text-white">Portfolio</div>
-                              <div className="text-xs text-gray-500">Members of selected portfolios can see</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Members of selected portfolios can see</div>
                             </div>
                           </button>
                         </div>
@@ -3791,7 +3791,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                             <div className="flex items-center gap-2">
                               <Briefcase className="h-4 w-4 text-gray-400" />
                               <span className="font-medium text-sm text-gray-900 dark:text-white">{portfolioName}</span>
-                              <span className="text-xs text-gray-500">({allPortfolioProposals.length} recommendation{allPortfolioProposals.length !== 1 ? 's' : ''})</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">({allPortfolioProposals.length} recommendation{allPortfolioProposals.length !== 1 ? 's' : ''})</span>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -3919,7 +3919,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                             {hasSizingData ? `${proposalGross.toFixed(2)}%` : '—'}
                                           </span>
                                         </div>
-                                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                                        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                                           <span>{proposalLegs.filter((l: any) => l.action === 'buy' || l.action === 'add').length} Long</span>
                                           <span>/</span>
                                           <span>{proposalLegs.filter((l: any) => l.action === 'sell' || l.action === 'reduce').length} Short</span>
@@ -4266,7 +4266,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                                     refetchProposals(); queryClient.invalidateQueries({ queryKey: ['trade-proposals-rejected'] }); queryClient.invalidateQueries({ queryKey: ['trade-events'] }); queryClient.invalidateQueries({ queryKey: ['decision-requests'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-inclusion-counts'] }); queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] }); invalidateActivityCaches()
                                                   }
                                                 }} className="px-3 py-1 text-[11px] font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors">Confirm Withdraw</button>
-                                                <button type="button" onClick={() => setConfirmWithdrawId(null)} className="text-[11px] text-gray-500 hover:text-gray-700">Cancel</button>
+                                                <button type="button" onClick={() => setConfirmWithdrawId(null)} className="text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">Cancel</button>
                                               </div>
                                             </div>
                                           )}
@@ -4483,7 +4483,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   </button>
                                   <button
                                     onClick={() => setShowNewPairRec(false)}
-                                    className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                    className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
                                   >
                                     Cancel
                                   </button>
@@ -4809,7 +4809,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           autoFocus
                         />
                         <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                          <button onClick={cancelEditTags} disabled={isUpdating} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Cancel</button>
+                          <button onClick={cancelEditTags} disabled={isUpdating} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400">Cancel</button>
                           <button onClick={saveTags} disabled={isUpdating} className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium">{isUpdating ? 'Saving...' : 'Save'}</button>
                         </div>
                       </div>
@@ -4884,7 +4884,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                           <button
                             onClick={cancelEditRationale}
                             disabled={isUpdating}
-                            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
                           >
                             Cancel
                           </button>
@@ -4990,7 +4990,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               <button
                                 onClick={cancelEditThesis}
                                 disabled={isUpdating}
-                                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
                               >
                                 Cancel
                               </button>
@@ -5161,7 +5161,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     className={clsx(
                                       "flex-1 py-1.5 px-3 text-xs font-medium rounded border transition-colors",
                                       editedRisk.conviction === level
-                                        ? level === 'low' ? "bg-gray-100 border-gray-400 text-gray-700"
+                                        ? level === 'low' ? "bg-gray-100 border-gray-400 text-gray-700 dark:text-gray-300 dark:bg-gray-800"
                                         : level === 'medium' ? "bg-blue-100 border-blue-400 text-blue-700"
                                         : "bg-green-100 border-green-400 text-green-700"
                                         : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -5333,7 +5333,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", workingLead === null && "bg-gray-100 dark:bg-gray-700")}
                                   >
                                     <XCircle className="h-4 w-4 text-gray-400" />
-                                    <span className="text-sm text-gray-500">Unassign</span>
+                                    <span className="text-sm text-gray-500 dark:text-gray-400">Unassign</span>
                                   </button>
                                   {teamMembers?.filter(m => m.id !== user?.id).map(member => {
                                     const isSelected = workingLead === member.id
@@ -5359,7 +5359,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                 <div className="flex items-center justify-end gap-1.5 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                                   <button
                                     onClick={(e) => { e.stopPropagation(); closeAndReset() }}
-                                    className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                    className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
                                   >
                                     Cancel
                                   </button>
@@ -5400,7 +5400,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                         ) : null
                                       })}
                                       {(trade as any).collaborators.length > 4 && (
-                                        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 text-gray-500 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800">
+                                        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 text-gray-500 rounded-full flex items-center justify-center text-[9px] font-semibold border border-white dark:border-gray-800 dark:text-gray-400">
                                           +{(trade as any).collaborators.length - 4}
                                         </div>
                                       )}
@@ -5413,7 +5413,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       }
                                       setShowCollaboratorsDropdown(!showCollaboratorsDropdown)
                                     }}
-                                    className="flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                    className="flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors dark:text-gray-400"
                                   >
                                     <span>{(trade as any).collaborators?.length > 0 ? 'Edit' : '+ Add'}</span>
                                     <ChevronDown className={clsx("h-3 w-3 transition-transform", showCollaboratorsDropdown && "rotate-180")} />
@@ -5504,7 +5504,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                     )
                                   })}
                                 {(!teamMembers || teamMembers.filter(m => m.id !== user?.id && m.id !== trade.assigned_to).length === 0) && (
-                                  <div className="px-3 py-2 text-sm text-gray-500">No team members available</div>
+                                  <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No team members available</div>
                                 )}
                                 </div>
                                 <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
@@ -5514,7 +5514,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   <div className="flex items-center gap-1.5">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); closeAndReset() }}
-                                      className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                      className="px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
                                     >
                                       Cancel
                                     </button>
@@ -5677,17 +5677,17 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                       {showVisibilityDropdown && isOwner && (
                         <div className="absolute left-0 bottom-full mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 min-w-[200px]">
                           <button onClick={() => updateVisibilityMutation.mutate('private')} disabled={updateVisibilityMutation.isPending} className={clsx("w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", (!trade.sharing_visibility || trade.sharing_visibility === 'private') && "bg-gray-50 dark:bg-gray-700")}>
-                            <Lock className="h-4 w-4 text-gray-500" />
+                            <Lock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-900 dark:text-white">Private</div>
-                              <div className="text-xs text-gray-500">Only visible to you</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Only visible to you</div>
                             </div>
                           </button>
                           <button onClick={() => updateVisibilityMutation.mutate('team')} disabled={updateVisibilityMutation.isPending} className={clsx("w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors", trade.sharing_visibility === 'team' && "bg-gray-50 dark:bg-gray-700")}>
                             <Users className="h-4 w-4 text-blue-500" />
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-900 dark:text-white">Portfolio</div>
-                              <div className="text-xs text-gray-500">Members of selected portfolios can see</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Members of selected portfolios can see</div>
                             </div>
                           </button>
                         </div>
@@ -6026,7 +6026,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               {/* Portfolio Header */}
                               <div className="bg-gray-50 dark:bg-gray-800 px-3 py-2 border-b border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center gap-2">
-                                  <Briefcase className="h-3.5 w-3.5 text-gray-500" />
+                                  <Briefcase className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
                                   <span className="font-medium text-sm text-gray-900 dark:text-white">{portfolioName}</span>
                                   <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
                                     Pair Trade
@@ -6034,7 +6034,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                   {(myProposal || otherProposals.length > 0) && (() => {
                                     const count = (myProposal ? 1 : 0) + otherProposals.length
                                     return (
-                                      <span className="ml-auto text-xs text-gray-500">
+                                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">
                                         {count} recommendation{count !== 1 ? 's' : ''}
                                       </span>
                                     )
@@ -6227,7 +6227,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                                   }}
                                                   placeholder="0.00"
                                                 />
-                                                <span className="text-xs text-gray-500">%</span>
+                                                <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
                                               </div>
                                             </div>
                                           ))
@@ -6447,7 +6447,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       if (currentWt > 0 && targetWt < currentWt) return { label: 'Reduce', color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-900/20' }
                                       if (currentWt < 0 && targetWt < currentWt) return { label: 'Increase Short', color: 'text-red-700 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/20' }
                                       if (currentWt < 0 && targetWt > currentWt) return { label: 'Reduce Short', color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-900/20' }
-                                      return { label: 'Hold', color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-700' }
+                                      return { label: 'Hold', color: 'text-gray-500 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700' }
                                     }
 
                                     // Render: current → target + classification
@@ -6497,10 +6497,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                         </div>
                                         {propTarget != null && (
                                           <div className="flex items-center gap-1.5 mt-0.5 text-xs tabular-nums">
-                                            <span className="text-gray-500">Current</span>
+                                            <span className="text-gray-500 dark:text-gray-400">Current</span>
                                             <span className="font-medium text-gray-700 dark:text-gray-300">{currentWt.toFixed(2)}%</span>
                                             <span className="text-gray-400">→</span>
-                                            <span className="text-gray-500">Target</span>
+                                            <span className="text-gray-500 dark:text-gray-400">Target</span>
                                             <span className="font-semibold text-gray-900 dark:text-white">{propTarget.toFixed(2)}%</span>
                                             {tc && <span className={clsx('text-[10px] font-semibold uppercase px-1 py-px rounded', tc.color, tc.bg)}>{tc.label}</span>}
                                             {(() => {
@@ -6695,24 +6695,24 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                       return (
                                         <div className="mt-1.5 px-2 py-1.5 rounded bg-gray-100 dark:bg-gray-700/50 text-[11px] tabular-nums space-y-0.5">
                                           <div className="flex justify-between">
-                                            <span className="text-gray-500">Current</span>
+                                            <span className="text-gray-500 dark:text-gray-400">Current</span>
                                             <span className="font-medium text-gray-700 dark:text-gray-300">{currentWt.toFixed(2)}%</span>
                                           </div>
                                           <div className="flex justify-between">
-                                            <span className="text-gray-500">Target</span>
+                                            <span className="text-gray-500 dark:text-gray-400">Target</span>
                                             <span className="font-semibold text-gray-900 dark:text-white">{targetWt.toFixed(2)}%</span>
                                           </div>
                                           <div className="border-t border-gray-200 dark:border-gray-600 my-0.5" />
                                           <div className="flex justify-between">
-                                            <span className="text-gray-500">Change</span>
+                                            <span className="text-gray-500 dark:text-gray-400">Change</span>
                                             <span className="font-semibold text-gray-700 dark:text-gray-300">
                                               {delta >= 0 ? '+' : ''}{delta.toFixed(2)}%
                                             </span>
                                           </div>
                                           {portfolio.benchmarkWeight !== null && (
                                             <div className="flex justify-between">
-                                              <span className="text-gray-500">Projected Active</span>
-                                              <span className={clsx('font-medium', projectedActive > 0 ? 'text-green-600 dark:text-green-400' : projectedActive < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500')}>
+                                              <span className="text-gray-500 dark:text-gray-400">Projected Active</span>
+                                              <span className={clsx('font-medium', projectedActive > 0 ? 'text-green-600 dark:text-green-400' : projectedActive < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400')}>
                                                 {projectedActive >= 0 ? '+' : ''}{projectedActive.toFixed(2)}%
                                               </span>
                                             </div>

@@ -628,7 +628,7 @@ export function AcceptedTradesTable({
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600"
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               title="Clear search"
             >
               <X className="w-3 h-3" />
@@ -745,7 +745,7 @@ export function AcceptedTradesTable({
                   <td className="py-2 px-3">
                     <span className={clsx(
                       'inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded',
-                      ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600'
+                      ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                     )}>
                       {trade.action}
                     </span>
@@ -948,7 +948,7 @@ export function AcceptedTradesTable({
                           e.stopPropagation()
                           setSelectedTradeId(isSelected ? null : trade.id)
                         }}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600"
+                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                         title="Reason & comments"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -1078,7 +1078,7 @@ function TradeDetailPane({
             <span
               className={clsx(
                 'inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded',
-                ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600',
+                ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
               )}
             >
               {trade.action}
@@ -1087,7 +1087,7 @@ function TradeDetailPane({
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 flex-shrink-0"
+          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 flex-shrink-0 dark:hover:text-gray-300"
           title="Close"
         >
           <X className="w-4 h-4" />

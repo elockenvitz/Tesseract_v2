@@ -51,15 +51,15 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             {step === 'type' ? 'Add Widget' : 'Widget Details'}
           </h2>
           <button
             onClick={handleClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -69,7 +69,7 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
         <div className="p-6">
           {step === 'type' ? (
             <div className="space-y-3">
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
                 Choose the type of widget you want to add to this asset:
               </p>
               <div className="grid grid-cols-2 gap-3">
@@ -79,13 +79,13 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
                     <button
                       key={option.value}
                       onClick={() => handleSelectType(option.value)}
-                      className="flex flex-col items-start p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
+                      className="flex flex-col items-start p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left dark:border-gray-700"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {Icon && <Icon className="w-5 h-5 text-primary-600" />}
-                        <span className="font-medium text-gray-900">{option.label}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{option.label}</span>
                       </div>
-                      <p className="text-xs text-gray-500">{option.description}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{option.description}</p>
                     </button>
                   )
                 })}
@@ -96,7 +96,7 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
               {/* Back button */}
               <button
                 onClick={() => setStep('type')}
-                className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 dark:hover:text-gray-200 dark:text-gray-400"
               >
                 ← Back to widget types
               </button>
@@ -121,7 +121,7 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
 
               {/* Title input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Title <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -129,14 +129,14 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g., Key Assumptions"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   autoFocus
                 />
               </div>
 
               {/* Description input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Description <span className="text-gray-400">(optional)</span>
                 </label>
                 <textarea
@@ -144,7 +144,7 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Brief description of what this widget tracks..."
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none dark:border-gray-600"
                 />
               </div>
             </div>
@@ -153,7 +153,7 @@ export function AddWidgetModal({ isOpen, onClose, onAdd, isAdding }: AddWidgetMo
 
         {/* Footer */}
         {step === 'details' && (
-          <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>

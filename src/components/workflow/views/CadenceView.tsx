@@ -155,7 +155,7 @@ const STATUS_CONFIG: Record<RuleStatus, { label: string; className: string; icon
   },
   paused: {
     label: 'Paused',
-    className: 'bg-gray-100 text-gray-600 border-gray-300',
+    className: 'bg-gray-100 text-gray-600 border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800',
     icon: <Clock className="w-3 h-3" />,
   },
 }
@@ -428,19 +428,19 @@ export function CadenceView({
   return (
     <div className="space-y-4">
       {/* ── System state banner ──────────────────────────────────────── */}
-      <div className="bg-gray-50/80 border border-gray-200 rounded-lg px-4 py-3">
+      <div className="bg-gray-50/80 border border-gray-200 rounded-lg px-4 py-3 dark:border-gray-700">
         {/* Title + cadence selector */}
         <div className="flex items-center gap-3">
-          <h3 className="text-[15px] font-semibold text-gray-900">Scheduling</h3>
+          <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Scheduling</h3>
           {branchCreationRules.length > 0 && (
-            <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+            <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">
               {branchCreationRules[0].rule_name || 'Scheduled'}
             </span>
           )}
         </div>
 
         {/* Microcopy */}
-        <p className="text-xs text-gray-500 mt-1.5 mb-2">
+        <p className="text-xs text-gray-500 mt-1.5 mb-2 dark:text-gray-400">
           {scopeType === 'general'
             ? 'These rules define how runs start and when they complete.'
             : scopeType === 'portfolio'
@@ -450,7 +450,7 @@ export function CadenceView({
 
         {/* Metrics + validity warning (only shown when incomplete) */}
         <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 text-gray-600">
+          <div className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 text-gray-600 dark:text-gray-400">
             <span>
               {automationRules.length} {automationRules.length === 1 ? 'rule' : 'rules'}
             </span>
@@ -554,36 +554,36 @@ export function CadenceView({
         <Card className="overflow-hidden">
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
           >
             <div className="flex items-center gap-2">
               {showHistory ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-              <History className="w-4 h-4 text-gray-600" />
-              <h4 className="text-sm font-semibold text-gray-900">Run History ({ruleExecutions.length})</h4>
+              <History className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Run History ({ruleExecutions.length})</h4>
             </div>
           </button>
 
           {showHistory && (
-            <div className="px-3 pb-3 border-t border-gray-100">
+            <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800">
               {isLoadingExecutions ? (
                 <div className="text-center py-4">
                   <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100 mt-2">
+                <div className="divide-y divide-gray-100 mt-2 dark:divide-gray-800">
                   {ruleExecutions.map((exec) => {
                     const rule = automationRules.find(r => r.id === exec.rule_id)
                     return (
                       <button
                         key={exec.id}
                         onClick={() => setSelectedExecution(exec)}
-                        className="flex items-center justify-between py-2 text-xs w-full text-left hover:bg-gray-50 rounded px-1 -mx-1 transition-colors"
+                        className="flex items-center justify-between py-2 text-xs w-full text-left hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           {exec.status === 'success' ? <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
                             : exec.status === 'error' ? <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
                             : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
-                          <span className="font-medium text-gray-700 truncate">{rule?.rule_name || 'Unknown rule'}</span>
+                          <span className="font-medium text-gray-700 truncate dark:text-gray-300">{rule?.rule_name || 'Unknown rule'}</span>
                           {exec.trigger_source !== 'manual' ? null : (
                             <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-medium">manual</span>
                           )}
@@ -612,12 +612,12 @@ export function CadenceView({
       {selectedExecution && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => setSelectedExecution(null)} />
-          <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col animate-in slide-in-from-right">
+          <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col animate-in slide-in-from-right dark:bg-gray-800">
             {/* Drawer header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900">Execution Detail</h3>
-              <button onClick={() => setSelectedExecution(null)} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-4 h-4 text-gray-500" />
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Execution Detail</h3>
+              <button onClick={() => setSelectedExecution(null)} className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
+                <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
 
@@ -625,7 +625,7 @@ export function CadenceView({
             <div className="flex-1 overflow-auto p-4 space-y-4">
               {/* Status */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</label>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Status</label>
                 <div className="mt-1 flex items-center gap-2">
                   {selectedExecution.status === 'success' ? <CheckCircle className="w-4 h-4 text-green-500" />
                     : selectedExecution.status === 'error' ? <AlertCircle className="w-4 h-4 text-red-500" />
@@ -642,29 +642,29 @@ export function CadenceView({
 
               {/* Rule name */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Rule</label>
-                <p className="mt-1 text-sm text-gray-900">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Rule</label>
+                <p className="mt-1 text-sm text-gray-900 dark:text-white">
                   {automationRules.find(r => r.id === selectedExecution.rule_id)?.rule_name || selectedExecution.rule_id}
                 </p>
               </div>
 
               {/* Timestamp */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Executed At</label>
-                <p className="mt-1 text-sm text-gray-900">{new Date(selectedExecution.executed_at).toLocaleString()}</p>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Executed At</label>
+                <p className="mt-1 text-sm text-gray-900 dark:text-white">{new Date(selectedExecution.executed_at).toLocaleString()}</p>
               </div>
 
               {/* Trigger source */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Trigger Source</label>
-                <p className="mt-1 text-sm text-gray-900">{selectedExecution.trigger_source}</p>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Trigger Source</label>
+                <p className="mt-1 text-sm text-gray-900 dark:text-white">{selectedExecution.trigger_source}</p>
               </div>
 
               {/* Result summary */}
               {selectedExecution.result_summary && (
                 <div>
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Result Summary</label>
-                  <pre className="mt-1 text-xs bg-gray-50 rounded-lg p-3 overflow-auto max-h-60 text-gray-800 border border-gray-200">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Result Summary</label>
+                  <pre className="mt-1 text-xs bg-gray-50 rounded-lg p-3 overflow-auto max-h-60 text-gray-800 border border-gray-200 dark:border-gray-700 dark:text-gray-100 dark:bg-gray-900">
                     {JSON.stringify(selectedExecution.result_summary, null, 2)}
                   </pre>
                 </div>
@@ -673,7 +673,7 @@ export function CadenceView({
               {/* Error message - admin only */}
               {canEdit && selectedExecution.error_message && (
                 <div>
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Error Message</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Error Message</label>
                   <pre className="mt-1 text-xs bg-red-50 rounded-lg p-3 overflow-auto max-h-40 text-red-800 border border-red-200 whitespace-pre-wrap">
                     {selectedExecution.error_message}
                   </pre>
@@ -683,8 +683,8 @@ export function CadenceView({
               {/* Idempotency key */}
               {selectedExecution.idempotency_key && (
                 <div>
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Idempotency Key</label>
-                  <p className="mt-1 text-xs text-gray-600 font-mono break-all">{selectedExecution.idempotency_key}</p>
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Idempotency Key</label>
+                  <p className="mt-1 text-xs text-gray-600 font-mono break-all dark:text-gray-400">{selectedExecution.idempotency_key}</p>
                 </div>
               )}
             </div>

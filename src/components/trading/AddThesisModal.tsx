@@ -87,7 +87,7 @@ export function AddThesisModal({
             </p>
           </div>
           <button onClick={onClose} type="button" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -105,7 +105,7 @@ export function AddThesisModal({
                   'flex-1 px-3 py-1.5 rounded-lg border-2 font-medium text-xs transition-all text-center',
                   category === 'directional'
                     ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-600'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                 )}
               >
                 Directional Thesis
@@ -116,7 +116,7 @@ export function AddThesisModal({
                   'flex-1 px-3 py-1.5 rounded-lg border-2 font-medium text-xs transition-all text-center',
                   category === 'context'
                     ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 dark:border-violet-600'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                 )}
               >
                 Context / Catalyst / Risk
@@ -137,7 +137,7 @@ export function AddThesisModal({
                     'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all',
                     direction === 'bull'
                       ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                   )}
                 >
                   <TrendingUp className="h-4 w-4" />
@@ -149,7 +149,7 @@ export function AddThesisModal({
                     'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all',
                     direction === 'bear'
                       ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 dark:border-red-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                   )}
                 >
                   <TrendingDown className="h-4 w-4" />
@@ -169,7 +169,7 @@ export function AddThesisModal({
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border-2 font-medium text-xs transition-all',
                     direction === 'catalyst'
                       ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                   )}
                 >
                   <Zap className="h-3.5 w-3.5" />
@@ -181,7 +181,7 @@ export function AddThesisModal({
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border-2 font-medium text-xs transition-all',
                     direction === 'risk'
                       ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                   )}
                 >
                   <ShieldAlert className="h-3.5 w-3.5" />
@@ -193,7 +193,7 @@ export function AddThesisModal({
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border-2 font-medium text-xs transition-all',
                     direction === 'context'
                       ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 dark:border-violet-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300 dark:text-gray-400'
                   )}
                 >
                   <FileText className="h-3.5 w-3.5" />
@@ -218,7 +218,7 @@ export function AddThesisModal({
                       'px-3 py-1 text-[11px] font-medium rounded-md transition-colors capitalize',
                       conviction === c
                         ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                     )}
                   >
                     {c}

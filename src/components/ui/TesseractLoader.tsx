@@ -179,7 +179,7 @@ export function TesseractLoader({
 
       {showText && (
         <div className="mt-6 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">{text}</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2 dark:text-white">{text}</h2>
           <div className="flex justify-center space-x-1">
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>

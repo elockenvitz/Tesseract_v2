@@ -130,16 +130,16 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 bg-gray-50 border-t border-gray-200">
+      <div className="flex items-center justify-center py-12 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
         <Loader2 className="w-6 h-6 animate-spin text-primary-500 mr-3" />
-        <span className="text-sm text-gray-600">Loading spreadsheet...</span>
+        <span className="text-sm text-gray-600 dark:text-gray-400">Loading spreadsheet...</span>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="text-center py-12 text-sm text-red-500 bg-red-50 border-t border-gray-200">
+      <div className="text-center py-12 text-sm text-red-500 bg-red-50 border-t border-gray-200 dark:border-gray-700">
         {error}
       </div>
     )
@@ -147,7 +147,7 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
 
   if (sheets.length === 0) {
     return (
-      <div className="text-center py-12 text-sm text-gray-500 bg-gray-50 border-t border-gray-200">
+      <div className="text-center py-12 text-sm text-gray-500 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
         No data found in spreadsheet
       </div>
     )
@@ -167,12 +167,12 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
       minHeight={150}
       maxHeight={800}
     >
-      <div className="bg-white flex-1 flex flex-col min-h-0">
+      <div className="bg-white flex-1 flex flex-col min-h-0 dark:bg-gray-800">
         {/* Header bar with sheet info */}
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs font-medium text-gray-700">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
               {sheets.length} sheet{sheets.length > 1 ? 's' : ''} • {totalRows.toLocaleString()} rows • {currentSheet.columns.length} columns
             </span>
           </div>
@@ -180,7 +180,7 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
 
         {/* Sheet Tabs */}
         {sheets.length > 1 && (
-          <div className="flex border-b border-gray-200 bg-white overflow-x-auto flex-shrink-0">
+          <div className="flex border-b border-gray-200 bg-white overflow-x-auto flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
             {sheets.map((sheet, index) => (
               <button
                 key={sheet.name}
@@ -189,7 +189,7 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
                   'px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
                   index === activeSheet
                     ? 'border-emerald-500 text-emerald-700 bg-emerald-50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
                 )}
               >
                 {sheet.name}
@@ -203,13 +203,13 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
           <table className="w-full text-sm border-collapse min-w-max">
             <thead className="sticky top-0 z-10">
               <tr>
-                <th className="px-3 py-2 text-center font-semibold text-gray-500 border-r border-b border-gray-300 bg-gray-100 w-12 sticky left-0 z-20">
+                <th className="px-3 py-2 text-center font-semibold text-gray-500 border-r border-b border-gray-300 bg-gray-100 w-12 sticky left-0 z-20 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800">
                   #
                 </th>
                 {currentSheet.columns.map((col, i) => (
                   <th
                     key={i}
-                    className="px-3 py-2 text-left font-semibold text-gray-800 border-r border-b border-gray-300 bg-gray-100 min-w-[120px] max-w-[300px]"
+                    className="px-3 py-2 text-left font-semibold text-gray-800 border-r border-b border-gray-300 bg-gray-100 min-w-[120px] max-w-[300px] dark:border-gray-600 dark:text-gray-100 dark:bg-gray-800"
                   >
                     <div className="truncate" title={col}>
                       {col}
@@ -218,16 +218,16 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
                 ))}
               </tr>
             </thead>
-            <tbody className="bg-white">
+            <tbody className="bg-white dark:bg-gray-800">
               {currentSheet.data.slice(0, displayRows).map((row, rowIndex) => (
                 <tr
                   key={rowIndex}
                   className={clsx(
                     'hover:bg-blue-50 transition-colors',
-                    rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                    rowIndex % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/50'
                   )}
                 >
-                  <td className="px-3 py-1.5 text-gray-400 border-r border-b border-gray-200 bg-gray-50 text-center font-mono text-xs sticky left-0">
+                  <td className="px-3 py-1.5 text-gray-400 border-r border-b border-gray-200 bg-gray-50 text-center font-mono text-xs sticky left-0 dark:border-gray-700 dark:bg-gray-900">
                     {rowIndex + 2}
                   </td>
                   {currentSheet.columns.map((_, colIndex) => {
@@ -239,8 +239,8 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
                       <td
                         key={colIndex}
                         className={clsx(
-                          'px-3 py-1.5 border-r border-b border-gray-200 max-w-[300px]',
-                          isNumber ? 'text-right font-mono text-gray-700' : 'text-gray-700'
+                          'px-3 py-1.5 border-r border-b border-gray-200 max-w-[300px] dark:border-gray-700',
+                          isNumber ? 'text-right font-mono text-gray-700 dark:text-gray-300' : 'text-gray-700 dark:text-gray-300'
                         )}
                         title={displayValue}
                       >
@@ -257,12 +257,12 @@ function ExcelPreview({ fileUrl, width, height, onSizeChange }: { fileUrl: strin
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-200 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
           <span className="text-xs text-gray-400">
             Drag edges to resize
           </span>
           {totalRows > displayRows && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               Showing {displayRows.toLocaleString()} of {totalRows.toLocaleString()} rows
             </span>
           )}
@@ -370,7 +370,7 @@ function ResizablePreviewContainer({
   return (
     <div
       ref={containerRef}
-      className="relative block border border-gray-300 rounded-b overflow-hidden"
+      className="relative block border border-gray-300 rounded-b overflow-hidden dark:border-gray-600"
       style={{
         width: `${currentSize.width}px`,
         height: `${currentSize.height}px`,
@@ -416,7 +416,7 @@ function ImagePreview({ fileUrl, fileName, width, height, onSizeChange }: { file
 
   if (error) {
     return (
-      <div className="text-center py-12 text-sm text-gray-500 bg-gray-50 border-t border-gray-200">
+      <div className="text-center py-12 text-sm text-gray-500 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
         Failed to load image preview
       </div>
     )
@@ -432,23 +432,23 @@ function ImagePreview({ fileUrl, fileName, width, height, onSizeChange }: { file
       minHeight={150}
       maxHeight={800}
     >
-      <div className="border-t border-gray-200 bg-gray-100 flex-1 flex flex-col min-h-0">
+      <div className="border-t border-gray-200 bg-gray-100 flex-1 flex flex-col min-h-0 dark:border-gray-700 dark:bg-gray-800">
         {/* Header bar with image info */}
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-2">
             <Image className="w-4 h-4 text-blue-600" />
-            <span className="text-xs font-medium text-gray-700">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
               {dimensions ? `${dimensions.width} × ${dimensions.height} px` : 'Loading...'}
             </span>
           </div>
           <span className="text-xs text-gray-400">Drag edges to resize</span>
         </div>
         {/* Image container */}
-        <div className="flex-1 p-4 flex items-center justify-center overflow-auto bg-gray-100 min-h-0">
+        <div className="flex-1 p-4 flex items-center justify-center overflow-auto bg-gray-100 min-h-0 dark:bg-gray-800">
           <img
             src={fileUrl}
             alt={fileName}
-            className="max-w-full max-h-full rounded-lg shadow-sm border border-gray-200 object-contain"
+            className="max-w-full max-h-full rounded-lg shadow-sm border border-gray-200 object-contain dark:border-gray-700"
             onError={() => setError(true)}
             onLoad={(e) => {
               const img = e.currentTarget
@@ -476,17 +476,17 @@ function DocumentPreview({ fileUrl, fileName, fileType, width, height, onSizeCha
       minHeight={200}
       maxHeight={900}
     >
-      <div className="border-t border-gray-200 bg-white flex-1 flex flex-col min-h-0">
+      <div className="border-t border-gray-200 bg-white flex-1 flex flex-col min-h-0 dark:border-gray-700 dark:bg-gray-800">
         {/* Header bar */}
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-orange-600" />
-            <span className="text-xs font-medium text-gray-700">{fileName}</span>
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{fileName}</span>
           </div>
           <span className="text-xs text-gray-400">Drag edges to resize</span>
         </div>
         {/* Document container */}
-        <div className="flex-1 overflow-hidden bg-gray-100 min-h-0">
+        <div className="flex-1 overflow-hidden bg-gray-100 min-h-0 dark:bg-gray-800">
           {isPdf ? (
             <iframe
               src={`${fileUrl}#toolbar=1&navpanes=0`}
@@ -497,7 +497,7 @@ function DocumentPreview({ fileUrl, fileName, fileType, width, height, onSizeCha
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-8 text-center">
               <FileText className="w-16 h-16 text-gray-300 mb-4" />
-              <p className="text-sm text-gray-600 mb-2">Preview not available for this file type</p>
+              <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">Preview not available for this file type</p>
               <p className="text-xs text-gray-400">Click the filename to download and view</p>
             </div>
           )}
@@ -800,9 +800,9 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
   if (isUploading || (node.attrs.pendingUploadId && !node.attrs.fileUrl && !error)) {
     return (
       <NodeViewWrapper className="file-attachment-wrapper my-1" data-drag-handle>
-        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 border border-gray-200 max-w-md">
+        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 border border-gray-200 max-w-md dark:border-gray-700 dark:bg-gray-900">
           <Loader2 className="w-4 h-4 text-primary-500 animate-spin flex-shrink-0" />
-          <span className="text-sm text-gray-600 truncate">
+          <span className="text-sm text-gray-600 truncate dark:text-gray-400">
             {node.attrs.fileName || 'Uploading...'}
           </span>
           <span className="text-xs text-gray-400">{uploadProgress}%</span>
@@ -852,12 +852,12 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
         <div
           className={clsx(
             'inline-flex items-center gap-2 px-3 py-2 rounded border-2 border-dashed cursor-pointer transition-colors',
-            selected ? 'border-primary-400 bg-primary-50' : 'border-gray-300 hover:border-primary-400 hover:bg-gray-50'
+            selected ? 'border-primary-400 bg-primary-50' : 'border-gray-300 hover:border-primary-400 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
           )}
           onClick={() => fileInputRef.current?.click()}
         >
           <File className="w-4 h-4 text-gray-400" />
-          <span className="text-sm text-gray-500">Click to upload a file</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">Click to upload a file</span>
           <input
             ref={fileInputRef}
             type="file"
@@ -875,8 +875,8 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
       <div
         className={clsx(
           'rounded border transition-all max-w-lg',
-          selected ? 'ring-1 ring-primary-500 border-primary-300' : 'border-gray-200',
-          localExpanded ? 'bg-white' : 'bg-gray-50 hover:bg-gray-100'
+          selected ? 'ring-1 ring-primary-500 border-primary-300' : 'border-gray-200 dark:border-gray-700',
+          localExpanded ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
         )}
       >
         {/* Compact Header */}
@@ -891,7 +891,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
           {canPreview && (
             <button
               onClick={toggleExpand}
-              className="p-0.5 text-gray-400 hover:text-gray-600 flex-shrink-0"
+              className="p-0.5 text-gray-400 hover:text-gray-600 flex-shrink-0 dark:hover:text-gray-300"
             >
               {localExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -909,7 +909,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
             category === 'video' && 'bg-purple-100 text-purple-600',
             category === 'audio' && 'bg-green-100 text-green-600',
             category === 'document' && 'bg-orange-100 text-orange-600',
-            category === 'default' && 'bg-gray-100 text-gray-600'
+            category === 'default' && 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
           )}>
             <IconComponent className="w-3 h-3" />
           </div>

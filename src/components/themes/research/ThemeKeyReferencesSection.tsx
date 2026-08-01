@@ -54,16 +54,16 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg">
+    <div className="bg-white border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-800">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded-lg bg-blue-50">
             <Library className="w-4 h-4 text-blue-600" />
           </div>
-          <h3 className="text-base font-semibold text-gray-900">Key References</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Key References</h3>
           {references.length > 0 && (
-            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 dark:text-gray-300">
               {references.length}
             </span>
           )}
@@ -76,26 +76,26 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
 
       {/* Add form */}
       {showAdd && (
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 space-y-2">
+        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 space-y-2 dark:border-gray-700 dark:bg-gray-900">
           <input
             type="url"
             value={newUrl}
             onChange={(e) => setNewUrl(e.target.value)}
             placeholder="https://..."
-            className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-primary-300 dark:border-gray-700 dark:bg-gray-800"
             autoFocus
           />
           <input
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Title (optional, defaults to URL)"
-            className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-primary-300 dark:border-gray-700 dark:bg-gray-800"
           />
           <div className="flex items-center justify-between">
             <select
               value={newImportance}
               onChange={(e) => setNewImportance(e.target.value as ThemeReferenceImportance)}
-              className="text-xs px-2 py-1 border border-gray-200 rounded bg-white"
+              className="text-xs px-2 py-1 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800"
             >
               <option value="low">Low</option>
               <option value="normal">Normal</option>
@@ -111,21 +111,21 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
               </Button>
             </div>
           </div>
-          <p className="text-[11px] text-gray-500">Tip: for now, add any URL as a reference (research notes, filings, reports). Note & file attachment coming later.</p>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">Tip: for now, add any URL as a reference (research notes, filings, reports). Note & file attachment coming later.</p>
         </div>
       )}
 
       {/* List */}
       {isLoading ? (
-        <div className="p-4"><div className="h-16 bg-gray-100 rounded animate-pulse" /></div>
+        <div className="p-4"><div className="h-16 bg-gray-100 rounded animate-pulse dark:bg-gray-800" /></div>
       ) : references.length === 0 ? (
         <div className="p-8 text-center">
           <Library className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">No references yet.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No references yet.</p>
           <p className="text-xs text-gray-400 mt-1">Pin URLs, research notes, and docs that back up this theme.</p>
         </div>
       ) : (
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-gray-100 dark:divide-gray-800">
           {references.map(r => {
             const canManage = r.user_id === user?.id
             const href = r.reference_type === 'external_link' ? r.external_url || undefined : undefined
@@ -138,12 +138,12 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
                   <div className="flex items-center gap-2 flex-wrap">
                     <Star className={clsx('w-3 h-3', IMPORTANCE_COLOR[r.importance])} fill={r.importance === 'critical' || r.importance === 'high' ? 'currentColor' : 'none'} />
                     {href ? (
-                      <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-gray-900 hover:text-primary-600 hover:underline truncate inline-flex items-center gap-1">
+                      <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-gray-900 hover:text-primary-600 hover:underline truncate inline-flex items-center gap-1 dark:text-white">
                         {r.title}
                         <ExternalLink className="w-3 h-3 opacity-60" />
                       </a>
                     ) : (
-                      <span className="text-sm font-medium text-gray-900 truncate">{r.title}</span>
+                      <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{r.title}</span>
                     )}
                     {r.is_pinned && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
@@ -151,7 +151,7 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
                       </span>
                     )}
                   </div>
-                  {r.description && <p className="text-xs text-gray-500 mt-0.5 truncate">{r.description}</p>}
+                  {r.description && <p className="text-xs text-gray-500 mt-0.5 truncate dark:text-gray-400">{r.description}</p>}
                   <p className="text-[11px] text-gray-400 mt-0.5">
                     Added {formatDistanceToNow(new Date(r.created_at), { addSuffix: true })}
                   </p>

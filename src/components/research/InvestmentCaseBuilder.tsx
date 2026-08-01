@@ -863,17 +863,17 @@ export function InvestmentCaseBuilder({
     <>
       <div className="space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-200 dark:border-gray-700">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Export Investment Case</h3>
-            <p className="text-sm text-gray-500">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Export Investment Case</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Generate a PDF document from your {symbol} research
             </p>
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <X className="w-5 h-5" />
             </button>
@@ -884,7 +884,7 @@ export function InvestmentCaseBuilder({
         {/* A. Template                                                   */}
         {/* ============================================================ */}
         <section>
-          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2 dark:text-gray-300">
             <Palette className="w-4 h-4" />
             Template
           </h4>
@@ -895,17 +895,17 @@ export function InvestmentCaseBuilder({
             />
 
             {selectedTemplate && (
-              <div className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                 <div className="min-w-0">
-                  <div className="font-medium text-sm text-gray-900">{selectedTemplate.name}</div>
+                  <div className="font-medium text-sm text-gray-900 dark:text-white">{selectedTemplate.name}</div>
                   {selectedTemplate.description && (
-                    <div className="text-xs text-gray-500 mt-0.5 truncate">{selectedTemplate.description}</div>
+                    <div className="text-xs text-gray-500 mt-0.5 truncate dark:text-gray-400">{selectedTemplate.description}</div>
                   )}
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded font-medium">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded font-medium dark:text-gray-400 dark:bg-gray-800">
                       {selectedTemplate.style_config.pageFormat.toUpperCase()}
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded capitalize">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded capitalize dark:text-gray-400 dark:bg-gray-800">
                       {selectedTemplate.style_config.fonts.body.family}
                     </span>
                     <span
@@ -956,26 +956,26 @@ export function InvestmentCaseBuilder({
         {/* B. Snapshot                                                    */}
         {/* ============================================================ */}
         <section>
-          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2 dark:text-gray-300">
             <Calendar className="w-4 h-4" />
             Snapshot
           </h4>
           <div className="space-y-2.5">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">As-of Date</label>
+              <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">As-of Date</label>
               <input
                 type="date"
                 value={asOfDate}
                 onChange={e => setAsOfDate(e.target.value)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-600">
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <input
                 type="checkbox"
                 checked={includeDraftChanges}
                 onChange={e => setIncludeDraftChanges(e.target.checked)}
-                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
               />
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
               Include draft changes
@@ -993,7 +993,7 @@ export function InvestmentCaseBuilder({
         {/* ============================================================ */}
         <section>
           <div className="flex items-center gap-2 mb-2">
-            <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-300">
               <FileStack className="w-4 h-4" />
               Content Scope
             </h4>
@@ -1018,7 +1018,7 @@ export function InvestmentCaseBuilder({
           </p>
 
           {/* Research Sections */}
-          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
             {sectionConfigs.map(section => {
               const isExpanded = expandedSections.has(section.id)
               const enabledFieldsCount = section.fields?.filter(f => f.enabled).length || 0
@@ -1027,7 +1027,7 @@ export function InvestmentCaseBuilder({
 
               return (
                 <div key={section.id}>
-                  <div className="flex items-center gap-2 p-3 hover:bg-gray-50">
+                  <div className="flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-gray-800">
                     <GripVertical className="w-4 h-4 text-gray-300 cursor-grab" />
                     <button
                       onClick={() => toggleSectionEnabled(section.id)}
@@ -1050,7 +1050,7 @@ export function InvestmentCaseBuilder({
                       )}
                       <span className={clsx(
                         'font-medium text-sm truncate',
-                        section.enabled ? 'text-gray-900' : 'text-gray-400 line-through'
+                        section.enabled ? 'text-gray-900 dark:text-white' : 'text-gray-400 line-through'
                       )}>
                         {section.name}
                       </span>
@@ -1060,7 +1060,7 @@ export function InvestmentCaseBuilder({
                     </button>
                     {/* Modification badges */}
                     {!section.enabled && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium flex-shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium flex-shrink-0 dark:text-gray-400 dark:bg-gray-800">
                         Excluded
                       </span>
                     )}
@@ -1077,7 +1077,7 @@ export function InvestmentCaseBuilder({
                         <div
                           key={field.id}
                           className={clsx(
-                            'flex items-center gap-1.5 px-2 py-1.5 text-sm rounded hover:bg-gray-50',
+                            'flex items-center gap-1.5 px-2 py-1.5 text-sm rounded hover:bg-gray-50 dark:hover:bg-gray-800',
                             !section.enabled && 'opacity-50'
                           )}
                         >
@@ -1095,7 +1095,7 @@ export function InvestmentCaseBuilder({
                           </button>
                           <span className={clsx(
                             'flex-1 truncate',
-                            field.enabled ? 'text-gray-700' : 'text-gray-400'
+                            field.enabled ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400'
                           )}>
                             {field.name}
                           </span>
@@ -1116,27 +1116,27 @@ export function InvestmentCaseBuilder({
         {/* Attachments (separate from research sections)                 */}
         {/* ============================================================ */}
         <section>
-          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2 dark:text-gray-300">
             <Paperclip className="w-4 h-4" />
             Attachments
           </h4>
-          <div className="space-y-2 border border-gray-200 rounded-lg p-3">
+          <div className="space-y-2 border border-gray-200 rounded-lg p-3 dark:border-gray-700">
             <label className="flex items-center gap-2 text-sm text-gray-400 cursor-not-allowed">
-              <input type="checkbox" disabled className="rounded border-gray-300" />
+              <input type="checkbox" disabled className="rounded border-gray-300 dark:border-gray-600" />
               <Paperclip className="w-3.5 h-3.5" />
               Supporting documents
               <span className="text-[10px] text-gray-400">(0)</span>
               <span className="text-[10px] text-gray-400 ml-auto italic">Coming soon</span>
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-400 cursor-not-allowed">
-              <input type="checkbox" disabled className="rounded border-gray-300" />
+              <input type="checkbox" disabled className="rounded border-gray-300 dark:border-gray-600" />
               <Link className="w-3.5 h-3.5" />
               Linked research
               <span className="text-[10px] text-gray-400">(0)</span>
               <span className="text-[10px] text-gray-400 ml-auto italic">Coming soon</span>
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-400 cursor-not-allowed">
-              <input type="checkbox" disabled className="rounded border-gray-300" />
+              <input type="checkbox" disabled className="rounded border-gray-300 dark:border-gray-600" />
               <BookOpen className="w-3.5 h-3.5" />
               Appendix
               <span className="text-[10px] text-gray-400 ml-auto italic">Coming soon</span>
@@ -1148,7 +1148,7 @@ export function InvestmentCaseBuilder({
         {/* D. Output                                                     */}
         {/* ============================================================ */}
         <section>
-          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2 dark:text-gray-300">
             <Download className="w-4 h-4" />
             Output
           </h4>
@@ -1163,7 +1163,7 @@ export function InvestmentCaseBuilder({
               </button>
               <button
                 disabled
-                className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-400 text-center cursor-not-allowed"
+                className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-400 text-center cursor-not-allowed dark:border-gray-700"
               >
                 <FileStack className="w-4 h-4 mx-auto mb-0.5 opacity-50" />
                 <span className="opacity-50">Packet</span>
@@ -1177,7 +1177,7 @@ export function InvestmentCaseBuilder({
             {/* Filename */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-gray-500">Filename</label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">Filename</label>
                 {filenameOverride.trim() && (
                   <button
                     onClick={() => setFilenameOverride('')}
@@ -1193,7 +1193,7 @@ export function InvestmentCaseBuilder({
                 value={filenameOverride}
                 onChange={e => setFilenameOverride(e.target.value)}
                 placeholder={defaultFilename}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
               {!filenameOverride.trim() && (
                 <p className="text-[10px] text-gray-400 mt-1">
@@ -1203,22 +1203,22 @@ export function InvestmentCaseBuilder({
             </div>
 
             {/* Export Summary */}
-            <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-100">
+            <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-100 dark:border-gray-800 dark:bg-gray-900">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
                 <div className="text-gray-400">Template</div>
-                <div className="text-gray-700 font-medium truncate">{effectiveTemplateName}</div>
+                <div className="text-gray-700 font-medium truncate dark:text-gray-300">{effectiveTemplateName}</div>
                 <div className="text-gray-400">Sections</div>
-                <div className="text-gray-700 font-medium">{enabledSections.length}</div>
+                <div className="text-gray-700 font-medium dark:text-gray-300">{enabledSections.length}</div>
                 <div className="text-gray-400">Fields</div>
-                <div className="text-gray-700 font-medium">{totalEnabledFields}</div>
+                <div className="text-gray-700 font-medium dark:text-gray-300">{totalEnabledFields}</div>
                 <div className="text-gray-400">As-of</div>
-                <div className="text-gray-700 font-medium">{formattedAsOfDate}</div>
+                <div className="text-gray-700 font-medium dark:text-gray-300">{formattedAsOfDate}</div>
                 <div className="text-gray-400">Draft changes</div>
-                <div className={clsx('font-medium', includeDraftChanges ? 'text-amber-600' : 'text-gray-700')}>
+                <div className={clsx('font-medium', includeDraftChanges ? 'text-amber-600' : 'text-gray-700 dark:text-gray-300')}>
                   {includeDraftChanges ? 'Included' : 'Excluded'}
                 </div>
                 <div className="text-gray-400">Mode</div>
-                <div className="text-gray-700 font-medium">Single PDF</div>
+                <div className="text-gray-700 font-medium dark:text-gray-300">Single PDF</div>
               </div>
             </div>
 
@@ -1247,24 +1247,24 @@ export function InvestmentCaseBuilder({
         {/* ============================================================ */}
         {/* Advanced Overrides (collapsible)                              */}
         {/* ============================================================ */}
-        <section className="border-t border-gray-200 pt-3">
+        <section className="border-t border-gray-200 pt-3 dark:border-gray-700">
           <button
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 w-full"
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 w-full dark:hover:text-gray-200 dark:text-gray-400"
           >
             {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             Advanced Overrides
           </button>
 
           {showAdvanced && (
-            <div className="mt-3 p-3 border border-gray-200 rounded-lg space-y-3 bg-gray-50/50">
+            <div className="mt-3 p-3 border border-gray-200 rounded-lg space-y-3 bg-gray-50/50 dark:border-gray-700">
               <p className="text-[11px] text-gray-400 italic">
                 These settings apply to this export only and do not modify your template.
               </p>
 
               {/* Custom export title */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1 dark:text-gray-400">
                   <Type className="w-3 h-3" />
                   Custom Export Title
                 </label>
@@ -1273,13 +1273,13 @@ export function InvestmentCaseBuilder({
                   value={customExportTitle}
                   onChange={e => setCustomExportTitle(e.target.value)}
                   placeholder={`Investment Case: ${symbol}`}
-                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                 />
               </div>
 
               {/* Temporary watermark */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">
                   Temporary Watermark
                 </label>
                 <input
@@ -1287,29 +1287,29 @@ export function InvestmentCaseBuilder({
                   value={tempWatermarkText}
                   onChange={e => setTempWatermarkText(e.target.value)}
                   placeholder="e.g., Draft, Confidential"
-                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                 />
               </div>
 
               {/* Hide cover page */}
-              <label className="flex items-center gap-2 text-sm text-gray-600">
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input
                   type="checkbox"
                   checked={hideCoverPage}
                   onChange={e => setHideCoverPage(e.target.checked)}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
                 <EyeOff className="w-3.5 h-3.5 text-gray-400" />
                 Hide cover page
               </label>
 
               {/* Exclude header/footer */}
-              <label className="flex items-center gap-2 text-sm text-gray-600">
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input
                   type="checkbox"
                   checked={excludeHeaderFooter}
                   onChange={e => setExcludeHeaderFooter(e.target.checked)}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
                 <EyeOff className="w-3.5 h-3.5 text-gray-400" />
                 Exclude header &amp; footer

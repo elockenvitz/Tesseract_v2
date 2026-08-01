@@ -68,7 +68,7 @@ const AUTHORITY_CHIPS: Record<string, string> = {
 }
 
 function getChipColor(chip: string): string {
-  return AUTHORITY_CHIPS[chip] || 'bg-gray-100 text-gray-500'
+  return AUTHORITY_CHIPS[chip] || 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
 }
 
 // ─── Collapsible Section ─────────────────────────────────────────────────
@@ -89,7 +89,7 @@ function CollapsibleSection({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-gray-900 w-full text-left py-0.5"
+        className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-gray-900 w-full text-left py-0.5 dark:hover:text-white dark:text-gray-300"
       >
         <Chevron className="w-3 h-3 text-gray-400 flex-shrink-0" />
         {title}
@@ -132,7 +132,7 @@ function ConfirmationBanner({
       </button>
       <button
         onClick={onCancel}
-        className="px-2.5 py-1 rounded text-[11px] font-medium border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+        className="px-2.5 py-1 rounded text-[11px] font-medium border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800"
       >
         Cancel
       </button>
@@ -237,7 +237,7 @@ function AuthorityFilterBar({
             placeholder="Search by name or email..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+            className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
           />
         </div>
         <div className="flex items-center gap-1">
@@ -248,7 +248,7 @@ function AuthorityFilterBar({
               className={`px-2.5 py-1 text-[11px] font-medium rounded-md cursor-pointer transition-all ${
                 filter === f.key
                   ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-gray-500 bg-white border border-gray-200 hover:text-gray-700 hover:bg-gray-50 hover:shadow-sm'
+                  : 'text-gray-500 bg-white border border-gray-200 hover:text-gray-700 hover:bg-gray-50 hover:shadow-sm dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
               }`}
             >
               {f.label}
@@ -264,7 +264,7 @@ function AuthorityFilterBar({
         <select
           value={statusFilter}
           onChange={(e) => onStatusFilterChange(e.target.value as 'all' | 'active' | 'suspended')}
-          className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
         >
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -274,7 +274,7 @@ function AuthorityFilterBar({
           <select
             value={teamFilter}
             onChange={(e) => onTeamFilterChange(e.target.value)}
-            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-[180px]"
+            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-[180px] dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
           >
             <option value="">All teams</option>
             {teamOptions.map(t => (
@@ -286,7 +286,7 @@ function AuthorityFilterBar({
           <select
             value={portfolioFilter}
             onChange={(e) => onPortfolioFilterChange(e.target.value)}
-            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-[180px]"
+            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent max-w-[180px] dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
           >
             <option value="">All portfolios</option>
             {portfolioOptions.map(p => (
@@ -402,7 +402,7 @@ function AccessSummaryPanel({
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+          <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider dark:text-gray-400">
             Access Summary
           </span>
           {row.status === 'suspended' && (
@@ -426,7 +426,7 @@ function AccessSummaryPanel({
           {isEditing && (
             <button
               onClick={handleExitEdit}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
             >
               <X className="w-3 h-3" />
               Done
@@ -446,13 +446,13 @@ function AccessSummaryPanel({
       )}
 
       {/* ── Section 1: Firm-Level Permissions ── */}
-      <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 space-y-1">
-        <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+      <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 space-y-1 dark:border-gray-700 dark:bg-gray-800">
+        <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider dark:text-gray-400">
           Firm-Level Permissions
         </div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
           <div className="flex items-center justify-between">
-            <span className="text-gray-500">Org Admin</span>
+            <span className="text-gray-500 dark:text-gray-400">Org Admin</span>
             <span className="flex items-center gap-1.5">
               {row.isOrgAdmin ? (
                 <span className="font-medium text-indigo-700">Yes</span>
@@ -470,7 +470,7 @@ function AccessSummaryPanel({
                     disabled={isLastAdmin || isMutating}
                     className={`ml-1 px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
                       isLastAdmin
-                        ? 'text-gray-300 border-gray-200 cursor-not-allowed'
+                        ? 'text-gray-300 border-gray-200 cursor-not-allowed dark:border-gray-700'
                         : 'text-red-600 border-red-200 hover:bg-red-50'
                     }`}
                     title={isLastAdmin ? 'Cannot remove the last organization admin' : undefined}
@@ -495,7 +495,7 @@ function AccessSummaryPanel({
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-gray-500">Coverage Admin</span>
+            <span className="text-gray-500 dark:text-gray-400">Coverage Admin</span>
             <span className="flex items-center gap-1.5">
               <span className={`font-medium ${
                 coverageScopeSummary === 'Global' ? 'text-purple-700'
@@ -536,7 +536,7 @@ function AccessSummaryPanel({
           </div>
         </div>
         {nodeScopes.length > 0 && (
-          <div className="pt-1 border-t border-gray-100">
+          <div className="pt-1 border-t border-gray-100 dark:border-gray-800">
             <div className="text-[10px] text-gray-400 mb-0.5">Coverage Scope</div>
             <div className="flex flex-wrap gap-1.5">
               {nodeScopes.map((scope, i) => (
@@ -563,12 +563,12 @@ function AccessSummaryPanel({
 
       {/* ── Section 2: Teams ── */}
       {row.teams.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+        <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
           <CollapsibleSection
             defaultOpen={row.teams.length <= 4}
             title={
               <span className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider dark:text-gray-400">
                   Teams ({row.teams.length})
                 </span>
                 <span className="text-[11px] text-gray-400 normal-case font-normal">
@@ -585,7 +585,7 @@ function AccessSummaryPanel({
                     key={team.nodeId}
                     className={`flex items-center gap-2 text-xs py-px rounded ${
                       hasRisk ? 'bg-red-50/60 -mx-1 px-1' : ''
-                    } ${onOpenNodeModal ? 'cursor-pointer hover:text-indigo-600' : 'text-gray-600'}`}
+                    } ${onOpenNodeModal ? 'cursor-pointer hover:text-indigo-600' : 'text-gray-600 dark:text-gray-400'}`}
                     onClick={() => onOpenNodeModal?.(team.nodeId)}
                   >
                     {hasRisk && <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />}
@@ -610,12 +610,12 @@ function AccessSummaryPanel({
 
       {/* ── Section 3: Portfolios (grouped by role) ── */}
       {row.portfolios.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+        <div className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
           <CollapsibleSection
             defaultOpen={row.portfolios.length <= 4}
             title={
               <span className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider dark:text-gray-400">
                   Portfolios ({row.portfolios.length})
                 </span>
                 <span className="text-[11px] text-gray-400 normal-case font-normal">
@@ -659,10 +659,10 @@ function AccessSummaryPanel({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-              <span className="text-[11px] font-bold text-gray-700">
+              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
                 {row.riskFlags.length} Governance Risk{row.riskFlags.length !== 1 ? 's' : ''}
               </span>
-              <span className="flex items-center gap-1.5 text-[10px] text-gray-500">
+              <span className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
                 {riskSeverityCounts.high > 0 && (
                   <span className="text-red-600 font-medium">{riskSeverityCounts.high} High</span>
                 )}
@@ -670,7 +670,7 @@ function AccessSummaryPanel({
                   <span className="text-amber-600 font-medium">{riskSeverityCounts.medium} Medium</span>
                 )}
                 {riskSeverityCounts.low > 0 && (
-                  <span className="text-gray-500 font-medium">{riskSeverityCounts.low} Low</span>
+                  <span className="text-gray-500 font-medium dark:text-gray-400">{riskSeverityCounts.low} Low</span>
                 )}
               </span>
             </div>
@@ -725,7 +725,7 @@ function RiskFlagRow({
       <SeverityIcon severity={flag.severity} className="w-3 h-3 flex-shrink-0" />
       <div className="min-w-0 flex-1">
         <span className="font-medium">{flag.label}</span>
-        <span className="text-[11px] text-gray-500 ml-1">{flag.detail}</span>
+        <span className="text-[11px] text-gray-500 ml-1 dark:text-gray-400">{flag.detail}</span>
       </div>
       {actionLabel && flag.anchorNodeId && onOpenNodeModal && (
         <button
@@ -754,7 +754,7 @@ function RiskCountBadge({ flags }: { flags: UserRiskFlag[] }) {
   const styles = {
     high: 'bg-red-100 text-red-700 border-red-200',
     medium: 'bg-amber-100 text-amber-700 border-amber-200',
-    low: 'bg-gray-100 text-gray-600 border-gray-200',
+    low: 'bg-gray-100 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
   }
 
   const topRisks = flags.slice(0, 3).map(f => f.label).join('\n')
@@ -799,7 +799,7 @@ function AuthorityRowComponent({
           <Chevron className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-gray-900 truncate">{row.fullName}</span>
+              <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{row.fullName}</span>
               {row.status === 'suspended' && (
                 <span className="px-1 py-0.5 text-[9px] font-medium rounded bg-amber-100 text-amber-700">
                   Suspended
@@ -839,7 +839,7 @@ function AuthorityRowComponent({
                 </span>
               ))}
               {overflow > 0 && (
-                <span className="px-1.5 py-0.5 text-[11px] font-medium rounded bg-gray-100 text-gray-500">
+                <span className="px-1.5 py-0.5 text-[11px] font-medium rounded bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800">
                   +{overflow}
                 </span>
               )}
@@ -853,7 +853,7 @@ function AuthorityRowComponent({
       {/* Teams count */}
       <td className="px-4 py-2.5 text-center">
         {row.teams.length > 0 ? (
-          <span className="text-sm font-medium text-gray-700">{row.teams.length}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{row.teams.length}</span>
         ) : (
           <span className="text-gray-300">&mdash;</span>
         )}
@@ -861,7 +861,7 @@ function AuthorityRowComponent({
       {/* Portfolios count */}
       <td className="px-4 py-2.5 text-center">
         {row.portfolios.length > 0 ? (
-          <span className="text-sm font-medium text-gray-700">{row.portfolios.length}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{row.portfolios.length}</span>
         ) : (
           <span className="text-gray-300">&mdash;</span>
         )}
@@ -1008,8 +1008,8 @@ export function OrgAuthorityMap({
             <Shield className="w-4 h-4 text-indigo-600" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Access & Roles</h3>
-            <p className="text-xs text-gray-500">Role assignments, access scope, and governance risk</p>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Access & Roles</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Role assignments, access scope, and governance risk</p>
           </div>
         </div>
         {showSeatMeter && <SeatSummaryBar seats={seatCounts} />}
@@ -1044,19 +1044,19 @@ export function OrgAuthorityMap({
       />
 
       {/* Table */}
-      <div className="border border-gray-200 rounded overflow-hidden">
+      <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-50/80 border-b border-gray-200">
-              <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[200px]">User</th>
-              <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[140px]">Admin Roles</th>
-              <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[140px]">Portfolio Roles</th>
-              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[70px]">Teams</th>
-              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[70px]">Portfolios</th>
-              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Risk</th>
+            <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
+              <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[200px] dark:text-gray-400">User</th>
+              <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[140px] dark:text-gray-400">Admin Roles</th>
+              <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider min-w-[140px] dark:text-gray-400">Portfolio Roles</th>
+              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[70px] dark:text-gray-400">Teams</th>
+              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[70px] dark:text-gray-400">Portfolios</th>
+              <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[80px] dark:text-gray-400">Risk</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {filtered.map(row => (
               <React.Fragment key={row.userId}>
                 <AuthorityRowComponent

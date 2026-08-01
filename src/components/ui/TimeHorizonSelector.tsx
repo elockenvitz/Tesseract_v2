@@ -134,17 +134,17 @@ export function TimeHorizonSelector({
   return (
     <div className={clsx('group relative', className)} ref={dropdownRef}>
       {isEditing ? (
-        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-4 min-w-[280px] z-50">
+        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-4 min-w-[280px] z-50 dark:border-gray-600 dark:bg-gray-800">
           <div className="space-y-4">
             {/* Tab Selection */}
-            <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
+            <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
               <button
                 onClick={() => setInputType('preset')}
                 className={clsx(
                   'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                   inputType === 'preset' 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' 
+                    : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                 )}
               >
                 Preset
@@ -154,8 +154,8 @@ export function TimeHorizonSelector({
                 className={clsx(
                   'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                   inputType === 'date' 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' 
+                    : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                 )}
               >
                 Date
@@ -165,8 +165,8 @@ export function TimeHorizonSelector({
                 className={clsx(
                   'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                   inputType === 'custom' 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' 
+                    : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                 )}
               >
                 Custom
@@ -184,7 +184,7 @@ export function TimeHorizonSelector({
                       'px-3 py-2 text-xs text-left rounded-md border transition-colors',
                       editValue === option.value
                         ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                     )}
                   >
                     {option.label}
@@ -195,14 +195,14 @@ export function TimeHorizonSelector({
 
             {inputType === 'date' && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
+                <label className="block text-xs font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Target Date
                 </label>
                 <input
                   type="date"
                   value={inputType === 'date' ? editValue : ''}
                   onChange={(e) => handleDateChange(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   min={new Date().toISOString().split('T')[0]} // Prevent past dates
                 />
               </div>
@@ -210,7 +210,7 @@ export function TimeHorizonSelector({
 
             {inputType === 'custom' && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
+                <label className="block text-xs font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Custom Timeframe
                 </label>
                 <div className="flex space-x-2">
@@ -220,12 +220,12 @@ export function TimeHorizonSelector({
                     onChange={(e) => setCustomValue(e.target.value)}
                     placeholder="Number"
                     min="1"
-                    className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   />
                   <select
                     value={customUnit}
                     onChange={(e) => setCustomUnit(e.target.value)}
-                    className="px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="px-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   >
                     <option value="days">Days</option>
                     <option value="weeks">Weeks</option>
@@ -237,10 +237,10 @@ export function TimeHorizonSelector({
             )}
 
             {/* Action Buttons */}
-            <div className="flex justify-end space-x-2 pt-2 border-t border-gray-200">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={handleCancel}
-                className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 transition-colors"
+                className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 transition-colors dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -257,13 +257,13 @@ export function TimeHorizonSelector({
       ) : (
         <div 
           className={clsx(
-            'cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors group-hover:bg-gray-50',
+            'cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors group-hover:bg-gray-50 dark:hover:bg-gray-800',
             displayClassName
           )}
           onClick={handleEdit}
         >
           <div className="flex items-center justify-center w-full relative">
-            <span className={value ? 'text-gray-500' : 'text-gray-400 italic'}>
+            <span className={value ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400 italic'}>
               {formatDisplayValue(value)}
             </span>
             <Edit3 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400 transition-opacity absolute right-0" />

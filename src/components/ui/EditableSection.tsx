@@ -111,11 +111,11 @@ export const EditableSection = forwardRef<EditableSectionRef, EditableSectionPro
   return (
     <div className={clsx('group', className)}>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
         {!isEditing && (
           <button
             onClick={handleEdit}
-            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 rounded transition-all"
+            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 rounded transition-all dark:hover:text-gray-300"
             title="Edit section"
           >
             <Edit3 className="h-4 w-4" />
@@ -132,10 +132,10 @@ export const EditableSection = forwardRef<EditableSectionRef, EditableSectionPro
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            className="w-full h-[120px] p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 overflow-y-auto"
+            className="w-full h-[120px] p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 overflow-y-auto dark:border-gray-600"
           />
           {isSaving && (
-            <div className="flex items-center text-xs text-gray-500">
+            <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-2" />
               Saving...
             </div>
@@ -143,11 +143,11 @@ export const EditableSection = forwardRef<EditableSectionRef, EditableSectionPro
         </div>
       ) : (
         <div 
-          className="h-[120px] prose prose-sm max-w-none cursor-pointer hover:bg-gray-50 rounded-lg p-3 -m-3 transition-colors overflow-y-auto"
+          className="h-[120px] prose prose-sm max-w-none cursor-pointer hover:bg-gray-50 rounded-lg p-3 -m-3 transition-colors overflow-y-auto dark:hover:bg-gray-800"
           onClick={handleEdit}
         >
           {content ? (
-            <div className="text-gray-700 whitespace-pre-wrap">{content}</div>
+            <div className="text-gray-700 whitespace-pre-wrap dark:text-gray-300">{content}</div>
           ) : (
             <div className="text-gray-400 italic">{placeholder}</div>
           )}

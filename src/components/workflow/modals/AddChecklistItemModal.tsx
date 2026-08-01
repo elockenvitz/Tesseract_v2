@@ -52,23 +52,23 @@ export function AddChecklistItemModal({ workflowId, stageId, existingItems, onCl
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Checklist Item</h3>
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Add Checklist Item</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Task Name</label>
             <input
               ref={inputRef}
               type="text"
               value={formData.item_text}
               onChange={(e) => setFormData({ ...formData, item_text: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
               placeholder="e.g., Complete new analysis"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">Item Type</label>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -76,7 +76,7 @@ export function AddChecklistItemModal({ workflowId, stageId, existingItems, onCl
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
                   formData.item_type === 'operational'
                     ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 }`}
               >
                 <Settings2 className="w-3.5 h-3.5" />Task
@@ -87,7 +87,7 @@ export function AddChecklistItemModal({ workflowId, stageId, existingItems, onCl
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
                   formData.item_type === 'thinking'
                     ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 }`}
               >
                 <BrainCircuit className="w-3.5 h-3.5" />Analysis
@@ -105,9 +105,9 @@ export function AddChecklistItemModal({ workflowId, stageId, existingItems, onCl
               id="is_required"
               checked={formData.is_required}
               onChange={(e) => setFormData({ ...formData, is_required: e.target.checked })}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
             />
-            <label htmlFor="is_required" className="ml-2 block text-sm text-gray-900">
+            <label htmlFor="is_required" className="ml-2 block text-sm text-gray-900 dark:text-white">
               Required item
             </label>
           </div>

@@ -165,7 +165,7 @@ export function CreateCollectionModal({ isOpen, onClose, editingCollection }: Cr
             onClick={onClose}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -261,7 +261,7 @@ export function CreateCollectionModal({ isOpen, onClose, editingCollection }: Cr
                         type="checkbox"
                         checked={selectedUserIds.includes(user.id)}
                         onChange={() => toggleUser(user.id)}
-                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                       />
                       <span className="text-sm text-gray-900 dark:text-white">
                         {user.full_name || user.email}
@@ -282,7 +282,7 @@ export function CreateCollectionModal({ isOpen, onClose, editingCollection }: Cr
                 type="checkbox"
                 checked={daysUntilDeadline.enabled}
                 onChange={(e) => setDaysUntilDeadline(prev => ({ ...prev, enabled: e.target.checked }))}
-                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
               />
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Filter by Days Until Deadline
@@ -311,7 +311,7 @@ export function CreateCollectionModal({ isOpen, onClose, editingCollection }: Cr
                   />
                   {daysUntilDeadline.operator === 'between' && (
                     <>
-                      <span className="text-sm text-gray-500">and</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">and</span>
                       <Input
                         type="number"
                         value={daysUntilDeadline.value2 || 0}
@@ -321,7 +321,7 @@ export function CreateCollectionModal({ isOpen, onClose, editingCollection }: Cr
                       />
                     </>
                   )}
-                  <span className="text-sm text-gray-500">days</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">days</span>
                 </div>
               </div>
             )}

@@ -201,9 +201,9 @@ export function StageDeadlineManager({
         {deadline ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Calendar className="w-4 h-4 text-gray-500" />
+              <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-700">Due: {formatDate(deadline.deadline_date)}</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Due: {formatDate(deadline.deadline_date)}</span>
                 <Badge
                   variant="secondary"
                   size="sm"
@@ -216,7 +216,7 @@ export function StageDeadlineManager({
             <div className="flex items-center space-x-1">
               <button
                 onClick={(e) => handleStartEditing(e)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
                 title="Edit deadline"
               >
                 <Edit3 className="w-3 h-3" />
@@ -234,7 +234,7 @@ export function StageDeadlineManager({
         ) : (
           <button
             onClick={(e) => handleStartEditing(e)}
-            className="flex items-center space-x-2 text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+            className="flex items-center space-x-2 text-xs text-gray-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors dark:text-gray-400"
           >
             <Calendar className="w-3 h-3" />
             <span>Set deadline...</span>
@@ -242,15 +242,15 @@ export function StageDeadlineManager({
         )}
 
         {isEditing && (
-          <div ref={dropdownRef} className="absolute z-50 mt-1 right-0 bg-white rounded-lg border border-gray-200 shadow-lg p-3 w-56">
+          <div ref={dropdownRef} className="absolute z-50 mt-1 right-0 bg-white rounded-lg border border-gray-200 shadow-lg p-3 w-56 dark:border-gray-700 dark:bg-gray-800">
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0 dark:text-gray-400" />
                 <input
                   type="date"
                   value={deadlineDate}
                   onChange={(e) => setDeadlineDate(e.target.value)}
-                  className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-700"
                   min={new Date().toISOString().split('T')[0]}
                   autoFocus
                 />
@@ -260,13 +260,13 @@ export function StageDeadlineManager({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Optional notes..."
-                className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-700"
               />
               <div className="flex justify-end space-x-1 pt-1">
                 <button
                   onClick={handleCancel}
                   disabled={saveDeadlineMutation.isPending}
-                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -284,7 +284,7 @@ export function StageDeadlineManager({
       </>
 
       {deadline?.notes && !isEditing && (
-        <div className="mt-1 text-xs text-gray-500 italic">
+        <div className="mt-1 text-xs text-gray-500 italic dark:text-gray-400">
           {deadline.notes}
         </div>
       )}

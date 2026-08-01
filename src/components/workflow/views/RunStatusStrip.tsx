@@ -61,7 +61,7 @@ export function RunStatusStrip({
   if (!activeRun) {
     // ─── No active run ───────────────────────────────────────────
     return (
-      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 transition-all duration-200">
+      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 transition-all duration-200 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 text-gray-400">
@@ -69,7 +69,7 @@ export function RunStatusStrip({
               <span className="text-sm font-medium">No active run</span>
             </div>
             {schedule?.next_run_at && (
-              <div className="flex items-center space-x-1.5 text-xs text-gray-500 border-l border-gray-200 pl-4">
+              <div className="flex items-center space-x-1.5 text-xs text-gray-500 border-l border-gray-200 pl-4 dark:border-gray-700 dark:text-gray-400">
                 <Calendar className="w-3.5 h-3.5" />
                 <span>Next scheduled: {safeFutureRelativeTime(schedule.next_run_at)}</span>
               </div>
@@ -95,22 +95,22 @@ export function RunStatusStrip({
     : getRunVersionLabel({ template_version_number: activeRun.template_version_number as number | null })
 
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-2.5 transition-all duration-200">
+    <div className="bg-white border-b border-gray-200 px-6 py-2.5 transition-all duration-200 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center justify-between">
         {/* Left: active run identity + metrics */}
         <div className="flex items-center space-x-5">
           {/* Run identity */}
           <button
             onClick={onViewRun}
-            className="flex items-center space-x-2 hover:bg-gray-50 rounded px-2 py-1 -mx-2 transition-colors group"
+            className="flex items-center space-x-2 hover:bg-gray-50 rounded px-2 py-1 -mx-2 transition-colors group dark:hover:bg-gray-800"
           >
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse flex-shrink-0" />
-            <span className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+            <span className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors dark:text-white">
               {runLabel}
             </span>
             {activeRun.template_version_number && (
               <span
-                className="text-[10px] font-medium px-1.5 py-0 rounded bg-gray-100 text-gray-500 leading-4"
+                className="text-[10px] font-medium px-1.5 py-0 rounded bg-gray-100 text-gray-500 leading-4 dark:text-gray-400 dark:bg-gray-800"
                 title={`Process definition ${versionLabel}`}
               >
                 {versionLabel}
@@ -130,7 +130,7 @@ export function RunStatusStrip({
                   <span className={`text-sm font-bold ${remaining > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                     {remaining}
                   </span>
-                  <span className="text-xs text-gray-500">remaining</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">remaining</span>
                 </div>
                 <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div
@@ -149,7 +149,7 @@ export function RunStatusStrip({
           <div className="h-5 w-px bg-gray-200" />
 
           {/* Started */}
-          <div className="flex items-center space-x-1.5 text-xs text-gray-500">
+          <div className="flex items-center space-x-1.5 text-xs text-gray-500 dark:text-gray-400">
             <Clock className="w-3.5 h-3.5" />
             <span>{safeRelativeTime(startedAt)}</span>
           </div>
@@ -158,7 +158,7 @@ export function RunStatusStrip({
           {endCondition && (
             <>
               <div className="h-5 w-px bg-gray-200" />
-              <span className="text-xs text-gray-500">{endCondition}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{endCondition}</span>
             </>
           )}
 
@@ -166,7 +166,7 @@ export function RunStatusStrip({
           {schedule?.next_run_at && (
             <>
               <div className="h-5 w-px bg-gray-200" />
-              <div className="flex items-center space-x-1.5 text-xs text-gray-500">
+              <div className="flex items-center space-x-1.5 text-xs text-gray-500 dark:text-gray-400">
                 <Calendar className="w-3.5 h-3.5" />
                 <span>Next: {safeFutureRelativeTime(schedule.next_run_at)}</span>
               </div>
@@ -177,7 +177,7 @@ export function RunStatusStrip({
           {stakeholderCount > 0 && (
             <>
               <div className="h-5 w-px bg-gray-200" />
-              <div className="flex items-center space-x-1.5 text-xs text-gray-500" title="Stakeholders notified on run events">
+              <div className="flex items-center space-x-1.5 text-xs text-gray-500 dark:text-gray-400" title="Stakeholders notified on run events">
                 <Users className="w-3.5 h-3.5" />
                 <span>{stakeholderCount}</span>
               </div>

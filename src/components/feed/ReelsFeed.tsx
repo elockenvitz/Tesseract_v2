@@ -182,7 +182,7 @@ export function ReelsFeed({
       )}>
         <div className="text-center">
           <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin text-primary-500" />
-          <p className="text-lg text-gray-600">Loading feed...</p>
+          <p className="text-lg text-gray-600 dark:text-gray-400">Loading feed...</p>
         </div>
       </div>
     )
@@ -196,8 +196,8 @@ export function ReelsFeed({
       )}>
         <div className="text-center">
           <Lightbulb className="w-12 h-12 mx-auto mb-4 text-red-400" />
-          <p className="text-lg text-gray-900">Error loading feed</p>
-          <p className="text-gray-500 mt-2">{error.message}</p>
+          <p className="text-lg text-gray-900 dark:text-white">Error loading feed</p>
+          <p className="text-gray-500 mt-2 dark:text-gray-400">{error.message}</p>
         </div>
       </div>
     )
@@ -211,8 +211,8 @@ export function ReelsFeed({
       )}>
         <div className="text-center">
           <Lightbulb className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-          <p className="text-lg text-gray-900">No ideas to show</p>
-          <p className="text-gray-500 mt-2">Start by adding some content!</p>
+          <p className="text-lg text-gray-900 dark:text-white">No ideas to show</p>
+          <p className="text-gray-500 mt-2 dark:text-gray-400">Start by adding some content!</p>
         </div>
       </div>
     )
@@ -224,7 +224,7 @@ export function ReelsFeed({
       className={clsx('relative w-full h-full overflow-hidden', className)}
     >
       {/* Progress indicator - horizontal at bottom */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700">
         {items.slice(
           Math.max(0, currentIndex - 3),
           Math.min(items.length, currentIndex + 4)
@@ -249,13 +249,13 @@ export function ReelsFeed({
             />
           )
         })}
-        <span className="text-xs text-gray-500 ml-2">
+        <span className="text-xs text-gray-500 ml-2 dark:text-gray-400">
           {currentIndex + 1}/{items.length}
         </span>
       </div>
 
       {/* Main content with snappy transition */}
-      <div className="w-full h-full relative overflow-hidden bg-gray-100">
+      <div className="w-full h-full relative overflow-hidden bg-gray-100 dark:bg-gray-800">
         <div
           className={clsx(
             'w-full h-full transition-all duration-150 ease-out',
@@ -286,7 +286,7 @@ export function ReelsFeed({
         }}
         className={clsx(
           'absolute top-4 left-1/2 -translate-x-1/2 z-20',
-          'p-2.5 bg-white shadow-md border border-gray-200 rounded-full text-gray-600',
+          'p-2.5 bg-white shadow-md border border-gray-200 rounded-full text-gray-600 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
           'hover:bg-gray-50 hover:text-gray-900 transition-colors',
           !hasItems && 'opacity-30 cursor-not-allowed'
         )}
@@ -303,7 +303,7 @@ export function ReelsFeed({
         }}
         className={clsx(
           'absolute bottom-12 left-1/2 -translate-x-1/2 z-20',
-          'p-2.5 bg-white shadow-md border border-gray-200 rounded-full text-gray-600',
+          'p-2.5 bg-white shadow-md border border-gray-200 rounded-full text-gray-600 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
           'hover:bg-gray-50 hover:text-gray-900 transition-colors',
           !hasItems && 'opacity-30 cursor-not-allowed'
         )}

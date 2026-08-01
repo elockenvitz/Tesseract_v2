@@ -190,14 +190,14 @@ export function StageWithChecklists({
               : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
             }
             {/* Stage Number */}
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm shrink-0">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm shrink-0 dark:text-gray-400 dark:bg-gray-800">
               {index + 1}
             </div>
 
             {/* Stage Info */}
             <div>
-              <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
-              <p className="text-sm text-gray-500">{stage.stage_description}</p>
+              <h4 className="font-medium text-gray-900 dark:text-white">{stage.stage_label}</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stage.stage_description}</p>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {stage.standard_deadline_days != null && (
                   <span className="text-xs text-gray-400">
@@ -272,8 +272,8 @@ export function StageWithChecklists({
         <div className="mt-3 border-t pt-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
-              <ListChecks className="w-4 h-4 text-gray-500" />
-              <h5 className="text-sm font-medium text-gray-700">
+              <ListChecks className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Checklist Items ({checklistItems.length})
               </h5>
             </div>
@@ -316,8 +316,8 @@ export function StageWithChecklists({
               ))}
             </div>
           ) : (
-            <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-              <p className="text-sm text-gray-500">
+            <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 No checklist items yet
               </p>
               {showControls && (

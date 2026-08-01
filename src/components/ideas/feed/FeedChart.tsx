@@ -73,7 +73,7 @@ export const FeedChart = React.memo(function FeedChart({
   const chartColor = stats?.isPositive ? '#10b981' : '#ef4444'
   const gradientId = `fcg-${symbol}-${timeframe}`
 
-  if (isLoading) return <div className={clsx('animate-pulse bg-gray-50 rounded', className)} style={{ height }} />
+  if (isLoading) return <div className={clsx('animate-pulse bg-gray-50 rounded dark:bg-gray-900', className)} style={{ height }} />
   if (!quote || chartData.length === 0) return <div className={className} style={{ height: 0 }} />
 
   return (
@@ -85,7 +85,7 @@ export const FeedChart = React.memo(function FeedChart({
             {TIMEFRAMES.map(tf => (
               <button key={tf.value} onClick={e => { e.stopPropagation(); setTimeframe(tf.value) }}
                 className={clsx('px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors',
-                  timeframe === tf.value ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100')}>
+                  timeframe === tf.value ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700')}>
                 {tf.label}
               </button>
             ))}
@@ -95,7 +95,7 @@ export const FeedChart = React.memo(function FeedChart({
         {onExpand && (
           <button
             onClick={e => { e.stopPropagation(); onExpand(symbol) }}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors opacity-0 group-hover/chart:opacity-100"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors opacity-0 group-hover/chart:opacity-100 dark:hover:text-gray-200 dark:hover:bg-gray-700"
             title="Open in Charting"
           >
             <Maximize2 className="w-3 h-3" />

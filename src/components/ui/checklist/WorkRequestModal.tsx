@@ -72,13 +72,13 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col"
+        className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col dark:bg-gray-800"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Request Follow-up</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider dark:text-white">Request Follow-up</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -87,7 +87,7 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {/* Request Type */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
               Request Type <span className="text-red-500">*</span>
             </label>
             <div className="flex flex-wrap gap-1.5">
@@ -98,7 +98,7 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
                   className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors ${
                     requestType === key
                       ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                   }`}
                 >
                   {meta.label}
@@ -109,14 +109,14 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
 
           {/* Prompt */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
               What needs to be answered? <span className="text-red-500">*</span>
             </label>
             <textarea
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
               placeholder="e.g., Validate the cap rate assumptions in the tower lease model against recent transactions"
-              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 focus:border-gray-400 resize-none placeholder:text-gray-400"
+              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 focus:border-gray-400 resize-none placeholder:text-gray-400 dark:border-gray-700"
               rows={3}
               autoFocus
             />
@@ -124,11 +124,11 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
 
           {/* Owner */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
               Owner <span className="text-red-500">*</span>
             </label>
             {ownerId ? (
-              <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md dark:border-gray-700 dark:bg-gray-900">
                 {(() => {
                   const u = users?.find(u => u.id === ownerId)
                   const name = userName(u)
@@ -138,7 +138,7 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
                       <div className={`w-6 h-6 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                         <span className="text-white text-[10px] font-semibold">{userInitials(u)}</span>
                       </div>
-                      <span className="text-sm text-gray-900 font-medium">{name}</span>
+                      <span className="text-sm text-gray-900 font-medium dark:text-white">{name}</span>
                       <button
                         onClick={() => setOwnerId('')}
                         className="ml-auto p-0.5 rounded hover:bg-gray-200 text-gray-400"
@@ -157,10 +157,10 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
                     value={userSearch}
                     onChange={e => setUserSearch(e.target.value)}
                     placeholder="Search by name or email"
-                    className="w-full text-sm pl-8 pr-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+                    className="w-full text-sm pl-8 pr-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700"
                   />
                 </div>
-                <div className="mt-1 max-h-[140px] overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+                <div className="mt-1 max-h-[140px] overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
                   {filteredUsers.map(u => {
                     const name = userName(u)
                     const color = avatarColor(name)
@@ -168,12 +168,12 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
                       <button
                         key={u.id}
                         onClick={() => { setOwnerId(u.id); setUserSearch('') }}
-                        className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-gray-50 transition-colors"
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                       >
                         <div className={`w-5 h-5 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                           <span className="text-white text-[8px] font-semibold">{userInitials(u)}</span>
                         </div>
-                        <span className="text-sm text-gray-700">{name}</span>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{name}</span>
                         <span className="text-xs text-gray-400 ml-auto">{u.email}</span>
                       </button>
                     )
@@ -189,24 +189,24 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
           {/* Due Date + Expected Output — side by side */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
                 Due Date
               </label>
               <input
                 type="date"
                 value={dueDate}
                 onChange={e => setDueDate(e.target.value)}
-                className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400"
+                className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
                 Expected Output
               </label>
               <select
                 value={expectedOutput}
                 onChange={e => setExpectedOutput(e.target.value as ExpectedOutput | '')}
-                className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="">— None —</option>
                 {(Object.entries(EXPECTED_OUTPUT_META) as [ExpectedOutput, { label: string }][]).map(([key, meta]) => (
@@ -218,20 +218,20 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
 
           {/* Context */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
               Context / Notes
             </label>
             <textarea
               value={contextNotes}
               onChange={e => setContextNotes(e.target.value)}
               placeholder="Any additional context, links, or constraints..."
-              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none placeholder:text-gray-400"
+              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none placeholder:text-gray-400 dark:border-gray-700"
               rows={2}
             />
           </div>
 
           {/* Create Tracked Task */}
-          <div className="pt-1 border-t border-gray-100">
+          <div className="pt-1 border-t border-gray-100 dark:border-gray-800">
             <label className="flex items-start gap-3 cursor-pointer group">
               <div className="pt-0.5">
                 <div
@@ -247,8 +247,8 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
               </div>
               <div onClick={() => setCreateTrackedTask(!createTrackedTask)}>
                 <div className="flex items-center gap-1.5">
-                  <LinkIcon className="w-3.5 h-3.5 text-gray-500" />
-                  <span className="text-sm font-medium text-gray-800">Create tracked operational task</span>
+                  <LinkIcon className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">Create tracked operational task</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
                   Creates a linked task in the stage checklist that can be independently assigned, tracked, and completed. Use this when follow-up needs active workflow tracking.
@@ -259,10 +259,10 @@ export function WorkRequestModal({ onSubmit, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50/50">
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50/50 dark:border-gray-700">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400"
           >
             Cancel
           </button>

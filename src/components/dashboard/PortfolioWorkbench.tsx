@@ -664,7 +664,7 @@ function HoldingsTable({ holdings, onNavigate, benchmarkMap }: {
             <div key={h.assetId} onClick={() => onNavigate?.({ id: h.assetId, title: h.symbol, type: 'asset', data: { id: h.assetId, symbol: h.symbol } })}
               className="flex items-center gap-2 px-3.5 py-[4px] cursor-pointer hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
               <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 w-[44px] shrink-0">{h.symbol}</span>
-              <span className="text-[10px] text-gray-500 tabular-nums w-[40px] text-right shrink-0">{h.weight.toFixed(1)}</span>
+              <span className="text-[10px] text-gray-500 tabular-nums w-[40px] text-right shrink-0 dark:text-gray-400">{h.weight.toFixed(1)}</span>
               <span className="text-[10px] text-gray-400 tabular-nums w-[40px] text-right shrink-0">{bw > 0 ? bw.toFixed(1) : '—'}</span>
               <span className={clsx('text-[10px] font-bold tabular-nums w-[40px] text-right shrink-0', gap > 0.5 ? 'text-emerald-600 dark:text-emerald-400' : gap < -0.5 ? 'text-red-600 dark:text-red-400' : 'text-gray-400')}>
                 {bw > 0 ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : '—'}
@@ -679,7 +679,7 @@ function HoldingsTable({ holdings, onNavigate, benchmarkMap }: {
         })}
       </div>
       {holdings.length > PREVIEW && (
-        <button onClick={() => setExpanded(e => !e)} className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 border-t border-gray-100 dark:border-gray-700/40 transition-colors">
+        <button onClick={() => setExpanded(e => !e)} className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 border-t border-gray-100 dark:border-gray-700/40 transition-colors dark:hover:text-gray-300">
           {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           {expanded ? 'Show less' : `+${holdings.length - PREVIEW} more`}
         </button>

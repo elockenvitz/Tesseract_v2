@@ -387,7 +387,7 @@ export function PairTradeLegEditor({
           <div className="flex gap-2 justify-end">
             <button
               onClick={handleCancelAdd}
-              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
             >
               Cancel
             </button>

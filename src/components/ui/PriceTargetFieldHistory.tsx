@@ -151,7 +151,7 @@ export function PriceTargetFieldHistory({
       case 'bull': return 'text-success-600'
       case 'base': return 'text-warning-600'
       case 'bear': return 'text-error-600'
-      default: return 'text-gray-600'
+      default: return 'text-gray-600 dark:text-gray-400'
     }
   }
 
@@ -159,11 +159,11 @@ export function PriceTargetFieldHistory({
     <Card className={clsx('h-full flex flex-col', className)}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
       >
         <div className="flex items-center space-x-2">
-          <History className="h-4 w-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">
+          <History className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             <span className={clsx('capitalize', getCaseColor(caseType))}>{caseType}</span> Case {formatFieldName(fieldName)} History
           </span>
         </div>
@@ -182,7 +182,7 @@ export function PriceTargetFieldHistory({
       </button>
 
       {expanded && (
-        <div className="flex-1 flex flex-col min-h-0 border-t border-gray-200">
+        <div className="flex-1 flex flex-col min-h-0 border-t border-gray-200 dark:border-gray-700">
           {isLoading ? (
             <div className="p-4 flex-1">
               <div className="space-y-3">
@@ -205,20 +205,20 @@ export function PriceTargetFieldHistory({
                 <div
                   key={change.id}
                   className={clsx(
-                    'p-3 border-b border-gray-100 last:border-b-0 flex-shrink-0',
+                    'p-3 border-b border-gray-100 last:border-b-0 flex-shrink-0 dark:border-gray-800',
                     index === 0 && 'bg-blue-50' // Highlight most recent change
                   )}
                 >
                   <div className="flex items-start space-x-3">
                     <div className="flex-shrink-0">
-                      <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center">
-                        <User className="h-3 w-3 text-gray-600" />
+                      <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center dark:bg-gray-800">
+                        <User className="h-3 w-3 text-gray-600 dark:text-gray-400" />
                       </div>
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-2">
-                        <span className="text-xs font-medium text-gray-900">
+                        <span className="text-xs font-medium text-gray-900 dark:text-white">
                           {change.changed_by_name || 'Unknown User'}
                         </span>
                         <Badge variant={getChangeTypeColor(change.change_type)} size="sm">
@@ -232,13 +232,13 @@ export function PriceTargetFieldHistory({
                       <div className="space-y-1">
                         {change.change_type === 'update' && (
                           <>
-                            <div className="text-xs text-gray-600">
+                            <div className="text-xs text-gray-600 dark:text-gray-400">
                               <span className="font-medium">From:</span>
                               <div className="mt-1 p-1.5 bg-red-50 border border-red-200 rounded text-red-800 text-xs">
                                 {formatValue(change.old_value, fieldName)}
                               </div>
                             </div>
-                            <div className="text-xs text-gray-600">
+                            <div className="text-xs text-gray-600 dark:text-gray-400">
                               <span className="font-medium">To:</span>
                               <div className="mt-1 p-1.5 bg-green-50 border border-green-200 rounded text-green-800 text-xs">
                                 {formatValue(change.new_value, fieldName)}
@@ -248,7 +248,7 @@ export function PriceTargetFieldHistory({
                         )}
                         
                         {change.change_type === 'insert' && (
-                          <div className="text-xs text-gray-600">
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
                             <span className="font-medium">Initial value:</span>
                             <div className="mt-1 p-1.5 bg-green-50 border border-green-200 rounded text-green-800 text-xs">
                               {formatValue(change.new_value, fieldName)}
@@ -273,7 +273,7 @@ export function PriceTargetFieldHistory({
               ))}
             </div>
           ) : (
-            <div className="p-6 text-center text-gray-500 flex-1 flex flex-col items-center justify-center">
+            <div className="p-6 text-center text-gray-500 flex-1 flex flex-col items-center justify-center dark:text-gray-400">
               <History className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm">No changes recorded for this {caseType} case {fieldName.toLowerCase()} yet</p>
             </div>

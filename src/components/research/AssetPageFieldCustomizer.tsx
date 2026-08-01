@@ -1828,12 +1828,12 @@ export function AssetPageFieldCustomizer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-[900px] h-[700px] flex flex-col mx-4">
+      <div className="bg-white rounded-xl shadow-2xl w-[900px] h-[700px] flex flex-col mx-4 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-gray-900">Customize Layout</h2>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Customize Layout</h2>
               {hasAssetCustomization && (
                 <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full font-medium">
                   Customized
@@ -1841,7 +1841,7 @@ export function AssetPageFieldCustomizer({
               )}
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
-              {assetName ? <span className="text-gray-500">{assetName}</span> : null}
+              {assetName ? <span className="text-gray-500 dark:text-gray-400">{assetName}</span> : null}
               {assetName ? ' · ' : ''}Changes here apply to this asset only.
             </p>
           </div>
@@ -1873,7 +1873,7 @@ export function AssetPageFieldCustomizer({
             )}
             <button
               onClick={handleCancel}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1891,7 +1891,7 @@ export function AssetPageFieldCustomizer({
               {/* Current Template Section */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-700">Template</h3>
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Template</h3>
                   <div className="flex items-center gap-2">
                     {canChangeLayout && (
                       <button
@@ -1905,13 +1905,13 @@ export function AssetPageFieldCustomizer({
                     <div className="relative" data-section-menu>
                       <button
                         onClick={() => setTemplateMoreMenu(prev => !prev)}
-                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                         title="More options"
                       >
                         <MoreVertical className="w-3.5 h-3.5" />
                       </button>
                       {templateMoreMenu && (
-                        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg border border-gray-200 shadow-lg z-50 py-1">
+                        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg border border-gray-200 shadow-lg z-50 py-1 dark:border-gray-700 dark:bg-gray-800">
                           {onOpenTemplates && (
                             <button
                               onClick={() => {
@@ -1919,7 +1919,7 @@ export function AssetPageFieldCustomizer({
                                 onClose()
                                 onOpenTemplates()
                               }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                             >
                               <ExternalLink className="w-4 h-4" />
                               Edit template in Templates
@@ -1931,7 +1931,7 @@ export function AssetPageFieldCustomizer({
                                 setTemplateMoreMenu(false)
                                 setShowCopyDialog(true)
                               }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                             >
                               <Copy className="w-4 h-4" />
                               Copy template…
@@ -1947,19 +1947,19 @@ export function AssetPageFieldCustomizer({
                 </div>
 
                 {/* Template Card */}
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-primary-100 flex items-center justify-center">
                       <Layout className="w-4 h-4 text-primary-600" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900 text-sm">{displayTemplateName}</span>
+                        <span className="font-medium text-gray-900 text-sm dark:text-white">{displayTemplateName}</span>
                         {isDisplayingDefault && (
-                          <span className="text-xs text-gray-500">(read-only)</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">(read-only)</span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
                         {visibleCount} of {totalCount} fields visible
                       </p>
                     </div>
@@ -1968,8 +1968,8 @@ export function AssetPageFieldCustomizer({
 
                 {/* Copy Dialog — hidden behind More menu */}
                 {canChangeLayout && showCopyDialog && (
-                  <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 mb-2">
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                    <p className="text-sm text-gray-700 mb-2 dark:text-gray-300">
                       This will create a new template. You can edit it in Templates.
                     </p>
                     <div className="flex gap-2">
@@ -1978,7 +1978,7 @@ export function AssetPageFieldCustomizer({
                         value={newTemplateName}
                         onChange={(e) => setNewTemplateName(e.target.value)}
                         placeholder="Template name..."
-                        className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                         autoFocus
                       />
                       <Button
@@ -2004,21 +2004,21 @@ export function AssetPageFieldCustomizer({
 
                 {/* Template Selector Dropdown */}
                 {canChangeLayout && showTemplateSelector && (
-                  <div className="mt-2 bg-white rounded-lg border border-gray-200 shadow-lg overflow-hidden max-h-64 overflow-y-auto">
+                  <div className="mt-2 bg-white rounded-lg border border-gray-200 shadow-lg overflow-hidden max-h-64 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                     {/* Default option */}
                     <button
                       onClick={() => handleSelectTemplate(null)}
                       className={clsx(
-                        'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors',
+                        'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                         isDraftDefault && 'bg-primary-50'
                       )}
                     >
-                      <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center shrink-0">
-                        <Layout className="w-3.5 h-3.5 text-gray-500" />
+                      <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center shrink-0 dark:bg-gray-800">
+                        <Layout className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="font-medium text-gray-900 text-sm">Default</span>
-                        <p className="text-xs text-gray-500">Standard layout for all users</p>
+                        <span className="font-medium text-gray-900 text-sm dark:text-white">Default</span>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Standard layout for all users</p>
                       </div>
                       {isDraftDefault && (
                         <Check className="w-4 h-4 text-primary-600 shrink-0" />
@@ -2028,8 +2028,8 @@ export function AssetPageFieldCustomizer({
                     {/* Saved layouts */}
                     {layouts && layouts.filter(l => l.id !== 'system-default').length > 0 && (
                       <>
-                        <div className="px-3 py-1.5 bg-gray-50 border-y border-gray-100 sticky top-0">
-                          <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <div className="px-3 py-1.5 bg-gray-50 border-y border-gray-100 sticky top-0 dark:border-gray-800 dark:bg-gray-900">
+                          <span className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                             Your Templates ({layouts.filter(l => l.id !== 'system-default').length})
                           </span>
                         </div>
@@ -2038,7 +2038,7 @@ export function AssetPageFieldCustomizer({
                             key={layout.id}
                             onClick={() => handleSelectTemplate(layout)}
                             className={clsx(
-                              'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors',
+                              'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                               getDraftLayoutSelected(layout.id) && 'bg-primary-50'
                             )}
                           >
@@ -2047,13 +2047,13 @@ export function AssetPageFieldCustomizer({
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className="font-medium text-gray-900 text-sm truncate">{layout.name}</span>
+                                <span className="font-medium text-gray-900 text-sm truncate dark:text-white">{layout.name}</span>
                                 {layout.is_default && (
                                   <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
                                 )}
                               </div>
                               {layout.description && (
-                                <p className="text-xs text-gray-500 truncate">{layout.description}</p>
+                                <p className="text-xs text-gray-500 truncate dark:text-gray-400">{layout.description}</p>
                               )}
                             </div>
                             {getDraftLayoutSelected(layout.id) && (
@@ -2090,14 +2090,14 @@ export function AssetPageFieldCustomizer({
                 {/* Left Column: Current Layout */}
                 <div className="flex-1 flex flex-col min-w-0">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-medium text-gray-700">Current Layout</h3>
-                    <span className="text-xs text-gray-500">{visibleCount} visible</span>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Current Layout</h3>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{visibleCount} visible</span>
                   </div>
-                  <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+                  <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col dark:border-gray-700">
                     <div className="flex-1 overflow-y-auto" data-autoscroll-container="current-layout">
                       {displayedFieldsBySection.length === 0 ? (
                         <div className={clsx(
-                          "flex flex-col items-center justify-center h-full text-gray-500 p-4",
+                          "flex flex-col items-center justify-center h-full text-gray-500 p-4 dark:text-gray-400",
                           activeDragType === 'library-field' && "bg-amber-50 border-2 border-dashed border-amber-300 m-2 rounded-lg"
                         )}>
                           {activeDragType === 'library-field' ? (
@@ -2168,7 +2168,7 @@ export function AssetPageFieldCustomizer({
                       )}
                     </div>
                     {/* Create Section Button */}
-                    <div className="border-t border-gray-200 p-2 bg-gray-50">
+                    <div className="border-t border-gray-200 p-2 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                       {showCreateSection ? (
                         <div className="space-y-2">
                           {/* Show pending field info if creating section with a field */}
@@ -2188,7 +2188,7 @@ export function AssetPageFieldCustomizer({
                               value={newSectionName}
                               onChange={(e) => setNewSectionName(e.target.value)}
                               placeholder="Enter section name..."
-                              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                               onKeyDown={(e) => {
                                 if (e.key === 'Escape') {
                                   setShowCreateSection(false)
@@ -2225,7 +2225,7 @@ export function AssetPageFieldCustomizer({
                                 setNewSectionName('')
                                 setPendingFieldForNewSection(null)
                               }}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded dark:hover:text-gray-300"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -2234,7 +2234,7 @@ export function AssetPageFieldCustomizer({
                       ) : (
                         <button
                           onClick={() => setShowCreateSection(true)}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                          className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                         >
                           <FolderPlus className="w-4 h-4" />
                           Create Section
@@ -2248,7 +2248,7 @@ export function AssetPageFieldCustomizer({
                 <div className="w-[300px] flex flex-col shrink-0">
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <h3 className="text-sm font-medium text-gray-700">Available Fields</h3>
+                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Available Fields</h3>
                       <p className="text-[10px] text-gray-400">From template · drag to add</p>
                     </div>
                     {activeDragType === 'library-field' && (
@@ -2257,9 +2257,9 @@ export function AssetPageFieldCustomizer({
                       </span>
                     )}
                   </div>
-                  <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-gray-50">
+                  <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                     {/* Search */}
-                    <div className="p-2 border-b border-gray-200 bg-white">
+                    <div className="p-2 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                       <div className="relative">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -2267,7 +2267,7 @@ export function AssetPageFieldCustomizer({
                           value={addFieldSearch}
                           onChange={(e) => setAddFieldSearch(e.target.value)}
                           placeholder="Search available fields..."
-                          className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-700"
                         />
                       </div>
                     </div>
@@ -2276,7 +2276,7 @@ export function AssetPageFieldCustomizer({
                       {availableFields.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-gray-400 px-4 py-6">
                           <Check className="w-6 h-6 mb-1.5 text-green-400" />
-                          <p className="text-xs font-medium text-gray-500">All fields are in layout</p>
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">All fields are in layout</p>
                           <p className="text-[10px] text-gray-400 text-center mt-1">
                             {addFieldSearch.trim() ? 'No hidden fields match your search.' : 'Hide a field from the layout to see it here.'}
                           </p>
@@ -2300,13 +2300,13 @@ export function AssetPageFieldCustomizer({
                     </div>
                     {/* Link to full library */}
                     {onOpenTemplates && (
-                      <div className="p-2 border-t border-gray-200 bg-white">
+                      <div className="p-2 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                         <button
                           onClick={() => {
                             onClose()
                             onOpenTemplates()
                           }}
-                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors dark:text-gray-400"
                         >
                           Browse full library in Templates
                           <ArrowRight className="w-3 h-3" />
@@ -2320,11 +2320,11 @@ export function AssetPageFieldCustomizer({
               {/* Drag Overlay - shows a preview of what's being dragged */}
               <DragOverlay dropAnimation={null}>
                 {activeDragType === 'library-field' && draggedFieldData && (
-                  <div className="px-3 py-2 bg-white border-2 border-primary-400 rounded-lg shadow-xl w-[300px]">
+                  <div className="px-3 py-2 bg-white border-2 border-primary-400 rounded-lg shadow-xl w-[300px] dark:bg-gray-800">
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-4 h-4 text-primary-500" />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-gray-900 truncate block">
+                        <span className="text-sm font-medium text-gray-900 truncate block dark:text-white">
                           {draggedFieldData.field_name}
                         </span>
                         <span className="text-[10px] text-gray-400">
@@ -2341,20 +2341,20 @@ export function AssetPageFieldCustomizer({
         </div>
 
         {/* Footer area — review band + action bar */}
-        <div className="border-t border-gray-200 bg-gray-50 rounded-b-xl">
+        <div className="border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
           {/* Inline collapsible review band */}
           {totalChangeCount > 0 && (
-            <div className="border-b border-gray-200">
+            <div className="border-b border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setReviewBandOpen(prev => !prev)}
-                className="w-full flex items-center gap-2 px-5 py-2 hover:bg-gray-100 transition-colors"
+                className="w-full flex items-center gap-2 px-5 py-2 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700"
               >
                 {reviewBandOpen ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
                 ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
                 )}
-                <span className="text-xs font-semibold text-gray-700">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                   Review changes ({totalChangeCount})
                 </span>
               </button>
@@ -2371,10 +2371,10 @@ export function AssetPageFieldCustomizer({
                         {layoutChanges.filter(c => c.type.startsWith('section_')).map(change => (
                           <div
                             key={`${change.type}-${change.entityId}`}
-                            className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white transition-colors"
+                            className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white transition-colors dark:hover:bg-gray-800"
                           >
                             <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                            <span className="text-xs text-gray-700 flex-1 min-w-0 truncate">{change.description}</span>
+                            <span className="text-xs text-gray-700 flex-1 min-w-0 truncate dark:text-gray-300">{change.description}</span>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleRevertChange(change) }}
                               className="text-[10px] text-amber-600 hover:text-amber-800 font-medium opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
@@ -2396,7 +2396,7 @@ export function AssetPageFieldCustomizer({
                         {layoutChanges.filter(c => c.type.startsWith('field_')).map(change => (
                           <div
                             key={`${change.type}-${change.entityId}`}
-                            className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white transition-colors"
+                            className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white transition-colors dark:hover:bg-gray-800"
                           >
                             <div className={clsx(
                               "w-1.5 h-1.5 rounded-full shrink-0",
@@ -2404,7 +2404,7 @@ export function AssetPageFieldCustomizer({
                                 : change.type === 'field_visibility' ? 'bg-red-400'
                                 : 'bg-amber-400'
                             )} />
-                            <span className="text-xs text-gray-700 flex-1 min-w-0 truncate">{change.description}</span>
+                            <span className="text-xs text-gray-700 flex-1 min-w-0 truncate dark:text-gray-300">{change.description}</span>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleRevertChange(change) }}
                               className="text-[10px] text-amber-600 hover:text-amber-800 font-medium opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
@@ -2417,7 +2417,7 @@ export function AssetPageFieldCustomizer({
                     </div>
                   )}
                   {/* Reset all at bottom of band */}
-                  <div className="pt-1.5 border-t border-gray-200 mt-1">
+                  <div className="pt-1.5 border-t border-gray-200 mt-1 dark:border-gray-700">
                     <button
                       onClick={handleClearOverrides}
                       className="flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-medium"
@@ -2470,16 +2470,16 @@ export function AssetPageFieldCustomizer({
       {/* Discard Changes Confirmation Dialog */}
       {showDiscardConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-[400px] mx-4 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Discard Changes?</h3>
+          <div className="bg-white rounded-xl shadow-2xl w-[400px] mx-4 overflow-hidden dark:bg-gray-800">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Discard Changes?</h3>
             </div>
             <div className="px-5 py-4">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 You have unsaved changes. Are you sure you want to discard them? This action cannot be undone.
               </p>
             </div>
-            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3">
+            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3 dark:bg-gray-900">
               <Button
                 variant="secondary"
                 onClick={() => setShowDiscardConfirm(false)}
@@ -2500,9 +2500,9 @@ export function AssetPageFieldCustomizer({
       {/* Create Field Dialog */}
       {showCreateField && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-[500px] h-[600px] mx-4 overflow-hidden flex flex-col">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900">Create Custom Field</h3>
+          <div className="bg-white rounded-xl shadow-2xl w-[500px] h-[600px] mx-4 overflow-hidden flex flex-col dark:bg-gray-800">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create Custom Field</h3>
               <button
                 onClick={() => {
                   setShowCreateField(false)
@@ -2510,7 +2510,7 @@ export function AssetPageFieldCustomizer({
                   setNewFieldType('rich_text')
                   setNewFieldCategory('')
                 }}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2518,7 +2518,7 @@ export function AssetPageFieldCustomizer({
             <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
               {/* Field Name */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                   Field Name
                 </label>
                 <input
@@ -2526,7 +2526,7 @@ export function AssetPageFieldCustomizer({
                   value={newFieldName}
                   onChange={(e) => setNewFieldName(e.target.value)}
                   placeholder="e.g., Key Metrics, Competitors, Notes"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                   autoFocus
                 />
               </div>
@@ -2541,13 +2541,13 @@ export function AssetPageFieldCustomizer({
                     {similarFields.map(field => (
                       <div
                         key={field.field_id}
-                        className="flex items-center justify-between bg-white rounded px-2 py-1.5 border border-amber-200"
+                        className="flex items-center justify-between bg-white rounded px-2 py-1.5 border border-amber-200 dark:bg-gray-800"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-medium text-gray-900 truncate">
+                          <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
                             {field.field_name}
                           </span>
-                          <span className="text-[10px] text-gray-500 shrink-0">
+                          <span className="text-[10px] text-gray-500 shrink-0 dark:text-gray-400">
                             {field.field_type.replace('_', ' ')}
                           </span>
                           {field.is_custom && field.creator_name && (
@@ -2595,13 +2595,13 @@ export function AssetPageFieldCustomizer({
 
               {/* Category Selector */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                   Category
                 </label>
                 <select
                   value={newFieldCategory}
                   onChange={(e) => setNewFieldCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:border-gray-600 dark:bg-gray-800"
                 >
                   <option value="">Select a category...</option>
                   {fieldCategories.map((cat) => (
@@ -2614,7 +2614,7 @@ export function AssetPageFieldCustomizer({
 
               {/* Field Type */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Field Type
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -2625,21 +2625,21 @@ export function AssetPageFieldCustomizer({
                       className={`flex items-start gap-3 p-3 rounded-lg border-2 text-left transition-all ${
                         newFieldType === ft.value
                           ? 'border-primary-500 bg-primary-50'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                       }`}
                     >
                       <div className={`p-1.5 rounded-lg ${
-                        newFieldType === ft.value ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-500'
+                        newFieldType === ft.value ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                       }`}>
                         {getFieldTypeIcon(ft.value)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className={`text-sm font-medium block ${
-                          newFieldType === ft.value ? 'text-primary-700' : 'text-gray-700'
+                          newFieldType === ft.value ? 'text-primary-700' : 'text-gray-700 dark:text-gray-300'
                         }`}>
                           {ft.label}
                         </span>
-                        <span className="text-xs text-gray-500 line-clamp-1">
+                        <span className="text-xs text-gray-500 line-clamp-1 dark:text-gray-400">
                           {ft.description}
                         </span>
                       </div>
@@ -2650,16 +2650,16 @@ export function AssetPageFieldCustomizer({
 
               {/* Field Configuration - shown for configurable types */}
               {newFieldType === 'slider' && (
-                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
-                  <h4 className="text-sm font-medium text-gray-700">Slider Configuration</h4>
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Slider Configuration</h4>
 
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Style</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Style</label>
                       <select
                         value={sliderStyle}
                         onChange={(e) => setSliderStyle(e.target.value as 'slider' | 'gauge' | 'progress')}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       >
                         <option value="slider">Slider</option>
                         <option value="gauge">Gauge</option>
@@ -2667,54 +2667,54 @@ export function AssetPageFieldCustomizer({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Min</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Min</label>
                       <input
                         type="number"
                         value={sliderMin}
                         onChange={(e) => setSliderMin(Number(e.target.value))}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Max</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Max</label>
                       <input
                         type="number"
                         value={sliderMax}
                         onChange={(e) => setSliderMax(Number(e.target.value))}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Min Label</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Min Label</label>
                       <input
                         type="text"
                         value={sliderLabels.min}
                         onChange={(e) => setSliderLabels({ ...sliderLabels, min: e.target.value })}
                         placeholder="e.g., Bearish"
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Mid Label</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Mid Label</label>
                       <input
                         type="text"
                         value={sliderLabels.mid}
                         onChange={(e) => setSliderLabels({ ...sliderLabels, mid: e.target.value })}
                         placeholder="e.g., Neutral"
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Max Label</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Max Label</label>
                       <input
                         type="text"
                         value={sliderLabels.max}
                         onChange={(e) => setSliderLabels({ ...sliderLabels, max: e.target.value })}
                         placeholder="e.g., Bullish"
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       />
                     </div>
                   </div>
@@ -2722,16 +2722,16 @@ export function AssetPageFieldCustomizer({
               )}
 
               {newFieldType === 'scenario' && (
-                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
-                  <h4 className="text-sm font-medium text-gray-700">Scenario Analysis Configuration</h4>
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Scenario Analysis Configuration</h4>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Scenario Preset</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Scenario Preset</label>
                       <select
                         value={scenarioPreset}
                         onChange={(e) => setScenarioPreset(e.target.value as keyof typeof SCENARIO_PRESETS)}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       >
                         {Object.entries(SCENARIO_PRESETS).map(([key, preset]) => (
                           <option key={key} value={key}>{preset.name}</option>
@@ -2739,11 +2739,11 @@ export function AssetPageFieldCustomizer({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Metric Preset</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Metric Preset</label>
                       <select
                         value={metricPreset}
                         onChange={(e) => setMetricPreset(e.target.value as keyof typeof METRIC_PRESETS)}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       >
                         {Object.entries(METRIC_PRESETS).map(([key]) => (
                           <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
@@ -2752,23 +2752,23 @@ export function AssetPageFieldCustomizer({
                     </div>
                   </div>
 
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     You can add, remove, or modify scenarios and metrics after creating the field.
                   </p>
                 </div>
               )}
 
               {newFieldType === 'scorecard' && (
-                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
-                  <h4 className="text-sm font-medium text-gray-700">Scorecard Configuration</h4>
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Scorecard Configuration</h4>
 
                   <div className="flex items-center gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Max Score</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Max Score</label>
                       <select
                         value={scorecardMaxScore}
                         onChange={(e) => setScorecardMaxScore(Number(e.target.value))}
-                        className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                        className="px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                       >
                         <option value={5}>5 (1-5 scale)</option>
                         <option value={10}>10 (1-10 scale)</option>
@@ -2778,7 +2778,7 @@ export function AssetPageFieldCustomizer({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-2">Criteria (weights should total 100%)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Criteria (weights should total 100%)</label>
                     <div className="space-y-2">
                       {scorecardCriteria.map((criterion, index) => (
                         <div key={index} className="flex items-center gap-2">
@@ -2791,7 +2791,7 @@ export function AssetPageFieldCustomizer({
                               setScorecardCriteria(updated)
                             }}
                             placeholder="Criterion name"
-                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                           />
                           <div className="flex items-center gap-1">
                             <input
@@ -2804,9 +2804,9 @@ export function AssetPageFieldCustomizer({
                               }}
                               min={0}
                               max={100}
-                              className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                              className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                             />
-                            <span className="text-xs text-gray-500">%</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
                           </div>
                           {scorecardCriteria.length > 1 && (
                             <button
@@ -2830,11 +2830,11 @@ export function AssetPageFieldCustomizer({
               )}
 
               {newFieldType === 'spreadsheet' && (
-                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
-                  <h4 className="text-sm font-medium text-gray-700">Spreadsheet Configuration</h4>
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Spreadsheet Configuration</h4>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-2">Columns</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Columns</label>
                     <div className="space-y-2">
                       {spreadsheetColumns.map((column, index) => (
                         <div key={index} className="flex items-center gap-2">
@@ -2847,7 +2847,7 @@ export function AssetPageFieldCustomizer({
                               setSpreadsheetColumns(updated)
                             }}
                             placeholder="Column name"
-                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                           />
                           <select
                             value={column.type}
@@ -2856,7 +2856,7 @@ export function AssetPageFieldCustomizer({
                               updated[index].type = e.target.value as 'text' | 'number' | 'currency' | 'percent'
                               setSpreadsheetColumns(updated)
                             }}
-                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md"
+                            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md dark:border-gray-600"
                           >
                             <option value="text">Text</option>
                             <option value="number">Number</option>
@@ -2882,7 +2882,7 @@ export function AssetPageFieldCustomizer({
                     </button>
                   </div>
 
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     Users can add more rows and columns after creation. Formulas like =SUM(A1:A5) are supported.
                   </p>
                 </div>
@@ -2895,7 +2895,7 @@ export function AssetPageFieldCustomizer({
                 </p>
               </div>
             </div>
-            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-200 shrink-0">
+            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-200 shrink-0 dark:border-gray-700 dark:bg-gray-900">
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -2932,15 +2932,15 @@ export function AssetPageFieldCustomizer({
       {/* Delete Field Confirmation Dialog */}
       {fieldToDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-[400px] mx-4 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Delete Custom Field?</h3>
+          <div className="bg-white rounded-xl shadow-2xl w-[400px] mx-4 overflow-hidden dark:bg-gray-800">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Delete Custom Field?</h3>
             </div>
             <div className="px-5 py-4">
-              <p className="text-sm text-gray-600">
-                Are you sure you want to delete <span className="font-medium text-gray-900">"{fieldToDelete.name}"</span>?
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Are you sure you want to delete <span className="font-medium text-gray-900 dark:text-white">"{fieldToDelete.name}"</span>?
               </p>
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-gray-500 mt-2 dark:text-gray-400">
                 This will permanently remove the field from the Field Library. Any data stored in this field across all assets will also be deleted.
               </p>
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -2949,7 +2949,7 @@ export function AssetPageFieldCustomizer({
                 </p>
               </div>
             </div>
-            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3">
+            <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-3 dark:bg-gray-900">
               <Button
                 variant="secondary"
                 onClick={() => setFieldToDelete(null)}
@@ -3083,20 +3083,20 @@ function SortableSection({
       ref={setNodeRef}
       style={style}
       className={clsx(
-        "border border-gray-200 rounded-lg overflow-hidden bg-white",
+        "border border-gray-200 rounded-lg overflow-hidden bg-white dark:border-gray-700 dark:bg-gray-800",
         isDragging && "shadow-lg"
       )}
     >
       {/* Section Header */}
       <div className={clsx(
-        "flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors",
+        "flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900",
         section.section_is_hidden && "opacity-50"
       )}>
         {/* Drag Handle for Section */}
         <button
           {...attributes}
           {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none dark:hover:text-gray-300"
           title="Drag to reorder section"
         >
           <GripVertical className="w-4 h-4" />
@@ -3119,7 +3119,7 @@ function SortableSection({
                   setEditingSectionName('')
                 }
               }}
-              className="font-medium text-gray-900 text-sm flex-1 text-left px-2 py-1 border border-primary-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="font-medium text-gray-900 text-sm flex-1 text-left px-2 py-1 border border-primary-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
               autoFocus
             />
             <button
@@ -3134,7 +3134,7 @@ function SortableSection({
                 setEditingSectionId(null)
                 setEditingSectionName('')
               }}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
               title="Cancel"
             >
               <X className="w-4 h-4" />
@@ -3150,7 +3150,7 @@ function SortableSection({
             ) : (
               <ChevronRight className="w-4 h-4 text-gray-400" />
             )}
-            <span className="font-medium text-gray-900 text-sm flex-1 text-left truncate flex items-center gap-1.5">
+            <span className="font-medium text-gray-900 text-sm flex-1 text-left truncate flex items-center gap-1.5 dark:text-white">
               {section.section_name}
               {section.section_is_added && (
                 <span className="px-1.5 py-0.5 text-[9px] bg-blue-100 text-blue-700 rounded font-medium shrink-0">
@@ -3178,7 +3178,7 @@ function SortableSection({
             <span className="text-[10px] text-amber-600 font-medium">Modified</span>
           </span>
         )}
-        <span className="text-xs text-gray-500 shrink-0">
+        <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">
           {visibleInSection}/{totalInSection}
         </span>
         {/* Section menu */}
@@ -3196,13 +3196,13 @@ function SortableSection({
               })
               setSectionMenuOpen(prev => prev === section.section_id ? null : section.section_id)
             }}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer dark:hover:text-gray-300"
           >
             <MoreVertical className="w-4 h-4" />
           </button>
           {sectionMenuOpen === section.section_id && menuPosition && createPortal(
             <div
-              className="fixed w-48 bg-white rounded-lg border border-gray-200 shadow-lg z-[9999] py-1"
+              className="fixed w-48 bg-white rounded-lg border border-gray-200 shadow-lg z-[9999] py-1 dark:border-gray-700 dark:bg-gray-800"
               style={{ top: menuPosition.top, left: menuPosition.left }}
               data-section-menu
             >
@@ -3211,7 +3211,7 @@ function SortableSection({
                   e.stopPropagation()
                   handleStartEditSection(section.section_id, section.section_name)
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
               >
                 <Pencil className="w-4 h-4" />
                 Rename Section
@@ -3242,7 +3242,7 @@ function SortableSection({
                         e.stopPropagation()
                         handleToggleSectionVisibility(section.section_id, section.section_is_hidden || false)
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       {section.section_is_hidden ? (
                         <>
@@ -3262,7 +3262,7 @@ function SortableSection({
               {/* Per-section revert controls */}
               {section.section_has_override && !section.section_is_added && (
                 <>
-                  <div className="border-t border-gray-100 my-1" />
+                  <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
                   {section.section_name !== section.section_original_name && handleRevertSectionName && (
                     <button
                       onClick={(e) => {
@@ -3300,7 +3300,7 @@ function SortableSection({
           items={section.fields.map(f => `field-${f.field_id}`)}
           strategy={verticalListSortingStrategy}
         >
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {section.fields.length === 0 ? (
               <div className={clsx(
                 "px-3 py-3 text-sm text-gray-400 text-center",
@@ -3385,7 +3385,7 @@ function EmptySectionDropZone({ id, isOver }: { id: string; isOver: boolean }) {
         "rounded border-2 border-dashed py-2 px-3 text-xs transition-colors",
         active
           ? "border-primary-400 bg-primary-50 text-primary-600"
-          : "border-gray-200 text-gray-400"
+          : "border-gray-200 text-gray-400 dark:border-gray-700"
       )}
     >
       {active ? "Drop to add" : "Drop field here"}
@@ -3475,7 +3475,7 @@ function SortableFieldRow({
       ref={setNodeRef}
       style={style}
       className={clsx(
-        "group flex items-center gap-2 px-3 py-2 hover:bg-gray-50 bg-white",
+        "group flex items-center gap-2 px-3 py-2 hover:bg-gray-50 bg-white dark:hover:bg-gray-800 dark:bg-gray-800",
         isAddedViaOverride && "bg-blue-50/50",
         isOverridden && !isAddedViaOverride && "bg-amber-50/30",
         isDragging && "shadow-lg"
@@ -3485,7 +3485,7 @@ function SortableFieldRow({
       <button
         {...attributes}
         {...listeners}
-        className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+        className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none dark:hover:text-gray-300"
         title="Drag to reorder"
       >
         <GripVertical className="w-4 h-4" />
@@ -3499,7 +3499,7 @@ function SortableFieldRow({
           "p-1.5 rounded transition-colors disabled:opacity-50",
           field.is_visible
             ? "text-primary-600 hover:bg-primary-50"
-            : "text-gray-400 hover:bg-gray-100"
+            : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
         )}
         title={field.is_visible ? "Hide field" : "Show field"}
       >
@@ -3515,11 +3515,11 @@ function SortableFieldRow({
         <div className="flex items-center gap-2">
           <span className={clsx(
             "text-sm truncate",
-            field.is_visible ? "text-gray-900" : "text-gray-500"
+            field.is_visible ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
           )}>
             {field.field_name}
           </span>
-          <span className="px-1.5 py-0.5 text-[9px] bg-gray-100 text-gray-500 rounded font-medium shrink-0">
+          <span className="px-1.5 py-0.5 text-[9px] bg-gray-100 text-gray-500 rounded font-medium shrink-0 dark:text-gray-400 dark:bg-gray-800">
             {fieldTypeName}
           </span>
           {isAddedViaOverride && (
@@ -3602,7 +3602,7 @@ function DraggableLibraryField({
     return (
       <div
         ref={setNodeRef}
-        className="px-3 py-2 border-b border-gray-100 bg-primary-50 border-dashed border-primary-300"
+        className="px-3 py-2 border-b border-gray-100 bg-primary-50 border-dashed border-primary-300 dark:border-gray-800"
       >
         <div className="flex items-center gap-2 opacity-40">
           <GripVertical className="w-4 h-4 text-primary-400" />
@@ -3614,7 +3614,7 @@ function DraggableLibraryField({
 
   if (isAlreadyVisible) {
     return (
-      <div className="px-3 py-2 border-b border-gray-100 bg-green-50/50">
+      <div className="px-3 py-2 border-b border-gray-100 bg-green-50/50 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <button
             onClick={onRemove}
@@ -3658,7 +3658,7 @@ function DraggableLibraryField({
   return (
     <div
       ref={setNodeRef}
-      className="px-3 py-2 border-b border-gray-100 bg-white hover:bg-primary-50 transition-colors group"
+      className="px-3 py-2 border-b border-gray-100 bg-white hover:bg-primary-50 transition-colors group dark:border-gray-800 dark:bg-gray-800"
     >
       <div className="flex items-center gap-2">
         <div
@@ -3669,7 +3669,7 @@ function DraggableLibraryField({
           <GripVertical className="w-4 h-4 text-gray-400 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-gray-900 truncate">
+              <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
                 {field.field_name}
               </span>
               {field.is_custom && (
@@ -3767,12 +3767,12 @@ function NewSectionDropZone({
         "mt-2 border-2 border-dashed rounded-lg transition-all duration-150",
         isOver
           ? "border-primary-400 bg-primary-50 scale-[1.02]"
-          : "border-gray-300 bg-gray-50/50 hover:border-gray-400"
+          : "border-gray-300 bg-gray-50/50 hover:border-gray-400 dark:border-gray-600"
       )}
     >
       <div className={clsx(
         "flex items-center justify-center gap-2 py-4 px-3",
-        isOver ? "text-primary-600" : "text-gray-500"
+        isOver ? "text-primary-600" : "text-gray-500 dark:text-gray-400"
       )}>
         <FolderPlus className="w-5 h-5" />
         <span className="text-sm font-medium">
@@ -3792,7 +3792,7 @@ export function AssetPageCustomizeButton({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
       title="Customize asset page layout"
     >
       <Settings2 className="w-4 h-4" />

@@ -141,8 +141,8 @@ export function OpsClientsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Clients</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{clients.length} organization{clients.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Clients</h1>
+          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{clients.length} organization{clients.length !== 1 ? 's' : ''}</p>
         </div>
         <button
           onClick={() => setShowProvision(!showProvision)}
@@ -155,11 +155,11 @@ export function OpsClientsPage() {
 
       {/* Provision Form */}
       {showProvision && (
-        <div className="bg-white border border-indigo-200 rounded-xl p-5 space-y-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-800">Provision New Client Organization</h3>
+        <div className="bg-white border border-indigo-200 rounded-xl p-5 space-y-4 shadow-sm dark:bg-gray-800">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Provision New Client Organization</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Organization Name</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Organization Name</label>
               <input
                 type="text"
                 placeholder="Acme Capital"
@@ -174,40 +174,40 @@ export function OpsClientsPage() {
                       : prev.slug,
                   }))
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">URL Slug</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">URL Slug</label>
               <input
                 type="text"
                 placeholder="acme-capital"
                 value={form.slug}
                 onChange={(e) => setForm(prev => ({ ...prev, slug: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono dark:border-gray-600"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Admin Email</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Admin Email</label>
               <input
                 type="email"
                 placeholder="admin@acmecapital.com"
                 value={form.email}
                 onChange={(e) => setForm(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
           </div>
-          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-gray-200 bg-gray-50/60 hover:bg-gray-50 cursor-pointer">
+          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-gray-200 bg-gray-50/60 hover:bg-gray-50 cursor-pointer dark:hover:bg-gray-800 dark:border-gray-700">
             <input
               type="checkbox"
               checked={form.isPilot}
               onChange={(e) => setForm(prev => ({ ...prev, isPilot: e.target.checked }))}
-              className="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              className="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600"
             />
             <div className="flex-1">
-              <div className="text-sm font-medium text-gray-800">Create as pilot org</div>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <div className="text-sm font-medium text-gray-800 dark:text-gray-100">Create as pilot org</div>
+              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                 Enables <span className="font-medium text-amber-700">pilot_mode</span> on the new org so every active member lands in the focused pilot experience. You can toggle this off later from the Pilot panel.
               </p>
             </div>
@@ -220,7 +220,7 @@ export function OpsClientsPage() {
             >
               {provisionMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />Provisioning...</> : `Create ${form.isPilot ? 'Pilot ' : ''}Organization`}
             </button>
-            <button onClick={() => setShowProvision(false)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+            <button onClick={() => setShowProvision(false)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">Cancel</button>
           </div>
         </div>
       )}
@@ -233,7 +233,7 @@ export function OpsClientsPage() {
           placeholder="Search clients..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
         />
       </div>
 
@@ -241,32 +241,32 @@ export function OpsClientsPage() {
       {isLoading ? (
         <div className="text-center py-12">
           <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Loading clients...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading clients...</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+        <div className="text-center py-12 bg-white rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
           <Building2 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-500">{searchTerm ? 'No clients match your search' : 'No clients yet'}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{searchTerm ? 'No clients match your search' : 'No clients yet'}</p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
           {filtered.map((client) => (
             <button
               key={client.id}
               onClick={() => navigate(`/ops/clients/${client.id}`)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+              className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
                   <Building2 className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{client.name}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate dark:text-white">{client.name}</p>
                   <p className="text-xs text-gray-400">{client.slug}</p>
                 </div>
               </div>
               <div className="flex items-center gap-5 flex-shrink-0">
-                <div className="flex items-center gap-1 text-xs text-gray-500">
+                <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                   <Users className="w-3.5 h-3.5" />
                   {client.member_count}
                 </div>

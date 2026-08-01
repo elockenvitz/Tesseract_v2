@@ -5377,14 +5377,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   }
 
   return (
-    <div className="fixed inset-0 top-32 flex bg-gray-50">
+    <div className="fixed inset-0 top-32 flex bg-gray-50 dark:bg-gray-900">
       {/* Left Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full dark:border-gray-700 dark:bg-gray-800">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-gray-900">Process</h1>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Process</h1>
               <OrgBadge />
             </div>
             <div className="flex items-center space-x-2">
@@ -5393,7 +5393,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                 title="Home"
                 className={!selectedWorkflow
                   ? 'p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 ring-2 ring-amber-300 dark:ring-amber-700 ring-offset-1'
-                  : 'p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'
+                  : 'p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors dark:hover:text-gray-300'
                 }
               >
                 <Home className="w-4 h-4" />
@@ -5412,7 +5412,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               placeholder="Search processes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
             />
           </div>
 
@@ -5421,7 +5421,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             <button
               onClick={() => setFilterBy('all')}
               className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                filterBy === 'all' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                filterBy === 'all' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
               }`}
             >
               All
@@ -5429,7 +5429,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             <button
               onClick={() => setFilterBy('my')}
               className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                filterBy === 'my' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                filterBy === 'my' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
               }`}
             >
               Mine
@@ -5437,7 +5437,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             <button
               onClick={() => setFilterBy('shared')}
               className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                filterBy === 'shared' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                filterBy === 'shared' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
               }`}
             >
               Shared
@@ -5454,7 +5454,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   <div className="flex items-center space-x-3">
                     <div className="w-3 h-3 bg-gray-200 rounded-full"></div>
                     <div className="flex-1">
-                      <div className="h-3.5 bg-gray-100 rounded w-3/4"></div>
+                      <div className="h-3.5 bg-gray-100 rounded w-3/4 dark:bg-gray-800"></div>
                     </div>
                   </div>
                 </div>
@@ -5465,12 +5465,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               {/* Processes list */}
               {filteredWorkflows.length > 0 && (
                 <div>
-                  <div className="px-3 py-2 border-b border-gray-200">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                       Processes ({filteredWorkflows.length})
                     </h3>
                   </div>
-                  <div className="border-b border-gray-200">
+                  <div className="border-b border-gray-200 dark:border-gray-700">
                     {filteredWorkflows.map((workflow) => (
                       <button
                         key={workflow.id}
@@ -5487,12 +5487,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
-                              <h3 className="font-medium text-sm text-gray-900 truncate">{workflow.name}</h3>
+                              <h3 className="font-medium text-sm text-gray-900 truncate dark:text-white">{workflow.name}</h3>
                               {workflow.is_favorited && (
                                 <Star className="w-3 h-3 text-yellow-500 fill-current flex-shrink-0" />
                               )}
                             </div>
-                            <p className="text-xs text-gray-500 truncate mt-1">{workflow.description}</p>
+                            <p className="text-xs text-gray-500 truncate mt-1 dark:text-gray-400">{workflow.description}</p>
                           </div>
                         </div>
                       </button>
@@ -5502,19 +5502,19 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               )}
 
               {filteredWorkflows.length === 0 && !isLoading && (
-                <div className="p-4 text-center text-gray-500 text-sm">
+                <div className="p-4 text-center text-gray-500 text-sm dark:text-gray-400">
                   {searchTerm ? 'No workflows found' : 'No workflows available'}
                 </div>
               )}
 
               {/* Archived Workflows Section */}
               {archivedWorkflows && archivedWorkflows.length > 0 && !isLoading && (
-                <div className="mt-6 pt-4 border-t border-gray-200">
+                <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                    className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    className="w-full px-3 pb-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                   >
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                       Archived ({archivedWorkflows.length})
                     </h3>
                     <ChevronDown
@@ -5534,7 +5534,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                           }}
                           onContextMenu={(e) => handleWorkflowContextMenu(e, workflow, true)}
                           className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
-                            selectedWorkflow?.id === workflow.id ? 'bg-gray-100' : ''
+                            selectedWorkflow?.id === workflow.id ? 'bg-gray-100 dark:bg-gray-800' : ''
                           }`}
                         >
                           <div className="flex items-center space-x-3">
@@ -5544,7 +5544,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2">
-                                <h3 className="font-medium text-sm text-gray-500 truncate">{workflow.name}</h3>
+                                <h3 className="font-medium text-sm text-gray-500 truncate dark:text-gray-400">{workflow.name}</h3>
                                 <Badge variant="secondary" size="sm" className="flex-shrink-0">
                                   Archived
                                 </Badge>
@@ -5570,40 +5570,40 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         {showInlineWorkflowCreator ? (
           // Inline Workflow Creator
           <div className="flex-1 flex flex-col">
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-              <h1 className="text-xl font-bold text-gray-900">Create New Workflow</h1>
-              <p className="text-gray-600 text-sm">Set up a new workflow to guide your investment process</p>
+            <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Create New Workflow</h1>
+              <p className="text-gray-600 text-sm dark:text-gray-400">Set up a new workflow to guide your investment process</p>
             </div>
 
-            <div className="flex-1 p-6 bg-gray-50">
-              <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-sm">
+            <div className="flex-1 p-6 bg-gray-50 dark:bg-gray-900">
+              <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-sm dark:bg-gray-800">
                 <div className="p-6">
                   <div className="space-y-6">
                     {/* Basic Information */}
                     <div>
-                      <h3 className="text-lg font-medium text-gray-900 mb-4">Basic Information</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-4 dark:text-white">Basic Information</h3>
                       <div className="grid grid-cols-1 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                             Process Name *
                           </label>
                           <input
                             type="text"
                             value={newWorkflowData.name}
                             onChange={(e) => setNewWorkflowData({ ...newWorkflowData, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                             placeholder="Enter process name"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                             Description
                           </label>
                           <textarea
                             value={newWorkflowData.description}
                             onChange={(e) => setNewWorkflowData({ ...newWorkflowData, description: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                             rows={3}
                             placeholder="Describe this workflow..."
                           />
@@ -5611,7 +5611,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                               Color
                             </label>
                             <div className="flex items-center space-x-2">
@@ -5619,25 +5619,25 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                                 type="color"
                                 value={newWorkflowData.color}
                                 onChange={(e) => setNewWorkflowData({ ...newWorkflowData, color: e.target.value })}
-                                className="w-10 h-10 rounded-lg border border-gray-300"
+                                className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600"
                               />
                               <input
                                 type="text"
                                 value={newWorkflowData.color}
                                 onChange={(e) => setNewWorkflowData({ ...newWorkflowData, color: e.target.value })}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                               />
                             </div>
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                               Cadence Group
                             </label>
                             <select
                               value={newWorkflowData.cadence_timeframe}
                               onChange={(e) => setNewWorkflowData({ ...newWorkflowData, cadence_timeframe: e.target.value as typeof newWorkflowData.cadence_timeframe })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:border-gray-600 dark:bg-gray-800"
                             >
                               <option value="persistent">Persistent (No Reset)</option>
                               <option value="daily">Daily</option>
@@ -5655,7 +5655,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex items-center justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
+                  <div className="flex items-center justify-end space-x-3 mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
                     <Button
                       variant="outline"
                       onClick={handleCancelNewWorkflow}
@@ -5677,7 +5677,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
         ) : pendingWorkflowId && !selectedWorkflow ? (
           workflowTargetOrg ? (
             // Entity belongs to a different org — show switch banner
-            <div className="flex-1 flex items-start justify-center p-8 bg-gray-50">
+            <div className="flex-1 flex items-start justify-center p-8 bg-gray-50 dark:bg-gray-900">
               <div className="max-w-lg w-full">
                 <OrgSwitchBanner targetOrg={workflowTargetOrg} entityLabel="This workflow" />
               </div>
@@ -5685,7 +5685,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
           ) : (
             // Loading skeleton while restoring a specific workflow
             <div className="flex-1 flex flex-col h-full overflow-hidden animate-pulse">
-              <div className="bg-white border-b border-gray-200 px-6 py-4">
+              <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex items-center space-x-4">
                   <div className="w-8 h-8 rounded-full bg-gray-200 flex-shrink-0" />
                   <div className="flex-1 space-y-2">
@@ -5694,17 +5694,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   </div>
                 </div>
               </div>
-              <div className="bg-white border-b border-gray-200 px-6">
+              <div className="bg-white border-b border-gray-200 px-6 dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex items-center gap-4 py-3">
                   <div className="h-4 bg-gray-200 rounded w-20" />
                   <div className="h-4 bg-gray-200 rounded w-16" />
                   <div className="h-4 bg-gray-200 rounded w-24" />
                 </div>
               </div>
-              <div className="flex-1 p-6 bg-gray-50 space-y-4">
-                <div className="h-24 bg-white rounded-lg border border-gray-200" />
-                <div className="h-24 bg-white rounded-lg border border-gray-200" />
-                <div className="h-24 bg-white rounded-lg border border-gray-200" />
+              <div className="flex-1 p-6 bg-gray-50 space-y-4 dark:bg-gray-900">
+                <div className="h-24 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" />
+                <div className="h-24 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" />
+                <div className="h-24 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800" />
               </div>
             </div>
           )
@@ -5746,7 +5746,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                                 setInlineWorkflowName(selectedWorkflow.name)
                               }
                             }}
-                            className="text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            className="text-xl font-bold text-gray-900 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
                             style={{ width: '400px' }}
                             autoFocus
                           />
@@ -5769,7 +5769,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                         )}
                         {/* Status pill */}
                         {selectedWorkflow.archived ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                             Archived
                           </span>
                         ) : (
@@ -5801,7 +5801,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                               setInlineWorkflowDescription(selectedWorkflow.description)
                             }
                           }}
-                          className="text-sm text-gray-600 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mt-1"
+                          className="text-sm text-gray-600 bg-white border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent mt-1 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800"
                           style={{ width: '400px' }}
                           placeholder="Add a description..."
                           autoFocus
@@ -5974,7 +5974,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             />
 
             {/* Tab Navigation — Primary (left) + Configure dropdown (right) */}
-            <div className="border-b border-gray-200">
+            <div className="border-b border-gray-200 dark:border-gray-700">
               <nav className="flex items-center justify-between px-6">
                 {/* Primary tabs */}
                 <div className="flex space-x-8">
@@ -5990,7 +5990,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                         className={`flex items-center space-x-2 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
                           activeView === tab.id
                             ? 'border-primary-500 text-primary-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                         }`}
                       >
                         <Icon className="w-4 h-4" />
@@ -6017,14 +6017,14 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                         className={`flex items-center space-x-1.5 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
                           isConfigActive
                             ? 'border-primary-500 text-primary-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                         }`}
                       >
                         <Settings className="w-4 h-4" />
                         <span>{isConfigActive ? activeConfigTab!.label : 'Configure'}</span>
                         <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
                       </button>
-                      <div className="absolute right-0 top-full mt-0 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-150">
+                      <div className="absolute right-0 top-full mt-0 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-150 dark:border-gray-700 dark:bg-gray-800">
                         {configTabs.map(tab => {
                           const Icon = tab.icon
                           return (
@@ -6034,7 +6034,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                               className={`w-full flex items-center space-x-2.5 px-3 py-2 text-sm transition-colors ${
                                 activeView === tab.id
                                   ? 'bg-primary-50 text-primary-700 font-medium'
-                                  : 'text-gray-700 hover:bg-gray-50'
+                                  : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
                               }`}
                             >
                               <Icon className="w-4 h-4" />
@@ -6053,7 +6053,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             <div key={`${selectedWorkflow.id}-${activeView}`} className={`flex-1 bg-gray-50 overflow-y-auto animate-in fade-in duration-150 ${activeView === 'stages' ? '' : 'p-6'}`}>
               {activeView === 'overview' && isLoadingBranches ? (
                 <div className="flex items-center justify-center py-20">
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
                 </div>
               ) : activeView === 'overview' && (
                 <OverviewView
@@ -6451,7 +6451,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
                 return showLoading ? (
                   <div className="flex items-center justify-center py-16">
-                    <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                    <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
                   </div>
                 ) : branchIsValid ? (
                   <RunDetailPanel
@@ -7226,15 +7226,15 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       {/* Upload File Modal */}
       {showUploadTemplateModal && selectedWorkflow && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Upload File</h2>
-              <p className="text-sm text-gray-500 mt-1">Files will be accessible when working through this workflow and stored in the Files tab</p>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md dark:bg-gray-800">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Upload File</h2>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Files will be accessible when working through this workflow and stored in the Files tab</p>
             </div>
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   File Name
                 </label>
                 <input
@@ -7242,12 +7242,12 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   placeholder="e.g., Q4 Earnings Model"
                   value={templateFormData.name}
                   onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Description (Optional)
                 </label>
                 <textarea
@@ -7255,28 +7255,28 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
                   rows={3}
                   value={templateFormData.description}
                   onChange={(e) => setTemplateFormData({ ...templateFormData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Upload File
                 </label>
                 <input
                   type="file"
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
                   onChange={(e) => setTemplateFormData({ ...templateFormData, file: e.target.files?.[0] || null })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:border-gray-600"
                 />
                 <p className="text-xs text-gray-400 mt-2">PDF, Word, Excel, PowerPoint, or Text files</p>
                 {templateFormData.file && (
-                  <p className="text-xs text-gray-600 mt-2">Selected: {templateFormData.file.name}</p>
+                  <p className="text-xs text-gray-600 mt-2 dark:text-gray-400">Selected: {templateFormData.file.name}</p>
                 )}
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3 dark:border-gray-700">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -7366,22 +7366,22 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       {/* Delete Workflow Confirmation Modal */}
       {showPermanentDeleteModal && workflowToPermanentlyDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 dark:bg-gray-800">
             <div className="p-6">
               <div className="flex items-center mb-4">
                 <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
                   <Trash2 className="w-6 h-6 text-red-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                     {selectedWorkflow?.archived ? 'Remove Archived Workflow' : 'Delete Workflow'}
                   </h3>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     Data will be preserved for recovery
                   </p>
                 </div>
               </div>
-              <p className="text-gray-700 mb-6">
+              <p className="text-gray-700 mb-6 dark:text-gray-300">
                 {selectedWorkflow?.archived ? (
                   <>
                     Are you sure you want to remove <span className="font-semibold">{selectedWorkflow?.name}</span> from the archived section?
@@ -7421,18 +7421,18 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       {/* Unarchive Workflow Confirmation Modal */}
       {showUnarchiveModal && workflowToUnarchive && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 dark:bg-gray-800">
             <div className="p-6">
               <div className="flex items-center mb-4">
                 <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
                   <CheckCircle className="w-6 h-6 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Restore Workflow</h3>
-                  <p className="text-sm text-gray-500">Move workflow back to active list</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Restore Workflow</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Move workflow back to active list</p>
                 </div>
               </div>
-              <p className="text-gray-700 mb-6">
+              <p className="text-gray-700 mb-6 dark:text-gray-300">
                 Are you sure you want to restore <span className="font-semibold">{selectedWorkflow?.name}</span>?
                 This workflow will be moved back to your active workflows list and will be available for use.
               </p>
@@ -7462,21 +7462,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       {/* Delete Stage Confirmation Modal */}
       {showDeleteStageModal && stageToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 dark:bg-gray-800">
             <div className="p-6">
               <div className="flex items-center mb-4">
                 <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
                   <Trash2 className="w-6 h-6 text-red-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Delete Stage</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">Delete Stage</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
                 </div>
               </div>
-              <p className="text-gray-700 mb-2">
+              <p className="text-gray-700 mb-2 dark:text-gray-300">
                 Are you sure you want to delete the <span className="font-semibold">"{stageToDelete.label}"</span> stage?
               </p>
-              <p className="text-sm text-gray-600 mb-6">
+              <p className="text-sm text-gray-600 mb-6 dark:text-gray-400">
                 All checklist items and configuration for this stage will be permanently removed.
               </p>
               <div className="flex justify-end space-x-3">
@@ -7524,7 +7524,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
       {contextMenu.isOpen && (
         <div
           ref={contextMenuRef}
-          className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px]"
+          className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[160px] dark:border-gray-700 dark:bg-gray-800"
           style={{
             left: contextMenu.x,
             top: contextMenu.y
@@ -7536,7 +7536,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               // Restore option for archived workflows
               <button
                 onClick={handleContextMenuUnarchive}
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Restore</span>
@@ -7545,7 +7545,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
               // Archive option for active workflows
               <button
                 onClick={handleContextMenuArchive}
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
               >
                 <Archive className="w-4 h-4" />
                 <span>Archive</span>
@@ -7555,7 +7555,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
           <button
             onClick={handleContextMenuDuplicate}
-            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
           >
             <Copy className="w-4 h-4" />
             <span>Duplicate</span>

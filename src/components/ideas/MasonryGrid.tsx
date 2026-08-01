@@ -178,7 +178,7 @@ export function MasonryGrid({
                 e.stopPropagation()
                 toggleExpand(item.id)
               }}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               title={isExpanded ? 'Collapse' : 'Expand'}
             >
               {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -312,7 +312,7 @@ export function MasonryGrid({
   if (items.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">No ideas to display</p>
+        <p className="text-gray-500 dark:text-gray-400">No ideas to display</p>
       </div>
     )
   }

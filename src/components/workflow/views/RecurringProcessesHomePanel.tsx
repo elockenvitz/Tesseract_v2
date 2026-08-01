@@ -229,12 +229,12 @@ export function RecurringProcessesHomePanel({
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <div className="bg-gray-100 px-6 py-6 border-b border-gray-200">
+        <div className="bg-gray-100 px-6 py-6 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
           <div className="grid grid-cols-4 gap-3">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
-                <div className="h-8 w-12 bg-gray-100 rounded mb-1" />
-                <div className="h-3 w-20 bg-gray-100 rounded" />
+              <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div className="h-8 w-12 bg-gray-100 rounded mb-1 dark:bg-gray-800" />
+                <div className="h-3 w-20 bg-gray-100 rounded dark:bg-gray-800" />
               </div>
             ))}
           </div>
@@ -242,7 +242,7 @@ export function RecurringProcessesHomePanel({
         <div className="flex-1 p-6">
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-14 bg-gray-100 rounded-lg" />
+              <div key={i} className="h-14 bg-gray-100 rounded-lg dark:bg-gray-800" />
             ))}
           </div>
         </div>
@@ -306,7 +306,7 @@ export function RecurringProcessesHomePanel({
         {hasAttention && viewFilter === 'active' && (
           <div className="flex items-center flex-wrap gap-2">
             {notStartedCount > 0 && (
-              <span className="inline-flex items-center space-x-1 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
+              <span className="inline-flex items-center space-x-1 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-3 py-1 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                 <Eye className="w-3 h-3 text-gray-400" />
                 <span>Not started ({notStartedCount})</span>
               </span>
@@ -322,10 +322,10 @@ export function RecurringProcessesHomePanel({
 
         {/* ─── A) Active Runs — dominant section ─── */}
         <Card>
-          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
             <div className="flex items-center space-x-2">
               <Activity className="w-4 h-4 text-blue-500" />
-              <h3 className="text-sm font-semibold text-gray-900">Active Runs</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Active Runs</h3>
               {activeCount > 0 && (
                 <Badge variant="default" className="text-xs">{activeCount}</Badge>
               )}
@@ -341,7 +341,7 @@ export function RecurringProcessesHomePanel({
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                   viewFilter === tab.key
                     ? 'bg-blue-100 text-blue-800 font-medium'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
                 }`}
               >
                 {tab.label}
@@ -370,9 +370,9 @@ export function RecurringProcessesHomePanel({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* C) Upcoming Cycles */}
           <Card>
-            <div className="px-5 py-3 border-b border-gray-200 flex items-center space-x-2">
+            <div className="px-5 py-3 border-b border-gray-200 flex items-center space-x-2 dark:border-gray-700">
               <Calendar className="w-4 h-4 text-indigo-500" />
-              <h3 className="text-sm font-semibold text-gray-900">Upcoming Cycles</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Upcoming Cycles</h3>
             </div>
             <div className="p-4">
               {upcomingCycles.length === 0 ? (
@@ -387,14 +387,14 @@ export function RecurringProcessesHomePanel({
                     return (
                       <div
                         key={rule.id}
-                        className="flex items-center justify-between py-2 px-2 rounded hover:bg-gray-50 transition-colors"
+                        className="flex items-center justify-between py-2 px-2 rounded hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                       >
                         <div className="flex items-center space-x-2 min-w-0">
                           <div
                             className="w-2 h-2 rounded-full flex-shrink-0"
                             style={{ backgroundColor: getScopeColor(wf?.scope_type) }}
                           />
-                          <span className="text-sm text-gray-700 truncate">
+                          <span className="text-sm text-gray-700 truncate dark:text-gray-300">
                             {wf?.name || 'Unknown'}
                           </span>
                           {cadenceLabel && (
@@ -403,7 +403,7 @@ export function RecurringProcessesHomePanel({
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center space-x-1 text-xs text-gray-500 flex-shrink-0 ml-2">
+                        <div className="flex items-center space-x-1 text-xs text-gray-500 flex-shrink-0 ml-2 dark:text-gray-400">
                           <Clock className="w-3 h-3" />
                           <span>{safeFutureRelativeTime(rule.next_run_at)}</span>
                         </div>
@@ -417,11 +417,11 @@ export function RecurringProcessesHomePanel({
 
           {/* D) Processes (catalog) */}
           <Card>
-            <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
               <div className="flex items-center space-x-2">
-                <List className="w-4 h-4 text-gray-500" />
+                <List className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Processes</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Processes</h3>
                 </div>
                 {workflows.length > 0 && (
                   <span className="text-xs text-gray-400">
@@ -434,8 +434,8 @@ export function RecurringProcessesHomePanel({
                   onClick={() => setShowArchived(!showArchived)}
                   className={`text-xs px-2 py-0.5 rounded transition-colors ${
                     showArchived
-                      ? 'bg-gray-200 text-gray-700 font-medium'
-                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                      ? 'bg-gray-200 text-gray-700 font-medium dark:text-gray-300'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                   }`}
                 >
                   {showArchived ? 'Hide archived' : 'Show archived'}
@@ -446,7 +446,7 @@ export function RecurringProcessesHomePanel({
               {isLoadingWorkflows ? (
                 <div className="space-y-2 opacity-40">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="h-6 bg-gray-100 rounded w-3/4" />
+                    <div key={i} className="h-6 bg-gray-100 rounded w-3/4 dark:bg-gray-800" />
                   ))}
                 </div>
               ) : catalogProcesses.length === 0 ? (
@@ -466,14 +466,14 @@ export function RecurringProcessesHomePanel({
                       <button
                         key={workflow.id}
                         onClick={() => onSelectWorkflow(workflow)}
-                        className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-gray-50 transition-colors text-left group"
+                        className="w-full flex items-center justify-between py-2 px-2 rounded hover:bg-gray-50 transition-colors text-left group dark:hover:bg-gray-800"
                       >
                         <div className="flex items-center space-x-2 min-w-0">
                           <div
                             className={`w-2 h-2 rounded-full flex-shrink-0 ${isArchived ? 'opacity-40' : ''}`}
                             style={{ backgroundColor: getScopeColor(workflow.scope_type) }}
                           />
-                          <span className={`text-sm truncate ${isArchived ? 'text-gray-400' : 'text-gray-700'}`}>
+                          <span className={`text-sm truncate ${isArchived ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
                             {workflow.name}
                           </span>
                           {isArchived && (

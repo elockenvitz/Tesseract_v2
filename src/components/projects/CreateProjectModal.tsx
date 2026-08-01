@@ -782,7 +782,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess, initialContext 
                           onClick={() => { setSelectedOrgGroupId(''); setOrgDropdownOpen(false) }}
                           className={clsx(
                             'w-full px-3 py-1.5 text-left text-[12px] transition-colors',
-                            !selectedOrgGroupId ? 'bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white font-medium' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            !selectedOrgGroupId ? 'bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white font-medium' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-400'
                           )}
                         >
                           None
@@ -976,7 +976,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess, initialContext 
                                             handleRemoveTeamMember(u.id)
                                           }
                                         }}
-                                        className="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                                        className="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600"
                                       />
                                       <div className="w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
                                         <span className="text-white text-[9px] font-semibold">

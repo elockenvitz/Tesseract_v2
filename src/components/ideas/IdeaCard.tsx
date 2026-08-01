@@ -160,12 +160,12 @@ export function IdeaCard({
     <div
       className={clsx(
         // Base styles
-        'relative w-full bg-white rounded-xl shadow-sm overflow-hidden flex flex-col',
+        'relative w-full bg-white rounded-xl shadow-sm overflow-hidden flex flex-col dark:bg-gray-800',
         'transition-all duration-150',
         // Border with optional sentiment accent
         'border-l-2',
         sentimentBorder || 'border-l-transparent',
-        'border border-gray-200',
+        'border border-gray-200 dark:border-gray-700',
         // Hover state: lift + border darken
         onClick && 'hover:shadow-md hover:border-gray-300 cursor-pointer',
         // Focus state for keyboard navigation
@@ -233,7 +233,7 @@ export function IdeaCard({
 
       {/* ===== TITLE (for notes and insights) ===== */}
       {'title' in item && item.title && (
-        <h3 className="font-semibold text-gray-900 mb-1.5 line-clamp-1 flex-shrink-0">
+        <h3 className="font-semibold text-gray-900 mb-1.5 line-clamp-1 flex-shrink-0 dark:text-white">
           {item.title}
         </h3>
       )}
@@ -248,7 +248,7 @@ export function IdeaCard({
             ? item.content.substring(0, maxChars).trim() + '...'
             : item.content
           return (
-            <p className={clsx("text-sm text-gray-700 leading-relaxed", contentClassName)}>
+            <p className={clsx("text-sm text-gray-700 leading-relaxed dark:text-gray-300", contentClassName)}>
               {displayText}
             </p>
           )
@@ -289,14 +289,14 @@ export function IdeaCard({
 
       {/* ===== CUSTOM ACTIONS WIDGET (if provided by parent) ===== */}
       {actionsWidget && (
-        <div className="mt-2 border-t border-gray-100 pt-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="mt-2 border-t border-gray-100 pt-2 flex-shrink-0 dark:border-gray-800" onClick={(e) => e.stopPropagation()}>
           {actionsWidget}
         </div>
       )}
 
       {/* ===== FOOTER: Author info only (hidden in "mine" scope) ===== */}
       {showAuthorRow && (
-        <div className="pt-2 border-t border-gray-100 mt-auto flex-shrink-0">
+        <div className="pt-2 border-t border-gray-100 mt-auto flex-shrink-0 dark:border-gray-800">
           <AuthorInfo
             author={item.author}
             onClick={onAuthorClick}
@@ -306,7 +306,7 @@ export function IdeaCard({
 
       {/* ===== FOOTER WIDGET SLOT ===== */}
       {footerWidget && (
-        <div className="mt-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+        <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800" onClick={(e) => e.stopPropagation()}>
           {footerWidget}
         </div>
       )}
@@ -346,7 +346,7 @@ function AuthorInfo({ author, onClick }: AuthorInfoProps) {
         e.stopPropagation()
         onClick?.(author.id)
       }}
-      className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 transition-colors"
+      className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
     >
       {/* 20px avatar with initials */}
       {author.avatar_url ? (
@@ -357,7 +357,7 @@ function AuthorInfo({ author, onClick }: AuthorInfoProps) {
         />
       ) : (
         <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-          <span className="text-[9px] font-medium text-gray-600">{initials}</span>
+          <span className="text-[9px] font-medium text-gray-600 dark:text-gray-400">{initials}</span>
         </div>
       )}
       {/* Author name - text-xs, muted */}

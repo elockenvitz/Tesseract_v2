@@ -17,14 +17,14 @@ interface AIContextProps {
 const sentimentConfig: Record<Sentiment, { icon: typeof TrendingUp; label: string; color: string; bg: string }> = {
   bullish: { icon: TrendingUp, label: 'Bullish', color: 'text-green-600', bg: 'bg-green-50' },
   bearish: { icon: TrendingDown, label: 'Bearish', color: 'text-red-600', bg: 'bg-red-50' },
-  neutral: { icon: Minus, label: 'Neutral', color: 'text-gray-600', bg: 'bg-gray-50' },
+  neutral: { icon: Minus, label: 'Neutral', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-50 dark:bg-gray-900' },
   mixed: { icon: AlertTriangle, label: 'Mixed', color: 'text-amber-600', bg: 'bg-amber-50' }
 }
 
 const confidenceConfig: Record<Confidence, { label: string; color: string }> = {
   high: { label: 'High confidence', color: 'text-green-600' },
   medium: { label: 'Medium confidence', color: 'text-amber-600' },
-  low: { label: 'Low confidence', color: 'text-gray-500' }
+  low: { label: 'Low confidence', color: 'text-gray-500 dark:text-gray-400' }
 }
 
 export function AIContext({
@@ -89,7 +89,7 @@ export function AIContext({
 
       {/* Summary */}
       {summary && (
-        <p className="text-sm text-gray-700 mb-2">
+        <p className="text-sm text-gray-700 mb-2 dark:text-gray-300">
           {summary}
         </p>
       )}
@@ -98,7 +98,7 @@ export function AIContext({
       {keyPoints.length > 0 && (
         <div className="space-y-1">
           {keyPoints.map((point, index) => (
-            <div key={index} className="flex items-start gap-2 text-xs text-gray-600">
+            <div key={index} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-400">
               <Lightbulb className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
               <span>{point}</span>
             </div>

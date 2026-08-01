@@ -57,7 +57,7 @@ function ExecutiveHeader({ verdict: v, mode }: { verdict: ScorecardVerdict; mode
                 className={clsx('transition-all duration-700', cfg.ringColor)} />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className={clsx('text-[18px] font-bold leading-none tabular-nums', v.verdict === 'insufficient' ? 'text-gray-400' : 'text-gray-900')}>
+              <span className={clsx('text-[18px] font-bold leading-none tabular-nums', v.verdict === 'insufficient' ? 'text-gray-400' : 'text-gray-900 dark:text-white')}>
                 {v.verdict === 'insufficient' ? '—' : v.score.toFixed(0)}
               </span>
             </div>
@@ -70,10 +70,10 @@ function ExecutiveHeader({ verdict: v, mode }: { verdict: ScorecardVerdict; mode
             <span className={clsx('text-[14px] font-bold', cfg.color)}>{cfg.label}</span>
             <span className={clsx('text-[10px]', confCfg.color)}>{confCfg.label}</span>
           </div>
-          <p className={clsx('text-[12px] font-semibold leading-snug', isSevere ? 'text-gray-900' : v.verdict === 'insufficient' ? 'text-gray-500' : 'text-gray-800')}>
+          <p className={clsx('text-[12px] font-semibold leading-snug', isSevere ? 'text-gray-900 dark:text-white' : v.verdict === 'insufficient' ? 'text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-gray-100')}>
             {v.headline}
           </p>
-          <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5">{v.interpretation}</p>
+          <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5 dark:text-gray-400">{v.interpretation}</p>
         </div>
 
         {/* Focus */}
@@ -81,7 +81,7 @@ function ExecutiveHeader({ verdict: v, mode }: { verdict: ScorecardVerdict; mode
           <div className="shrink-0 max-w-[260px] pl-4 border-l border-black/5">
             <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Focus</div>
             {v.focus.map((f, i) => (
-              <p key={i} className="text-[10px] text-gray-600 leading-relaxed flex items-start gap-1.5">
+              <p key={i} className="text-[10px] text-gray-600 leading-relaxed flex items-start gap-1.5 dark:text-gray-400">
                 <span className="text-gray-300 mt-px shrink-0">›</span>{f}
               </p>
             ))}
@@ -112,7 +112,7 @@ function FlagBadge({ flag }: { flag: ScorecardFlag }) {
     strength: 'bg-emerald-100/80 text-emerald-800 border-emerald-300/50',
     weakness: 'bg-red-100/80 text-red-800 border-red-300/50',
     warning: 'bg-amber-100/80 text-amber-800 border-amber-300/50',
-    info: 'bg-gray-100 text-gray-600 border-gray-200',
+    info: 'bg-gray-100 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
   }
   return <span className={clsx('text-[9px] font-semibold px-2 py-0.5 rounded border', styles[flag.type])}>{flag.label}</span>
 }
@@ -125,10 +125,10 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
   const resolved = snapshot.winners + snapshot.losers
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-800">
       {/* Process pipeline */}
       {breakdown.stages.length > 0 && (
-        <div className="px-4 py-2.5 border-b border-gray-100">
+        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-1">
             {breakdown.stages.map((stage, i) => (
               <div key={stage.id} className="flex items-center gap-1 flex-1 min-w-0">
@@ -138,7 +138,7 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
                   stage.status === 'adequate' ? 'bg-blue-50 border border-blue-200' :
                   stage.status === 'weak' ? 'bg-amber-50 border border-amber-300' :
                   stage.status === 'failing' ? 'bg-red-50 border border-red-300 ring-1 ring-red-200' :
-                  'bg-gray-50 border border-gray-100'
+                  'bg-gray-50 border border-gray-100 dark:border-gray-800 dark:bg-gray-900'
                 )}>
                   <div className={clsx('text-[9px] font-bold uppercase tracking-wide',
                     stage.status === 'strong' ? 'text-emerald-700' :
@@ -164,7 +164,7 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
             ))}
           </div>
           {breakdown.failurePoint && (
-            <p className="text-[10px] text-gray-500 mt-1.5">
+            <p className="text-[10px] text-gray-500 mt-1.5 dark:text-gray-400">
               <span className="font-semibold text-red-600">Primary breakdown: {breakdown.failurePoint}.</span>
               {breakdown.failureSummary && ` ${breakdown.failureSummary}`}
             </p>
@@ -173,7 +173,7 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
       )}
 
       {/* Outcome stats */}
-      <div className="flex items-stretch divide-x divide-gray-100">
+      <div className="flex items-stretch divide-x divide-gray-100 dark:divide-gray-800">
         <StatCell
           value={resolved > 0 ? <><span className="text-emerald-600">{snapshot.winners}</span><span className="text-gray-300 mx-0.5">/</span><span className="text-red-600">{snapshot.losers}</span></> : '—'}
           label="won / lost"
@@ -182,7 +182,7 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
         <StatCell
           value={snapshot.winRate != null ? `${snapshot.winRate.toFixed(0)}%` : '—'}
           label="win rate"
-          color={snapshot.winRate != null ? (snapshot.winRate >= 55 ? 'text-emerald-600' : snapshot.winRate < 45 ? 'text-red-600' : 'text-gray-700') : undefined}
+          color={snapshot.winRate != null ? (snapshot.winRate >= 55 ? 'text-emerald-600' : snapshot.winRate < 45 ? 'text-red-600' : 'text-gray-700 dark:text-gray-300') : undefined}
           muted={snapshot.winRate == null}
         />
         <StatCell
@@ -197,13 +197,13 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
           <StatCell
             value={`${snapshot.avgDelayCostBps > 0 ? '+' : ''}${snapshot.avgDelayCostBps.toFixed(0)}`}
             label="delay bps"
-            color={snapshot.avgDelayCostBps > 10 ? 'text-red-600' : 'text-gray-700'}
+            color={snapshot.avgDelayCostBps > 10 ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}
           />
         )}
       </div>
 
-      <div className="px-3 py-1.5 border-t border-gray-100">
-        <p className="text-[10px] text-gray-500">{snapshot.summaryText}</p>
+      <div className="px-3 py-1.5 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-[10px] text-gray-500 dark:text-gray-400">{snapshot.summaryText}</p>
       </div>
     </div>
   )
@@ -212,7 +212,7 @@ function ProcessBreakdownStrip({ breakdown, snapshot }: { breakdown: ProcessBrea
 function StatCell({ value, label, color, muted }: { value: React.ReactNode; label: string; color?: string; muted?: boolean }) {
   return (
     <div className="flex-1 px-3 py-2 text-center">
-      <div className={clsx('text-[15px] font-bold tabular-nums leading-none', muted ? 'text-gray-300' : color || 'text-gray-700')}>
+      <div className={clsx('text-[15px] font-bold tabular-nums leading-none', muted ? 'text-gray-300' : color || 'text-gray-700 dark:text-gray-300')}>
         {value}
       </div>
       <div className="text-[8px] text-gray-400 mt-0.5">{label}</div>
@@ -250,10 +250,10 @@ function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
   }[pillar.strength]
 
   return (
-    <div className={clsx('rounded-lg border bg-white p-3',
-      pillar.measurable ? 'border-gray-200' : 'border-gray-100 bg-gray-50/40')}>
+    <div className={clsx('rounded-lg border bg-white p-3 dark:bg-gray-800',
+      pillar.measurable ? 'border-gray-200 dark:border-gray-700' : 'border-gray-100 bg-gray-50/40 dark:border-gray-800')}>
       <div className="flex items-center justify-between mb-1.5">
-        <h4 className={clsx('text-[10px] font-bold uppercase tracking-wide', pillar.measurable ? 'text-gray-800' : 'text-gray-400')}>
+        <h4 className={clsx('text-[10px] font-bold uppercase tracking-wide', pillar.measurable ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400')}>
           {pillar.title}
         </h4>
         <span className={clsx('text-[9px] font-semibold', strengthColor)}>{pillar.strength}</span>
@@ -261,9 +261,9 @@ function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
 
       {pillar.score != null ? (
         <div className="mb-1.5">
-          <span className="text-[18px] font-bold text-gray-900 tabular-nums leading-none">{pillar.score.toFixed(0)}</span>
+          <span className="text-[18px] font-bold text-gray-900 tabular-nums leading-none dark:text-white">{pillar.score.toFixed(0)}</span>
           <span className="text-[9px] text-gray-300 ml-0.5">/ 100</span>
-          <div className="h-1 bg-gray-100 rounded-full overflow-hidden mt-1">
+          <div className="h-1 bg-gray-100 rounded-full overflow-hidden mt-1 dark:bg-gray-800">
             <div className={clsx('h-full rounded-full',
               pillar.score >= 70 ? 'bg-emerald-500' : pillar.score >= 50 ? 'bg-blue-500' : pillar.score >= 30 ? 'bg-amber-500' : 'bg-red-500'
             )} style={{ width: `${Math.min(pillar.score, 100)}%` }} />
@@ -277,12 +277,12 @@ function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
         {pillar.metrics.map((m, i) => (
           <div key={i} className="flex items-center justify-between text-[10px]">
             <span className="text-gray-400">{m.label}</span>
-            <span className={clsx('font-medium tabular-nums', pillar.measurable ? 'text-gray-700' : 'text-gray-400')}>{m.value}</span>
+            <span className={clsx('font-medium tabular-nums', pillar.measurable ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400')}>{m.value}</span>
           </div>
         ))}
       </div>
 
-      <p className={clsx('text-[9px] leading-relaxed', pillar.measurable ? 'text-gray-500' : 'text-gray-400')}>{pillar.takeaway}</p>
+      <p className={clsx('text-[9px] leading-relaxed', pillar.measurable ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400')}>{pillar.takeaway}</p>
     </div>
   )
 }
@@ -294,7 +294,7 @@ function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
 function BehaviorInsightsSection({ insights }: { insights: BehaviorInsight[] }) {
   if (insights.length === 0) return null
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-4 py-2.5">
+    <div className="rounded-lg border border-gray-200 bg-white px-4 py-2.5 dark:border-gray-700 dark:bg-gray-800">
       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Observations</div>
       <div className="space-y-1">
         {insights.map((ins, i) => (
@@ -304,7 +304,7 @@ function BehaviorInsightsSection({ insights }: { insights: BehaviorInsight[] }) 
             )}>
               {ins.severity === 'positive' ? '↑' : ins.severity === 'negative' ? '↓' : '·'}
             </span>
-            <span className="text-gray-600 leading-relaxed">{ins.text}</span>
+            <span className="text-gray-600 leading-relaxed dark:text-gray-400">{ins.text}</span>
           </div>
         ))}
       </div>
@@ -346,7 +346,7 @@ function TeamRoster({ entries, onSelect }: { entries: RosterEntry[]; onSelect: (
         {(['score', 'name', 'data', 'weakest'] as RosterSort[]).map(s => (
           <button key={s} onClick={() => { if (sortBy === s) setSortDesc(!sortDesc); else { setSortBy(s); setSortDesc(true) } }}
             className={clsx('px-2 py-0.5 text-[10px] font-medium rounded transition-colors',
-              sortBy === s ? 'bg-gray-200 text-gray-800' : 'text-gray-400 hover:text-gray-600'
+              sortBy === s ? 'bg-gray-200 text-gray-800 dark:text-gray-100' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
             )}>
             {s === 'data' ? 'Most data' : s === 'weakest' ? 'Needs work' : s.charAt(0).toUpperCase() + s.slice(1)}
             {sortBy === s && <span className="ml-0.5">{sortDesc ? '↓' : '↑'}</span>}
@@ -366,17 +366,17 @@ function RosterRow({ entry, onClick }: { entry: RosterEntry; onClick: () => void
 
   return (
     <div onClick={onClick}
-      className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm cursor-pointer transition-all">
+      className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm cursor-pointer transition-all dark:border-gray-800 dark:bg-gray-800">
       {/* Score */}
       <div className="shrink-0 w-8 text-center">
-        <span className={clsx('text-[14px] font-bold tabular-nums', noData ? 'text-gray-300' : 'text-gray-900')}>
+        <span className={clsx('text-[14px] font-bold tabular-nums', noData ? 'text-gray-300' : 'text-gray-900 dark:text-white')}>
           {noData ? '—' : entry.score.toFixed(0)}
         </span>
       </div>
 
       {/* Name + verdict + context */}
       <div className="w-44 shrink-0">
-        <div className="text-[11px] font-semibold text-gray-900 truncate">{entry.name}</div>
+        <div className="text-[11px] font-semibold text-gray-900 truncate dark:text-white">{entry.name}</div>
         <div className="flex items-center gap-1.5">
           <span className={clsx('text-[9px] font-semibold', cfg.color)}>{cfg.label}</span>
           {entry.teamContext && (
@@ -392,13 +392,13 @@ function RosterRow({ entry, onClick }: { entry: RosterEntry; onClick: () => void
             {entry.strongest && (
               <div className="flex items-center gap-1 text-[10px]">
                 <ArrowUp className="w-3 h-3 text-emerald-500 shrink-0" />
-                <span className="text-gray-500 truncate">{entry.strongest}</span>
+                <span className="text-gray-500 truncate dark:text-gray-400">{entry.strongest}</span>
               </div>
             )}
             {entry.weakest && (
               <div className="flex items-center gap-1 text-[10px]">
                 <ArrowDown className="w-3 h-3 text-red-400 shrink-0" />
-                <span className="text-gray-500 truncate">{entry.weakest}</span>
+                <span className="text-gray-500 truncate dark:text-gray-400">{entry.weakest}</span>
               </div>
             )}
           </div>
@@ -411,7 +411,7 @@ function RosterRow({ entry, onClick }: { entry: RosterEntry; onClick: () => void
       <div className="flex items-center gap-2.5 shrink-0">
         {entry.metrics.map((m, i) => (
           <div key={i} className="text-center min-w-[32px]">
-            <div className={clsx('text-[10px] font-semibold tabular-nums', noData ? 'text-gray-300' : 'text-gray-700')}>{m.value}</div>
+            <div className={clsx('text-[10px] font-semibold tabular-nums', noData ? 'text-gray-300' : 'text-gray-700 dark:text-gray-300')}>{m.value}</div>
             <div className="text-[7px] text-gray-400">{m.label}</div>
           </div>
         ))}
@@ -434,7 +434,7 @@ function AnalystDetailView({ userId, onBack }: { userId: string; onBack: () => v
   const insights = buildAnalystInsights(data ?? null)
   return (
     <div className="space-y-2.5">
-      <button onClick={onBack} className="text-[11px] text-gray-500 hover:text-gray-700">← Back to team</button>
+      <button onClick={onBack} className="text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">← Back to team</button>
       <ExecutiveHeader verdict={verdict} mode="analyst" />
       <ProcessBreakdownStrip breakdown={breakdown} snapshot={snapshot} />
       <DiagnosticPillarsSection pillars={pillars} />
@@ -453,7 +453,7 @@ function PMDetailView({ userId, onBack }: { userId: string; onBack: () => void }
   const insights = buildPMInsights(data ?? null)
   return (
     <div className="space-y-2.5">
-      <button onClick={onBack} className="text-[11px] text-gray-500 hover:text-gray-700">← Back to team</button>
+      <button onClick={onBack} className="text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">← Back to team</button>
       <ExecutiveHeader verdict={verdict} mode="pm" />
       <ProcessBreakdownStrip breakdown={breakdown} snapshot={snapshot} />
       <DiagnosticPillarsSection pillars={pillars} />
@@ -465,9 +465,9 @@ function PMDetailView({ userId, onBack }: { userId: string; onBack: () => void }
 function LoadingSkeleton() {
   return (
     <div className="space-y-2.5 animate-pulse">
-      <div className="h-24 bg-gray-100 rounded-lg" />
-      <div className="h-16 bg-gray-50 rounded-lg" />
-      <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4].map(i => <div key={i} className="h-28 bg-gray-50 rounded-lg" />)}</div>
+      <div className="h-24 bg-gray-100 rounded-lg dark:bg-gray-800" />
+      <div className="h-16 bg-gray-50 rounded-lg dark:bg-gray-900" />
+      <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4].map(i => <div key={i} className="h-28 bg-gray-50 rounded-lg dark:bg-gray-900" />)}</div>
     </div>
   )
 }
@@ -557,8 +557,8 @@ export function PMScorecardsView({ portfolioId }: { portfolioId?: string | null 
   if (!isPM) {
     return (
       <div className="space-y-2.5">
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-          <p className="text-[11px] text-gray-600">PM scorecards evaluate decision quality, execution discipline, and timing. You are not assigned as a portfolio manager — the format below is a preview.</p>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+          <p className="text-[11px] text-gray-600 dark:text-gray-400">PM scorecards evaluate decision quality, execution discipline, and timing. You are not assigned as a portfolio manager — the format below is a preview.</p>
         </div>
         {myLoading ? <LoadingSkeleton /> : (
           <>

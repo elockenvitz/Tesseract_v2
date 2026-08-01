@@ -183,7 +183,7 @@ export function PilotWorkspaceCustomizationCard({ forceHide }: PilotWorkspaceCus
                   'group flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-left transition-all',
                   item.done
                     ? 'bg-white/40 border-emerald-200/70 dark:bg-gray-800/30 dark:border-emerald-800/40'
-                    : 'bg-white/80 border-emerald-200/60 hover:bg-white hover:border-emerald-300 hover:shadow-sm dark:bg-gray-800/60 dark:border-emerald-800/40',
+                    : 'bg-white/80 border-emerald-200/60 hover:bg-white hover:border-emerald-300 hover:shadow-sm dark:bg-gray-800/60 dark:border-emerald-800/40 dark:hover:bg-gray-800',
                 )}
               >
                 <span className={clsx(

@@ -406,7 +406,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     return (
       <div className="space-y-3">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="animate-pulse p-3 bg-gray-50 rounded-lg">
+          <div key={i} className="animate-pulse p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
             <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
             <div className="h-3 bg-gray-200 rounded w-1/2" />
           </div>
@@ -417,7 +417,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
 
   if (feedItems.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
         <MessageSquare className="h-12 w-12 mx-auto mb-3 text-gray-300" />
         <p className="font-medium">No ideas yet</p>
         <p className="text-sm">Capture your first thought or trade idea above</p>
@@ -438,7 +438,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
           "p-3 rounded-lg border transition-all",
           thought.is_pinned
             ? "bg-amber-50/50 border-amber-200"
-            : "bg-white border-gray-100 hover:border-gray-200"
+            : "bg-white border-gray-100 hover:border-gray-200 dark:border-gray-800 dark:bg-gray-800"
         )}
       >
         {/* Header */}
@@ -474,7 +474,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
           <div className="relative">
             <button
               onClick={() => setMenuOpen(menuOpen === thought.id ? null : thought.id)}
-              className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>
@@ -482,13 +482,13 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
             {menuOpen === thought.id && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px] z-20">
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px] z-20 dark:border-gray-700 dark:bg-gray-800">
                   <button
                     onClick={() => {
                       togglePin.mutate({ id: thought.id, isPinned: thought.is_pinned })
                       setMenuOpen(null)
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     {thought.is_pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
                     <span>{thought.is_pinned ? 'Unpin' : 'Pin'}</span>
@@ -498,7 +498,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                       archiveThought.mutate(thought.id)
                       setMenuOpen(null)
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <Archive className="h-4 w-4" />
                     <span>Archive</span>
@@ -522,7 +522,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
         </div>
 
         {/* Content */}
-        <p className="text-sm text-gray-900 whitespace-pre-wrap mb-2">
+        <p className="text-sm text-gray-900 whitespace-pre-wrap mb-2 dark:text-white">
           {thought.content}
         </p>
 
@@ -544,7 +544,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
         {thought.tags && thought.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
             {thought.tags.map(tag => (
-              <span key={tag} className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+              <span key={tag} className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">
                 <Hash className="h-3 w-3 mr-0.5" />
                 {tag}
               </span>
@@ -575,7 +575,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     const tradeTitle = `${trade.action === 'buy' ? 'Long' : 'Short'} ${trade.assets?.symbol || 'Trade'}`
 
     return (
-      <div key={trade.id} className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all">
+      <div key={trade.id} className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all dark:border-gray-800 dark:bg-gray-800">
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap">
@@ -593,7 +593,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
             {trade.assets && (
               <button
                 onClick={() => onAssetClick?.(trade.assets!.id, trade.assets!.symbol)}
-                className="text-sm font-semibold text-gray-900 hover:text-primary-600"
+                className="text-sm font-semibold text-gray-900 hover:text-primary-600 dark:text-white"
               >
                 {trade.assets.symbol}
               </button>
@@ -618,7 +618,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                   setSelectedOrgCategory(null)
                 }
               }}
-              className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>
@@ -626,7 +626,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
             {menuOpen === menuId && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => { setMenuOpen(null); setMenuView('main'); setSelectedOrgCategory(null) }} />
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px] z-20">
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px] z-20 dark:border-gray-700 dark:bg-gray-800">
                   {/* Main Menu */}
                   {menuView === 'main' && (
                     <>
@@ -636,7 +636,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                             onOpenDiscussion('trade_idea', trade.id, tradeTitle)
                             setMenuOpen(null)
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                         >
                           <MessageSquare className="h-4 w-4" />
                           <span>Discuss</span>
@@ -645,7 +645,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
 
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('urgency') }}
-                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                       >
                         <span className="flex items-center gap-2">
                           <Zap className="h-4 w-4" />
@@ -656,7 +656,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
 
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibility') }}
-                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                       >
                         <span className="flex items-center gap-2">
                           <VisibilityIcon className="h-4 w-4" />
@@ -665,7 +665,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                         <ChevronRight className="h-3 w-3" />
                       </button>
 
-                      <div className="border-t border-gray-100 my-1" />
+                      <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
 
                       <button
                         onClick={() => {
@@ -687,7 +687,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('main') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -702,8 +702,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                             setMenuView('main')
                           }}
                           className={clsx(
-                            "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50",
-                            trade.urgency === u ? "bg-gray-100 font-medium" : ""
+                            "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                            trade.urgency === u ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                           )}
                         >
                           <span className={clsx("w-2 h-2 rounded-full", urgencyConfig[u].bg)} />
@@ -718,7 +718,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('main') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -732,8 +732,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                           setMenuView('main')
                         }}
                         className={clsx(
-                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50",
-                          (trade.visibility || 'private') === 'private' ? "bg-gray-100 font-medium" : ""
+                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                          (trade.visibility || 'private') === 'private' ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                         )}
                       >
                         <Lock className="h-4 w-4" />
@@ -743,8 +743,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibilityCategory') }}
                         className={clsx(
-                          "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50",
-                          trade.visibility === 'team' ? "bg-gray-100 font-medium" : ""
+                          "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                          trade.visibility === 'team' ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                         )}
                       >
                         <span className="flex items-center gap-2">
@@ -761,8 +761,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                           setMenuView('main')
                         }}
                         className={clsx(
-                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50",
-                          trade.visibility === 'public' ? "bg-gray-100 font-medium" : ""
+                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                          trade.visibility === 'public' ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                         )}
                       >
                         <Globe className="h-4 w-4" />
@@ -776,7 +776,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibility') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -795,7 +795,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                             }}
                             disabled={count === 0}
                             className={clsx(
-                              "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50",
+                              "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
                               count === 0 && "opacity-50 cursor-not-allowed"
                             )}
                           >
@@ -817,7 +817,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibilityCategory') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -835,7 +835,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                               setMenuView('main')
                               setSelectedOrgCategory(null)
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                           >
                             <span>{node.name}</span>
                           </button>
@@ -856,7 +856,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
         >
           {/* Rationale */}
           {trade.rationale && (
-            <p className="text-sm text-gray-600 mb-2">{trade.rationale}</p>
+            <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">{trade.rationale}</p>
           )}
         </div>
 
@@ -895,7 +895,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     const pairTitle = `${longSymbols} / ${shortSymbols} Pair`
 
     return (
-      <div key={pair.pair_id} className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all">
+      <div key={pair.pair_id} className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all dark:border-gray-800 dark:bg-gray-800">
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2 flex-wrap">
@@ -923,7 +923,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                   setSelectedOrgCategory(null)
                 }
               }}
-              className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>
@@ -931,7 +931,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
             {menuOpen === menuId && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => { setMenuOpen(null); setMenuView('main'); setSelectedOrgCategory(null) }} />
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px] z-20">
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px] z-20 dark:border-gray-700 dark:bg-gray-800">
                   {/* Main Menu */}
                   {menuView === 'main' && (
                     <>
@@ -941,7 +941,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                             onOpenDiscussion('trade_idea', pair.pair_id, pairTitle)
                             setMenuOpen(null)
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                         >
                           <MessageSquare className="h-4 w-4" />
                           <span>Discuss</span>
@@ -950,7 +950,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
 
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('urgency') }}
-                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                       >
                         <span className="flex items-center gap-2">
                           <Zap className="h-4 w-4" />
@@ -961,7 +961,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
 
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibility') }}
-                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                       >
                         <span className="flex items-center gap-2">
                           <VisibilityIcon className="h-4 w-4" />
@@ -970,7 +970,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                         <ChevronRight className="h-3 w-3" />
                       </button>
 
-                      <div className="border-t border-gray-100 my-1" />
+                      <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
 
                       <button
                         onClick={() => {
@@ -992,7 +992,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('main') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -1007,8 +1007,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                             setMenuView('main')
                           }}
                           className={clsx(
-                            "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50",
-                            pair.urgency === u ? "bg-gray-100 font-medium" : ""
+                            "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                            pair.urgency === u ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                           )}
                         >
                           <span className={clsx("w-2 h-2 rounded-full", urgencyConfig[u].bg)} />
@@ -1023,7 +1023,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('main') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -1037,8 +1037,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                           setMenuView('main')
                         }}
                         className={clsx(
-                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50",
-                          (pair.visibility || 'private') === 'private' ? "bg-gray-100 font-medium" : ""
+                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                          (pair.visibility || 'private') === 'private' ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                         )}
                       >
                         <Lock className="h-4 w-4" />
@@ -1048,8 +1048,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibilityCategory') }}
                         className={clsx(
-                          "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50",
-                          pair.visibility === 'team' ? "bg-gray-100 font-medium" : ""
+                          "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                          pair.visibility === 'team' ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                         )}
                       >
                         <span className="flex items-center gap-2">
@@ -1066,8 +1066,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                           setMenuView('main')
                         }}
                         className={clsx(
-                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50",
-                          pair.visibility === 'public' ? "bg-gray-100 font-medium" : ""
+                          "w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
+                          pair.visibility === 'public' ? "bg-gray-100 font-medium dark:bg-gray-800" : ""
                         )}
                       >
                         <Globe className="h-4 w-4" />
@@ -1081,7 +1081,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibility') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -1100,7 +1100,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                             }}
                             disabled={count === 0}
                             className={clsx(
-                              "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50",
+                              "w-full flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800",
                               count === 0 && "opacity-50 cursor-not-allowed"
                             )}
                           >
@@ -1122,7 +1122,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuView('visibilityCategory') }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800 dark:text-gray-400"
                       >
                         <ChevronLeft className="h-4 w-4" />
                         <span>Back</span>
@@ -1140,7 +1140,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
                               setMenuView('main')
                               setSelectedOrgCategory(null)
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                           >
                             <span>{node.name}</span>
                           </button>
@@ -1208,7 +1208,7 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
 
           {/* Rationale */}
           {pair.rationale && (
-            <p className="text-sm text-gray-600 mb-2">{pair.rationale}</p>
+            <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">{pair.rationale}</p>
           )}
         </div>
 
@@ -1239,8 +1239,8 @@ export function ThoughtsFeed({ limit = 10, showHeader = true, onAssetClick, onOp
     <div className="space-y-3">
       {showHeader && (
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-gray-900">Recent Ideas</h3>
-          <span className="text-xs text-gray-500">{feedItems.length} items</span>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Recent Ideas</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{feedItems.length} items</span>
         </div>
       )}
 

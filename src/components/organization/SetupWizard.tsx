@@ -300,7 +300,7 @@ export function SetupWizard({ open, onClose, isFirstOrg = false, isPlatformAdmin
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {isFinished ? 'Setup Complete' : 'New Organization'}
               </h2>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {isFinished ? 'Your organization is ready' : `Step ${step} of 5`}
               </p>
             </div>
@@ -529,13 +529,13 @@ function Step2Invites({
 }) {
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-gray-500 dark:text-gray-400">
         Invite colleagues to join your organization. You can always add more later.
       </p>
 
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Email</label>
           <input
             type="email"
             value={inviteEmail}
@@ -546,7 +546,7 @@ function Step2Invites({
           />
         </div>
         <div className="w-32">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Role</label>
           <select
             value={inviteRole}
             onChange={(e) => onRoleChange(e.target.value as 'admin' | 'member')}
@@ -570,12 +570,12 @@ function Step2Invites({
                 <span className="text-sm text-gray-800 dark:text-gray-200">{inv.email}</span>
                 <span className={clsx(
                   'px-1.5 py-0.5 text-[10px] rounded font-medium',
-                  inv.role === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                  inv.role === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                 )}>
                   {inv.role}
                 </span>
               </div>
-              <button onClick={() => onRemove(inv.email)} className="p-1 hover:bg-gray-100 rounded">
+              <button onClick={() => onRemove(inv.email)} className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
                 <Trash2 className="w-3.5 h-3.5 text-gray-400" />
               </button>
             </div>
@@ -586,7 +586,7 @@ function Step2Invites({
       {invites.length === 0 && (
         <div className="text-center py-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
           <Mail className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">No invites yet. You can skip this step.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No invites yet. You can skip this step.</p>
         </div>
       )}
     </div>
@@ -607,13 +607,13 @@ function Step3Teams({
 }) {
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-gray-500 dark:text-gray-400">
         Create teams and optionally a portfolio for each. A default "General" team is always created.
       </p>
 
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Team Name</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Team Name</label>
           <input
             type="text"
             value={teamName}
@@ -624,7 +624,7 @@ function Step3Teams({
           />
         </div>
         <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Portfolio (optional)</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Portfolio (optional)</label>
           <input
             type="text"
             value={teamPortfolioName}
@@ -654,7 +654,7 @@ function Step3Teams({
                   </>
                 )}
               </div>
-              <button onClick={() => onRemove(t.name)} className="p-1 hover:bg-gray-100 rounded">
+              <button onClick={() => onRemove(t.name)} className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
                 <Trash2 className="w-3.5 h-3.5 text-gray-400" />
               </button>
             </div>
@@ -665,7 +665,7 @@ function Step3Teams({
       {teams.length === 0 && (
         <div className="text-center py-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
           <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             No additional teams. A "General" team will be created automatically.
           </p>
         </div>
@@ -693,7 +693,7 @@ function Step4Defaults({
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-gray-500 dark:text-gray-400">
         Optionally seed starter templates to get your team productive faster.
       </p>
 
@@ -702,11 +702,11 @@ function Step4Defaults({
           type="checkbox"
           checked={seedDefaults}
           onChange={(e) => onToggle(e.target.checked)}
-          className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600"
         />
         <div>
           <span className="text-sm font-medium text-gray-900 dark:text-white">Seed default configuration</span>
-          <p className="text-xs text-gray-500 mt-0.5">Creates a starter set of research sections, coverage roles, and user role definitions</p>
+          <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Creates a starter set of research sections, coverage roles, and user role definitions</p>
         </div>
       </label>
 
@@ -717,7 +717,7 @@ function Step4Defaults({
               <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
               <div>
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{item.label}</span>
-                <p className="text-xs text-gray-500">{item.desc}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{item.desc}</p>
               </div>
             </div>
           ))}
@@ -741,7 +741,7 @@ function Step5Review({
 }) {
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-500">Review your setup before creating the organization.</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">Review your setup before creating the organization.</p>
 
       {isAdditionalOrg && (
         <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
@@ -762,8 +762,8 @@ function Step5Review({
             </div>
             <div>
               <p className="text-sm font-semibold text-gray-900 dark:text-white">{orgName}</p>
-              <p className="text-xs text-gray-500">/{orgSlug}</p>
-              {orgDescription && <p className="text-xs text-gray-500 mt-0.5">{orgDescription}</p>}
+              <p className="text-xs text-gray-500 dark:text-gray-400">/{orgSlug}</p>
+              {orgDescription && <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{orgDescription}</p>}
             </div>
           </div>
         </div>
@@ -781,7 +781,7 @@ function Step5Review({
                   <span className="text-gray-700 dark:text-gray-300">{i.email}</span>
                   <span className={clsx(
                     'px-1.5 py-0.5 text-[10px] rounded font-medium',
-                    i.role === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                    i.role === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                   )}>
                     {i.role}
                   </span>
@@ -789,7 +789,7 @@ function Step5Review({
               ))}
             </div>
           ) : (
-            <p className="text-xs text-gray-500">No invites — you can add people later</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">No invites — you can add people later</p>
           )}
         </div>
 
@@ -832,7 +832,7 @@ function Step5Review({
             ) : (
               <>
                 <Shield className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-500">No default seeding — blank slate</span>
+                <span className="text-gray-500 dark:text-gray-400">No default seeding — blank slate</span>
               </>
             )}
           </div>
@@ -860,10 +860,10 @@ function FinishedView({
 
       <div>
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{orgName} is ready!</h3>
-        <p className="text-sm text-gray-500 mt-1">Your organization has been created successfully.</p>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Your organization has been created successfully.</p>
       </div>
 
-      <div className="flex justify-center gap-6 text-sm text-gray-600">
+      <div className="flex justify-center gap-6 text-sm text-gray-600 dark:text-gray-400">
         {inviteCount > 0 && (
           <div className="flex items-center gap-1">
             <Mail className="w-4 h-4 text-indigo-500" />

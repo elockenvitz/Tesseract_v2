@@ -162,23 +162,23 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
 
           {/* User Info */}
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{displayName}</h1>
 
             <div className="mt-2 space-y-1">
               {profile.email && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <Mail className="w-4 h-4" />
                   <span>{profile.email}</span>
                 </div>
               )}
               {profile.organization && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <Building2 className="w-4 h-4" />
                   <span>{profile.organization}</span>
                 </div>
               )}
               {profile.created_at && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <Calendar className="w-4 h-4" />
                   <span>Member since {formatDistanceToNow(new Date(profile.created_at), { addSuffix: true })}</span>
                 </div>
@@ -188,20 +188,20 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
             {/* Quick Stats */}
             <div className="mt-4 flex gap-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{coveredAssets?.length || 0}</div>
-                <div className="text-xs text-gray-500">Assets Covered</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{coveredAssets?.length || 0}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Assets Covered</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{priceTargets?.length || 0}</div>
-                <div className="text-xs text-gray-500">Price Targets</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{priceTargets?.length || 0}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Price Targets</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{recentNotes?.length || 0}</div>
-                <div className="text-xs text-gray-500">Notes</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{recentNotes?.length || 0}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Notes</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{assignedTasks?.length || 0}</div>
-                <div className="text-xs text-gray-500">Open Tasks</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{assignedTasks?.length || 0}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Open Tasks</div>
               </div>
             </div>
           </div>
@@ -212,11 +212,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       <Card padding="none">
         <button
           onClick={() => toggleSection('trackRecord')}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
           <div className="flex items-center space-x-3">
             <TrendingUp className="h-5 w-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Track Record</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Track Record</h2>
           </div>
           {collapsedSections.trackRecord ? (
             <ChevronDown className="h-5 w-5 text-gray-400" />
@@ -225,7 +225,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
           )}
         </button>
         {!collapsedSections.trackRecord && (
-          <div className="border-t border-gray-100 p-6">
+          <div className="border-t border-gray-100 p-6 dark:border-gray-800">
             <AnalystPerformanceCard
               userId={user.id}
               periodType="all_time"
@@ -238,11 +238,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       <Card padding="none">
         <button
           onClick={() => toggleSection('coveredAssets')}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
           <div className="flex items-center space-x-3">
             <Target className="h-5 w-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Coverage ({coveredAssets?.length || 0})</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Coverage ({coveredAssets?.length || 0})</h2>
           </div>
           {collapsedSections.coveredAssets ? (
             <ChevronDown className="h-5 w-5 text-gray-400" />
@@ -251,7 +251,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
           )}
         </button>
         {!collapsedSections.coveredAssets && (
-          <div className="border-t border-gray-100 p-6">
+          <div className="border-t border-gray-100 p-6 dark:border-gray-800">
             {coveredAssets && coveredAssets.length > 0 ? (
               <div className="grid gap-3">
                 {coveredAssets.map((coverage: any) => (
@@ -267,25 +267,25 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                         })
                       }
                     }}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors dark:border-gray-700"
                   >
                     <div>
-                      <div className="font-semibold text-gray-900">{coverage.assets?.symbol}</div>
-                      <div className="text-sm text-gray-600">{coverage.assets?.company_name}</div>
+                      <div className="font-semibold text-gray-900 dark:text-white">{coverage.assets?.symbol}</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{coverage.assets?.company_name}</div>
                     </div>
                     <div className="text-right">
                       <Badge variant="default" size="sm">{coverage.role || 'Analyst'}</Badge>
                       {coverage.assets?.sector && (
-                        <div className="text-xs text-gray-500 mt-1">{coverage.assets.sector}</div>
+                        <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">{coverage.assets.sector}</div>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
                 <Target className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No coverage assignments</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">No coverage assignments</p>
               </div>
             )}
           </div>
@@ -296,11 +296,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       <Card padding="none">
         <button
           onClick={() => toggleSection('priceTargets')}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
           <div className="flex items-center space-x-3">
             <TrendingUp className="h-5 w-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Recent Price Targets ({priceTargets?.length || 0})</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Price Targets ({priceTargets?.length || 0})</h2>
           </div>
           {collapsedSections.priceTargets ? (
             <ChevronDown className="h-5 w-5 text-gray-400" />
@@ -309,7 +309,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
           )}
         </button>
         {!collapsedSections.priceTargets && (
-          <div className="border-t border-gray-100 p-6">
+          <div className="border-t border-gray-100 p-6 dark:border-gray-800">
             {priceTargets && priceTargets.length > 0 ? (
               <div className="space-y-3">
                 {priceTargets.map((target: any) => (
@@ -325,10 +325,10 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                         })
                       }
                     }}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors dark:border-gray-700"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="font-semibold text-gray-900">{target.assets?.symbol}</div>
+                      <div className="font-semibold text-gray-900 dark:text-white">{target.assets?.symbol}</div>
                       <Badge
                         variant={target.scenario?.toLowerCase().includes('bull') ? 'success' : target.scenario?.toLowerCase().includes('bear') ? 'error' : 'default'}
                         size="sm"
@@ -337,8 +337,8 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                       </Badge>
                     </div>
                     <div className="text-right">
-                      <div className="font-semibold text-gray-900">${target.target_price?.toFixed(2)}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="font-semibold text-gray-900 dark:text-white">${target.target_price?.toFixed(2)}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
                         {target.target_date ? new Date(target.target_date).toLocaleDateString() : 'No date'}
                       </div>
                     </div>
@@ -346,9 +346,9 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
                 <TrendingUp className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No price targets set</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">No price targets set</p>
               </div>
             )}
           </div>
@@ -359,11 +359,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       <Card padding="none">
         <button
           onClick={() => toggleSection('openTasks')}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
           <div className="flex items-center space-x-3">
             <CheckSquare className="h-5 w-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Open Tasks ({assignedTasks?.length || 0})</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Open Tasks ({assignedTasks?.length || 0})</h2>
           </div>
           {collapsedSections.openTasks ? (
             <ChevronDown className="h-5 w-5 text-gray-400" />
@@ -372,7 +372,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
           )}
         </button>
         {!collapsedSections.openTasks && (
-          <div className="border-t border-gray-100 p-6">
+          <div className="border-t border-gray-100 p-6 dark:border-gray-800">
             {assignedTasks && assignedTasks.length > 0 ? (
               <div className="space-y-3">
                 {assignedTasks.map((task: any) => (
@@ -388,11 +388,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                         })
                       }
                     }}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors dark:border-gray-700"
                   >
                     <div className="flex-1">
-                      <div className="text-sm text-gray-900">{task.item_text}</div>
-                      <div className="text-xs text-gray-500 mt-1">
+                      <div className="text-sm text-gray-900 dark:text-white">{task.item_text}</div>
+                      <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                         {task.assets?.symbol} • Stage: {task.stage_id}
                       </div>
                     </div>
@@ -400,9 +400,9 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
                 <CheckSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No open tasks assigned</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">No open tasks assigned</p>
               </div>
             )}
           </div>
@@ -413,11 +413,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
       <Card padding="none">
         <button
           onClick={() => toggleSection('recentNotes')}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
           <div className="flex items-center space-x-3">
             <FileText className="h-5 w-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Recent Notes ({recentNotes?.length || 0})</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Notes ({recentNotes?.length || 0})</h2>
           </div>
           {collapsedSections.recentNotes ? (
             <ChevronDown className="h-5 w-5 text-gray-400" />
@@ -426,7 +426,7 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
           )}
         </button>
         {!collapsedSections.recentNotes && (
-          <div className="border-t border-gray-100 p-6">
+          <div className="border-t border-gray-100 p-6 dark:border-gray-800">
             {recentNotes && recentNotes.length > 0 ? (
               <div className="space-y-3">
                 {recentNotes.map((note: any) => (
@@ -442,11 +442,11 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                         })
                       }
                     }}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-colors dark:border-gray-700"
                   >
                     <div className="flex-1">
-                      <div className="font-medium text-gray-900">{note.title}</div>
-                      <div className="text-xs text-gray-500 mt-1">
+                      <div className="font-medium text-gray-900 dark:text-white">{note.title}</div>
+                      <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                         {note.assets?.symbol} • {note.note_type || 'Note'} • Updated {formatDistanceToNow(new Date(note.updated_at), { addSuffix: true })}
                       </div>
                     </div>
@@ -457,9 +457,9 @@ export function UserTab({ user, onNavigate }: UserTabProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
                 <FileText className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No notes yet</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">No notes yet</p>
               </div>
             )}
           </div>

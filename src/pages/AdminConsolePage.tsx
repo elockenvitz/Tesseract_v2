@@ -88,7 +88,7 @@ const ADMIN_STATUS_PILL: Record<ExportJob['status'], string> = {
   running: 'bg-indigo-100 text-indigo-700',
   succeeded: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
-  cancelled: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800',
 }
 
 function formatBytes(bytes: number): string {
@@ -495,11 +495,11 @@ export function AdminConsolePage() {
       <div className="max-w-5xl mx-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center">
+            <h1 className="text-xl font-bold text-gray-900 flex items-center dark:text-white">
               <Shield className="w-5 h-5 mr-2 text-indigo-600" />
               Admin Console
             </h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
               Platform support — view organizations and manage temporary access
             </p>
           </div>
@@ -515,13 +515,13 @@ export function AdminConsolePage() {
         {/* Provision New Client Form */}
         {showProvision && (
           <Card className="p-4 space-y-4 border-indigo-200 bg-indigo-50/30">
-            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5 dark:text-gray-100">
               <Building2 className="w-4 h-4 text-indigo-600" />
               Provision New Client Organization
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Organization Name</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Organization Name</label>
                 <input
                   type="text"
                   placeholder="Acme Capital"
@@ -532,27 +532,27 @@ export function AdminConsolePage() {
                       setProvisionSlug(e.target.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'))
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">URL Slug</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">URL Slug</label>
                 <input
                   type="text"
                   placeholder="acme-capital"
                   value={provisionSlug}
                   onChange={(e) => setProvisionSlug(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono dark:border-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Admin Email</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Admin Email</label>
                 <input
                   type="email"
                   placeholder="admin@acmecapital.com"
                   value={provisionEmail}
                   onChange={(e) => setProvisionEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 />
               </div>
             </div>
@@ -569,7 +569,7 @@ export function AdminConsolePage() {
               </Button>
               <button
                 onClick={() => setShowProvision(false)}
-                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -585,7 +585,7 @@ export function AdminConsolePage() {
             placeholder="Search organizations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
           />
         </div>
 
@@ -593,34 +593,34 @@ export function AdminConsolePage() {
         {orgsLoading ? (
           <div className="text-center py-12">
             <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-gray-500">Loading organizations...</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading organizations...</p>
           </div>
         ) : filteredOrgs.length === 0 ? (
-          <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <div className="text-center py-12 bg-gray-50 rounded-lg dark:bg-gray-900">
             <Building2 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">No organizations found</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No organizations found</p>
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
+          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
             {filteredOrgs.map((org) => (
               <button
                 key={org.id}
                 onClick={() => setSelectedOrgId(org.id)}
-                className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
               >
                 <div className="flex items-center space-x-3 min-w-0">
                   <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
                     <Building2 className="w-4.5 h-4.5 text-indigo-600" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{org.name}</p>
-                    <p className="text-xs text-gray-500">{org.slug}</p>
+                    <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{org.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{org.slug}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-4 flex-shrink-0">
                   <div className="text-right">
                     <div className="flex items-center space-x-2 text-xs">
-                      <span className="text-gray-600">
+                      <span className="text-gray-600 dark:text-gray-400">
                         <Users className="w-3 h-3 inline mr-0.5" />
                         {org.member_count}
                       </span>
@@ -650,42 +650,42 @@ export function AdminConsolePage() {
       <div className="flex items-center space-x-3">
         <button
           onClick={() => setSelectedOrgId(null)}
-          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center">
+          <h1 className="text-xl font-bold text-gray-900 flex items-center dark:text-white">
             <Building2 className="w-5 h-5 mr-2 text-indigo-600" />
             {selectedOrg?.name}
           </h1>
-          <p className="text-xs text-gray-500">{selectedOrg?.slug}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{selectedOrg?.slug}</p>
         </div>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3">
-          <p className="text-xs text-gray-500">Total Members</p>
-          <p className="text-lg font-bold text-gray-900">{orgMembers.length}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Total Members</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-white">{orgMembers.length}</p>
         </Card>
         <Card className="p-3">
-          <p className="text-xs text-gray-500">Active</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Active</p>
           <p className="text-lg font-bold text-green-600">{activeMembers.length}</p>
         </Card>
         <Card className="p-3">
-          <p className="text-xs text-gray-500">Suspended</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Suspended</p>
           <p className="text-lg font-bold text-amber-600">{inactiveMembers.length}</p>
         </Card>
         <Card className="p-3">
-          <p className="text-xs text-gray-500">Pending Invites</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Pending Invites</p>
           <p className="text-lg font-bold text-blue-600">{orgInvites.length}</p>
         </Card>
       </div>
 
       {/* Governance */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-medium text-gray-700 flex items-center">
+        <h3 className="text-sm font-medium text-gray-700 flex items-center dark:text-gray-300">
           <FileText className="w-4 h-4 mr-1.5 text-indigo-500" />
           Governance
         </h3>
@@ -771,14 +771,14 @@ export function AdminConsolePage() {
       {/* Export Jobs */}
       {exportJobs.length > 0 && (
         <Card className="p-4 space-y-3">
-          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+          <h3 className="text-sm font-medium text-gray-700 flex items-center dark:text-gray-300">
             <Download className="w-4 h-4 mr-1.5 text-indigo-500" />
             Export Jobs ({exportJobs.length})
           </h3>
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-gray-50 text-gray-500 text-left">
+                <tr className="bg-gray-50 text-gray-500 text-left dark:text-gray-400 dark:bg-gray-900">
                   <th className="px-3 py-2 font-medium">Status</th>
                   <th className="px-3 py-2 font-medium">Requested</th>
                   <th className="px-3 py-2 font-medium">Completed</th>
@@ -787,7 +787,7 @@ export function AdminConsolePage() {
                   <th className="px-3 py-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {exportJobs.map((job) => {
                   const expired = job.result_expires_at && new Date(job.result_expires_at) < new Date()
                   return (
@@ -803,16 +803,16 @@ export function AdminConsolePage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {format(new Date(job.created_at), 'MMM d, h:mm a')}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {job.finished_at ? format(new Date(job.finished_at), 'MMM d, h:mm a') : '—'}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {job.result_bytes != null ? formatBytes(job.result_bytes) : '—'}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {job.attempt_count}/{job.max_attempts}
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -834,7 +834,7 @@ export function AdminConsolePage() {
                             <button
                               onClick={() => cancelExportJobMutation.mutate(job.id)}
                               disabled={cancelExportJobMutation.isPending}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-red-600 border border-gray-200 rounded hover:bg-red-50 transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-red-600 border border-gray-200 rounded hover:bg-red-50 transition-colors dark:border-gray-700 dark:text-gray-400"
                             >
                               <XCircle className="w-3 h-3" /> Cancel
                             </button>
@@ -843,7 +843,7 @@ export function AdminConsolePage() {
                             <button
                               onClick={() => requestExportMutation.mutate(selectedOrgId!)}
                               disabled={requestExportMutation.isPending}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-indigo-600 border border-gray-200 rounded hover:bg-indigo-50 transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-indigo-600 border border-gray-200 rounded hover:bg-indigo-50 transition-colors dark:border-gray-700 dark:text-gray-400"
                             >
                               <RefreshCw className="w-3 h-3" /> Retry
                             </button>
@@ -891,14 +891,14 @@ export function AdminConsolePage() {
       {showArchiveConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowArchiveConfirm(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4 dark:bg-gray-800">
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                 <Archive className="w-5 h-5 text-amber-600" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Archive Organization?</h3>
-                <p className="text-sm text-gray-500">This will mark the org as archived. It can be restored later.</p>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Archive Organization?</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">This will mark the org as archived. It can be restored later.</p>
               </div>
             </div>
             <div className="flex justify-end space-x-3">
@@ -920,25 +920,25 @@ export function AdminConsolePage() {
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4 dark:bg-gray-800">
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                 <Trash2 className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Schedule Deletion?</h3>
-                <p className="text-sm text-gray-500">Choose how many days from now to delete this organization.</p>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Schedule Deletion?</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Choose how many days from now to delete this organization.</p>
               </div>
             </div>
             <div className="mb-4">
-              <label className="block text-xs text-gray-500 mb-1">Days from now</label>
+              <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Days from now</label>
               <input
                 type="number"
                 value={deletionDays}
                 onChange={(e) => setDeletionDays(e.target.value)}
                 min={1}
                 max={365}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
             <div className="flex justify-end space-x-3">
@@ -962,30 +962,30 @@ export function AdminConsolePage() {
 
       {/* Grant Temporary Access */}
       <Card className="p-4">
-        <h3 className="text-sm font-medium text-gray-700 flex items-center mb-3">
+        <h3 className="text-sm font-medium text-gray-700 flex items-center mb-3 dark:text-gray-300">
           <UserPlus className="w-4 h-4 mr-1.5 text-indigo-500" />
           Grant Temporary Access
         </h3>
         <div className="flex items-end gap-3">
           <div className="flex-1 max-w-xs">
-            <label className="block text-xs text-gray-500 mb-1">User ID</label>
+            <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">User ID</label>
             <input
               type="text"
               value={grantUserId}
               onChange={(e) => setGrantUserId(e.target.value)}
               placeholder="UUID of user"
-              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
           </div>
           <div className="w-32">
-            <label className="block text-xs text-gray-500 mb-1">Duration (min)</label>
+            <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Duration (min)</label>
             <input
               type="number"
               value={grantDuration}
               onChange={(e) => setGrantDuration(e.target.value)}
               min={1}
               max={1440}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
           </div>
           <Button
@@ -1007,7 +1007,7 @@ export function AdminConsolePage() {
       {/* Temporary Access Grants */}
       {tempAccessMembers.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+          <h3 className="text-sm font-medium text-gray-700 flex items-center dark:text-gray-300">
             <Clock className="w-4 h-4 mr-1.5 text-purple-500" />
             Temporary Access ({tempAccessMembers.length})
           </h3>
@@ -1015,8 +1015,8 @@ export function AdminConsolePage() {
             {tempAccessMembers.map((m) => (
               <div key={m.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{m.user_full_name}</p>
-                  <p className="text-xs text-gray-500">{m.user_email}</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{m.user_full_name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{m.user_email}</p>
                   <p className="text-xs text-purple-600 mt-0.5">
                     Expires {m.expires_at ? format(new Date(m.expires_at), 'MMM d, yyyy h:mm a') : '—'}
                   </p>
@@ -1040,7 +1040,7 @@ export function AdminConsolePage() {
       {/* Members List */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+          <h3 className="text-sm font-medium text-gray-700 flex items-center dark:text-gray-300">
             <Users className="w-4 h-4 mr-1.5 text-green-500" />
             Members ({orgMembers.length})
           </h3>
@@ -1055,7 +1055,7 @@ export function AdminConsolePage() {
             <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
+          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
             {orgMembers.map((m) => (
               <div key={m.id} className="px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center space-x-3 min-w-0">
@@ -1075,7 +1075,7 @@ export function AdminConsolePage() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-gray-900 truncate">{m.user_full_name}</span>
+                      <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{m.user_full_name}</span>
                       {m.is_org_admin && (
                         <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded">Admin</span>
                       )}
@@ -1089,10 +1089,10 @@ export function AdminConsolePage() {
                         {m.status}
                       </span>
                       {m.role !== 'member' && m.role !== 'admin' && (
-                        <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded">{m.role}</span>
+                        <span className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">{m.role}</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 truncate">{m.user_email}</p>
+                    <p className="text-xs text-gray-500 truncate dark:text-gray-400">{m.user_email}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
@@ -1110,7 +1110,7 @@ export function AdminConsolePage() {
                           placeholder="Reason..."
                           value={morphReason}
                           onChange={(e) => setMorphReason(e.target.value)}
-                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500"
+                          className="w-36 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500 dark:border-gray-600"
                           autoFocus
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') { setMorphTargetId(null); setMorphReason('') }
@@ -1135,7 +1135,7 @@ export function AdminConsolePage() {
                         </button>
                         <button
                           onClick={() => { setMorphTargetId(null); setMorphReason('') }}
-                          className="text-xs text-gray-400 hover:text-gray-600"
+                          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                         >
                           Cancel
                         </button>
@@ -1162,7 +1162,7 @@ export function AdminConsolePage() {
       {/* Pending Invites */}
       {orgInvites.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+          <h3 className="text-sm font-medium text-gray-700 flex items-center dark:text-gray-300">
             <Clock className="w-4 h-4 mr-1.5 text-blue-500" />
             Pending Invites ({orgInvites.length})
           </h3>
@@ -1170,8 +1170,8 @@ export function AdminConsolePage() {
             {orgInvites.map((inv) => (
               <div key={inv.id} className="px-4 py-2.5 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{inv.email}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{inv.email}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     Sent {new Date(inv.created_at).toLocaleDateString()} · {inv.status}
                   </p>
                 </div>

@@ -87,7 +87,7 @@ export function ProjectCollectionsSidebar({
   ]
 
   const STATUS_OPTIONS: { value: ProjectStatus; label: string; icon: any; color: string }[] = [
-    { value: 'planning', label: 'Planning', icon: Circle, color: 'text-gray-500' },
+    { value: 'planning', label: 'Planning', icon: Circle, color: 'text-gray-500 dark:text-gray-400' },
     { value: 'in_progress', label: 'In Progress', icon: Clock, color: 'text-blue-500' },
     { value: 'blocked', label: 'Blocked', icon: AlertCircle, color: 'text-red-500' },
     { value: 'completed', label: 'Completed', icon: CheckCircle, color: 'text-green-500' }

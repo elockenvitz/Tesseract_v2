@@ -44,7 +44,7 @@ function TruncatedBadges({
       ))}
       {overflow > 0 && (
         <span
-          className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 cursor-default"
+          className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 cursor-default dark:text-gray-400 dark:bg-gray-800"
           title={items.slice(maxVisible).join('\n')}
         >
           +{overflow} more
@@ -269,11 +269,11 @@ export function OrgAccessTab({
       {/* Report Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center">
-            <FileText className="w-4 h-4 text-gray-500" />
+          <div className="w-9 h-9 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center dark:border-gray-700 dark:bg-gray-800">
+            <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Governance Report</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Governance Report</h3>
             <p className="text-[11px] text-gray-400">
               Generated {generatedAt}
               <span className="mx-1.5 text-gray-300">|</span>
@@ -296,13 +296,13 @@ export function OrgAccessTab({
             placeholder="Search by name, email, team, portfolio..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+            className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'suspended')}
-          className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
         >
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -311,7 +311,7 @@ export function OrgAccessTab({
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'member' | 'flagged')}
-          className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
         >
           <option value="all">All roles</option>
           <option value="admin">Admins only</option>
@@ -322,40 +322,40 @@ export function OrgAccessTab({
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
           <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {search || statusFilter !== 'all' || roleFilter !== 'all'
               ? 'No members match filters'
               : 'No active members'}
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50/80 border-b border-gray-200">
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Person</th>
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Org Role</th>
+              <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
+                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Person</th>
+                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Status</th>
+                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Org Role</th>
                 {authorityRows && (
-                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Admin Roles</th>
+                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Admin Roles</th>
                 )}
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Teams</th>
-                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Portfolios</th>
+                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Teams</th>
+                <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Portfolios</th>
                 {authorityRows && (
-                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Risk Flags</th>
+                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Risk Flags</th>
                 )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {filtered.map((row) => (
                 <tr key={row.userId} className={`hover:bg-gray-50/50 ${row.status === 'suspended' ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <UserCircle className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       <div className="min-w-0">
-                        <div className="font-medium text-gray-900 truncate max-w-[180px]">{row.name}</div>
+                        <div className="font-medium text-gray-900 truncate max-w-[180px] dark:text-white">{row.name}</div>
                         <div className="text-[11px] text-gray-400 truncate">{row.email}</div>
                       </div>
                     </div>

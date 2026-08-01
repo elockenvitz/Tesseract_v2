@@ -98,8 +98,8 @@ export function MetricPopover({
           <div className="space-y-3">
             {/* Current Price */}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">Current Price</span>
-              <span className="text-lg font-semibold text-gray-900">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Current Price</span>
+              <span className="text-lg font-semibold text-gray-900 dark:text-white">
                 ${(quote?.price || asset.current_price || 0).toFixed(2)}
               </span>
             </div>
@@ -107,7 +107,7 @@ export function MetricPopover({
             {/* Change */}
             {quote?.changePercent !== undefined && (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Today's Change</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">Today's Change</span>
                 <span className={clsx(
                   'text-sm font-medium flex items-center gap-1',
                   quote.changePercent >= 0 ? 'text-green-600' : 'text-red-600'
@@ -120,8 +120,8 @@ export function MetricPopover({
 
             {/* High/Low */}
             {(quote?.high || quote?.low) && (
-              <div className="pt-2 border-t border-gray-100">
-                <div className="flex justify-between text-xs text-gray-500 mb-1">
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex justify-between text-xs text-gray-500 mb-1 dark:text-gray-400">
                   <span>Day Range</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -144,9 +144,9 @@ export function MetricPopover({
 
             {/* Volume */}
             {quote?.volume && (
-              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                <span className="text-sm text-gray-500">Volume</span>
-                <span className="text-sm font-medium text-gray-700">
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800">
+                <span className="text-sm text-gray-500 dark:text-gray-400">Volume</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {(quote.volume / 1000000).toFixed(2)}M
                 </span>
               </div>
@@ -154,16 +154,16 @@ export function MetricPopover({
 
             {/* Price Targets */}
             {asset.price_targets?.length > 0 && (
-              <div className="pt-2 border-t border-gray-100">
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2 dark:text-gray-400">
                   <Target className="h-3 w-3" />
                   <span>Price Targets</span>
                 </div>
                 <div className="space-y-1">
                   {asset.price_targets.slice(0, 3).map((target: any, idx: number) => (
                     <div key={idx} className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600">{target.analyst || 'Analyst'}</span>
-                      <span className="font-medium text-gray-900">${target.price?.toFixed(2)}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{target.analyst || 'Analyst'}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">${target.price?.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -186,7 +186,7 @@ export function MetricPopover({
         return (
           <div className="space-y-2">
             {coverage.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No coverage assigned</p>
+              <p className="text-sm text-gray-500 italic dark:text-gray-400">No coverage assigned</p>
             ) : (
               coverage.map((analyst, idx) => (
                 <div
@@ -196,18 +196,18 @@ export function MetricPopover({
                     analyst.isLead ? 'bg-blue-50' : 'hover:bg-gray-50'
                   )}
                 >
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-400">
                     {analyst.analyst.split(' ').map(n => n[0]).join('').slice(0, 2)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900 truncate">{analyst.analyst}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{analyst.analyst}</p>
                       {analyst.isLead && (
                         <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded">Lead</span>
                       )}
                     </div>
                     {analyst.team && (
-                      <p className="text-xs text-gray-500">{analyst.team}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{analyst.team}</p>
                     )}
                   </div>
                 </div>
@@ -220,19 +220,19 @@ export function MetricPopover({
         return (
           <div className="space-y-2">
             {workflows.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No active processes</p>
+              <p className="text-sm text-gray-500 italic dark:text-gray-400">No active processes</p>
             ) : (
               workflows.map((workflow, idx) => (
                 <button
                   key={idx}
                   onClick={() => { onWorkflowClick?.(workflow.id); setIsOpen(false); }}
-                  className="w-full flex items-center gap-3 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-2 py-2 rounded-md hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
                 >
                   <div
                     className="w-3 h-3 rounded-full flex-shrink-0"
                     style={{ backgroundColor: workflow.color }}
                   />
-                  <span className="text-sm text-gray-900 flex-1">{workflow.name}</span>
+                  <span className="text-sm text-gray-900 flex-1 dark:text-white">{workflow.name}</span>
                   <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
                 </button>
               ))
@@ -245,11 +245,11 @@ export function MetricPopover({
           { value: 'high', label: 'High', color: 'bg-red-100 text-red-700 border-red-200' },
           { value: 'medium', label: 'Medium', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
           { value: 'low', label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' },
-          { value: 'none', label: 'None', color: 'bg-gray-100 text-gray-700 border-gray-200' },
+          { value: 'none', label: 'None', color: 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800' },
         ]
         return (
           <div className="space-y-2">
-            <p className="text-xs text-gray-500 mb-2">Set priority level:</p>
+            <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">Set priority level:</p>
             {priorities.map(priority => (
               <button
                 key={priority.value}
@@ -258,7 +258,7 @@ export function MetricPopover({
                   'w-full flex items-center gap-2 px-3 py-2 rounded-md border transition-colors',
                   asset.priority === priority.value
                     ? priority.color + ' ring-2 ring-offset-1 ring-blue-500'
-                    : 'border-gray-200 hover:bg-gray-50'
+                    : 'border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                 )}
               >
                 <span className={clsx(
@@ -303,18 +303,18 @@ export function MetricPopover({
       {isOpen && createPortal(
         <div
           ref={popoverRef}
-          className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-72 animate-in fade-in slide-in-from-top-2 duration-150"
+          className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-72 animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
           style={{ left: position.x, top: position.y }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-800">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{asset.symbol}</span>
-              <span className="text-sm font-medium text-gray-900">{getTitle()}</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{getTitle()}</span>
             </div>
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              className="p-1 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
             >
               <X className="h-3.5 w-3.5 text-gray-400" />
             </button>

@@ -406,7 +406,7 @@ function ValueEditor({
                 'px-1.5 py-0.5 text-[11px] rounded border transition-colors',
                 on
                   ? 'bg-primary-100 border-primary-400 text-primary-800 dark:bg-primary-900/40 dark:border-primary-600 dark:text-primary-200'
-                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-400'
+                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800'
               )}
             >
               {o.label}
@@ -464,7 +464,7 @@ function ValueEditor({
             placeholder="30"
             className="text-xs w-20 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-1.5 py-1 text-gray-800 dark:text-gray-200"
           />
-          <span className="text-xs text-gray-500">days</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">days</span>
         </div>
       )
     }
@@ -534,7 +534,7 @@ function RulePill({ rule }: { rule: ScreenRule }) {
   return (
     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded-full border border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
       <span className="font-semibold">{field.label}</span>
-      <span className="text-gray-500">{OPERATOR_LABELS[rule.op]}</span>
+      <span className="text-gray-500 dark:text-gray-400">{OPERATOR_LABELS[rule.op]}</span>
       {!isPresenceOp(rule.op) && (
         <span className="font-mono text-gray-800 dark:text-gray-100">
           {formatValue(rule, field)}

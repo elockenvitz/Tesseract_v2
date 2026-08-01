@@ -87,7 +87,7 @@ export function InvestmentCaseTemplatePreview({
         {/* Cover Page Preview */}
         <div
           className={clsx(
-            'bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto transition-all duration-300',
+            'bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto transition-all duration-300 dark:bg-gray-800',
             highlightArea === 'margins' && 'ring-2 ring-primary-400/60'
           )}
           style={{
@@ -162,7 +162,7 @@ export function InvestmentCaseTemplatePreview({
             )}>
               {branding_config.logoPath ? (
                 <div
-                  className="bg-gray-100 rounded flex items-center justify-center"
+                  className="bg-gray-100 rounded flex items-center justify-center dark:bg-gray-800"
                   style={{
                     width: `${Math.round(branding_config.logoWidth * scale * 0.8 * 3.78)}px`,
                     height: `${Math.round((branding_config.logoHeight || branding_config.logoWidth * 0.5) * scale * 0.8 * 3.78)}px`
@@ -183,7 +183,7 @@ export function InvestmentCaseTemplatePreview({
                 </span>
               ) : (
                 <div
-                  className="bg-gray-100 rounded flex items-center justify-center"
+                  className="bg-gray-100 rounded flex items-center justify-center dark:bg-gray-800"
                   style={{
                     width: `${Math.round(branding_config.logoWidth * scale * 0.8 * 3.78)}px`,
                     height: `${Math.round((branding_config.logoHeight || branding_config.logoWidth * 0.5) * scale * 0.8 * 3.78)}px`
@@ -370,7 +370,7 @@ export function InvestmentCaseTemplatePreview({
           {/* Packet mode indicator */}
           {ctx.mode === 'packet' && (
             <div className="absolute top-1/2 left-0 right-0 mt-6 px-4 text-center space-y-1">
-              <div className="border-t border-dashed border-gray-300 mx-4" />
+              <div className="border-t border-dashed border-gray-300 mx-4 dark:border-gray-600" />
               <p
                 style={{
                   fontSize: `${7 * scale}pt`,
@@ -386,7 +386,7 @@ export function InvestmentCaseTemplatePreview({
         {/* TOC Preview (if enabled) */}
         {toc_config.enabled && (
           <div
-            className="bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto p-4"
+            className="bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto p-4 dark:bg-gray-800"
             style={{
               width: `${scaledWidth}px`,
               minHeight: `${Math.round(scaledHeight * 0.6)}px`,
@@ -434,7 +434,7 @@ export function InvestmentCaseTemplatePreview({
         {/* Content Section Preview */}
         {enabledSections.length > 0 && (
           <div
-            className="bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto p-4"
+            className="bg-white rounded-sm shadow-[0_1px_4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] relative overflow-hidden mx-auto p-4 dark:bg-gray-800"
             style={{
               width: `${scaledWidth}px`,
               minHeight: `${Math.round(scaledHeight * 0.6)}px`,

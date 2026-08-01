@@ -401,16 +401,16 @@ export function PromoteToTradeIdeaModal({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-[480px] max-h-[90vh] bg-white rounded-lg shadow-xl overflow-hidden">
+      <div className="relative w-[480px] max-h-[90vh] bg-white rounded-lg shadow-xl overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-green-600" />
-            <span className="text-sm font-semibold text-gray-900">Promote to Trade Idea</span>
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">Promote to Trade Idea</span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -423,15 +423,15 @@ export function PromoteToTradeIdeaModal({
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
                 <TrendingUp className="h-6 w-6 text-green-600" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-1">Trade Idea Created</h3>
-              <p className="text-sm text-gray-500 mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-1 dark:text-white">Trade Idea Created</h3>
+              <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">
                 Your thought has been promoted to the Idea Pipeline.
               </p>
 
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800"
                 >
                   Done
                 </button>
@@ -476,7 +476,7 @@ export function PromoteToTradeIdeaModal({
 
               {/* Trade type toggle */}
               <div className="flex items-center justify-end mb-3">
-                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
                   <button
                     type="button"
                     onClick={() => {
@@ -490,8 +490,8 @@ export function PromoteToTradeIdeaModal({
                     className={clsx(
                       "px-2.5 py-1 text-xs font-medium rounded-md transition-all",
                       tradeType === 'single'
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800"
+                        : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                     )}
                   >
                     Single
@@ -508,8 +508,8 @@ export function PromoteToTradeIdeaModal({
                     className={clsx(
                       "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1",
                       tradeType === 'pair'
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800"
+                        : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                     )}
                   >
                     <ArrowLeftRight className="h-3 w-3" />
@@ -523,10 +523,10 @@ export function PromoteToTradeIdeaModal({
                 <>
                   <div className="relative mb-3">
                     {selectedAsset ? (
-                      <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                         <div>
-                          <span className="font-semibold text-gray-900">{selectedAsset.symbol}</span>
-                          <span className="text-sm text-gray-500 ml-2">{selectedAsset.company_name}</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{selectedAsset.symbol}</span>
+                          <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{selectedAsset.company_name}</span>
                         </div>
                         <button
                           type="button"
@@ -552,19 +552,19 @@ export function PromoteToTradeIdeaModal({
                           }}
                           onFocus={() => setShowAssetDropdown(true)}
                           onKeyDown={handleKeyDown}
-                          className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                         />
                         {showAssetDropdown && assets && assets.length > 0 && (
-                          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                             {assets.map(asset => (
                               <button
                                 key={asset.id}
                                 type="button"
                                 onClick={() => selectAsset(asset)}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
-                                <span className="font-medium text-gray-900">{asset.symbol}</span>
-                                <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                                <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                                <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                               </button>
                             ))}
                           </div>
@@ -586,7 +586,7 @@ export function PromoteToTradeIdeaModal({
                             ? a === 'buy'
                               ? "border-green-500 bg-green-50 text-green-700"
                               : "border-red-500 bg-red-50 text-red-700"
-                            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                            : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
                         )}
                       >
                         {a === 'buy' ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
@@ -639,10 +639,10 @@ export function PromoteToTradeIdeaModal({
                         }}
                         onFocus={() => setShowLongDropdown(true)}
                         onKeyDown={handleKeyDown}
-                        className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent dark:border-gray-700"
                       />
                       {showLongDropdown && longSearchResults && longSearchResults.length > 0 && (
-                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                           {longSearchResults
                             .filter(asset => !longAssets.find(a => a.id === asset.id))
                             .map(asset => (
@@ -650,10 +650,10 @@ export function PromoteToTradeIdeaModal({
                                 key={asset.id}
                                 type="button"
                                 onClick={() => addLongAsset(asset)}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
-                                <span className="font-medium text-gray-900">{asset.symbol}</span>
-                                <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                                <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                                <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                               </button>
                             ))}
                         </div>
@@ -700,10 +700,10 @@ export function PromoteToTradeIdeaModal({
                         }}
                         onFocus={() => setShowShortDropdown(true)}
                         onKeyDown={handleKeyDown}
-                        className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        className="w-full pl-10 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:border-gray-700"
                       />
                       {showShortDropdown && shortSearchResults && shortSearchResults.length > 0 && (
-                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                           {shortSearchResults
                             .filter(asset => !shortAssets.find(a => a.id === asset.id))
                             .map(asset => (
@@ -711,10 +711,10 @@ export function PromoteToTradeIdeaModal({
                                 key={asset.id}
                                 type="button"
                                 onClick={() => addShortAsset(asset)}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
-                                <span className="font-medium text-gray-900">{asset.symbol}</span>
-                                <span className="text-sm text-gray-500 ml-2">{asset.company_name}</span>
+                                <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                                <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">{asset.company_name}</span>
                               </button>
                             ))}
                         </div>
@@ -727,7 +727,7 @@ export function PromoteToTradeIdeaModal({
               {/* Urgency */}
               <div className="mb-3">
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wide">Urgency</span>
+                  <span className="text-[10px] text-gray-500 uppercase tracking-wide dark:text-gray-400">Urgency</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {urgencyOptions.map((option) => {
@@ -739,7 +739,7 @@ export function PromoteToTradeIdeaModal({
                         onClick={() => setUrgency(option.value)}
                         className={clsx(
                           "px-2 py-1 rounded-full text-xs font-medium border transition-all capitalize",
-                          isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50"
+                          isSelected ? option.color + ' border-current' : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                         )}
                       >
                         {option.label}
@@ -756,7 +756,7 @@ export function PromoteToTradeIdeaModal({
                 onChange={(e) => setRationale(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Why now? What's the catalyst or risk?"
-                className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 min-h-[60px] mb-3"
+                className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder-gray-400 min-h-[60px] mb-3 dark:border-gray-700 dark:text-white"
                 rows={2}
               />
 
@@ -766,11 +766,11 @@ export function PromoteToTradeIdeaModal({
                   <button
                     type="button"
                     onClick={() => setShowPortfolioMenu(!showPortfolioMenu)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700"
                   >
                     <div className="flex items-center gap-2">
                       <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
-                      <span className="text-gray-700">
+                      <span className="text-gray-700 dark:text-gray-300">
                         {selectedPortfolioIds.length === 0
                           ? 'No specific portfolio'
                           : selectedPortfolioIds.length === 1
@@ -784,7 +784,7 @@ export function PromoteToTradeIdeaModal({
                   {showPortfolioMenu && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setShowPortfolioMenu(false)} />
-                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto">
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                         {/* No portfolio option */}
                         <button
                           type="button"
@@ -793,20 +793,20 @@ export function PromoteToTradeIdeaModal({
                             setShowPortfolioMenu(false)
                           }}
                           className={clsx(
-                            "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm",
+                            "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm dark:hover:bg-gray-800",
                             selectedPortfolioIds.length === 0 && "bg-primary-50"
                           )}
                         >
                           <div className={clsx(
                             "h-4 w-4 rounded border flex items-center justify-center",
-                            selectedPortfolioIds.length === 0 ? "bg-primary-500 border-primary-500" : "border-gray-300"
+                            selectedPortfolioIds.length === 0 ? "bg-primary-500 border-primary-500" : "border-gray-300 dark:border-gray-600"
                           )}>
                             {selectedPortfolioIds.length === 0 && <span className="text-white text-xs">✓</span>}
                           </div>
-                          <span className="text-gray-600">No specific portfolio</span>
+                          <span className="text-gray-600 dark:text-gray-400">No specific portfolio</span>
                         </button>
 
-                        <div className="border-t border-gray-100 my-1" />
+                        <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
 
                         {/* Portfolio options */}
                         {portfolios.map(p => {
@@ -824,17 +824,17 @@ export function PromoteToTradeIdeaModal({
                                 }
                               }}
                               className={clsx(
-                                "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm",
+                                "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-sm dark:hover:bg-gray-800",
                                 isSelected && "bg-primary-50"
                               )}
                             >
                               <div className={clsx(
                                 "h-4 w-4 rounded border flex items-center justify-center flex-shrink-0",
-                                isSelected ? "bg-primary-500 border-primary-500" : "border-gray-300"
+                                isSelected ? "bg-primary-500 border-primary-500" : "border-gray-300 dark:border-gray-600"
                               )}>
                                 {isSelected && <span className="text-white text-xs">✓</span>}
                               </div>
-                              <span className="text-gray-700 flex-1">{p.name}</span>
+                              <span className="text-gray-700 flex-1 dark:text-gray-300">{p.name}</span>
                               {holdsAsset && (
                                 <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
                                   Held
@@ -850,14 +850,14 @@ export function PromoteToTradeIdeaModal({
               )}
 
               {/* Footer with visibility and submit */}
-              <div className="pt-3 border-t border-gray-100">
+              <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
                 <div className="flex items-center justify-between">
                   {/* Visibility selector */}
                   <div className="relative">
                     <button
                       type="button"
                       onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
-                      className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-2.5 py-1.5 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                      className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800 px-2.5 py-1.5 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
                     >
                       {getVisibilityIcon()}
                       <span>{getVisibilityLabel()}</span>
@@ -867,7 +867,7 @@ export function PromoteToTradeIdeaModal({
                     {showVisibilityMenu && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setShowVisibilityMenu(false)} />
-                        <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[220px] z-20">
+                        <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[220px] z-20 dark:border-gray-700 dark:bg-gray-800">
                           <button
                             type="button"
                             onClick={() => {
@@ -875,14 +875,14 @@ export function PromoteToTradeIdeaModal({
                               setShowVisibilityMenu(false)
                             }}
                             className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                              visibility === 'private' && "bg-gray-50"
+                              "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800",
+                              visibility === 'private' && "bg-gray-50 dark:bg-gray-900"
                             )}
                           >
-                            <Lock className="h-4 w-4 text-gray-500" />
+                            <Lock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                             <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">Private</div>
-                              <div className="text-xs text-gray-500">Only visible to you</div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">Private</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Only visible to you</div>
                             </div>
                           </button>
                           <button
@@ -892,14 +892,14 @@ export function PromoteToTradeIdeaModal({
                               setShowVisibilityMenu(false)
                             }}
                             className={clsx(
-                              "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50",
-                              visibility === 'portfolio' && "bg-gray-50"
+                              "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800",
+                              visibility === 'portfolio' && "bg-gray-50 dark:bg-gray-900"
                             )}
                           >
                             <Users className="h-4 w-4 text-blue-500" />
                             <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">Portfolio</div>
-                              <div className="text-xs text-gray-500">Members can see</div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">Portfolio</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Members can see</div>
                             </div>
                           </button>
                         </div>
@@ -912,7 +912,7 @@ export function PromoteToTradeIdeaModal({
                     <button
                       type="button"
                       onClick={onClose}
-                      className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-md border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
                     >
                       Cancel
                     </button>

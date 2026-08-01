@@ -366,17 +366,17 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       <div className="flex items-start justify-between mb-6 flex-shrink-0">
         <div className="flex items-start space-x-8 flex-1">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            <h1 className="text-2xl font-bold text-gray-900 mb-1 dark:text-white">
               {portfolio.name}
               {portfolio.portfolio_id && (
-                <span className="font-normal text-gray-600"> - {portfolio.portfolio_id}</span>
+                <span className="font-normal text-gray-600 dark:text-gray-400"> - {portfolio.portfolio_id}</span>
               )}
             </h1>
             {portfolio.description && (
-              <p className="text-lg text-gray-600 mb-1">{portfolio.description}</p>
+              <p className="text-lg text-gray-600 mb-1 dark:text-gray-400">{portfolio.description}</p>
             )}
             {portfolio.benchmark && (
-              <p className="text-sm text-gray-500">Benchmark: {portfolio.benchmark}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Benchmark: {portfolio.benchmark}</p>
             )}
           </div>
         </div>
@@ -384,7 +384,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
 
       {/* Tabs Card */}
       <Card padding="none" className="flex-1 flex flex-col overflow-hidden min-h-0">
-        <div className="border-b border-gray-200">
+        <div className="border-b border-gray-200 dark:border-gray-700">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
             {TABS.map(({ key, label, icon: Icon, badgeKey }) => {
               const isActive = activeTab === key
@@ -400,7 +400,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                   className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                     isActive
                       ? 'border-primary-500 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                   }`}
                 >
                   <div className="flex items-center space-x-2">

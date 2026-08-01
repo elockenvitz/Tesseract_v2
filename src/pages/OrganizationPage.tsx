@@ -307,22 +307,22 @@ type TabType = 'teams' | 'people' | 'portfolios' | 'requests' | 'access' | 'acti
 // Loading screen component
 function LoadingScreen() {
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center space-x-4">
           <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
             <Building2 className="w-6 h-6 text-indigo-600" />
           </div>
           <div>
             <div className="h-6 w-32 bg-gray-200 rounded animate-pulse" />
-            <div className="h-4 w-48 bg-gray-100 rounded animate-pulse mt-1" />
+            <div className="h-4 w-48 bg-gray-100 rounded animate-pulse mt-1 dark:bg-gray-800" />
           </div>
         </div>
       </div>
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center space-y-3">
           <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-gray-600">Loading organization...</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">Loading organization...</span>
         </div>
       </div>
     </div>
@@ -2996,7 +2996,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   }
 
   return (
-    <div className={`h-full flex flex-col ${activeTab === 'teams' ? 'bg-white' : 'bg-gray-50'} relative`}>
+    <div className={`h-full flex flex-col ${activeTab === 'teams' ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-900'} relative`}>
       {/* Loading overlay with blur */}
       {isLoadingOrgMembers && (
         <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -3004,14 +3004,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         </div>
       )}
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
               <Building2 className="w-6 h-6 text-indigo-600" />
             </div>
             <div className="flex items-center space-x-3">
-              <h1 className="text-xl font-semibold text-gray-900">
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {organization?.name || 'Organization'}
               </h1>
               <OrgBadge />
@@ -3022,10 +3022,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   disabled={!isAdminBadgeReady}
                   className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
                     !isAdminBadgeReady
-                      ? 'blur-sm opacity-50 bg-gray-100 text-gray-600'
+                      ? 'blur-sm opacity-50 bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                       : isOrgAdmin || isCoverageAdmin
                       ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                   }`}
                 >
                   <Shield className="w-3 h-3 mr-1" />
@@ -3044,15 +3044,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                 {/* Dropdown */}
                 {showAdminBadgeDropdown && (
-                  <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                    <div className="p-3 border-b border-gray-100">
-                      <h3 className="text-sm font-medium text-gray-900">Your Permissions</h3>
+                  <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:border-gray-700 dark:bg-gray-800">
+                    <div className="p-3 border-b border-gray-100 dark:border-gray-800">
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white">Your Permissions</h3>
                     </div>
                     <div className="p-3 space-y-3">
                       {/* Org Admin Status */}
                       <div className="flex items-start space-x-3">
                         <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
-                          isOrgAdmin ? 'bg-green-100' : 'bg-gray-100'
+                          isOrgAdmin ? 'bg-green-100' : 'bg-gray-100 dark:bg-gray-800'
                         }`}>
                           {isOrgAdmin ? (
                             <Check className="w-3 h-3 text-green-600" />
@@ -3061,8 +3061,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           )}
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">Organization Admin</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">Organization Admin</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
                             {isOrgAdmin
                               ? 'Can manage teams, members, and settings'
                               : 'Cannot modify organization structure'}
@@ -3073,7 +3073,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       {/* Coverage Admin Status */}
                       <div className="flex items-start space-x-3">
                         <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
-                          isCoverageAdmin ? 'bg-green-100' : 'bg-gray-100'
+                          isCoverageAdmin ? 'bg-green-100' : 'bg-gray-100 dark:bg-gray-800'
                         }`}>
                           {isCoverageAdmin ? (
                             <Check className="w-3 h-3 text-green-600" />
@@ -3082,12 +3082,12 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           )}
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">
                             Coverage Admin
                             {hasGlobalCoverageAdmin && hasNodeLevelCoverageAdmin ? '' :
                              hasNodeLevelCoverageAdmin ? ' (Limited)' : ''}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
                             {hasGlobalCoverageAdmin
                               ? 'Can manage coverage assignments globally'
                               : hasNodeLevelCoverageAdmin
@@ -3099,8 +3099,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                       {/* Node-level coverage admin details */}
                       {hasNodeLevelCoverageAdmin && !hasGlobalCoverageAdmin && (
-                        <div className="pt-2 border-t border-gray-100">
-                          <p className="text-xs font-medium text-gray-500 mb-2">Coverage admin for:</p>
+                        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                          <p className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Coverage admin for:</p>
                           <div className="space-y-1 max-h-24 overflow-y-auto">
                             {userCoverageAdminNodes.slice(0, 5).map(nodeId => {
                               const node = orgChartNodes.find(n => n.id === nodeId)
@@ -3110,7 +3110,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                     className="w-2 h-2 rounded-full"
                                     style={{ backgroundColor: node.color }}
                                   />
-                                  <span className="text-gray-700">{node.name}</span>
+                                  <span className="text-gray-700 dark:text-gray-300">{node.name}</span>
                                 </div>
                               ) : null
                             })}
@@ -3125,13 +3125,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                       {/* Read Access (shown when no admin permissions) */}
                       {!isOrgAdmin && !isCoverageAdmin && (
-                        <div className="flex items-start space-x-3 pt-2 border-t border-gray-100">
+                        <div className="flex items-start space-x-3 pt-2 border-t border-gray-100 dark:border-gray-800">
                           <div className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center bg-blue-100">
                             <Check className="w-3 h-3 text-blue-600" />
                           </div>
                           <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-900">Read Access</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">Read Access</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
                               Can view organization structure and team information
                             </p>
                           </div>
@@ -3177,7 +3177,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-6 flex-shrink-0">
+      <div className="bg-white border-b border-gray-200 px-6 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex space-x-1">
           {visibleTabs.map(tab => (
             <button
@@ -3186,7 +3186,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               className={`flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               {tab.icon}
@@ -3248,7 +3248,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       {/* Search Bar (portfolios only — people tab has its own search) */}
       {activeTab === 'portfolios' && (
-        <div className="bg-white px-6 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="bg-white px-6 py-4 border-b border-gray-100 flex-shrink-0 dark:border-gray-800 dark:bg-gray-800">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -3256,7 +3256,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               placeholder="Search portfolios..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
             />
           </div>
         </div>
@@ -3265,7 +3265,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {/* Content */}
       <div
         ref={activeTab === 'teams' ? orgChartContainerRef : undefined}
-        className={`flex-1 overflow-auto ${activeTab === 'teams' ? 'p-0 bg-white scrollbar-hide select-none' : 'p-6'}`}
+        className={`flex-1 overflow-auto ${activeTab === 'teams' ? 'p-0 bg-white scrollbar-hide select-none dark:bg-gray-800' : 'p-6'}`}
         style={activeTab === 'teams' && teamsViewMode === 'structure' ? { cursor: isPanning ? 'grabbing' : 'grab' } : undefined}
         onMouseDown={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanStart : undefined}
         onMouseMove={activeTab === 'teams' && teamsViewMode === 'structure' ? handlePanMove : undefined}
@@ -3279,7 +3279,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               {/* ── View Switcher Toolbar + Org Summary ── */}
               <div className="flex items-center justify-between mb-5" data-no-pan>
                 {/* View switcher */}
-                <div className="inline-flex items-center bg-gray-100 rounded p-0.5">
+                <div className="inline-flex items-center bg-gray-100 rounded p-0.5 dark:bg-gray-800">
                   {([
                     { mode: 'structure' as TeamsViewMode, label: 'Structure', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
                     { mode: 'coverage' as TeamsViewMode, label: 'Coverage', icon: <Eye className="w-3.5 h-3.5" /> },
@@ -3289,8 +3289,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       onClick={() => setTeamsViewMode(v.mode)}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                         teamsViewMode === v.mode
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                          ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                       }`}
                     >
                       {v.icon}
@@ -3339,12 +3339,12 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                     placeholder="Search nodes..."
                     value={orgChartSearch}
                     onChange={(e) => setOrgChartSearch(e.target.value)}
-                    className="w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                    className="w-48 pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-700 dark:bg-gray-800"
                   />
                   {orgChartSearch && (
                     <button
                       onClick={() => setOrgChartSearch('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -3366,7 +3366,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
                         orgChartTypeFilter === chip.type
                           ? 'bg-indigo-50 text-indigo-700 font-medium border border-indigo-200'
-                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
                       }`}
                     >
                       {chip.label}
@@ -3380,14 +3380,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 <div className="flex items-center gap-1">
                   <button
                     onClick={collapseAll}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                     title="Collapse all"
                   >
                     <Minimize2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={expandAll}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                     title="Expand all"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
@@ -3399,8 +3399,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   onClick={() => setShowEmptyBranches(prev => !prev)}
                   className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
                     showEmptyBranches
-                      ? 'bg-gray-100 text-gray-700 border-gray-200'
-                      : 'text-gray-400 border-transparent hover:bg-gray-50'
+                      ? 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
+                      : 'text-gray-400 border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'
                   }`}
                   title={showEmptyBranches ? 'Showing empty branches' : 'Empty branches hidden'}
                 >
@@ -3425,7 +3425,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         ? 'bg-red-50 text-red-700 border-red-200'
                         : riskSeverityFilter === 'medium'
                         ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : 'bg-gray-100 text-gray-600 border-gray-200'
+                        : 'bg-gray-100 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     }`}
                     title="Clear risk filter"
                   >
@@ -3442,7 +3442,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   <div className="flex items-center gap-1 text-xs">
                     <button
                       onClick={() => setFocusedNodeId(null)}
-                      className="flex items-center gap-1 px-2 py-1 text-gray-500 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors"
+                      className="flex items-center gap-1 px-2 py-1 text-gray-500 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors dark:text-gray-400"
                     >
                       <Home className="w-3 h-3" />
                       <span>Organization</span>
@@ -3454,8 +3454,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           onClick={() => i < focusedBreadcrumb.length - 1 ? setFocusedNodeId(crumb.id) : undefined}
                           className={`px-2 py-1 rounded transition-colors ${
                             i === focusedBreadcrumb.length - 1
-                              ? 'font-medium text-gray-900 bg-white shadow-sm border border-gray-200'
-                              : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-100'
+                              ? 'font-medium text-gray-900 bg-white shadow-sm border border-gray-200 dark:border-gray-700 dark:text-white dark:bg-gray-800'
+                              : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-100 dark:text-gray-400'
                           }`}
                         >
                           {crumb.name}
@@ -3465,7 +3465,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   </div>
                   <button
                     onClick={() => setFocusedNodeId(null)}
-                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 rounded shadow-sm transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 rounded shadow-sm transition-colors dark:bg-gray-800"
                   >
                     <X className="w-3 h-3" />
                     Exit focus
@@ -3494,12 +3494,12 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   )}
 
                   {/* Root Node Card */}
-                  <div className="bg-white border-2 border-indigo-300 rounded-xl shadow-sm px-6 py-4 text-center min-w-[200px]">
+                  <div className="bg-white border-2 border-indigo-300 rounded-xl shadow-sm px-6 py-4 text-center min-w-[200px] dark:bg-gray-800">
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-100 mb-2">
                       <Building2 className="w-6 h-6 text-indigo-600" />
                     </div>
-                    <h3 className="font-semibold text-gray-900">{organization?.name || 'Organization'}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">{orgMembers.length} members</p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{organization?.name || 'Organization'}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{orgMembers.length} members</p>
                   </div>
                 </div>
 
@@ -3663,10 +3663,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               {/* Empty State - shown when no nodes exist */}
               {nodeTree.length === 0 && (
                 <div className="flex justify-center mt-8">
-                  <div className="text-center py-8 px-12 bg-white rounded-lg border border-dashed border-gray-300">
+                  <div className="text-center py-8 px-12 bg-white rounded-lg border border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-800">
                     <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <h3 className="text-sm font-medium text-gray-900 mb-1">No nodes yet</h3>
-                    <p className="text-xs text-gray-500 mb-3">
+                    <h3 className="text-sm font-medium text-gray-900 mb-1 dark:text-white">No nodes yet</h3>
+                    <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                       {isOrgAdmin ? 'Create your first organization node' : 'No organization nodes have been created yet'}
                     </p>
                     {isOrgAdmin && (
@@ -3698,24 +3698,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         <Eye className="w-4 h-4 text-emerald-600" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900">Coverage Overview</h3>
-                        <p className="text-xs text-gray-500">Asset coverage by team and portfolio</p>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Coverage Overview</h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Asset coverage by team and portfolio</p>
                       </div>
                     </div>
-                    <div className="border border-gray-200 rounded overflow-hidden">
+                    <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="bg-gray-50/80 border-b border-gray-200">
-                            <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Team</th>
-                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Members</th>
-                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Portfolios</th>
-                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Assets</th>
-                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Analysts</th>
-                            {orgPerms.canViewGovernance && <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Health</th>}
-                            {orgPerms.canViewGovernance && <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Risks</th>}
+                          <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Team</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Members</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Portfolios</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Assets</th>
+                            <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Analysts</th>
+                            {orgPerms.canViewGovernance && <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Health</th>}
+                            {orgPerms.canViewGovernance && <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Risks</th>}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                           {Array.from(orgGraph.nodes.values())
                             .filter(n => n.nodeType === 'team')
                             .sort((a, b) => a.name.localeCompare(b.name))
@@ -3737,26 +3737,26 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                         onClick={() => {
                                           setViewingTeamCoverage({ teamId: teamNode.id, teamName: teamNode.name })
                                         }}
-                                        className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline"
+                                        className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline dark:text-white"
                                       >
                                         {teamNode.name}
                                       </button>
                                       {teamNode.isNonInvestment && (
-                                        <span className="ml-1.5 text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded">Non-Inv</span>
+                                        <span className="ml-1.5 text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded dark:bg-gray-800">Non-Inv</span>
                                       )}
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700 dark:text-gray-300">
                                   {teamNode.totalMemberCount || <span className="text-gray-300">&mdash;</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700 dark:text-gray-300">
                                   {teamNode.portfolioCount || <span className="text-gray-300">&mdash;</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700 dark:text-gray-300">
                                   {teamNode.coverageAssetCount || <span className="text-gray-300">&mdash;</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-center text-sm text-gray-700">
+                                <td className="px-4 py-2.5 text-center text-sm text-gray-700 dark:text-gray-300">
                                   {teamNode.coverageAnalystCount || <span className="text-gray-300">&mdash;</span>}
                                 </td>
                                 {orgPerms.canViewGovernance && (
@@ -3789,18 +3789,18 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         </tbody>
                         {orgGraph.totalTeams > 0 && (
                           <tfoot>
-                            <tr className="bg-gray-50 border-t border-gray-200">
-                              <td className="px-4 py-2 text-xs font-medium text-gray-500">{orgGraph.totalTeams} team{orgGraph.totalTeams !== 1 ? 's' : ''}</td>
-                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500">{orgGraph.totalMembers}</td>
-                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500">{orgGraph.totalPortfolios}</td>
-                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500" colSpan={2} />
+                            <tr className="bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                              <td className="px-4 py-2 text-xs font-medium text-gray-500 dark:text-gray-400">{orgGraph.totalTeams} team{orgGraph.totalTeams !== 1 ? 's' : ''}</td>
+                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">{orgGraph.totalMembers}</td>
+                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">{orgGraph.totalPortfolios}</td>
+                              <td className="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400" colSpan={2} />
                               {orgPerms.canViewGovernance && (
                               <td className="px-4 py-2 text-center">
                                 <HealthPill score={orgGraph.overallHealth} showLabel />
                               </td>
                               )}
                               {orgPerms.canViewGovernance && (
-                              <td className="px-4 py-2 text-center text-xs text-gray-500">
+                              <td className="px-4 py-2 text-center text-xs text-gray-500 dark:text-gray-400">
                                 {orgGraph.totalRiskFlags > 0 ? `${orgGraph.totalRiskFlags} total` : 'None'}
                               </td>
                               )}
@@ -3860,7 +3860,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
                           isSelected
                             ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                         }`}
                       >
                         {filter === 'active' && 'Active'}
@@ -3868,7 +3868,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         {filter === 'discarded' && 'Discarded'}
                         {filter === 'all' && 'All'}
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          isSelected ? 'bg-indigo-200/70 text-indigo-800' : 'bg-gray-200 text-gray-500'
+                          isSelected ? 'bg-indigo-200/70 text-indigo-800' : 'bg-gray-200 text-gray-500 dark:text-gray-400'
                         }`}>
                           {count}
                         </span>
@@ -3881,8 +3881,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               {filteredPortfolios.length === 0 ? (
                 <div className="text-center py-12">
                   <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No portfolios found</h3>
-                  <p className="text-sm text-gray-500">No portfolios match your search</p>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No portfolios found</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No portfolios match your search</p>
                 </div>
               ) : (
                 filteredPortfolios.map(portfolio => {
@@ -3915,7 +3915,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <h3 className={`font-medium ${isInactive ? 'text-gray-500' : 'text-gray-900'}`}>{portfolio.name}</h3>
+                                <h3 className={`font-medium ${isInactive ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>{portfolio.name}</h3>
                                 {isDiscarded && (
                                   <span className="px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded">
                                     Discarded
@@ -3992,7 +3992,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               </div>
                             </div>
                             {portfolio.description && (
-                              <p className={`text-sm ${isInactive ? 'text-gray-400' : 'text-gray-500'}`}>{portfolio.description}</p>
+                              <p className={`text-sm ${isInactive ? 'text-gray-400' : 'text-gray-500 dark:text-gray-400'}`}>{portfolio.description}</p>
                             )}
                             <div className="flex items-center space-x-2 mt-2">
                               {team && (
@@ -4000,7 +4000,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                   {team.name}
                                 </span>
                               )}
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {teamMembers.length} team member{teamMembers.length !== 1 ? 's' : ''}
                               </span>
                             </div>
@@ -4010,12 +4010,12 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               <div className="mt-3 space-y-2">
                                 {Object.entries(membersByRole).map(([role, members]) => (
                                   <div key={role}>
-                                    <div className="text-xs font-medium text-gray-500 mb-1">{role}</div>
+                                    <div className="text-xs font-medium text-gray-500 mb-1 dark:text-gray-400">{role}</div>
                                     <div className="flex flex-wrap gap-1">
                                       {members.map(m => (
                                         <div
                                           key={m.id}
-                                          className="group inline-flex items-center px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full"
+                                          className="group inline-flex items-center px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full dark:text-gray-300 dark:bg-gray-800"
                                         >
                                           <span>{getTeamMemberDisplayName(m)}</span>
                                           {m.focus && (
@@ -4032,7 +4032,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                                 className="p-0.5 hover:bg-gray-200 rounded"
                                                 title="Edit"
                                               >
-                                                <Edit3 className="w-3 h-3 text-gray-500" />
+                                                <Edit3 className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                                               </button>
                                               <button
                                                 onClick={() => setDeletePortfolioTeamConfirm({ isOpen: true, member: m })}
@@ -4073,10 +4073,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
               {/* Governance header + sub-tab switcher */}
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Governance</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">Manage roles, access scope, and governance risk</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Governance</h2>
+                  <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Manage roles, access scope, and governance risk</p>
                 </div>
-                <div className="inline-flex items-center bg-gray-100 rounded p-0.5">
+                <div className="inline-flex items-center bg-gray-100 rounded p-0.5 dark:bg-gray-800">
                   {([
                     { key: 'manage' as AccessSubTab, label: 'Manage' },
                     { key: 'report' as AccessSubTab, label: 'Report' },
@@ -4086,8 +4086,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       onClick={() => setAccessSubTab(v.key)}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                         accessSubTab === v.key
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                          ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                       }`}
                     >
                       {v.label}
@@ -4163,17 +4163,17 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 <div className="space-y-3">
 
               <Card className="p-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">Org Admins</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2 dark:text-white">Org Admins</h3>
                 <div className="space-y-2">
                   {orgMembers.filter(m => m.is_org_admin).map(admin => (
-                    <div key={admin.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={admin.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
                           <Crown className="w-4 h-4 text-indigo-600" />
                         </div>
                         <div>
                           <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-900">{admin.user?.full_name}</span>
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">{admin.user?.full_name}</span>
                             {onUserClick && admin.user_id && (
                               <button
                                 onClick={(e) => {
@@ -4187,7 +4187,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               </button>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500">{admin.user?.email}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{admin.user?.email}</p>
                         </div>
                       </div>
                     </div>
@@ -4205,14 +4205,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 <Card className="p-4">
                   <div className="mb-3">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium text-gray-900">Onboarding Policy</h3>
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white">Onboarding Policy</h3>
                       {(() => {
                         const policy = organization.onboarding_policy || 'invite_only'
                         const pillConfig = policy === 'open'
                           ? { label: 'Open — Auto-Join Enabled', className: 'bg-amber-100 text-amber-700' }
                           : policy === 'approval_required'
                             ? { label: 'Approval Required', className: 'bg-blue-100 text-blue-700' }
-                            : { label: 'Invite Only', className: 'bg-gray-100 text-gray-600' }
+                            : { label: 'Invite Only', className: 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800' }
                         return (
                           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pillConfig.className}`}>
                             {pillConfig.label}
@@ -4220,7 +4220,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         )
                       })()}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                       Control how users with a matching email domain can join your organization
                     </p>
                     {organization.updated_at && (
@@ -4241,7 +4241,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                             isActive
                               ? 'border-indigo-300 bg-indigo-50/50'
-                              : 'border-gray-200 hover:border-gray-300'
+                              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                           }`}
                         >
                           <input
@@ -4255,10 +4255,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                           />
                           <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isActive ? 'text-indigo-600' : 'text-gray-400'}`} />
                           <div className="min-w-0">
-                            <div className={`text-sm font-medium ${isActive ? 'text-indigo-900' : 'text-gray-900'}`}>
+                            <div className={`text-sm font-medium ${isActive ? 'text-indigo-900' : 'text-gray-900 dark:text-white'}`}>
                               {opt.label}
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                            <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{opt.desc}</div>
                           </div>
                         </label>
                       )
@@ -4298,14 +4298,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-medium text-gray-900">Branding & Compliance</h3>
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white">Branding & Compliance</h3>
                       {isBrandingLocked ? (
-                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Read-Only</span>
+                        <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">Read-Only</span>
                       ) : (
                         <span className="text-[10px] font-medium text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">Editing</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Organization identity, logo, and default disclaimer for reports</p>
+                    <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Organization identity, logo, and default disclaimer for reports</p>
                     {organization?.updated_at && (
                       <p className="text-[10px] text-gray-400 mt-0.5">Updated {formatTimeAgo(organization.updated_at)}</p>
                     )}
@@ -4327,7 +4327,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   <div className="space-y-4">
                     {/* Organization Name */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                         Organization Name
                       </label>
                       <input
@@ -4336,13 +4336,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         disabled={isBrandingLocked}
                         onChange={(e) => setEditingBranding({ ...editingBranding, org_name: e.target.value })}
                         placeholder="Organization name"
-                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                       />
                     </div>
 
                     {/* Description */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                         Description
                       </label>
                       <textarea
@@ -4351,20 +4351,20 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         onChange={(e) => setEditingBranding({ ...editingBranding, org_description: e.target.value })}
                         rows={2}
                         placeholder="Describe your organization"
-                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                       />
                     </div>
 
                     {/* Logo */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                         Organization Logo
                       </label>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">
                         Used on investment case reports and shared documents when &ldquo;Use org branding&rdquo; is enabled
                       </p>
                       <div className="flex items-start gap-4">
-                        <div className="w-24 h-16 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                        <div className="w-24 h-16 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
                           {brandingLogoPreview ? (
                             <img
                               src={brandingLogoPreview}
@@ -4419,10 +4419,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                     {/* Firm Name */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                         Firm Name
                       </label>
-                      <p className="text-xs text-gray-500 mb-1">
+                      <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">
                         Displayed on report covers and headers
                       </p>
                       <input
@@ -4431,13 +4431,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         disabled={isBrandingLocked}
                         onChange={(e) => setEditingBranding({ ...editingBranding, firm_name: e.target.value })}
                         placeholder="e.g. Acme Capital"
-                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                       />
                     </div>
 
                     {/* Tagline */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                         Tagline
                       </label>
                       <input
@@ -4446,16 +4446,16 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         disabled={isBrandingLocked}
                         onChange={(e) => setEditingBranding({ ...editingBranding, tagline: e.target.value })}
                         placeholder="e.g. Investing in tomorrow"
-                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                       />
                     </div>
 
                     {/* Default Disclaimer */}
                     <div className={isBrandingLocked ? 'opacity-60' : ''}>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                         Default Disclaimer
                       </label>
-                      <p className="text-xs text-gray-500 mb-1">
+                      <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">
                         Used as the default on investment case reports when &ldquo;Use org default disclaimer&rdquo; is enabled
                       </p>
                       <textarea
@@ -4464,13 +4464,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                         onChange={(e) => setEditingBranding({ ...editingBranding, default_disclaimer: e.target.value })}
                         rows={3}
                         placeholder="This document is for informational purposes only and does not constitute investment advice..."
-                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isBrandingLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                       />
                     </div>
 
                     {/* Footer: Save / Cancel (editing mode only) */}
                     {!isBrandingLocked && (
-                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">
                         <Button
                           size="sm"
                           variant="outline"
@@ -4543,14 +4543,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-medium text-gray-900">Coverage Settings</h3>
+                        <h3 className="text-sm font-medium text-gray-900 dark:text-white">Coverage Settings</h3>
                         {isCoverageSettingsLocked ? (
-                          <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Read-Only</span>
+                          <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">Read-Only</span>
                         ) : (
                           <span className="text-[10px] font-medium text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">Editing</span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">Configure how coverage works across your organization</p>
+                      <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Configure how coverage works across your organization</p>
                       {coverageSettings?.updated_at && (
                         <p className="text-[10px] text-gray-400 mt-0.5">Updated {formatTimeAgo(coverageSettings.updated_at)}</p>
                       )}
@@ -4572,10 +4572,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                     <div className="space-y-6">
                       {/* Default Visibility */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                           Default Coverage Visibility
                         </label>
-                        <p className="text-xs text-gray-500 mb-3">
+                        <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                           When a user adds new coverage, this is the default visibility level
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -4595,7 +4595,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
                                 editingCoverageSettings.default_visibility === option.value
                                   ? 'bg-indigo-100 border-indigo-500 text-indigo-700'
-                                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800'
                               } ${isCoverageSettingsLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
                               title={option.desc}
                             >
@@ -4616,11 +4616,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                               ...editingCoverageSettings,
                               enable_hierarchy: e.target.checked
                             })}
-                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600"
                           />
                           <div>
-                            <span className="text-sm font-medium text-gray-700">Enable Coverage Hierarchy</span>
-                            <p className="text-xs text-gray-500">Allow defining analyst roles/levels for coverage (e.g., Lead Analyst, Analyst)</p>
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Coverage Hierarchy</span>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Allow defining analyst roles/levels for coverage (e.g., Lead Analyst, Analyst)</p>
                           </div>
                         </label>
                       </div>
@@ -4637,11 +4637,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                 ...editingCoverageSettings,
                                 allow_multiple_coverage: !e.target.checked
                               })}
-                              className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                              className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600"
                             />
                             <div>
-                              <span className="text-sm font-medium text-gray-700">Single Analyst Per Security</span>
-                              <p className="text-xs text-gray-500">Only one analyst can cover each security at a time (within visibility level)</p>
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Single Analyst Per Security</span>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Only one analyst can cover each security at a time (within visibility level)</p>
                             </div>
                           </label>
                         </div>
@@ -4650,15 +4650,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       {/* Hierarchy Levels - Only show if hierarchy is enabled */}
                       {editingCoverageSettings.enable_hierarchy && (
                         <div className={isCoverageSettingsLocked ? 'opacity-60' : ''}>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                             Coverage Hierarchy Levels
                           </label>
-                          <p className="text-xs text-gray-500 mb-3">
+                          <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                             Define the hierarchy levels for coverage roles (first level is highest). Mark levels as "exclusive" if only one analyst can hold that role per security.
                           </p>
                           <div className="space-y-2">
                             {editingCoverageSettings.hierarchy_levels.map((level, index) => (
-                              <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                              <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg dark:bg-gray-900">
                                 <span className="text-xs text-gray-400 w-6">{index + 1}.</span>
                                 <input
                                   type="text"
@@ -4672,7 +4672,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                       hierarchy_levels: newLevels
                                     })
                                   }}
-                                  className={`flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isCoverageSettingsLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                  className={`flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isCoverageSettingsLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                                   placeholder="Role name..."
                                 />
                                 <label className={`flex items-center gap-1.5 whitespace-nowrap ${isCoverageSettingsLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
@@ -4688,9 +4688,9 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                                         hierarchy_levels: newLevels
                                       })
                                     }}
-                                    className="h-3.5 w-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                    className="h-3.5 w-3.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600"
                                   />
-                                  <span className="text-xs text-gray-600">Exclusive</span>
+                                  <span className="text-xs text-gray-600 dark:text-gray-400">Exclusive</span>
                                 </label>
                                 {editingCoverageSettings.hierarchy_levels.length > 1 && !isCoverageSettingsLocked && (
                                   <button
@@ -4728,10 +4728,10 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                       {/* Visibility Change Permission */}
                       <div className={isCoverageSettingsLocked ? 'opacity-60' : ''}>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                           Who Can Change Visibility
                         </label>
-                        <p className="text-xs text-gray-500 mb-3">
+                        <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                           Control who can modify the visibility of coverage records
                         </p>
                         <select
@@ -4741,7 +4741,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                             ...editingCoverageSettings,
                             visibility_change_permission: e.target.value as 'anyone' | 'team_lead' | 'coverage_admin'
                           })}
-                          className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isCoverageSettingsLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                          className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isCoverageSettingsLocked ? 'bg-gray-100 cursor-not-allowed dark:bg-gray-800' : ''}`}
                         >
                           <option value="anyone">Anyone (all users can change visibility)</option>
                           <option value="team_lead">Team Leads & Admins</option>
@@ -4751,7 +4751,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                       {/* Footer: Save / Cancel (editing mode only) */}
                       {!isCoverageSettingsLocked && (
-                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">
                           <Button
                             size="sm"
                             variant="outline"
@@ -4785,7 +4785,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   )}
 
                   {!editingCoverageSettings && (
-                    <div className="text-center py-4 text-gray-500">
+                    <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                       Loading coverage settings...
                     </div>
                   )}
@@ -4846,15 +4846,15 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {/* Node Join Request Modal */}
       {nodeJoinRequest && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">Request to Join</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Request access to <span className="font-medium text-gray-700">{nodeJoinRequest.name}</span>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md dark:bg-gray-800">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request to Join</h3>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
+                Request access to <span className="font-medium text-gray-700 dark:text-gray-300">{nodeJoinRequest.name}</span>
               </p>
             </div>
             <div className="px-6 py-4">
-              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg mb-4">
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg mb-4 dark:bg-gray-900">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white`} style={{ backgroundColor: nodeJoinRequest.color || '#6366f1' }}>
                   {nodeJoinRequest.icon === 'users' && <Users className="w-5 h-5" />}
                   {nodeJoinRequest.icon === 'building' && <Building2 className="w-5 h-5" />}
@@ -4863,24 +4863,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   {!['users', 'building', 'briefcase', 'folder'].includes(nodeJoinRequest.icon) && <Users className="w-5 h-5" />}
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{nodeJoinRequest.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{nodeJoinRequest.node_type}</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{nodeJoinRequest.name}</p>
+                  <p className="text-xs text-gray-500 capitalize dark:text-gray-400">{nodeJoinRequest.node_type}</p>
                 </div>
               </div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Reason (optional)
               </label>
               <textarea
                 id="node-join-reason"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 rows={3}
                 placeholder="Why would you like to join this group?"
               />
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3">
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 dark:border-gray-800">
               <button
                 onClick={() => setNodeJoinRequest(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-300"
               >
                 Cancel
               </button>
@@ -4966,18 +4966,18 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowCoverageSettingsConfirm(false)} />
             <div className="flex min-h-full items-center justify-center p-4">
-              <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto p-6">
+              <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto p-6 dark:bg-gray-800">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                     <AlertTriangle className="h-5 w-5 text-amber-600" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Confirm Coverage Settings Change</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Confirm Coverage Settings Change</h3>
                   </div>
                 </div>
 
                 <div className="mb-6">
-                  <p className="text-sm text-gray-600 mb-4">
+                  <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
                     You are about to change organization-wide coverage settings. These changes will affect how all users interact with coverage data.
                   </p>
 
@@ -4987,7 +4987,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       <div className="space-y-2">
                         {changes.map((change, idx) => (
                           <div key={idx} className="text-sm">
-                            <span className="font-medium text-gray-700">{change.label}:</span>
+                            <span className="font-medium text-gray-700 dark:text-gray-300">{change.label}:</span>
                             <div className="flex items-center gap-2 mt-0.5 ml-2">
                               <span className="text-red-600 line-through">{change.from}</span>
                               <span className="text-gray-400">→</span>
@@ -4998,8 +4998,8 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                      <p className="text-sm text-gray-600">No changes detected.</p>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-900">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">No changes detected.</p>
                     </div>
                   )}
                 </div>
@@ -5155,24 +5155,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {/* Team Removal Confirmation Modal */}
       {teamRemovalConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
-            <div className="p-6 border-b border-gray-100">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 dark:bg-gray-800">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-800">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Remove from {teamRemovalConfirm.teamNodeName}</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Remove from {teamRemovalConfirm.teamNodeName}</h3>
               </div>
             </div>
             <div className="p-6 space-y-3">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Removing <strong>{teamRemovalConfirm.memberName}</strong> from this team
                 {teamRemovalConfirm.affectedPortfolios.length > 0 ? ' will also remove access to:' : '.'}
               </p>
               {teamRemovalConfirm.affectedPortfolios.length > 0 && (
                 <ul className="space-y-1 ml-4">
                   {teamRemovalConfirm.affectedPortfolios.map((name) => (
-                    <li key={name} className="flex items-center gap-2 text-sm text-gray-700">
+                    <li key={name} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                       <Briefcase className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                       {name}
                     </li>
@@ -5180,7 +5180,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 </ul>
               )}
               {teamRemovalConfirm.affectedPortfolios.length > 0 && (
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                   Access to other portfolios will remain unchanged.
                 </p>
               )}
@@ -5370,24 +5370,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {/* Delete Node Confirmation Modal */}
       {deleteNodeConfirm.isOpen && deleteNodeConfirm.node && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 dark:bg-gray-800">
             {/* Header */}
-            <div className="p-6 border-b border-gray-100">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-800">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Delete {deleteNodeConfirm.node.node_type.charAt(0).toUpperCase() + deleteNodeConfirm.node.node_type.slice(1)}</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Delete {deleteNodeConfirm.node.node_type.charAt(0).toUpperCase() + deleteNodeConfirm.node.node_type.slice(1)}</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
                 </div>
               </div>
             </div>
 
             {/* Content */}
             <div className="p-6">
-              <p className="text-gray-600 mb-4">
-                Are you sure you want to delete <span className="font-semibold text-gray-900">"{deleteNodeConfirm.node.name}"</span>?
+              <p className="text-gray-600 mb-4 dark:text-gray-400">
+                Are you sure you want to delete <span className="font-semibold text-gray-900 dark:text-white">"{deleteNodeConfirm.node.name}"</span>?
               </p>
               {(() => {
                 const childCount = orgChartNodes.filter(n => n.parent_id === deleteNodeConfirm.node!.id).length
@@ -5400,13 +5400,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   </div>
                 ) : null
               })()}
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 The {deleteNodeConfirm.node.node_type} will be removed from the organization structure.
               </p>
             </div>
 
             {/* Footer */}
-            <div className="p-6 border-t border-gray-100 flex justify-end space-x-3">
+            <div className="p-6 border-t border-gray-100 flex justify-end space-x-3 dark:border-gray-800">
               <Button
                 variant="outline"
                 onClick={() => setDeleteNodeConfirm({ isOpen: false, node: null })}
@@ -5463,14 +5463,14 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setDeletePortfolioTeamConfirm({ isOpen: false, member: null })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-6">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-6 dark:bg-gray-800">
               <div className="flex items-center space-x-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Remove Team Member</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Remove Team Member</h3>
               </div>
-              <p className="text-gray-600 mb-6">
+              <p className="text-gray-600 mb-6 dark:text-gray-400">
                 Are you sure you want to remove <strong>{getTeamMemberDisplayName(deletePortfolioTeamConfirm.member)}</strong> ({deletePortfolioTeamConfirm.member.role}) from this portfolio?
               </p>
               <div className="flex justify-end space-x-3">
@@ -5702,16 +5702,16 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-end z-50">
-      <div className="bg-white h-full w-full max-w-xl shadow-2xl flex flex-col animate-slide-in-right">
+      <div className="bg-white h-full w-full max-w-xl shadow-2xl flex flex-col animate-slide-in-right dark:bg-gray-800">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
               <Briefcase className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">{teamName} Coverage</h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{teamName} Coverage</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 {uniqueAssetCount} asset{uniqueAssetCount !== 1 ? 's' : ''} covered
                 {overlapCount > 0 && (
                   <span className="ml-2 text-amber-600">
@@ -5723,7 +5723,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -5738,8 +5738,8 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
           ) : coverageRecords.length === 0 ? (
             <div className="text-center py-12">
               <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No coverage assigned</h3>
-              <p className="text-sm text-gray-500">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No coverage assigned</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 This team doesn't have any coverage assignments yet.
               </p>
             </div>
@@ -5775,7 +5775,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
 
               {/* Coverage list */}
               <div className="space-y-3">
-                <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
                   <FileText className="w-4 h-4 text-gray-400" />
                   Coverage Assignments
                 </h3>
@@ -5783,12 +5783,12 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                   {coverageRecords.map((record) => (
                     <div
                       key={record.id}
-                      className="bg-white border border-gray-200 rounded-lg p-3 hover:border-gray-300 transition-colors"
+                      className="bg-white border border-gray-200 rounded-lg p-3 hover:border-gray-300 transition-colors dark:border-gray-700 dark:bg-gray-800"
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900">
+                            <span className="font-medium text-gray-900 dark:text-white">
                               {(record.asset as any)?.ticker || 'Unknown'}
                             </span>
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getVisibilityColor(record.visibility || 'team')}`}>
@@ -5796,7 +5796,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                               {record.visibility || 'team'}
                             </span>
                             {record.role && (
-                              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded dark:bg-gray-800">
                                 {record.role}
                               </span>
                             )}
@@ -5806,12 +5806,12 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-500 mt-0.5">
+                          <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
                             {(record.asset as any)?.name || 'Unknown Asset'}
                           </p>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm text-gray-900">
+                          <div className="text-sm text-gray-900 dark:text-white">
                             {(record.user as any)?.first_name || ''} {(record.user as any)?.last_name || (record.user as any)?.email?.split('@')[0] || 'Unknown'}
                           </div>
                           <div className="text-xs text-gray-400">
@@ -5828,15 +5828,15 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
-          <div className="flex items-center justify-between text-xs text-gray-500">
+        <div className="p-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1">
               <Info className="w-3 h-3" />
               Visibility determines who can see each coverage assignment
             </span>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors dark:text-gray-300 dark:bg-gray-800"
             >
               Close
             </button>
@@ -5863,33 +5863,33 @@ function AddTeamModal({ team, onClose, onSave, isLoading }: AddTeamModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">
           {team ? 'Edit Team' : 'Add Team'}
         </h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Team Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               placeholder="e.g., Tech Sector"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               rows={3}
               placeholder="What does this team focus on?"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Color</label>
             <div className="flex space-x-2">
               {colors.map(c => (
                 <button
@@ -5934,17 +5934,17 @@ function AddMemberModal({ team, existingMembers, availableUsers, onClose, onSave
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">
           Add Member to {team.name}
         </h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Select User</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Select User</label>
             <select
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
             >
               <option value="">Choose a user...</option>
               {filteredUsers.map(u => (
@@ -5962,7 +5962,7 @@ function AddMemberModal({ team, existingMembers, availableUsers, onClose, onSave
               onChange={(e) => setIsAdmin(e.target.checked)}
               className="rounded text-indigo-600"
             />
-            <label htmlFor="isAdmin" className="text-sm text-gray-700">
+            <label htmlFor="isAdmin" className="text-sm text-gray-700 dark:text-gray-300">
               Make team admin
             </label>
           </div>
@@ -6022,17 +6022,17 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">
           Add Member to {node.name}
         </h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Select User *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Select User *</label>
             <select
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
             >
               <option value="">Choose a user...</option>
               {filteredUsers.map(u => (
@@ -6046,11 +6046,11 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
           {teamLike ? (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Team Role *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Team Role *</label>
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 >
                   {TEAM_ROLE_OPTIONS.map(r => (
                     <option key={r} value={r}>{r}</option>
@@ -6059,11 +6059,11 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Function</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Function</label>
                 <select
                   value={teamFunction}
                   onChange={(e) => setTeamFunction(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 >
                   <option value="">None (optional)</option>
                   {TEAM_FUNCTION_OPTIONS.map(f => (
@@ -6075,14 +6075,14 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
           ) : (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Role *</label>
                 <select
                   value={role}
                   onChange={(e) => {
                     setRole(e.target.value)
                     setFocus('')
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 >
                   <option value="">Select a role...</option>
                   {roleOptions.map(r => (
@@ -6092,11 +6092,11 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Focus</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Focus</label>
                 <select
                   value={focus}
                   onChange={(e) => setFocus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 >
                   {focusOptions.map(f => (
                     <option key={f.value} value={f.value}>{f.label}</option>
@@ -6107,19 +6107,19 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
           )}
 
           {/* Coverage Admin Checkbox */}
-          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100 dark:border-gray-800">
             <input
               type="checkbox"
               id="coverage-admin"
               checked={isCoverageAdmin}
               onChange={(e) => setIsCoverageAdmin(e.target.checked)}
-              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600"
             />
             <div>
-              <label htmlFor="coverage-admin" className="text-sm font-medium text-gray-700">
+              <label htmlFor="coverage-admin" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Coverage Admin
               </label>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Can manage coverage assignments for this {node.node_type} and all children
               </p>
             </div>
@@ -6128,12 +6128,12 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
           {/* Show existing members */}
           {existingMembers.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Current Members</label>
-              <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Current Members</label>
+              <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
                 {existingMembers.map(m => (
                   <div key={m.id} className="px-3 py-2 text-sm flex items-center justify-between">
-                    <span className="text-gray-700">{m.user?.full_name || m.user?.email}</span>
-                    <span className="text-xs text-gray-500">{m.role}{m.focus ? ` · ${m.focus}` : ''}</span>
+                    <span className="text-gray-700 dark:text-gray-300">{m.user?.full_name || m.user?.email}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{m.role}{m.focus ? ` · ${m.focus}` : ''}</span>
                   </div>
                 ))}
               </div>
@@ -6179,15 +6179,15 @@ function RequestAccessModal({ teams, portfolios, onClose, onSubmit, isLoading }:
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Access</h3>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Request Access</h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Request Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Request Type</label>
             <select
               value={requestType}
               onChange={(e) => setRequestType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
             >
               {requestTypes.map(rt => (
                 <option key={rt.value} value={rt.value}>{rt.label}</option>
@@ -6197,11 +6197,11 @@ function RequestAccessModal({ teams, portfolios, onClose, onSubmit, isLoading }:
 
           {(requestType === 'join_team' || requestType === 'team_admin') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Team</label>
               <select
                 value={targetTeamId}
                 onChange={(e) => setTargetTeamId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               >
                 <option value="">Select a team...</option>
                 {teams.map(t => (
@@ -6213,11 +6213,11 @@ function RequestAccessModal({ teams, portfolios, onClose, onSubmit, isLoading }:
 
           {requestType === 'join_portfolio' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Portfolio</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Portfolio</label>
               <select
                 value={targetPortfolioId}
                 onChange={(e) => setTargetPortfolioId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               >
                 <option value="">Select a portfolio...</option>
                 {portfolios.map(p => (
@@ -6228,11 +6228,11 @@ function RequestAccessModal({ teams, portfolios, onClose, onSubmit, isLoading }:
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Reason (optional)</label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               rows={3}
               placeholder="Why do you need this access?"
             />
@@ -6293,72 +6293,72 @@ function AddContactModal({ onClose, onSave, isLoading }: AddContactModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Contact</h3>
-        <p className="text-sm text-gray-500 mb-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Add Contact</h3>
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Add a person who doesn't have platform access but may need to receive reports or communications.
         </p>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Full Name *</label>
             <input
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               placeholder="John Smith"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 placeholder="john@example.com"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Phone</label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 placeholder="+1 (555) 000-0000"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 placeholder="CEO"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Company</label>
               <input
                 type="text"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
                 placeholder="Acme Corp"
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contact Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Contact Type</label>
             <select
               value={contactType}
               onChange={(e) => setContactType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
             >
               {contactTypes.map(ct => (
                 <option key={ct.value} value={ct.value}>{ct.label}</option>
@@ -6366,11 +6366,11 @@ function AddContactModal({ onClose, onSave, isLoading }: AddContactModalProps) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Notes</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:border-gray-600"
               rows={2}
               placeholder="Any additional notes about this contact..."
             />
@@ -6383,7 +6383,7 @@ function AddContactModal({ onClose, onSave, isLoading }: AddContactModalProps) {
               onChange={(e) => setReceivesReports(e.target.checked)}
               className="rounded text-indigo-600"
             />
-            <label htmlFor="receivesReports" className="text-sm text-gray-700">
+            <label htmlFor="receivesReports" className="text-sm text-gray-700 dark:text-gray-300">
               Receives reports and communications
             </label>
           </div>
@@ -6430,20 +6430,20 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
   if (showConfirmation) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
           <div className="flex items-center space-x-3 mb-4">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
               actionType === 'suspend' ? 'bg-amber-100' : 'bg-red-100'
             }`}>
               <AlertTriangle className={`w-5 h-5 ${actionType === 'suspend' ? 'text-amber-600' : 'text-red-600'}`} />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900">Are you sure?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Are you sure?</h3>
           </div>
 
           {actionType === 'suspend' ? (
             <>
-              <p className="text-sm text-gray-600 mb-4">
-                You are about to suspend <span className="font-semibold text-gray-900">{member.user?.full_name}</span>'s access to the platform.
+              <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
+                You are about to suspend <span className="font-semibold text-gray-900 dark:text-white">{member.user?.full_name}</span>'s access to the platform.
               </p>
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
                 <p className="text-sm text-amber-800">
@@ -6458,8 +6458,8 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
             </>
           ) : (
             <>
-              <p className="text-sm text-gray-600 mb-4">
-                You are about to request permanent removal of <span className="font-semibold text-gray-900">{member.user?.full_name}</span> from the platform.
+              <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
+                You are about to request permanent removal of <span className="font-semibold text-gray-900 dark:text-white">{member.user?.full_name}</span> from the platform.
               </p>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
                 <p className="text-sm text-red-800">
@@ -6493,28 +6493,28 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
             <UserX className="w-5 h-5 text-amber-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Manage User Access</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Manage User Access</h3>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
           Choose an action for <span className="font-medium">{member.user?.full_name}</span>
         </p>
 
         {/* Action Type Toggle */}
         <div className="space-y-2 mb-4">
-          <label className="block text-sm font-medium text-gray-700">Action</label>
-          <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Action</label>
+          <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
             <button
               type="button"
               onClick={() => setActionType('suspend')}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                 actionType === 'suspend'
-                  ? 'bg-white text-amber-700 shadow-sm border border-amber-200'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-amber-700 shadow-sm border border-amber-200 dark:bg-gray-800'
+                  : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
               }`}
             >
               <UserX className="w-4 h-4 inline mr-1.5" />
@@ -6525,8 +6525,8 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
               onClick={() => setActionType('remove')}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                 actionType === 'remove'
-                  ? 'bg-white text-red-700 shadow-sm border border-red-200'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-red-700 shadow-sm border border-red-200 dark:bg-gray-800'
+                  : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
               }`}
             >
               <Trash2 className="w-4 h-4 inline mr-1.5" />
@@ -6548,7 +6548,7 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               {actionType === 'suspend' ? 'Reason for suspension' : 'Reason for removal request'} *
             </label>
             <textarea
@@ -6556,8 +6556,8 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
               onChange={(e) => setReason(e.target.value)}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 ${
                 actionType === 'suspend'
-                  ? 'border-gray-300 focus:ring-amber-500 focus:border-amber-500'
-                  : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
+                  ? 'border-gray-300 focus:ring-amber-500 focus:border-amber-500 dark:border-gray-600'
+                  : 'border-gray-300 focus:ring-red-500 focus:border-red-500 dark:border-gray-600'
               }`}
               rows={3}
               placeholder={actionType === 'suspend'
@@ -6595,15 +6595,15 @@ function RemovalRequestModal({ member, onClose, onSubmit, isLoading }: RemovalRe
   if (showConfirmation) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
           <div className="flex items-center space-x-3 mb-4">
             <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900">Are you sure?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Are you sure?</h3>
           </div>
-          <p className="text-sm text-gray-600 mb-4">
-            You are about to request removal of <span className="font-semibold text-gray-900">{member.user?.full_name}</span> from the organization.
+          <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
+            You are about to request removal of <span className="font-semibold text-gray-900 dark:text-white">{member.user?.full_name}</span> from the organization.
           </p>
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
             <p className="text-sm text-red-800">
@@ -6632,14 +6632,14 @@ function RemovalRequestModal({ member, onClose, onSubmit, isLoading }: RemovalRe
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
             <Send className="w-5 h-5 text-red-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Request User Removal</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request User Removal</h3>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
           This will send a removal request to the account team for <span className="font-medium">{member.user?.full_name}</span>.
           The account team will review and process this request.
         </p>
@@ -6650,11 +6650,11 @@ function RemovalRequestModal({ member, onClose, onSubmit, isLoading }: RemovalRe
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for removal request *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Reason for removal request *</label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 dark:border-gray-600"
               rows={3}
               placeholder="Please explain why this user should be removed..."
             />
@@ -6761,16 +6761,16 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
             <Plus className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               {insertMode ? 'Insert Node Between' : 'Add to Organization'}
             </h3>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {insertMode
                 ? 'Insert a new parent node above existing nodes'
                 : parentId ? 'Add a child node' : 'Add to the root level'}
@@ -6781,7 +6781,7 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
         <div className="space-y-5">
           {/* Node Type Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Type</label>
             <div className="grid grid-cols-2 gap-2">
               {NODE_TYPE_OPTIONS.map(option => (
                 <button
@@ -6790,11 +6790,11 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
                   className={`flex items-center space-x-2 p-3 rounded-lg border-2 text-left transition-colors ${
                     nodeType === option.value
                       ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300'
                   }`}
                 >
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    nodeType === option.value ? 'bg-indigo-100' : 'bg-gray-100'
+                    nodeType === option.value ? 'bg-indigo-100' : 'bg-gray-100 dark:bg-gray-800'
                   }`}>
                     {option.value === 'division' && <Building2 className="w-4 h-4" />}
                     {option.value === 'department' && <FolderOpen className="w-4 h-4" />}
@@ -6804,7 +6804,7 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
                   </div>
                   <div>
                     <div className="text-sm font-medium">{option.label}</div>
-                    <div className="text-xs text-gray-500">{option.description}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{option.description}</div>
                   </div>
                 </button>
               ))}
@@ -6814,13 +6814,13 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
           {/* Custom Type Label (only for custom type) */}
           {nodeType === 'custom' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Custom Type Label *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Custom Type Label *</label>
               <input
                 type="text"
                 value={customTypeLabel}
                 onChange={(e) => setCustomTypeLabel(e.target.value)}
                 placeholder="e.g., Business Unit, Region, Practice Area"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
           )}
@@ -6828,7 +6828,7 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
           {/* Portfolio Selection (only for portfolio type) */}
           {nodeType === 'portfolio' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Portfolio *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Select Portfolio *</label>
               {/* Search input */}
               <div className="relative mb-3">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -6837,13 +6837,13 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
                   value={portfolioSearch}
                   onChange={(e) => setPortfolioSearch(e.target.value)}
                   placeholder="Search portfolios..."
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
                 />
               </div>
               {/* Portfolio list */}
-              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg dark:border-gray-700">
                 {filteredPortfolios.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-gray-500">
+                  <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
                     {portfolioSearch ? 'No portfolios match your search' : 'No portfolios available'}
                   </div>
                 ) : (
@@ -6854,18 +6854,18 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
                       className={`w-full flex items-center space-x-3 p-3 text-left transition-colors border-b border-gray-100 last:border-b-0 ${
                         selectedPortfolioId === portfolio.id
                           ? 'bg-green-50 text-green-700'
-                          : 'hover:bg-gray-50 text-gray-700'
+                          : 'hover:bg-gray-50 text-gray-700 dark:hover:bg-gray-800 dark:text-gray-300'
                       }`}
                     >
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        selectedPortfolioId === portfolio.id ? 'bg-green-100' : 'bg-gray-100'
+                        selectedPortfolioId === portfolio.id ? 'bg-green-100' : 'bg-gray-100 dark:bg-gray-800'
                       }`}>
                         <Briefcase className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{portfolio.name}</div>
                         {portfolio.description && (
-                          <div className="text-xs text-gray-500 truncate">{portfolio.description}</div>
+                          <div className="text-xs text-gray-500 truncate dark:text-gray-400">{portfolio.description}</div>
                         )}
                       </div>
                       {selectedPortfolioId === portfolio.id && (
@@ -6881,13 +6881,13 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
           {/* Name (not shown for portfolio type) */}
           {nodeType !== 'portfolio' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Name *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={`Enter ${nodeType === 'custom' ? customTypeLabel || 'node' : nodeType} name`}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
           )}
@@ -6895,12 +6895,12 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
           {/* Description (not shown for portfolio type) */}
           {nodeType !== 'portfolio' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 rows={2}
               />
             </div>
@@ -6909,7 +6909,7 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
           {/* Color (not shown for portfolio type) */}
           {nodeType !== 'portfolio' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Color</label>
               <div className="flex flex-wrap gap-2">
                 {NODE_COLORS.map(c => (
                   <button
@@ -6926,17 +6926,17 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
           )}
 
           {/* Non-Investment Checkbox */}
-          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100 dark:border-gray-800">
             <input
               type="checkbox"
               id="isNonInvestment"
               checked={isNonInvestment}
               onChange={(e) => setIsNonInvestment(e.target.checked)}
-              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded dark:border-gray-600"
             />
-            <label htmlFor="isNonInvestment" className="text-sm text-gray-700">
+            <label htmlFor="isNonInvestment" className="text-sm text-gray-700 dark:text-gray-300">
               <span className="font-medium">Non-investment team</span>
-              <p className="text-xs text-gray-500">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
             </label>
           </div>
         </div>
@@ -7008,7 +7008,7 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-6">
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -7017,8 +7017,8 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
             <Edit3 className="w-5 h-5" style={{ color: node.color }} />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Edit {getTypeLabel()}</h3>
-            <p className="text-sm text-gray-500">{node.name}</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit {getTypeLabel()}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{node.name}</p>
           </div>
         </div>
 
@@ -7026,44 +7026,44 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
           {/* Custom Type Label (only for custom type) */}
           {node.node_type === 'custom' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type Label *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Type Label *</label>
               <input
                 type="text"
                 value={customTypeLabel}
                 onChange={(e) => setCustomTypeLabel(e.target.value)}
                 placeholder="e.g., Business Unit, Region"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
           )}
 
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Name *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               rows={2}
             />
           </div>
 
           {/* Color */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Color</label>
             <div className="flex flex-wrap gap-2">
               {NODE_COLORS.map(c => (
                 <button
@@ -7079,17 +7079,17 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
           </div>
 
           {/* Non-Investment Checkbox */}
-          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center space-x-3 pt-2 border-t border-gray-100 dark:border-gray-800">
             <input
               type="checkbox"
               id="editIsNonInvestment"
               checked={isNonInvestment}
               onChange={(e) => setIsNonInvestment(e.target.checked)}
-              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded dark:border-gray-600"
             />
-            <label htmlFor="editIsNonInvestment" className="text-sm text-gray-700">
+            <label htmlFor="editIsNonInvestment" className="text-sm text-gray-700 dark:text-gray-300">
               <span className="font-medium">Non-investment team</span>
-              <p className="text-xs text-gray-500">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
             </label>
           </div>
         </div>
@@ -7324,10 +7324,10 @@ function NodeDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col dark:bg-gray-800">
         {/* Header */}
         <div
-          className="p-5 border-b border-gray-100"
+          className="p-5 border-b border-gray-100 dark:border-gray-800"
           style={{ backgroundColor: `${currentColor}08` }}
         >
           <div className="flex items-start justify-between">
@@ -7344,12 +7344,12 @@ function NodeDetailModal({
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className="text-lg font-semibold text-gray-900 w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="text-lg font-semibold text-gray-900 w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600 dark:text-white"
                     placeholder="Enter name"
                     autoFocus
                   />
                 ) : (
-                  <h3 className="text-lg font-semibold text-gray-900 truncate">{node.name}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 truncate dark:text-white">{node.name}</h3>
                 )}
                 <div className="flex items-center space-x-2 mt-0.5">
                   <span
@@ -7359,7 +7359,7 @@ function NodeDetailModal({
                     {getTypeLabel()}
                   </span>
                   {node.is_non_investment && (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800">
                       Non-Investment
                     </span>
                   )}
@@ -7370,7 +7370,7 @@ function NodeDetailModal({
               {isAdmin && !isEditing && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all text-gray-500 hover:text-indigo-600"
+                  className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all text-gray-500 hover:text-indigo-600 dark:hover:bg-gray-800 dark:text-gray-400"
                   title="Edit"
                 >
                   <Edit3 className="w-4 h-4" />
@@ -7378,7 +7378,7 @@ function NodeDetailModal({
               )}
               <button
                 onClick={isEditing ? handleCancelEdit : onClose}
-                className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all"
+                className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all dark:hover:bg-gray-800"
                 title={isEditing ? "Cancel editing" : "Close"}
               >
                 <X className="w-5 h-5 text-gray-400" />
@@ -7392,13 +7392,13 @@ function NodeDetailModal({
           {/* Custom Type Label (only for custom type in edit mode) */}
           {isEditing && node.node_type === 'custom' && (
             <div className="mb-6">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Type Label *</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Type Label *</h4>
               <input
                 type="text"
                 value={editCustomTypeLabel}
                 onChange={(e) => setEditCustomTypeLabel(e.target.value)}
                 placeholder="e.g., Business Unit, Region"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
           )}
@@ -7408,29 +7408,29 @@ function NodeDetailModal({
             <div className="mb-5">
               {isEditing ? (
                 <>
-                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Description</h4>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">Description</h4>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     placeholder="Add a description..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
                     rows={2}
                   />
                 </>
               ) : (
-                <p className="text-sm text-gray-600">{node.description}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{node.description}</p>
               )}
             </div>
           )}
 
           {/* Edit-only settings */}
           {isEditing && (
-            <div className="mb-5 p-4 bg-gray-50 rounded-lg space-y-4">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">Settings</h4>
+            <div className="mb-5 p-4 bg-gray-50 rounded-lg space-y-4 dark:bg-gray-900">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">Settings</h4>
 
               {/* Color */}
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Color</label>
+                <label className="text-sm font-medium text-gray-700 mb-2 block dark:text-gray-300">Color</label>
                 <div className="flex flex-wrap gap-2">
                   {NODE_COLORS.map(c => (
                     <button
@@ -7446,17 +7446,17 @@ function NodeDetailModal({
               </div>
 
               {/* Non-Investment Checkbox */}
-              <div className="flex items-center space-x-3 pt-2 border-t border-gray-200">
+              <div className="flex items-center space-x-3 pt-2 border-t border-gray-200 dark:border-gray-700">
                 <input
                   type="checkbox"
                   id="detailIsNonInvestment"
                   checked={editIsNonInvestment}
                   onChange={(e) => setEditIsNonInvestment(e.target.checked)}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded dark:border-gray-600"
                 />
-                <label htmlFor="detailIsNonInvestment" className="text-sm text-gray-700">
+                <label htmlFor="detailIsNonInvestment" className="text-sm text-gray-700 dark:text-gray-300">
                   <span className="font-medium">Non-investment team</span>
-                  <p className="text-xs text-gray-500">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
                 </label>
               </div>
             </div>
@@ -7465,7 +7465,7 @@ function NodeDetailModal({
           {/* Members */}
           <div className="mb-5">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center dark:text-gray-400">
                 <Users className="w-3.5 h-3.5 mr-1.5" />
                 Members ({displayMembers.length})
               </h4>
@@ -7484,11 +7484,11 @@ function NodeDetailModal({
             {isEditing && showAddMember && (
               <div className="bg-indigo-50 rounded-lg p-3 mb-3 space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Select User</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Select User</label>
                   <select
                     value={selectedUserId}
                     onChange={(e) => setSelectedUserId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                   >
                     <option value="">Choose a user...</option>
                     {availableUsersFiltered.map(user => {
@@ -7502,11 +7502,11 @@ function NodeDetailModal({
                 {isTeamLike ? (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Team Role</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Team Role</label>
                       <select
                         value={memberRole}
                         onChange={(e) => setMemberRole(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                       >
                         {TEAM_ROLE_OPTIONS.map(r => (
                           <option key={r} value={r}>{r}</option>
@@ -7514,11 +7514,11 @@ function NodeDetailModal({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Function</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Function</label>
                       <select
                         value={memberFocus}
                         onChange={(e) => setMemberFocus(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                       >
                         <option value="">None (optional)</option>
                         {TEAM_FUNCTION_OPTIONS.map(f => (
@@ -7530,14 +7530,14 @@ function NodeDetailModal({
                 ) : isPortfolioNode ? (
                   <>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Role (optional)</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Role (optional)</label>
                       <select
                         value={memberRole}
                         onChange={(e) => {
                           setMemberRole(e.target.value)
                           setMemberFocus('')
                         }}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                       >
                         <option value="">Select role...</option>
                         {ROLE_OPTIONS.map(r => (
@@ -7547,7 +7547,7 @@ function NodeDetailModal({
                     </div>
                     {memberRole && getFocusOptionsForRole(memberRole).length > 0 && (
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Focus (select multiple)</label>
                         <div className="flex flex-wrap gap-1.5">
                           {getFocusOptionsForRole(memberRole).map(focus => {
                             const currentFocuses = memberFocus ? memberFocus.split(', ').filter(Boolean) : []
@@ -7568,7 +7568,7 @@ function NodeDetailModal({
                                 className={`px-2 py-1 text-xs rounded-full border transition-colors ${
                                   isSelected
                                     ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                                 }`}
                               >
                                 {focus}
@@ -7583,7 +7583,7 @@ function NodeDetailModal({
                 <div className="flex justify-end space-x-2">
                   <button
                     onClick={() => setShowAddMember(false)}
-                    className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                    className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400"
                   >
                     Cancel
                   </button>
@@ -7599,7 +7599,7 @@ function NodeDetailModal({
             )}
 
             {displayMembers.length > 0 ? (
-              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2 dark:bg-gray-900">
                 {displayMembers.map(member => {
                   const displayName = member.user?.first_name || member.user?.last_name
                     ? `${member.user.first_name || ''} ${member.user.last_name || ''}`.trim()
@@ -7626,7 +7626,7 @@ function NodeDetailModal({
                     }
 
                     return (
-                      <div key={member.id} className="bg-white border border-indigo-200 rounded-lg p-3 space-y-3">
+                      <div key={member.id} className="bg-white border border-indigo-200 rounded-lg p-3 space-y-3 dark:bg-gray-800">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <div
@@ -7635,7 +7635,7 @@ function NodeDetailModal({
                             >
                               {initial}
                             </div>
-                            <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</p>
                           </div>
                           <button
                             onClick={() => {
@@ -7643,7 +7643,7 @@ function NodeDetailModal({
                               setEditMemberRole('')
                               setEditMemberFocus('')
                             }}
-                            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                            className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
                             title="Done editing"
                           >
                             <X className="w-4 h-4" />
@@ -7653,7 +7653,7 @@ function NodeDetailModal({
                         {isTeamLike ? (
                           <>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Team Role</label>
+                              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Team Role</label>
                               <select
                                 value={editMemberRole}
                                 onChange={(e) => {
@@ -7661,7 +7661,7 @@ function NodeDetailModal({
                                   setEditMemberRole(newRole)
                                   onUpdateMember(member.id, newRole, editMemberFocus || null)
                                 }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                               >
                                 {TEAM_ROLE_OPTIONS.map(r => (
                                   <option key={r} value={r}>{r}</option>
@@ -7669,7 +7669,7 @@ function NodeDetailModal({
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Function</label>
+                              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Function</label>
                               <select
                                 value={editMemberFocus}
                                 onChange={(e) => {
@@ -7677,7 +7677,7 @@ function NodeDetailModal({
                                   setEditMemberFocus(newFunc)
                                   onUpdateMember(member.id, editMemberRole, newFunc || null)
                                 }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                               >
                                 <option value="">None</option>
                                 {TEAM_FUNCTION_OPTIONS.map(f => (
@@ -7690,7 +7690,7 @@ function NodeDetailModal({
                           <>
                             {/* Role dropdown - auto-saves */}
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Role</label>
                               <select
                                 value={editMemberRole}
                                 onChange={(e) => {
@@ -7700,7 +7700,7 @@ function NodeDetailModal({
                                   // Auto-save on role change (clear focus since options differ per role)
                                   onUpdateMember(member.id, newRole, null)
                                 }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                               >
                                 <option value="">Select role...</option>
                                 {ROLE_OPTIONS.map(r => (
@@ -7712,7 +7712,7 @@ function NodeDetailModal({
                             {/* Focus multi-select pills - auto-saves */}
                             {roleFocusOptions.length > 0 && (
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-2">Focus (select multiple)</label>
+                                <label className="block text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Focus (select multiple)</label>
                                 <div className="flex flex-wrap gap-1.5">
                                   {roleFocusOptions.map(focus => (
                                     <button
@@ -7721,7 +7721,7 @@ function NodeDetailModal({
                                       className={`px-2 py-1 text-xs rounded-full border transition-colors ${
                                         currentFocuses.includes(focus)
                                           ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                                       }`}
                                     >
                                       {focus}
@@ -7746,15 +7746,15 @@ function NodeDetailModal({
                           {initial}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{displayName}</p>
-                          {(isPortfolioNode || isTeamLike) && member.role && <p className="text-xs text-gray-500">{member.role}{member.focus ? ` · ${member.focus}` : ''}</p>}
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</p>
+                          {(isPortfolioNode || isTeamLike) && member.role && <p className="text-xs text-gray-500 dark:text-gray-400">{member.role}{member.focus ? ` · ${member.focus}` : ''}</p>}
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
                         {isPortfolioNode && !isTeamLike && member.focus && (
                           <div className="flex flex-wrap gap-1">
                             {member.focus.split(', ').map((f, idx) => (
-                              <span key={idx} className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">{f}</span>
+                              <span key={idx} className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded dark:text-gray-400">{f}</span>
                             ))}
                           </div>
                         )}
@@ -7786,20 +7786,20 @@ function NodeDetailModal({
                 })}
               </div>
             ) : (
-              <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">No members assigned yet</p>
+              <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3 dark:text-gray-400 dark:bg-gray-900">No members assigned yet</p>
             )}
           </div>
 
           {/* Coverage Admin Section - shows members from this node and all descendants (only for investment-related nodes) */}
           {!(isEditing ? editIsNonInvestment : node.is_non_investment) && (canManageCoverageAdmins || membersWithDescendants.some(m => m.is_coverage_admin || globalCoverageAdminUserIds.has(m.user_id))) && (
-            <div className="pt-4 border-t border-gray-100">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center mb-3">
+            <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center mb-3 dark:text-gray-400">
                 <Shield className="w-3.5 h-3.5 mr-1.5" />
                 Coverage Admin Rights
               </h4>
 
               {/* List of members from this node and descendants with per-member admin controls */}
-              <div className="bg-gray-50 rounded-lg divide-y divide-gray-100">
+              <div className="bg-gray-50 rounded-lg divide-y divide-gray-100 dark:divide-gray-800 dark:bg-gray-900">
                 {membersWithDescendants.length > 0 ? (
                   membersWithDescendants.map(member => {
                     const displayName = member.user?.full_name || member.user?.email || 'Unknown'
@@ -7826,7 +7826,7 @@ function NodeDetailModal({
                           >
                             {initial}
                           </div>
-                          <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</p>
                         </div>
                         <div className="flex items-center space-x-2">
                           {/* Admin Status Badge */}
@@ -7865,7 +7865,7 @@ function NodeDetailModal({
                                   className={`p-1.5 rounded transition-colors ${
                                     adminStatus.status === 'explicit'
                                       ? 'text-indigo-600 hover:bg-indigo-50'
-                                      : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
+                                      : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700'
                                   }`}
                                   title={adminStatus.status === 'explicit' ? 'Remove explicit admin' : 'Grant explicit admin'}
                                 >
@@ -7880,7 +7880,7 @@ function NodeDetailModal({
                                   className={`p-1.5 rounded transition-colors ${
                                     member.coverage_admin_blocked
                                       ? 'text-amber-600 hover:bg-amber-50'
-                                      : 'text-gray-400 hover:bg-gray-100 hover:text-amber-600'
+                                      : 'text-gray-400 hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-gray-700'
                                   }`}
                                   title={member.coverage_admin_blocked ? 'Unblock admin access' : 'Block inherited/global admin'}
                                 >
@@ -7894,7 +7894,7 @@ function NodeDetailModal({
                     )
                   })
                 ) : (
-                  <p className="px-3 py-2 text-sm text-gray-500">No node members. Add members to manage coverage admin rights.</p>
+                  <p className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No node members. Add members to manage coverage admin rights.</p>
                 )}
               </div>
             </div>
@@ -7904,7 +7904,7 @@ function NodeDetailModal({
 
         {/* Footer - only shows when editing */}
         {isEditing && (
-          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3 dark:border-gray-800 dark:bg-gray-900">
             <Button variant="outline" onClick={handleCancelEdit}>Cancel</Button>
             <Button
               onClick={handleSave}

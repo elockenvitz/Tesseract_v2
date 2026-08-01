@@ -187,7 +187,7 @@ export function FeedbackWidget() {
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               {type === 'referral' ? 'Refer a friend' : 'Send Feedback'}
             </h3>
-            <button onClick={handleClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <button onClick={handleClose} className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -198,7 +198,7 @@ export function FeedbackWidget() {
               <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                 {type === 'referral' ? 'Thanks for the intro!' : 'Thanks for your feedback!'}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                 {type === 'referral' ? "We'll follow up shortly." : "We'll review it shortly."}
               </p>
             </div>
@@ -223,7 +223,7 @@ export function FeedbackWidget() {
                       }}
                       className={clsx(
                         'flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border text-[11px] font-medium transition-all',
-                        isActive ? ft.color : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+                        isActive ? ft.color : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600 dark:hover:text-gray-300 dark:border-gray-700'
                       )}
                     >
                       <Icon className="w-4 h-4" />

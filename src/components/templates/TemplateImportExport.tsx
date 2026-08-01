@@ -479,27 +479,27 @@ export function TemplateImportExport({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Import / Export Templates</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Import / Export Templates</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Mode Toggle */}
-        <div className="flex border-b border-gray-200">
+        <div className="flex border-b border-gray-200 dark:border-gray-700">
           <button
             onClick={() => setMode('export')}
             className={clsx(
               'flex-1 px-4 py-2 text-sm font-medium transition-colors',
               mode === 'export'
                 ? 'text-primary-700 border-b-2 border-primary-600 bg-primary-50'
-                : 'text-gray-600 hover:bg-gray-50'
+                : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             <Download className="w-4 h-4 inline mr-2" />
@@ -511,7 +511,7 @@ export function TemplateImportExport({
               'flex-1 px-4 py-2 text-sm font-medium transition-colors',
               mode === 'import'
                 ? 'text-primary-700 border-b-2 border-primary-600 bg-primary-50'
-                : 'text-gray-600 hover:bg-gray-50'
+                : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             <Upload className="w-4 h-4 inline mr-2" />
@@ -525,7 +525,7 @@ export function TemplateImportExport({
             <div className="space-y-4">
               {/* Export Format Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Export Format</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Export Format</label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setExportFormat('docx')}
@@ -533,7 +533,7 @@ export function TemplateImportExport({
                       'flex-1 px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-center gap-2',
                       exportFormat === 'docx'
                         ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
                     )}
                   >
                     <FileText className="w-4 h-4" />
@@ -545,7 +545,7 @@ export function TemplateImportExport({
                       'flex-1 px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-center gap-2',
                       exportFormat === 'txt'
                         ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
                     )}
                   >
                     <FileText className="w-4 h-4" />
@@ -557,7 +557,7 @@ export function TemplateImportExport({
                       'flex-1 px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-center gap-2',
                       exportFormat === 'json'
                         ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
                     )}
                   >
                     <FileJson className="w-4 h-4" />
@@ -567,7 +567,7 @@ export function TemplateImportExport({
               </div>
 
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   Select templates ({exportSelection.size} selected)
                 </p>
                 <div className="flex gap-2">
@@ -587,7 +587,7 @@ export function TemplateImportExport({
                 </div>
               </div>
 
-              <div className="space-y-1 max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
+              <div className="space-y-1 max-h-48 overflow-y-auto border border-gray-200 rounded-lg dark:border-gray-700">
                 {templates.map(template => (
                   <label
                     key={template.id}
@@ -600,13 +600,13 @@ export function TemplateImportExport({
                       type="checkbox"
                       checked={exportSelection.has(template.id)}
                       onChange={() => toggleExportSelection(template.id)}
-                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded dark:border-gray-600"
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                         {template.name}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
                         {template.category}
                         {template.shortcut && ` - .t.${template.shortcut}`}
                       </p>
@@ -622,19 +622,19 @@ export function TemplateImportExport({
                   <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-3">
                     <Check className="w-6 h-6 text-green-600" />
                   </div>
-                  <p className="text-lg font-medium text-gray-900">Import Successful!</p>
-                  <p className="text-sm text-gray-500">Your templates have been imported</p>
+                  <p className="text-lg font-medium text-gray-900 dark:text-white">Import Successful!</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Your templates have been imported</p>
                 </div>
               ) : !importedData ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors dark:border-gray-600"
                 >
                   <FileText className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-                  <p className="text-sm font-medium text-gray-900 mb-1">
+                  <p className="text-sm font-medium text-gray-900 mb-1 dark:text-white">
                     Click to select a file
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     Supports Word (.docx), Text (.txt), and JSON files
                   </p>
                   <p className="text-xs text-gray-400 mt-2">
@@ -650,7 +650,7 @@ export function TemplateImportExport({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <FileText className="w-4 h-4" />
                     <span>{importedData.length} template{importedData.length !== 1 ? 's' : ''} ready to import</span>
                   </div>
@@ -668,7 +668,7 @@ export function TemplateImportExport({
                             key={index}
                             className="p-3 bg-amber-50 border border-amber-200 rounded-lg"
                           >
-                            <p className="text-sm font-medium text-gray-900 mb-2">
+                            <p className="text-sm font-medium text-gray-900 mb-2 dark:text-white">
                               "{conflict.imported.name}" already exists
                             </p>
                             <div className="flex gap-2">
@@ -678,7 +678,7 @@ export function TemplateImportExport({
                                   'px-2 py-1 text-xs rounded transition-colors',
                                   conflict.resolution === 'skip'
                                     ? 'bg-gray-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                                 )}
                               >
                                 Skip
@@ -689,7 +689,7 @@ export function TemplateImportExport({
                                   'px-2 py-1 text-xs rounded transition-colors',
                                   conflict.resolution === 'replace'
                                     ? 'bg-red-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                                 )}
                               >
                                 Replace
@@ -700,7 +700,7 @@ export function TemplateImportExport({
                                   'px-2 py-1 text-xs rounded transition-colors',
                                   conflict.resolution === 'rename'
                                     ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                                 )}
                               >
                                 Import as copy
@@ -712,7 +712,7 @@ export function TemplateImportExport({
                     </div>
                   )}
 
-                  <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+                  <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto dark:border-gray-700">
                     {importedData.map((template, index) => {
                       const conflict = conflicts.find(c => c.imported.name === template.name)
                       const willSkip = conflict?.resolution === 'skip'
@@ -721,18 +721,18 @@ export function TemplateImportExport({
                         <div
                           key={index}
                           className={clsx(
-                            'p-2 border-b border-gray-100 last:border-0',
+                            'p-2 border-b border-gray-100 last:border-0 dark:border-gray-800',
                             willSkip && 'opacity-50'
                           )}
                         >
                           <p className={clsx(
                             'text-sm font-medium',
-                            willSkip ? 'text-gray-400 line-through' : 'text-gray-900'
+                            willSkip ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'
                           )}>
                             {template.name}
                             {conflict?.resolution === 'rename' && ' (Imported)'}
                           </p>
-                          <p className="text-xs text-gray-500">{template.category}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{template.category}</p>
                         </div>
                       )
                     })}
@@ -751,7 +751,7 @@ export function TemplateImportExport({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2">
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2 dark:border-gray-700 dark:bg-gray-900">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>

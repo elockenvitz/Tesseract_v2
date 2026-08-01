@@ -47,7 +47,7 @@ const TYPE_COLORS: Record<string, { bg: string; icon: string; pill: string }> = 
   trade:       { bg: 'bg-rose-50',     icon: 'text-rose-600',    pill: 'bg-rose-600 text-white' },
   trade_sheet: { bg: 'bg-teal-50',     icon: 'text-teal-600',    pill: 'bg-teal-600 text-white' },
   meeting:     { bg: 'bg-sky-50',      icon: 'text-sky-600',     pill: 'bg-sky-600 text-white' },
-  note:        { bg: 'bg-gray-100',    icon: 'text-gray-600',    pill: 'bg-gray-700 text-white' },
+  note:        { bg: 'bg-gray-100 dark:bg-gray-800',    icon: 'text-gray-600 dark:text-gray-400',    pill: 'bg-gray-700 text-white' },
   theme:       { bg: 'bg-purple-50',   icon: 'text-purple-600',  pill: 'bg-purple-600 text-white' },
   workflow:    { bg: 'bg-cyan-50',     icon: 'text-cyan-600',    pill: 'bg-cyan-600 text-white' },
   project:     { bg: 'bg-indigo-50',   icon: 'text-indigo-600',  pill: 'bg-indigo-600 text-white' },
@@ -275,7 +275,7 @@ function RelationshipPill({
       <button
         ref={triggerRef}
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 bg-white border border-gray-200 rounded hover:border-gray-300 hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 bg-white border border-gray-200 rounded hover:border-gray-300 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
       >
         <IntentIcon className="h-2.5 w-2.5 text-gray-400" />
         <span>{intent.label}</span>
@@ -286,7 +286,7 @@ function RelationshipPill({
         <div
           ref={menuRef}
           style={menuStyle}
-          className="bg-white rounded-lg shadow-xl border border-gray-200 py-1 w-[220px]"
+          className="bg-white rounded-lg shadow-xl border border-gray-200 py-1 w-[220px] dark:border-gray-700 dark:bg-gray-800"
         >
           {LINK_INTENTS.map(opt => {
             const OptIcon = opt.icon
@@ -295,13 +295,13 @@ function RelationshipPill({
                 key={opt.value}
                 onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false) }}
                 className={`w-full px-2.5 py-1.5 text-left hover:bg-gray-50 transition-colors flex items-center gap-2 ${
-                  value === opt.value ? 'bg-gray-50' : ''
+                  value === opt.value ? 'bg-gray-50 dark:bg-gray-900' : ''
                 }`}
               >
                 <OptIcon className={`h-3 w-3 flex-shrink-0 ${value === opt.value ? 'text-primary-500' : 'text-gray-400'}`} />
                 <div className="flex-1 min-w-0">
-                  <span className="text-[11px] font-medium text-gray-900">{opt.label}</span>
-                  <p className="text-[10px] text-gray-500 leading-tight">{opt.description}</p>
+                  <span className="text-[11px] font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                  <p className="text-[10px] text-gray-500 leading-tight dark:text-gray-400">{opt.description}</p>
                 </div>
                 {value === opt.value && <Check className="h-3 w-3 text-primary-500 flex-shrink-0" />}
               </button>
@@ -439,7 +439,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
         onClick={e => e.stopPropagation()}
       >
         {/* Search header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
           <input
             ref={inputRef}
@@ -450,26 +450,26 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
             className="flex-1 text-sm bg-transparent border-0 outline-none placeholder-gray-400"
           />
           {query && (
-            <button onClick={() => setQuery('')} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
+            <button onClick={() => setQuery('')} className="p-0.5 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700">
               <X className="h-3.5 w-3.5 text-gray-400" />
             </button>
           )}
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+            className="p-1 hover:bg-gray-100 rounded-md transition-colors dark:hover:bg-gray-700"
           >
             <X className="h-4 w-4 text-gray-400" />
           </button>
         </div>
 
         {/* Type filter pills */}
-        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-gray-100">
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-gray-100 dark:border-gray-800">
           <button
             onClick={() => setActiveFilter(null)}
             className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-full whitespace-nowrap transition-colors ${
               activeFilter === null
                 ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
             }`}
           >
             <Layers className="h-3 w-3" />
@@ -488,7 +488,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                 }${
                   isActive
                     ? colors?.pill || 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                 }`}
               >
                 <Icon className="h-3 w-3" />
@@ -501,7 +501,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
         {/* Body: results (left) + selected panel (right) */}
         <div className="flex flex-1 min-h-0">
           {/* Results — left column */}
-          <div className={`overflow-y-auto flex-1 min-h-0 ${selected.size > 0 || existingLinks.length > 0 ? 'border-r border-gray-100' : ''}`}>
+          <div className={`overflow-y-auto flex-1 min-h-0 ${selected.size > 0 || existingLinks.length > 0 ? 'border-r border-gray-100 dark:border-gray-800' : ''}`}>
             {isLoading ? (
               <div className="flex items-center justify-center py-10">
                 <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
@@ -509,7 +509,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
             ) : dedupedResults.length === 0 ? (
               <div className="text-center py-10 px-6">
                 <Search className="h-7 w-7 text-gray-300 mx-auto mb-2.5" />
-                <p className="text-sm font-medium text-gray-500">
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
                   {query.trim() ? 'No matching objects' : 'Search to link objects'}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
@@ -540,7 +540,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                           ? 'opacity-50 cursor-default'
                           : isSelected
                             ? 'bg-primary-50 border-l-2 border-l-primary-500'
-                            : 'hover:bg-gray-50 cursor-pointer border-l-2 border-l-transparent'
+                            : 'hover:bg-gray-50 cursor-pointer border-l-2 border-l-transparent dark:hover:bg-gray-800'
                       }`}
                     >
                       {/* Selection indicator */}
@@ -548,8 +548,8 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                         isSelected
                           ? 'bg-primary-600 border-primary-600'
                           : isAlreadyLinked
-                            ? 'bg-gray-200 border-gray-300'
-                            : 'border-gray-300'
+                            ? 'bg-gray-200 border-gray-300 dark:border-gray-600'
+                            : 'border-gray-300 dark:border-gray-600'
                       }`}>
                         {(isSelected || isAlreadyLinked) && <Check className="h-3 w-3 text-white" />}
                       </div>
@@ -561,12 +561,12 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium text-gray-900 truncate leading-tight">{result.title}</p>
-                        <p className="text-[11px] text-gray-500 truncate leading-tight mt-0.5">{contextLine}</p>
+                        <p className="text-[13px] font-medium text-gray-900 truncate leading-tight dark:text-white">{result.title}</p>
+                        <p className="text-[11px] text-gray-500 truncate leading-tight mt-0.5 dark:text-gray-400">{contextLine}</p>
                       </div>
 
                       {isAlreadyLinked && (
-                        <span className="text-[10px] font-medium text-gray-400 flex-shrink-0 bg-gray-100 px-1.5 py-0.5 rounded">Linked</span>
+                        <span className="text-[10px] font-medium text-gray-400 flex-shrink-0 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">Linked</span>
                       )}
                     </button>
                   )
@@ -582,7 +582,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
               {existingLinks.length > 0 && (
                 <>
                   <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-                    <p className="text-[11px] font-semibold text-gray-600">
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-400">
                       Linked
                       <span className="text-gray-400 font-normal ml-1">({existingLinks.length})</span>
                     </p>
@@ -597,16 +597,16 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                       return (
                         <div
                           key={link.id}
-                          className="rounded-lg border border-gray-200 bg-white/80"
+                          className="rounded-lg border border-gray-200 bg-white/80 dark:border-gray-700"
                         >
                           <div className="flex items-start gap-2 px-2.5 pt-2 pb-1.5">
                             <div className={`w-6 h-6 rounded-md ${colors.bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                               <Icon className={`h-3 w-3 ${colors.icon}`} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[12px] font-medium text-gray-900 truncate leading-tight">{link.label}</p>
+                              <p className="text-[12px] font-medium text-gray-900 truncate leading-tight dark:text-white">{link.label}</p>
                               {link.subtitle && (
-                                <p className="text-[10px] text-gray-500 truncate leading-tight mt-0.5">{link.subtitle}</p>
+                                <p className="text-[10px] text-gray-500 truncate leading-tight mt-0.5 dark:text-gray-400">{link.subtitle}</p>
                               )}
                             </div>
                             {!link.isAuto && onDeleteLink && (
@@ -621,7 +621,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                           </div>
                           <div className="px-2.5 pb-1.5 flex items-center gap-1.5">
                             <span className="text-[10px] text-gray-400">Relationship:</span>
-                            <span className="text-[10px] font-medium text-gray-600">{intentLabel}</span>
+                            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">{intentLabel}</span>
                             {link.isAuto && (
                               <span className="text-[9px] text-gray-400 italic ml-auto">Inline reference</span>
                             )}
@@ -637,7 +637,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
               {selected.size > 0 && (
                 <>
                   <div className="flex items-center justify-between px-3 pt-2 pb-1.5">
-                    <p className="text-[11px] font-semibold text-gray-600">
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-400">
                       {existingLinks.length > 0 ? 'Adding' : 'Objects to Link'}
                       <span className="text-gray-400 font-normal ml-1">({selected.size})</span>
                     </p>
@@ -657,7 +657,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                       return (
                         <div
                           key={item.id}
-                          className="rounded-lg border border-gray-200 bg-white shadow-sm"
+                          className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
                         >
                           {/* Object identity row */}
                           <div className="flex items-start gap-2 px-2.5 pt-2 pb-1.5">
@@ -665,9 +665,9 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                               <Icon className={`h-3 w-3 ${colors.icon}`} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[12px] font-medium text-gray-900 truncate leading-tight">{item.label}</p>
+                              <p className="text-[12px] font-medium text-gray-900 truncate leading-tight dark:text-white">{item.label}</p>
                               {item.context && (
-                                <p className="text-[10px] text-gray-500 truncate leading-tight mt-0.5">{item.context}</p>
+                                <p className="text-[10px] text-gray-500 truncate leading-tight mt-0.5 dark:text-gray-400">{item.context}</p>
                               )}
                             </div>
                             <button
@@ -702,12 +702,12 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
         </div>
 
         {/* Footer: global default relationship + confirm */}
-        <div className="border-t border-gray-200 px-4 py-2.5 bg-gray-50/80 flex items-center justify-between gap-3">
+        <div className="border-t border-gray-200 px-4 py-2.5 bg-gray-50/80 flex items-center justify-between gap-3 dark:border-gray-700">
           {/* Global default relationship selector */}
           <div className="relative" ref={defaultMenuRef}>
             <button
               onClick={() => setShowDefaultMenu(!showDefaultMenu)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
             >
               <activeDefault.icon className="h-3 w-3 text-gray-400" />
               <span className="text-gray-400">Default Relationship:</span>
@@ -716,7 +716,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
             </button>
 
             {showDefaultMenu && (
-              <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[240px]">
+              <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[240px] dark:border-gray-700 dark:bg-gray-800">
                 {LINK_INTENTS.map(intent => {
                   const IntentIcon = intent.icon
                   return (
@@ -724,15 +724,15 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
                       key={intent.value}
                       onClick={() => { setDefaultRelationship(intent.value); setShowDefaultMenu(false) }}
                       className={`w-full px-3 py-2 text-left hover:bg-gray-50 transition-colors ${
-                        defaultRelationship === intent.value ? 'bg-gray-50' : ''
+                        defaultRelationship === intent.value ? 'bg-gray-50 dark:bg-gray-900' : ''
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         <IntentIcon className={`h-3.5 w-3.5 flex-shrink-0 ${defaultRelationship === intent.value ? 'text-primary-500' : 'text-gray-400'}`} />
-                        <span className="text-xs font-medium text-gray-900 flex-1">{intent.label}</span>
+                        <span className="text-xs font-medium text-gray-900 flex-1 dark:text-white">{intent.label}</span>
                         {defaultRelationship === intent.value && <Check className="h-3.5 w-3.5 text-primary-500 flex-shrink-0" />}
                       </div>
-                      <p className="text-[11px] text-gray-500 mt-0.5 ml-[22px]">{intent.description}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5 ml-[22px] dark:text-gray-400">{intent.description}</p>
                     </button>
                   )
                 })}
@@ -747,7 +747,7 @@ export function ObjectLinkPicker({ isOpen, onLinkMultiple, onClose, existingLink
             className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all flex-shrink-0 ${
               selected.size > 0
                 ? 'bg-primary-600 text-white hover:bg-primary-700 shadow-sm'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800'
             }`}
           >
             {selected.size === 0

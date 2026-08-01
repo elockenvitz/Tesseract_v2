@@ -321,8 +321,8 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Portfolios</h1>
-          <p className="text-gray-600">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Portfolios</h1>
+          <p className="text-gray-600 dark:text-gray-400">
             {filteredPortfolios.length} of {portfolios?.length || 0} portfolios
           </p>
         </div>
@@ -339,12 +339,12 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
             <div className="relative group">
               <button
                 disabled
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed dark:bg-gray-800"
               >
                 <Plus className="w-4 h-4" />
                 New Portfolio
               </button>
-              <div className="absolute right-0 top-full mt-1 w-64 p-2 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+              <div className="absolute right-0 top-full mt-1 w-64 p-2 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                 <div className="flex items-start gap-1.5">
                   <ShieldAlert className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
                   Only Org Admins and Coverage Admins can create portfolios.
@@ -366,7 +366,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
               placeholder="Search by portfolio name, description, or benchmark..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
@@ -383,7 +383,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
                     isSelected
                       ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800',
                   )}
                 >
                   {filter === 'active' && 'Active'}
@@ -392,7 +392,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   {filter === 'all' && 'All'}
                   <span className={clsx(
                     'text-[10px] px-1.5 py-0.5 rounded-full',
-                    isSelected ? 'bg-indigo-200/70 text-indigo-800' : 'bg-gray-200 text-gray-500',
+                    isSelected ? 'bg-indigo-200/70 text-indigo-800' : 'bg-gray-200 text-gray-500 dark:text-gray-400',
                   )}>
                     {count}
                   </span>
@@ -405,7 +405,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
           <div className="flex items-center justify-between">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400"
             >
               <Filter className="h-4 w-4" />
               <span>Filters</span>
@@ -431,7 +431,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
 
           {/* Filter Controls */}
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <Select
                 label="Sort by"
                 value={sortBy}
@@ -456,14 +456,14 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
             <ListSkeleton count={5} />
           </div>
         ) : filteredPortfolios.length > 0 ? (
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {/* Table Header */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                 <div className="col-span-4">
                   <button
                     onClick={() => handleSort('name')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
                   >
                     <span>Portfolio</span>
                     <ArrowUpDown className="h-3 w-3" />
@@ -472,7 +472,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                 <div className="col-span-2">
                   <button
                     onClick={() => handleSort('benchmark')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
                   >
                     <span>Benchmark</span>
                     <ArrowUpDown className="h-3 w-3" />
@@ -487,7 +487,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                 <div className="col-span-2">
                   <button
                     onClick={() => handleSort('updated_at')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
                   >
                     <span>Updated</span>
                     <ArrowUpDown className="h-3 w-3" />
@@ -513,7 +513,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   className={clsx(
                     'px-6 py-4 cursor-pointer transition-colors group/row',
                     isDiscarded
-                      ? 'bg-gray-100/60 hover:bg-gray-100'
+                      ? 'bg-gray-100/60 hover:bg-gray-100 dark:hover:bg-gray-700'
                       : isArchived
                         ? 'bg-gray-50/50 hover:bg-gray-100/70'
                         : 'hover:bg-gray-50',
@@ -542,7 +542,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           <div className="flex items-center gap-1.5">
                             <p className={clsx(
                               'text-sm font-semibold truncate',
-                              isInactive ? 'text-gray-500' : 'text-gray-900',
+                              isInactive ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white',
                             )}>
                               {portfolio.name}
                             </p>
@@ -558,7 +558,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                             )}
                           </div>
                           {portfolio.description && (
-                            <p className={clsx('text-xs truncate', isInactive ? 'text-gray-400' : 'text-gray-500')}>
+                            <p className={clsx('text-xs truncate', isInactive ? 'text-gray-400' : 'text-gray-500 dark:text-gray-400')}>
                               {portfolio.description}
                             </p>
                           )}
@@ -569,7 +569,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     {/* Benchmark */}
                     <div className="col-span-2">
                       {portfolio.benchmark ? (
-                        <span className={clsx('text-sm', isInactive ? 'text-gray-400' : 'text-gray-900')}>
+                        <span className={clsx('text-sm', isInactive ? 'text-gray-400' : 'text-gray-900 dark:text-white')}>
                           {portfolio.benchmark}
                         </span>
                       ) : (
@@ -581,7 +581,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     <div className="col-span-2">
                       {links.length > 0 ? (
                         <div className="relative group/teams">
-                          <div className={clsx('flex items-center gap-1.5 text-sm', isInactive ? 'text-gray-400' : 'text-gray-600')}>
+                          <div className={clsx('flex items-center gap-1.5 text-sm', isInactive ? 'text-gray-400' : 'text-gray-600 dark:text-gray-400')}>
                             <Users className="h-3.5 w-3.5 text-gray-400" />
                             <span>{links.length}</span>
                             {leadTeam && (
@@ -589,7 +589,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                             )}
                           </div>
                           {/* Tooltip */}
-                          <div className="absolute left-0 bottom-full mb-1 w-48 p-2 text-xs bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 group-hover/teams:opacity-100 transition-opacity pointer-events-none z-10">
+                          <div className="absolute left-0 bottom-full mb-1 w-48 p-2 text-xs bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 group-hover/teams:opacity-100 transition-opacity pointer-events-none z-10 dark:border-gray-700 dark:bg-gray-800">
                             {links.map((l: any) => (
                               <div key={l.team_node_id} className="flex items-center gap-1.5 py-0.5">
                                 {l.is_lead && <Star className="w-3 h-3 text-amber-400 fill-current shrink-0" />}
@@ -607,11 +607,11 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     {/* Members */}
                     <div className="col-span-2">
                       {counts.total > 0 ? (
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           {counts.pms > 0 && (
                             <span className={clsx(
                               'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded',
-                              isInactive ? 'bg-gray-100 text-gray-400' : 'bg-sky-50 text-sky-700',
+                              isInactive ? 'bg-gray-100 text-gray-400 dark:bg-gray-800' : 'bg-sky-50 text-sky-700',
                             )}>
                               {counts.pms} PM{counts.pms > 1 ? 's' : ''}
                             </span>
@@ -619,7 +619,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           {counts.analysts > 0 && (
                             <span className={clsx(
                               'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded',
-                              isInactive ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 text-gray-600',
+                              isInactive ? 'bg-gray-100 text-gray-400 dark:bg-gray-800' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
                             )}>
                               {counts.analysts} A
                             </span>
@@ -638,7 +638,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     {/* Last Updated + Actions */}
                     <div className="col-span-2">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center text-sm text-gray-500">
+                        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                           <Calendar className="h-3 w-3 mr-1" />
                           {formatDistanceToNow(new Date(portfolio.updated_at || ''), { addSuffix: true })}
                         </div>
@@ -653,11 +653,11 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                               }}
                               className="p-1 rounded hover:bg-gray-200 opacity-0 group-hover/row:opacity-100 transition-opacity"
                             >
-                              <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                              <MoreHorizontal className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                             </button>
 
                             {openMenuId === portfolio.id && (
-                              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 dark:border-gray-700 dark:bg-gray-800">
                                 {isDiscarded ? (
                                   <button
                                     onClick={(e) => {
@@ -665,7 +665,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                                       setOpenMenuId(null)
                                       restoreMutation.mutate(portfolio.id)
                                     }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                                   >
                                     <RotateCcw className="w-4 h-4" />
                                     Restore
@@ -679,7 +679,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                                           setOpenMenuId(null)
                                           setArchiveConfirm({ isOpen: true, portfolio, action: 'unarchive' })
                                         }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                                       >
                                         <ArchiveRestore className="w-4 h-4" />
                                         Unarchive
@@ -691,7 +691,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                                           setOpenMenuId(null)
                                           setArchiveConfirm({ isOpen: true, portfolio, action: 'archive' })
                                         }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                                       >
                                         <Archive className="w-4 h-4" />
                                         Archive

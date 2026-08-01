@@ -352,7 +352,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
     if (isHolding) return { label: 'Critical', cls: 'bg-red-50 text-red-700 border-red-200' }
     if (isLargeCap) return { label: 'High', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
     if (isWatchlisted) return { label: 'Medium', cls: 'bg-blue-50 text-blue-600 border-blue-200' }
-    return { label: 'Low', cls: 'bg-gray-50 text-gray-400 border-gray-200' }
+    return { label: 'Low', cls: 'bg-gray-50 text-gray-400 border-gray-200 dark:border-gray-700 dark:bg-gray-900' }
   }
 
   const renderPriorityBadge = (asset: any) => {
@@ -367,9 +367,9 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
   const renderPortfolioCell = (asset: any) => {
     const names = portfoliosByAsset.get(asset.id)
     if (!names || names.length === 0) return <span className="text-[11px] text-gray-300">—</span>
-    if (names.length === 1) return <span className="text-[11px] text-gray-600 truncate">{names[0]}</span>
+    if (names.length === 1) return <span className="text-[11px] text-gray-600 truncate dark:text-gray-400">{names[0]}</span>
     return (
-      <span className="text-[11px] text-gray-600 truncate" title={names.join(', ')}>
+      <span className="text-[11px] text-gray-600 truncate dark:text-gray-400" title={names.join(', ')}>
         {names[0]} <span className="text-gray-400">+{names.length - 1}</span>
       </span>
     )
@@ -438,11 +438,11 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
   return (
     <Card padding="none" className="h-[calc(90vh-280px)] flex flex-col overflow-hidden relative">
       {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 space-y-2">
+      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 space-y-2 dark:border-gray-700 dark:bg-gray-900">
         {/* Row 1: Title + count + tooltip */}
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">Coverage Gaps</h3>
-          <span className="text-[11px] text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Coverage Gaps</h3>
+          <span className="text-[11px] text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full dark:text-gray-400">
             {effectiveGapCount !== totalGapCount
               ? `${effectiveGapCount}/${totalGapCount} assets without analyst coverage`
               : `${totalGapCount} asset${totalGapCount !== 1 ? 's' : ''} without analyst coverage`}
@@ -461,7 +461,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
           <select
             value={gapGroupBy}
             onChange={(e) => setGapGroupBy(e.target.value as 'none' | 'sector' | 'industry' | 'portfolio')}
-            className="text-[11px] bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-400"
+            className="text-[11px] bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
           >
             <option value="none">Group by: None</option>
             <option value="portfolio">Group by: Portfolio</option>
@@ -507,7 +507,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
           </span>
           <button
             onClick={openBulkAssign}
-            className="px-3 py-1 text-xs font-medium text-primary-700 bg-white hover:bg-primary-50 rounded-full transition-colors"
+            className="px-3 py-1 text-xs font-medium text-primary-700 bg-white hover:bg-primary-50 rounded-full transition-colors dark:bg-gray-800"
           >
             Assign Coverage
           </button>
@@ -524,7 +524,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
       {showPortfolioView ? (
         <div className="flex-1 overflow-y-auto">
           {!portfolioUniverseData || portfolioUniverseData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+            <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
               <Briefcase className="h-12 w-12 text-gray-300 mb-3" />
               <p className="text-sm font-medium">No portfolio universes defined</p>
               <p className="text-xs text-gray-400 mt-1">Define investable universes in portfolios to see coverage gaps.</p>
@@ -533,8 +533,8 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
             <div>
               {/* ── Portfolio risk overview strip ────────────────── */}
               {portfolioRiskSummary.length > 0 && (
-                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Coverage Risk Across Portfolios</p>
+                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">Coverage Risk Across Portfolios</p>
                   <div className="flex flex-wrap gap-2">
                     {portfolioRiskSummary.map(p => {
                       const c = coverageColor(p.pct)
@@ -549,10 +549,10 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                           className={clsx('flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left transition-colors hover:shadow-sm', c.bg, c.border)}
                         >
                           <div className="min-w-0">
-                            <p className="text-[11px] font-medium text-gray-900 truncate">{p.name}</p>
+                            <p className="text-[11px] font-medium text-gray-900 truncate dark:text-white">{p.name}</p>
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <span className={clsx('text-[11px] font-bold', c.text)}>{p.pct}%</span>
-                              <span className="text-[10px] text-gray-500">{p.gaps} gap{p.gaps !== 1 ? 's' : ''}</span>
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400">{p.gaps} gap{p.gaps !== 1 ? 's' : ''}</span>
                             </div>
                           </div>
                           {/* Mini progress bar */}
@@ -589,7 +589,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                 const cc = coveragePercent != null ? coverageColor(coveragePercent) : null
 
                 return (
-                  <div key={portfolioData.portfolio.id} id={`portfolio-${portfolioData.portfolio.id}`} className="border-b border-gray-200 last:border-b-0">
+                  <div key={portfolioData.portfolio.id} id={`portfolio-${portfolioData.portfolio.id}`} className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
                     {/* Portfolio header */}
                     <button
                       onClick={() => {
@@ -600,11 +600,11 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                           return next
                         })
                       }}
-                      className="w-full px-4 py-2 bg-gray-50/80 hover:bg-gray-100 flex items-center gap-3 text-left"
+                      className="w-full px-4 py-2 bg-gray-50/80 hover:bg-gray-100 flex items-center gap-3 text-left dark:hover:bg-gray-700"
                     >
                       {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
-                      <Briefcase className="h-3.5 w-3.5 text-gray-500" />
-                      <span className="text-[12px] font-semibold text-gray-900">{portfolioData.portfolio.name}</span>
+                      <Briefcase className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+                      <span className="text-[12px] font-semibold text-gray-900 dark:text-white">{portfolioData.portfolio.name}</span>
 
                       {!hasUniverse ? (
                         <span className="text-[10px] text-gray-400 italic">No investable universe defined</span>
@@ -619,7 +619,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                             {coveragePercent}% covered
                           </span>
                           {/* Gap count */}
-                          <span className="text-[10px] text-gray-500">
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">
                             {searchQuery && gapCount !== totalGapCt ? `${gapCount}/${totalGapCt}` : totalGapCt} gap{(searchQuery && gapCount !== totalGapCt ? gapCount : totalGapCt) !== 1 ? 's' : ''}
                           </span>
                           {/* Mini progress bar */}
@@ -645,24 +645,24 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                           </p>
                         </div>
                       ) : (
-                        <div className="divide-y divide-gray-100">
+                        <div className="divide-y divide-gray-100 dark:divide-gray-800">
                           {filteredAssets.map(asset => {
                             const tier = getAssetTier(asset)
                             return (
-                              <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50" style={gridStyle({ checkbox: hasAnyCoverageAdminRights, mcap: portHasAnyMcap })}>
+                              <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800" style={gridStyle({ checkbox: hasAnyCoverageAdminRights, mcap: portHasAnyMcap })}>
                                 {hasAnyCoverageAdminRights && (
                                   <div className="flex items-center">
                                     <input
                                       type="checkbox"
                                       checked={selectedGapAssets.has(asset.id)}
                                       onChange={() => toggleGapSelect(asset.id)}
-                                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5"
+                                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5 dark:border-gray-600"
                                     />
                                   </div>
                                 )}
                                 <div className="min-w-0 px-2">
-                                  <p className="text-[12px] font-semibold text-gray-900">{asset.symbol}</p>
-                                  <p className="text-[11px] text-gray-500 truncate">{asset.company_name}</p>
+                                  <p className="text-[12px] font-semibold text-gray-900 dark:text-white">{asset.symbol}</p>
+                                  <p className="text-[11px] text-gray-500 truncate dark:text-gray-400">{asset.company_name}</p>
                                 </div>
                                 <div>
                                   <span className={clsx('inline-flex px-1.5 py-0.5 text-[9px] font-bold rounded border whitespace-nowrap', tier.cls)}>
@@ -670,9 +670,9 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                                   </span>
                                 </div>
                                 <div className="pl-3 pr-2 min-w-0">{renderPortfolioCell(asset)}</div>
-                                <div className="px-2"><span className="text-[12px] text-gray-600">{asset.sector || '—'}</span></div>
+                                <div className="px-2"><span className="text-[12px] text-gray-600 dark:text-gray-400">{asset.sector || '—'}</span></div>
                                 {portHasAnyMcap && (
-                                  <div className="px-2 text-right"><span className="text-[12px] text-gray-600">{formatMarketCap(asset.market_cap)}</span></div>
+                                  <div className="px-2 text-right"><span className="text-[12px] text-gray-600 dark:text-gray-400">{formatMarketCap(asset.market_cap)}</span></div>
                                 )}
                                 <div className="flex justify-end">
                                   {hasAnyCoverageAdminRights && (
@@ -700,16 +700,16 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
         <>
           {/* ── Firm universe column header ────────────────────── */}
           {!gapsGrouping && (
-            <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-200"
+            <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900"
               style={gridStyle({ checkbox: hasAnyCoverageAdminRights, mcap: hasAnyMarketCap })}
             >
               {hasAnyCoverageAdminRights && <div />}
-              <div onDoubleClick={() => handleColumnSort('symbol')} className="px-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Asset{sortIndicator('symbol')}</div>
-              <div onDoubleClick={() => handleColumnSort('priority')} className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Priority{sortIndicator('priority')}</div>
-              <div onDoubleClick={() => handleColumnSort('portfolios')} className="pl-3 pr-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Portfolios{sortIndicator('portfolios')}</div>
-              <div onDoubleClick={() => handleColumnSort('sector')} className="px-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Sector{sortIndicator('sector')}</div>
+              <div onDoubleClick={() => handleColumnSort('symbol')} className="px-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900 dark:hover:text-white dark:text-gray-400">Asset{sortIndicator('symbol')}</div>
+              <div onDoubleClick={() => handleColumnSort('priority')} className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900 dark:hover:text-white dark:text-gray-400">Priority{sortIndicator('priority')}</div>
+              <div onDoubleClick={() => handleColumnSort('portfolios')} className="pl-3 pr-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900 dark:hover:text-white dark:text-gray-400">Portfolios{sortIndicator('portfolios')}</div>
+              <div onDoubleClick={() => handleColumnSort('sector')} className="px-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900 dark:hover:text-white dark:text-gray-400">Sector{sortIndicator('sector')}</div>
               {hasAnyMarketCap && (
-                <div onDoubleClick={() => handleColumnSort('marketCap')} className="px-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider text-right cursor-pointer select-none hover:text-gray-900">Mkt Cap{sortIndicator('marketCap')}</div>
+                <div onDoubleClick={() => handleColumnSort('marketCap')} className="px-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wider text-right cursor-pointer select-none hover:text-gray-900 dark:hover:text-white dark:text-gray-400">Mkt Cap{sortIndicator('marketCap')}</div>
               )}
               <div />
             </div>
@@ -717,23 +717,23 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
 
           <div className="flex-1 overflow-y-auto">
             {!gapsData || gapsData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
                 <CheckCircle className="h-12 w-12 text-green-400 mb-3" />
                 <p className="text-sm font-medium">No uncovered assets in this universe.</p>
                 <p className="text-xs text-gray-400 mt-1">Every asset in the system has active coverage.</p>
               </div>
             ) : filteredGapsData.length === 0 && matchingCoveredAssets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
                 <Search className="h-12 w-12 text-gray-300 mb-3" />
                 <p className="text-sm font-medium">No assets matching &ldquo;{searchQuery}&rdquo;</p>
                 <p className="text-xs text-gray-400 mt-1">Try a different search term.</p>
               </div>
             ) : !gapsGrouping ? (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {/* Select all */}
                 {hasAnyCoverageAdminRights && filteredGapsData.length > 0 && (
                   <div className="px-4 py-1 bg-gray-50/50">
-                    <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
+                    <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer dark:text-gray-400">
                       <input
                         type="checkbox"
                         checked={filteredGapsData.length > 0 && filteredGapsData.every((a: any) => selectedGapAssets.has(a.id))}
@@ -743,14 +743,14 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                           if (allSelected) setSelectedGapAssets(new Set())
                           else setSelectedGapAssets(new Set(allIds))
                         }}
-                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5"
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5 dark:border-gray-600"
                       />
                       Select all
                     </label>
                   </div>
                 )}
                 {filteredGapsData.map((asset: any) => (
-                  <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50"
+                  <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800"
                     style={gridStyle({ checkbox: hasAnyCoverageAdminRights, mcap: hasAnyMarketCap })}
                   >
                     {hasAnyCoverageAdminRights && (
@@ -759,13 +759,13 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                           type="checkbox"
                           checked={selectedGapAssets.has(asset.id)}
                           onChange={() => toggleGapSelect(asset.id)}
-                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5"
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5 dark:border-gray-600"
                         />
                       </div>
                     )}
                     <div className="min-w-0 px-2">
-                      <p className="text-[12px] font-semibold text-gray-900">{asset.symbol}</p>
-                      <p className="text-[11px] text-gray-500 truncate">{asset.company_name}</p>
+                      <p className="text-[12px] font-semibold text-gray-900 dark:text-white">{asset.symbol}</p>
+                      <p className="text-[11px] text-gray-500 truncate dark:text-gray-400">{asset.company_name}</p>
                     </div>
                     <div>
                       {(() => { const tier = getAssetTier(asset); return (
@@ -773,9 +773,9 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                       ) })()}
                     </div>
                     <div className="pl-3 pr-2 min-w-0">{renderPortfolioCell(asset)}</div>
-                    <div className="px-2"><span className="text-[12px] text-gray-600">{asset.sector || '—'}</span></div>
+                    <div className="px-2"><span className="text-[12px] text-gray-600 dark:text-gray-400">{asset.sector || '—'}</span></div>
                     {hasAnyMarketCap && (
-                      <div className="px-2 text-right"><span className="text-[12px] text-gray-600">{formatMarketCap(asset.market_cap)}</span></div>
+                      <div className="px-2 text-right"><span className="text-[12px] text-gray-600 dark:text-gray-400">{formatMarketCap(asset.market_cap)}</span></div>
                     )}
                     <div className="flex justify-end">
                       {hasAnyCoverageAdminRights && (
@@ -790,7 +790,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                   </div>
                 ))}
                 {matchingCoveredAssets.map((asset: any) => (
-                  <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50 bg-green-50/50"
+                  <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50 bg-green-50/50 dark:hover:bg-gray-800"
                     style={gridStyle({ checkbox: hasAnyCoverageAdminRights, mcap: hasAnyMarketCap })}
                   >
                     {hasAnyCoverageAdminRights && <div />}
@@ -798,16 +798,16 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                         <div>
-                          <p className="text-[12px] font-medium text-gray-900">{asset.symbol}</p>
-                          <p className="text-[11px] text-gray-500 truncate">{asset.company_name}</p>
+                          <p className="text-[12px] font-medium text-gray-900 dark:text-white">{asset.symbol}</p>
+                          <p className="text-[11px] text-gray-500 truncate dark:text-gray-400">{asset.company_name}</p>
                         </div>
                       </div>
                     </div>
                     <div />
                     <div className="pl-3 pr-2 min-w-0">{renderPortfolioCell(asset)}</div>
-                    <div className="px-2"><span className="text-[12px] text-gray-600">{asset.sector || '—'}</span></div>
+                    <div className="px-2"><span className="text-[12px] text-gray-600 dark:text-gray-400">{asset.sector || '—'}</span></div>
                     {hasAnyMarketCap && (
-                      <div className="px-2 text-right"><span className="text-[12px] text-gray-600">{formatMarketCap(asset.market_cap)}</span></div>
+                      <div className="px-2 text-right"><span className="text-[12px] text-gray-600 dark:text-gray-400">{formatMarketCap(asset.market_cap)}</span></div>
                     )}
                     <div className="flex justify-end">
                       <span className="text-[10px] text-green-600 bg-green-100 px-2 py-0.5 rounded-full">Covered</span>
@@ -831,7 +831,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                   return sortedGroups.map(([groupName, groupAssets]) => {
                     const isCollapsed = collapsedGapsGroups.has(groupName)
                     return (
-                      <div key={groupName} className="border-b border-gray-200 last:border-b-0">
+                      <div key={groupName} className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
                         <button
                           onClick={() => {
                             setCollapsedGapsGroups(prev => {
@@ -841,16 +841,16 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                               return next
                             })
                           }}
-                          className="w-full px-4 py-2 bg-gray-50 hover:bg-gray-100 flex items-center gap-2 text-left border-b border-gray-100"
+                          className="w-full px-4 py-2 bg-gray-50 hover:bg-gray-100 flex items-center gap-2 text-left border-b border-gray-100 dark:hover:bg-gray-700 dark:border-gray-800 dark:bg-gray-900"
                         >
                           {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
-                          <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">{groupName}</span>
-                          <span className="text-[10px] text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full font-medium">{groupAssets.length}</span>
+                          <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">{groupName}</span>
+                          <span className="text-[10px] text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full font-medium dark:text-gray-400">{groupAssets.length}</span>
                         </button>
                         {!isCollapsed && (
-                          <div className="divide-y divide-gray-100">
+                          <div className="divide-y divide-gray-100 dark:divide-gray-800">
                             {groupAssets.map((asset: any) => (
-                              <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50"
+                              <div key={asset.id} className="px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800"
                                 style={gridStyle({ checkbox: hasAnyCoverageAdminRights, mcap: grpHasMcap })}
                               >
                                 {hasAnyCoverageAdminRights && (
@@ -859,13 +859,13 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                                       type="checkbox"
                                       checked={selectedGapAssets.has(asset.id)}
                                       onChange={() => toggleGapSelect(asset.id)}
-                                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5"
+                                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5 dark:border-gray-600"
                                     />
                                   </div>
                                 )}
                                 <div className="min-w-0 px-2">
-                                  <p className="text-[12px] font-semibold text-gray-900">{asset.symbol}</p>
-                                  <p className="text-[11px] text-gray-500 truncate">{asset.company_name}</p>
+                                  <p className="text-[12px] font-semibold text-gray-900 dark:text-white">{asset.symbol}</p>
+                                  <p className="text-[11px] text-gray-500 truncate dark:text-gray-400">{asset.company_name}</p>
                                 </div>
                                 <div>
                                   {(() => { const tier = getAssetTier(asset); return (
@@ -874,12 +874,12 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                                 </div>
                                 <div className="pl-3 pr-2 min-w-0">{renderPortfolioCell(asset)}</div>
                                 <div className="px-2">
-                                  <span className="text-[12px] text-gray-600">
+                                  <span className="text-[12px] text-gray-600 dark:text-gray-400">
                                     {gapsGrouping === 'sector' ? (asset.industry || '—') : (asset.sector || '—')}
                                   </span>
                                 </div>
                                 {grpHasMcap && (
-                                  <div className="px-2 text-right"><span className="text-[12px] text-gray-600">{formatMarketCap(asset.market_cap)}</span></div>
+                                  <div className="px-2 text-right"><span className="text-[12px] text-gray-600 dark:text-gray-400">{formatMarketCap(asset.market_cap)}</span></div>
                                 )}
                                 <div className="flex justify-end">
                                   {hasAnyCoverageAdminRights && (
@@ -911,13 +911,13 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
           <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setBulkAssignOpen(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setBulkAssignOpen(false)}>
             <div
-              className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200"
+              className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 dark:bg-gray-800"
               onClick={e => e.stopPropagation()}
             >
               {/* Modal header */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900">Assign Coverage</h3>
-                <button onClick={() => setBulkAssignOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Assign Coverage</h3>
+                <button onClick={() => setBulkAssignOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -926,10 +926,10 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
               <div className="px-5 py-4 space-y-4">
                 {/* 1. Selected Assets */}
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-700 mb-1">
+                  <label className="block text-[11px] font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Selected Assets{selectedGapAssets.size > 1 ? ` (${selectedGapAssets.size})` : ''}
                   </label>
-                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
                     {(() => {
                       const PREVIEW_LIMIT = 3
                       const assets = selectedAssetObjects
@@ -940,8 +940,8 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                           {visible.map((a: any) => (
                             <div key={a.id} className="px-3 py-1.5">
                               <div className="flex items-baseline gap-1.5">
-                                <span className="text-[12px] font-semibold text-gray-900">{a.symbol}</span>
-                                <span className="text-[11px] text-gray-500 truncate">{a.company_name}</span>
+                                <span className="text-[12px] font-semibold text-gray-900 dark:text-white">{a.symbol}</span>
+                                <span className="text-[11px] text-gray-500 truncate dark:text-gray-400">{a.company_name}</span>
                               </div>
                               {a.sector && <p className="text-[10px] text-gray-400">{a.sector}</p>}
                             </div>
@@ -959,7 +959,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                             <button
                               type="button"
                               onClick={() => setBulkAssetsExpanded(false)}
-                              className="w-full px-3 py-1 text-[10px] text-gray-500 hover:bg-gray-50 transition-colors text-left"
+                              className="w-full px-3 py-1 text-[10px] text-gray-500 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800 dark:text-gray-400"
                             >
                               Show less
                             </button>
@@ -972,7 +972,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
 
                 {/* 2. Analyst dropdown */}
                 <div className="relative">
-                  <label className="block text-[11px] font-medium text-gray-700 mb-1">Analyst</label>
+                  <label className="block text-[11px] font-medium text-gray-700 mb-1 dark:text-gray-300">Analyst</label>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                     <input
@@ -981,20 +981,20 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                       onChange={e => { setBulkAnalystSearch(e.target.value); setBulkAnalystDropdownOpen(true) }}
                       onFocus={() => setBulkAnalystDropdownOpen(true)}
                       placeholder="Search or select analyst"
-                      className="w-full pl-8 pr-3 py-1.5 text-[12px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full pl-8 pr-3 py-1.5 text-[12px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     />
                   </div>
                   {bulkAnalystDropdownOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setBulkAnalystDropdownOpen(false)} />
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                         {(() => {
                           const q = bulkAnalystSearch.toLowerCase()
                           const filtered = (users || []).filter(u => {
                             const name = u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.email?.split('@')[0] || ''
                             return name.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
                           })
-                          if (filtered.length === 0) return <div className="px-3 py-2 text-[11px] text-gray-500">No analysts found</div>
+                          if (filtered.length === 0) return <div className="px-3 py-2 text-[11px] text-gray-500 dark:text-gray-400">No analysts found</div>
                           return filtered.map(u => {
                             const name = u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.email?.split('@')[0] || 'Unknown'
                             const assetCount = analystWorkload.get(u.id) || 0
@@ -1008,13 +1008,13 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                                   setBulkAnalystDropdownOpen(false)
                                 }}
                                 className={clsx(
-                                  'w-full px-3 py-1.5 text-left hover:bg-gray-50 transition-colors flex items-center justify-between',
+                                  'w-full px-3 py-1.5 text-left hover:bg-gray-50 transition-colors flex items-center justify-between dark:hover:bg-gray-800',
                                   bulkAnalystId === u.id && 'bg-primary-50',
                                 )}
                               >
                                 <div>
-                                  <div className="text-[12px] font-medium text-gray-900">{name}</div>
-                                  {u.email && <div className="text-[10px] text-gray-500">{u.email}</div>}
+                                  <div className="text-[12px] font-medium text-gray-900 dark:text-white">{name}</div>
+                                  {u.email && <div className="text-[10px] text-gray-500 dark:text-gray-400">{u.email}</div>}
                                 </div>
                                 <span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{assetCount} asset{assetCount !== 1 ? 's' : ''}</span>
                               </button>
@@ -1028,17 +1028,17 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
 
                 {/* 3. Coverage Group dropdown */}
                 <div className="relative">
-                  <label className="block text-[11px] font-medium text-gray-700 mb-1">Coverage Group</label>
+                  <label className="block text-[11px] font-medium text-gray-700 mb-1 dark:text-gray-300">Coverage Group</label>
                   <button
                     type="button"
                     onClick={() => setBulkCoversForOpen(prev => !prev)}
                     className={clsx(
                       'w-full flex items-center justify-between px-3 py-1.5 border rounded-lg text-[12px] text-left',
                       'focus:outline-none focus:ring-2 focus:ring-primary-500',
-                      bulkCoversForOpen ? 'border-primary-400 ring-2 ring-primary-500/20' : 'border-gray-300',
+                      bulkCoversForOpen ? 'border-primary-400 ring-2 ring-primary-500/20' : 'border-gray-300 dark:border-gray-600',
                     )}
                   >
-                    <span className={bulkGroupId ? 'text-gray-900' : 'text-gray-400'}>
+                    <span className={bulkGroupId ? 'text-gray-900 dark:text-white' : 'text-gray-400'}>
                       {bulkGroupLabel || 'Select group'}
                     </span>
                     <ChevronDown size={13} className={clsx('text-gray-400 transition-transform', bulkCoversForOpen && 'rotate-180')} />
@@ -1047,20 +1047,20 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                   {bulkCoversForOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setBulkCoversForOpen(false)} />
-                      <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                         {/* Firm-wide */}
                         <button
                           type="button"
                           onClick={() => { setBulkGroupId('__firm__'); setBulkCoversForOpen(false) }}
                           className={clsx(
-                            'w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left hover:bg-gray-50 transition-colors',
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                             bulkGroupId === '__firm__' && 'bg-primary-50 text-primary-700 font-medium',
                           )}
                         >
                           Firm-wide
                           {bulkGroupId === '__firm__' && <Check size={12} className="ml-auto text-primary-500" />}
                         </button>
-                        <div className="border-t border-gray-100" />
+                        <div className="border-t border-gray-100 dark:border-gray-800" />
 
                         {NODE_TYPE_SECTIONS.map(section => {
                           const nodes = (allOrgChartNodes?.nodes || []).filter((n: any) => n.node_type === section.type)
@@ -1076,7 +1076,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                                   else next.add(section.type)
                                   return next
                                 })}
-                                className="w-full flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                                className="w-full flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-gray-500 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:text-gray-400"
                               >
                                 {isExpanded
                                   ? <ChevronDown size={11} className="text-gray-400" />
@@ -1090,7 +1090,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
                                   type="button"
                                   onClick={() => { setBulkGroupId(n.id); setBulkCoversForOpen(false) }}
                                   className={clsx(
-                                    'w-full flex items-center gap-2 pl-7 pr-3 py-1 text-[12px] text-left hover:bg-gray-50 transition-colors',
+                                    'w-full flex items-center gap-2 pl-7 pr-3 py-1 text-[12px] text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                                     bulkGroupId === n.id && 'bg-primary-50 text-primary-700 font-medium',
                                   )}
                                 >
@@ -1108,10 +1108,10 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
               </div>
 
               {/* Modal footer */}
-              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setBulkAssignOpen(false)}
-                  className="px-3 py-1.5 text-[12px] font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-[12px] font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700 dark:text-gray-300"
                 >
                   Cancel
                 </button>

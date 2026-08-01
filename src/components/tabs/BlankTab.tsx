@@ -219,7 +219,7 @@ const UTILITY_SURFACES = [
     description: 'Technical charts',
     icon: LineChart,
     gradient: 'from-gray-100 to-slate-100',
-    iconColor: 'text-gray-600'
+    iconColor: 'text-gray-600 dark:text-gray-400'
   },
   {
     id: 'asset-allocation',
@@ -362,7 +362,7 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
               <Search className="h-6 w-6 text-primary-600" />
             </div>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 text-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 text-center mb-4 dark:text-white">
             What would you like to explore?
           </h2>
           <div className="max-w-xl mx-auto">
@@ -375,7 +375,7 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
 
         {/* Section 1: Primary Work Surfaces */}
         <div className="mb-8">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1 dark:text-gray-400">
             Go To
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
@@ -385,12 +385,12 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
                 <button
                   key={item.id}
                   onClick={() => handleNavigate(item)}
-                  className="flex flex-col items-center p-4 rounded-xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group"
+                  className="flex flex-col items-center p-4 rounded-xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
                 >
                   <div className={`w-10 h-10 bg-gradient-to-r ${item.gradient} rounded-lg flex items-center justify-center mb-2 group-hover:scale-105 transition-transform`}>
                     <Icon className={`h-5 w-5 ${item.iconColor}`} />
                   </div>
-                  <span className="text-sm font-medium text-gray-700">{item.title}</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{item.title}</span>
                   <span className="text-xs text-gray-400 mt-0.5">{item.description}</span>
                 </button>
               )
@@ -400,7 +400,7 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
 
         {/* Section 2: Create & Add */}
         <div className="mb-8">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1 dark:text-gray-400">
             Create
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -410,12 +410,12 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
                 <button
                   key={item.id}
                   onClick={() => handleAction(item.action)}
-                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group"
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800"
                 >
                   <div className={`w-9 h-9 bg-gradient-to-r ${item.gradient} rounded-lg flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
                     <Icon className={`h-4.5 w-4.5 ${item.iconColor}`} />
                   </div>
-                  <span className="text-xs font-medium text-gray-600">{item.title}</span>
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{item.title}</span>
                 </button>
               )
             })}
@@ -424,7 +424,7 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
 
         {/* Section 3: Supporting & Utility */}
         <div>
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3 px-1 dark:text-gray-400">
             Browse
           </h3>
           <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
@@ -434,12 +434,12 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
                 <button
                   key={item.id}
                   onClick={() => handleNavigate(item)}
-                  className="flex flex-col items-center p-3 rounded-lg bg-white border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-all group"
+                  className="flex flex-col items-center p-3 rounded-lg bg-white border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-all group dark:hover:bg-gray-800 dark:border-gray-800 dark:bg-gray-800"
                 >
                   <div className={`w-8 h-8 bg-gradient-to-r ${item.gradient} rounded-md flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform`}>
                     <Icon className={`h-4 w-4 ${item.iconColor}`} />
                   </div>
-                  <span className="text-xs font-medium text-gray-600">{item.title}</span>
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{item.title}</span>
                 </button>
               )
             })}

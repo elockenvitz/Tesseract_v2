@@ -338,19 +338,19 @@ export function ManageNodeDrawer({
         role="dialog"
         aria-label={`Manage ${node.name}`}
         tabIndex={-1}
-        className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-[60] flex flex-col outline-none animate-in slide-in-from-right duration-200"
+        className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-[60] flex flex-col outline-none animate-in slide-in-from-right duration-200 dark:bg-gray-800"
       >
         {/* ── Header ── */}
-        <div className="px-5 pt-4 pb-3 border-b border-gray-200 shrink-0">
+        <div className="px-5 pt-4 pb-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <div className="min-w-0">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{typeLabel}</div>
-              <h2 className="text-base font-semibold text-gray-900 truncate">{node.name}</h2>
+              <h2 className="text-base font-semibold text-gray-900 truncate dark:text-white">{node.name}</h2>
             </div>
             <button
               ref={closeButtonRef}
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors shrink-0"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors shrink-0 dark:hover:text-gray-300 dark:hover:bg-gray-700"
               title="Close (Esc)"
             >
               <X className="w-4 h-4" />
@@ -367,7 +367,7 @@ export function ManageNodeDrawer({
                   'px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize',
                   activeTab === tab
                     ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50',
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400',
                 )}
               >
                 {tab}
@@ -435,10 +435,10 @@ export function ManageNodeDrawer({
 
         {/* ── Footer (save details/settings changes) ── */}
         {(activeTab === 'details' || activeTab === 'settings') && (
-          <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 shrink-0">
+          <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 shrink-0 dark:border-gray-700 dark:bg-gray-900">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-md transition-colors"
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-md transition-colors dark:text-gray-400"
             >
               Cancel
             </button>
@@ -479,35 +479,35 @@ function DetailsTab({
     <div className="space-y-5">
       {node.node_type === 'custom' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Type Label *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Type Label *</label>
           <input
             type="text"
             value={editCustomTypeLabel}
             onChange={(e) => onCustomTypeLabelChange(e.target.value)}
             placeholder="e.g., Business Unit, Region"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
           />
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Name *</label>
         <input
           type="text"
           value={editName}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="Enter name"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
         <textarea
           value={editDescription}
           onChange={(e) => onDescriptionChange(e.target.value)}
           placeholder="Optional description..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm resize-y"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm resize-y dark:border-gray-600"
           rows={3}
         />
       </div>
@@ -554,7 +554,7 @@ function MembersTab({
     <div className="space-y-4">
       {/* Header with add button */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-700">Direct Members ({members.length})</h3>
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Direct Members ({members.length})</h3>
         <button
           onClick={onToggleAddMember}
           className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
@@ -568,11 +568,11 @@ function MembersTab({
       {showAddMember && (
         <div className="bg-indigo-50 rounded-lg p-3 space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Select User</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Select User</label>
             <select
               value={selectedUserId}
               onChange={(e) => onSelectUser(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             >
               <option value="">Choose a user...</option>
               {availableUsers.map(u => {
@@ -584,11 +584,11 @@ function MembersTab({
           {isPortfolio && (
             <>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Role</label>
                 <select
                   value={memberRole}
                   onChange={(e) => onRoleChange(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 >
                   <option value="">Select role...</option>
                   <option value="Portfolio Manager">Portfolio Manager</option>
@@ -597,19 +597,19 @@ function MembersTab({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Focus</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Focus</label>
                 <input
                   type="text"
                   value={memberFocus}
                   onChange={(e) => onFocusChange(e.target.value)}
                   placeholder="e.g., Technology, Healthcare"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 />
               </div>
             </>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={onCancelAdd} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+            <button onClick={onCancelAdd} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
             <button
               onClick={onAddMember}
               disabled={!selectedUserId}
@@ -623,7 +623,7 @@ function MembersTab({
 
       {/* Member list */}
       {members.length > 0 ? (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 dark:divide-gray-800">
           {members.map(member => {
             const name = member.user?.full_name || member.user?.email || 'Unknown'
             const initial = name.charAt(0).toUpperCase()
@@ -637,8 +637,8 @@ function MembersTab({
                     {initial}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{name}</div>
-                    {member.role && <div className="text-xs text-gray-500">{member.role}{member.focus ? ` — ${member.focus}` : ''}</div>}
+                    <div className="text-sm font-medium text-gray-900 truncate dark:text-white">{name}</div>
+                    {member.role && <div className="text-xs text-gray-500 dark:text-gray-400">{member.role}{member.focus ? ` — ${member.focus}` : ''}</div>}
                   </div>
                 </div>
                 <button
@@ -682,7 +682,7 @@ function CoverageTab({
 }) {
   if (node.is_non_investment) {
     return (
-      <div className="text-sm text-gray-500 italic">
+      <div className="text-sm text-gray-500 italic dark:text-gray-400">
         Non-investment node — coverage admin management is not applicable.
       </div>
     )
@@ -690,7 +690,7 @@ function CoverageTab({
 
   if (membersWithDescendants.length === 0) {
     return (
-      <div className="text-sm text-gray-500">
+      <div className="text-sm text-gray-500 dark:text-gray-400">
         No members in this node or its descendants. Add members first to manage coverage admin rights.
       </div>
     )
@@ -698,11 +698,11 @@ function CoverageTab({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Manage coverage admin rights for members of this node and its descendants.
       </p>
 
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y divide-gray-100 dark:divide-gray-800">
         {membersWithDescendants.map(member => {
           const name = member.user?.full_name || member.user?.email || 'Unknown'
           const initial = name.charAt(0).toUpperCase()
@@ -731,7 +731,7 @@ function CoverageTab({
                   {initial}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-gray-900 truncate">{name}</div>
+                  <div className="text-sm font-medium text-gray-900 truncate dark:text-white">{name}</div>
                   {/* Admin status badge */}
                   {adminStatus.status === 'explicit' && (
                     <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium">Admin</span>
@@ -757,7 +757,7 @@ function CoverageTab({
                         'p-1.5 rounded transition-colors',
                         adminStatus.status === 'explicit'
                           ? 'text-indigo-600 hover:bg-indigo-50'
-                          : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600',
+                          : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700',
                       )}
                       title={adminStatus.status === 'explicit' ? 'Remove admin' : 'Grant admin'}
                     >
@@ -771,7 +771,7 @@ function CoverageTab({
                         'p-1.5 rounded transition-colors',
                         member.coverage_admin_blocked
                           ? 'text-amber-600 hover:bg-amber-50'
-                          : 'text-gray-400 hover:bg-gray-100 hover:text-amber-600',
+                          : 'text-gray-400 hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-gray-700',
                       )}
                       title={member.coverage_admin_blocked ? 'Unblock admin access' : 'Block inherited/global admin'}
                     >
@@ -807,7 +807,7 @@ function SettingsTab({
     <div className="space-y-5">
       {/* Color */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
           <Palette className="w-3.5 h-3.5 inline mr-1.5" />
           Color
         </label>
@@ -827,17 +827,17 @@ function SettingsTab({
       </div>
 
       {/* Non-Investment Checkbox */}
-      <div className="flex items-start gap-3 pt-3 border-t border-gray-100">
+      <div className="flex items-start gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
         <input
           type="checkbox"
           id="manageIsNonInvestment"
           checked={editIsNonInvestment}
           onChange={(e) => onNonInvestmentChange(e.target.checked)}
-          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mt-0.5"
+          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mt-0.5 dark:border-gray-600"
         />
-        <label htmlFor="manageIsNonInvestment" className="text-sm text-gray-700">
+        <label htmlFor="manageIsNonInvestment" className="text-sm text-gray-700 dark:text-gray-300">
           <span className="font-medium">Non-investment team</span>
-          <p className="text-xs text-gray-500 mt-0.5">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
+          <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Exclude from coverage filters (e.g., Operations, HR, IT)</p>
         </label>
       </div>
     </div>

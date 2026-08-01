@@ -113,7 +113,7 @@ export function AddBranchEndingRuleModal({
     <form id="add-branch-ending-rule-form" onSubmit={handleSubmit} className="space-y-7">
       {/* ─── Name & Status ───────────────────────────── */}
       <div className="space-y-1.5">
-        <label className="block text-[13px] font-medium text-gray-700">
+        <label className="block text-[13px] font-medium text-gray-700 dark:text-gray-300">
           Rule Name
         </label>
         <div className="flex items-center gap-4">
@@ -121,7 +121,7 @@ export function AddBranchEndingRuleModal({
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
             placeholder="e.g., Archive after 30 days"
             required
           />
@@ -139,19 +139,19 @@ export function AddBranchEndingRuleModal({
                 formData.isActive ? 'translate-x-[14px]' : 'translate-x-[3px]'
               }`} />
             </button>
-            <span className={`text-[13px] whitespace-nowrap ${formData.isActive ? 'text-gray-600' : 'text-gray-400'}`}>
+            <span className={`text-[13px] whitespace-nowrap ${formData.isActive ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'}`}>
               {formData.isActive ? 'Active' : 'Inactive'}
             </span>
           </div>
         </div>
       </div>
 
-      <div className="border-t border-gray-100" />
+      <div className="border-t border-gray-100 dark:border-gray-800" />
 
       {/* ─── 1. Trigger ──────────────────────────────── */}
       <div className="space-y-4">
         <div>
-          <h4 className="text-[13px] font-semibold text-gray-900">Trigger</h4>
+          <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trigger</h4>
           <p className="text-[11px] text-gray-400 mt-0.5">When should this run automatically close?</p>
         </div>
 
@@ -191,13 +191,13 @@ export function AddBranchEndingRuleModal({
                 className={`px-3.5 py-3 rounded-lg transition-all text-left ${
                   selected
                     ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
-                    : 'border border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                    : 'border border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-700'
                 }`}
               >
                 <div className="flex items-start space-x-2.5">
                   <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${selected ? 'text-blue-600' : 'text-gray-400'}`} />
                   <div className="min-w-0">
-                    <div className={`text-[13px] font-medium leading-tight ${selected ? 'text-blue-900' : 'text-gray-800'}`}>
+                    <div className={`text-[13px] font-medium leading-tight ${selected ? 'text-blue-900' : 'text-gray-800 dark:text-gray-100'}`}>
                       {option.label}
                     </div>
                     <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">{option.desc}</div>
@@ -212,7 +212,7 @@ export function AddBranchEndingRuleModal({
         {formData.conditionType === 'time_after_creation' && (
           <div className="space-y-3 pt-1">
             <div>
-              <label className="block text-[13px] font-medium text-gray-700 mb-2">End after</label>
+              <label className="block text-[13px] font-medium text-gray-700 mb-2 dark:text-gray-300">End after</label>
               <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                 <input
                   type="number"
@@ -230,7 +230,7 @@ export function AddBranchEndingRuleModal({
                       })
                     }
                   }}
-                  className="w-20 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-20 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                 />
                 <select
                   value={formData.conditionValue.unit || 'days'}
@@ -238,7 +238,7 @@ export function AddBranchEndingRuleModal({
                     ...formData,
                     conditionValue: { ...formData.conditionValue, unit: e.target.value as TimeUnit }
                   })}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                 >
                   <option value="minutes">minutes</option>
                   <option value="hours">hours</option>
@@ -284,7 +284,7 @@ export function AddBranchEndingRuleModal({
                           })
                         }
                       }}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     />
                     <select
                       value={formData.conditionValue.secondaryUnit || 'hours'}
@@ -292,7 +292,7 @@ export function AddBranchEndingRuleModal({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, secondaryUnit: e.target.value as TimeUnit }
                       })}
-                      className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     >
                       <option value="minutes">minutes</option>
                       <option value="hours">hours</option>
@@ -350,7 +350,7 @@ export function AddBranchEndingRuleModal({
               </p>
             </div>
 
-            <div className="border-t border-gray-100" />
+            <div className="border-t border-gray-100 dark:border-gray-800" />
 
             {/* Specific time of day */}
             <div>
@@ -362,14 +362,14 @@ export function AddBranchEndingRuleModal({
                     ...formData,
                     conditionValue: { ...formData.conditionValue, atSpecificTime: e.target.checked }
                   })}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
                 />
-                <span className="text-[13px] font-medium text-gray-700">Trigger at a specific time of day</span>
+                <span className="text-[13px] font-medium text-gray-700 dark:text-gray-300">Trigger at a specific time of day</span>
               </label>
 
               {formData.conditionValue.atSpecificTime && (
                 <div className="mt-2.5 flex items-center space-x-2 pl-6">
-                  <span className="text-[13px] text-gray-600">At</span>
+                  <span className="text-[13px] text-gray-600 dark:text-gray-400">At</span>
                   <input
                     type="time"
                     value={formData.conditionValue.triggerTime || '09:00'}
@@ -377,7 +377,7 @@ export function AddBranchEndingRuleModal({
                       ...formData,
                       conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
                     })}
-                    className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                   />
                   <span className="text-[11px] text-gray-400">(your local time)</span>
                 </div>
@@ -389,7 +389,7 @@ export function AddBranchEndingRuleModal({
         {/* ── Specific date config ───────────────────── */}
         {formData.conditionType === 'specific_date' && (
           <div className="space-y-2.5 pt-1">
-            <label className="block text-[13px] font-medium text-gray-700 mb-0.5">End date</label>
+            <label className="block text-[13px] font-medium text-gray-700 mb-0.5 dark:text-gray-300">End date</label>
             <div className="flex items-center space-x-3 flex-wrap gap-y-2">
               <input
                 type="date"
@@ -398,7 +398,7 @@ export function AddBranchEndingRuleModal({
                   ...formData,
                   conditionValue: { ...formData.conditionValue, date: e.target.value }
                 })}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               />
               <span className="text-[13px] text-gray-400">at</span>
               <input
@@ -408,7 +408,7 @@ export function AddBranchEndingRuleModal({
                   ...formData,
                   conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
                 })}
-                className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               />
               <span className="text-[11px] text-gray-400">(your local time)</span>
             </div>
@@ -426,12 +426,12 @@ export function AddBranchEndingRuleModal({
                   ...formData,
                   conditionValue: { ...formData.conditionValue, include_deleted: e.target.checked }
                 })}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
               />
-              <span className="text-[13px] text-gray-700">Consider removed assets as complete</span>
+              <span className="text-[13px] text-gray-700 dark:text-gray-300">Consider removed assets as complete</span>
             </label>
             <div className="flex items-center space-x-2">
-              <span className="text-[13px] text-gray-600">Wait</span>
+              <span className="text-[13px] text-gray-600 dark:text-gray-400">Wait</span>
               <input
                 type="number"
                 min="0"
@@ -440,20 +440,20 @@ export function AddBranchEndingRuleModal({
                   ...formData,
                   conditionValue: { ...formData.conditionValue, grace_period_days: parseInt(e.target.value) || 0 }
                 })}
-                className="w-16 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-16 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               />
-              <span className="text-[13px] text-gray-600">days after completion (grace period)</span>
+              <span className="text-[13px] text-gray-600 dark:text-gray-400">days after completion (grace period)</span>
             </div>
           </div>
         )}
       </div>
 
-      <div className="border-t border-gray-100" />
+      <div className="border-t border-gray-100 dark:border-gray-800" />
 
       {/* ─── 2. Outcome ──────────────────────────────── */}
       <div className="space-y-4">
         <div>
-          <h4 className="text-[13px] font-semibold text-gray-900">Outcome</h4>
+          <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Outcome</h4>
           <p className="text-[11px] text-gray-400 mt-0.5">What should happen when it closes?</p>
         </div>
 
@@ -462,7 +462,7 @@ export function AddBranchEndingRuleModal({
           <label className={`flex items-start px-3.5 py-3 rounded-lg cursor-pointer transition-all ${
             formData.actionType === 'mark_complete'
               ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
-              : 'border border-gray-200 hover:border-gray-300'
+              : 'border border-gray-200 hover:border-gray-300 dark:border-gray-700'
           }`}>
             <input
               type="radio"
@@ -472,7 +472,7 @@ export function AddBranchEndingRuleModal({
               className="mt-0.5 mr-3 accent-blue-600"
             />
             <div>
-              <div className={`text-[13px] font-medium ${formData.actionType === 'mark_complete' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <div className={`text-[13px] font-medium ${formData.actionType === 'mark_complete' ? 'text-blue-900' : 'text-gray-800 dark:text-gray-100'}`}>
                 End run
               </div>
               <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
@@ -485,7 +485,7 @@ export function AddBranchEndingRuleModal({
           <label className={`flex items-start px-3.5 py-3 rounded-lg cursor-pointer transition-all ${
             formData.actionType === 'archive_branch'
               ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
-              : 'border border-gray-200 hover:border-gray-300'
+              : 'border border-gray-200 hover:border-gray-300 dark:border-gray-700'
           }`}>
             <input
               type="radio"
@@ -495,7 +495,7 @@ export function AddBranchEndingRuleModal({
               className="mt-0.5 mr-3 accent-blue-600"
             />
             <div>
-              <div className={`text-[13px] font-medium ${formData.actionType === 'archive_branch' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <div className={`text-[13px] font-medium ${formData.actionType === 'archive_branch' ? 'text-blue-900' : 'text-gray-800 dark:text-gray-100'}`}>
                 End run & archive
               </div>
               <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
@@ -508,7 +508,7 @@ export function AddBranchEndingRuleModal({
           <label className={`flex items-start px-3.5 py-3 rounded-lg cursor-pointer transition-all ${
             formData.actionType === 'notify_only'
               ? 'border border-blue-500 bg-blue-50/60 shadow-sm'
-              : 'border border-gray-200 hover:border-gray-300'
+              : 'border border-gray-200 hover:border-gray-300 dark:border-gray-700'
           }`}>
             <input
               type="radio"
@@ -518,7 +518,7 @@ export function AddBranchEndingRuleModal({
               className="mt-0.5 mr-3 accent-blue-600"
             />
             <div>
-              <div className={`text-[13px] font-medium ${formData.actionType === 'notify_only' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <div className={`text-[13px] font-medium ${formData.actionType === 'notify_only' ? 'text-blue-900' : 'text-gray-800 dark:text-gray-100'}`}>
                 Send notification only
               </div>
               <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
@@ -529,11 +529,11 @@ export function AddBranchEndingRuleModal({
         </div>
       </div>
 
-      <div className="border-t border-gray-100" />
+      <div className="border-t border-gray-100 dark:border-gray-800" />
 
       {/* ─── 3. Notifications ────────────────────────── */}
       <div className="space-y-2.5">
-        <p className="text-[12px] font-medium text-gray-500">Notifications <span className="font-normal text-gray-400">— optional</span></p>
+        <p className="text-[12px] font-medium text-gray-500 dark:text-gray-400">Notifications <span className="font-normal text-gray-400">— optional</span></p>
         <div className="space-y-1.5">
           <label className="flex items-center space-x-2 cursor-pointer">
             <input
@@ -543,9 +543,9 @@ export function AddBranchEndingRuleModal({
                 ...formData,
                 actionValue: { ...formData.actionValue, notify_owner: e.target.checked }
               })}
-              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
             />
-            <span className="text-[13px] text-gray-600">Notify run owner</span>
+            <span className="text-[13px] text-gray-600 dark:text-gray-400">Notify run owner</span>
           </label>
           <label className="flex items-center space-x-2 cursor-pointer">
             <input
@@ -555,14 +555,14 @@ export function AddBranchEndingRuleModal({
                 ...formData,
                 actionValue: { ...formData.actionValue, notify_collaborators: e.target.checked }
               })}
-              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
             />
-            <span className="text-[13px] text-gray-600">Notify all collaborators</span>
+            <span className="text-[13px] text-gray-600 dark:text-gray-400">Notify all collaborators</span>
           </label>
         </div>
       </div>
 
-      <div className="border-t border-gray-100" />
+      <div className="border-t border-gray-100 dark:border-gray-800" />
 
       {/* ─── Summary Preview ─────────────────────────── */}
       <div className="bg-blue-50/60 border border-blue-200 rounded-md px-3.5 py-3">
@@ -582,17 +582,17 @@ export function AddBranchEndingRuleModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4 pt-32 pb-8">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col dark:bg-gray-800">
         {/* Fixed Header */}
-        <div className="px-6 py-5 border-b border-gray-200 flex-shrink-0">
+        <div className="px-6 py-5 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Create Run Ending Rule</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Define when and how runs are closed.</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Create Run Ending Rule</h2>
+              <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Define when and how runs are closed.</p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-5 h-5" />
             </button>
@@ -605,8 +605,8 @@ export function AddBranchEndingRuleModal({
         </div>
 
         {/* Fixed Footer */}
-        <div className="px-6 py-3.5 border-t border-gray-200 flex justify-end items-center space-x-3 flex-shrink-0">
-          <Button type="button" variant="outline" onClick={onClose} className="text-gray-500">
+        <div className="px-6 py-3.5 border-t border-gray-200 flex justify-end items-center space-x-3 flex-shrink-0 dark:border-gray-700">
+          <Button type="button" variant="outline" onClick={onClose} className="text-gray-500 dark:text-gray-400">
             Cancel
           </Button>
           <Button type="submit" form="add-branch-ending-rule-form" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">

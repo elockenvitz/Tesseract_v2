@@ -438,7 +438,7 @@ function QueueRow({
         </span>
 
         {/* Action */}
-        <span className={clsx('w-[40px] shrink-0 text-[12px] font-bold ml-2', isPairTrade ? 'text-blue-600 dark:text-blue-400' : action ? (ACTION_COLOR[action] ?? 'text-gray-500') : '')}>
+        <span className={clsx('w-[40px] shrink-0 text-[12px] font-bold ml-2', isPairTrade ? 'text-blue-600 dark:text-blue-400' : action ? (ACTION_COLOR[action] ?? 'text-gray-500 dark:text-gray-400') : '')}>
           {isPairTrade ? 'Pair' : action ?? ''}
         </span>
 

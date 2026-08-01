@@ -172,7 +172,7 @@ export function GeneralRunDetailPanel({
 
   if (isLoadingProgress) {
     return (
-      <Card className="bg-white">
+      <Card className="bg-white dark:bg-gray-800">
         <div className="p-6 animate-pulse space-y-3">
           <div className="h-6 bg-gray-200 rounded w-1/3" />
           <div className="h-4 bg-gray-200 rounded w-2/3" />
@@ -183,10 +183,10 @@ export function GeneralRunDetailPanel({
 
   if (!progress) {
     return (
-      <Card className="bg-white">
+      <Card className="bg-white dark:bg-gray-800">
         <div className="p-6 text-center">
           <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-          <div className="text-sm font-medium text-gray-600">No progress data</div>
+          <div className="text-sm font-medium text-gray-600 dark:text-gray-400">No progress data</div>
           <div className="text-xs text-gray-400 mt-1">This run has not been initialized.</div>
         </div>
       </Card>
@@ -205,9 +205,9 @@ export function GeneralRunDetailPanel({
             </>
           ) : (
             <>
-              <span className="text-sm text-gray-500">Stage {currentStageIndex + 1} of {totalStages}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Stage {currentStageIndex + 1} of {totalStages}</span>
               <span className="text-gray-300">·</span>
-              <span className="text-sm font-medium text-gray-900">{sortedStages[currentStageIndex]?.stage_label}</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{sortedStages[currentStageIndex]?.stage_label}</span>
             </>
           )}
         </div>
@@ -235,7 +235,7 @@ export function GeneralRunDetailPanel({
 
         return (
           <Card key={stage.stage_key} className={isCurrent ? 'ring-2 ring-blue-200' : ''}>
-            <div className="px-5 py-3 border-b border-gray-200">
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {isPast || (isCompleted && true) ? (
@@ -245,7 +245,7 @@ export function GeneralRunDetailPanel({
                   ) : (
                     <Circle className="w-4 h-4 text-gray-300" />
                   )}
-                  <h4 className="text-sm font-semibold text-gray-900">{stage.stage_label}</h4>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{stage.stage_label}</h4>
                   {isCurrent && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Current</span>}
                 </div>
                 {stageItems.length > 0 && (
@@ -289,7 +289,7 @@ export function GeneralRunDetailPanel({
 
               {/* Advance button — only on current stage */}
               {isCurrent && !isRunEnded && (
-                <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
+                <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between dark:border-gray-700">
                   <span className="text-xs text-gray-400">
                     {allCurrentComplete && stageItems.length > 0 ? 'All items complete' : stageItems.length > 0 ? `${stageDone} of ${stageItems.length} complete` : ''}
                   </span>

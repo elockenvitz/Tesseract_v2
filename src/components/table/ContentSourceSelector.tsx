@@ -150,18 +150,18 @@ export function ContentSourceSelector({
   return createPortal(
     <div
       ref={popoverRef}
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-80 animate-in fade-in slide-in-from-top-2 duration-150"
+      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-80 animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
       style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div>
-          <h3 className="text-sm font-medium text-gray-900">Content Source</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{columnLabel} column</p>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white">Content Source</h3>
+          <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{columnLabel} column</p>
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          className="p-1 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
         >
           <X className="h-4 w-4 text-gray-400" />
         </button>
@@ -183,23 +183,23 @@ export function ContentSourceSelector({
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors',
                     isSelected
                       ? 'bg-blue-50 border border-blue-200'
-                      : 'hover:bg-gray-50 border border-transparent'
+                      : 'hover:bg-gray-50 border border-transparent dark:hover:bg-gray-800'
                   )}
                 >
                   <div className={clsx(
                     'w-8 h-8 rounded-lg flex items-center justify-center',
-                    isSelected ? 'bg-blue-100' : 'bg-gray-100'
+                    isSelected ? 'bg-blue-100' : 'bg-gray-100 dark:bg-gray-800'
                   )}>
-                    <Icon className={clsx('h-4 w-4', isSelected ? 'text-blue-600' : 'text-gray-500')} />
+                    <Icon className={clsx('h-4 w-4', isSelected ? 'text-blue-600' : 'text-gray-500 dark:text-gray-400')} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={clsx(
                       'text-sm font-medium',
-                      isSelected ? 'text-blue-900' : 'text-gray-900'
+                      isSelected ? 'text-blue-900' : 'text-gray-900 dark:text-white'
                     )}>
                       {option.label}
                     </p>
-                    <p className="text-xs text-gray-500">{option.description}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{option.description}</p>
                   </div>
                   {isSelected && currentSourceType === option.value && (
                     <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />
@@ -216,7 +216,7 @@ export function ContentSourceSelector({
             {/* Back button */}
             <button
               onClick={() => setShowAnalystPicker(false)}
-              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 mb-3"
+              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 mb-3 dark:hover:text-white dark:text-gray-400"
             >
               <ChevronRight className="h-4 w-4 rotate-180" />
               Back to sources
@@ -224,10 +224,10 @@ export function ContentSourceSelector({
 
             {/* Analyst selection */}
             <div className="mb-3">
-              <h4 className="text-sm font-medium text-gray-900 mb-1">
+              <h4 className="text-sm font-medium text-gray-900 mb-1 dark:text-white">
                 {selectedType === 'individual' ? 'Select Analyst' : 'Select Analysts'}
               </h4>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {selectedType === 'individual'
                   ? 'Choose whose view to display'
                   : 'Select analysts to combine views'}
@@ -235,13 +235,13 @@ export function ContentSourceSelector({
             </div>
 
             {loadingAnalysts ? (
-              <div className="py-8 text-center text-sm text-gray-500">
+              <div className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                 Loading analysts...
               </div>
             ) : analysts.length === 0 ? (
               <div className="py-8 text-center">
                 <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No contributions found</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">No contributions found</p>
                 <p className="text-xs text-gray-400 mt-1">
                   Analysts who have contributed to this field will appear here
                 </p>
@@ -259,18 +259,18 @@ export function ContentSourceSelector({
                         'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors',
                         isSelected
                           ? 'bg-blue-50 border border-blue-200'
-                          : 'hover:bg-gray-50 border border-transparent'
+                          : 'hover:bg-gray-50 border border-transparent dark:hover:bg-gray-800'
                       )}
                     >
                       <div className={clsx(
                         'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium',
-                        isSelected ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                        isSelected ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                       )}>
                         {analyst.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                       </div>
                       <span className={clsx(
                         'flex-1 text-sm',
-                        isSelected ? 'text-blue-900 font-medium' : 'text-gray-700'
+                        isSelected ? 'text-blue-900 font-medium' : 'text-gray-700 dark:text-gray-300'
                       )}>
                         {analyst.name}
                       </span>
@@ -284,7 +284,7 @@ export function ContentSourceSelector({
             )}
 
             {/* Apply button */}
-            <div className="mt-4 pt-3 border-t border-gray-100">
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
               <button
                 onClick={handleApply}
                 disabled={!canApply() || isMutating}
@@ -292,7 +292,7 @@ export function ContentSourceSelector({
                   'w-full py-2 px-4 rounded-lg text-sm font-medium transition-colors',
                   canApply() && !isMutating
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800'
                 )}
               >
                 {isMutating ? 'Applying...' : 'Apply'}

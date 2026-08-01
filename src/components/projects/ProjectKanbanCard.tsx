@@ -84,7 +84,7 @@ export function ProjectKanbanCard({ project, onClick, isDragging }: ProjectKanba
             </span>
           ))}
           {project.project_tag_assignments.length > 2 && (
-            <span className="text-xs text-gray-500">+{project.project_tag_assignments.length - 2}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">+{project.project_tag_assignments.length - 2}</span>
           )}
         </div>
       )}

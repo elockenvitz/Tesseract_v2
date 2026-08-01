@@ -161,7 +161,7 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
         onClick={() => setShowMenu(!showMenu)}
         className={clsx(
           'inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-sm transition-all cursor-pointer select-none',
-          'bg-gray-50/50 border-gray-300 text-gray-700',
+          'bg-gray-50/50 border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300',
           selected && 'ring-2 ring-primary-300',
           'hover:bg-gray-100 hover:border-gray-400'
         )}
@@ -169,9 +169,9 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
       >
         {/* Symbol + Label: "AAPL price" */}
         {showSymbol && (
-          <span className="font-semibold text-gray-900">{symbol}</span>
+          <span className="font-semibold text-gray-900 dark:text-white">{symbol}</span>
         )}
-        <span className="text-gray-500">{config.label}</span>
+        <span className="text-gray-500 dark:text-gray-400">{config.label}</span>
 
         {/* Loading indicator */}
         {isLoading && displayValue === null && (
@@ -189,7 +189,7 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
             'flex items-center gap-0.5 font-medium',
             dataType === 'change' && isPositiveChange && 'text-emerald-600',
             dataType === 'change' && isNegativeChange && 'text-red-600',
-            dataType !== 'change' && 'text-gray-900'
+            dataType !== 'change' && 'text-gray-900 dark:text-white'
           )}>
             {dataType === 'change' && (
               displayValue >= 0
@@ -210,15 +210,15 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
       {showMenu && (
         <div
           ref={menuRef}
-          className="absolute z-50 top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm select-none"
+          className="absolute z-50 top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm select-none dark:border-gray-700 dark:bg-gray-800"
           onClick={(e) => e.stopPropagation()}
           contentEditable={false}
         >
           {/* Header */}
-          <div className="px-3 py-2 border-b border-gray-100">
-            <div className="font-semibold text-gray-900">{symbol} {config.label}</div>
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+            <div className="font-semibold text-gray-900 dark:text-white">{symbol} {config.label}</div>
             {!isLive && snapshotAt && (
-              <div className="text-xs text-gray-500 mt-0.5">
+              <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                 as of {format(new Date(snapshotAt), 'MMM d, h:mm a')}
               </div>
             )}
@@ -230,7 +230,7 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
               onClick={toggleLive}
               className={clsx(
                 'w-full px-3 py-2 text-left flex items-center gap-2 transition-colors',
-                isLive ? 'bg-green-50 text-green-700' : 'hover:bg-gray-50 text-gray-700'
+                isLive ? 'bg-green-50 text-green-700' : 'hover:bg-gray-50 text-gray-700 dark:hover:bg-gray-800 dark:text-gray-300'
               )}
             >
               {isLive ? <Zap className="h-4 w-4" /> : <ZapOff className="h-4 w-4" />}
@@ -239,7 +239,7 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
 
             <button
               onClick={handleRefresh}
-              className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 text-gray-700"
+              className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 text-gray-700 dark:hover:bg-gray-800 dark:text-gray-300"
             >
               <RefreshCw className={clsx('h-4 w-4', isLoading && 'animate-spin')} />
               <span>Refresh now</span>
@@ -248,14 +248,14 @@ export function DataValueView({ node, updateAttributes, selected }: DataValueVie
 
           {/* Current value info */}
           {quoteData && !isLive && liveValue !== snapshotValue && (
-            <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
+            <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
               Current: {formatValue(liveValue)}
             </div>
           )}
 
           {/* Error message */}
           {error && (
-            <div className="border-t border-gray-100 px-3 py-2 text-xs text-red-600">
+            <div className="border-t border-gray-100 px-3 py-2 text-xs text-red-600 dark:border-gray-800">
               Failed to fetch data. Click refresh to retry.
             </div>
           )}

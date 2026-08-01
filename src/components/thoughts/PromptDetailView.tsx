@@ -249,7 +249,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
   if (isLoading || !thought) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
       </div>
     )
   }
@@ -391,7 +391,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
                 </button>
                 <button
                   onClick={() => { setIsEditing(false); setEditContent(thought.content) }}
-                  className="h-7 px-3 text-xs text-gray-500 hover:text-gray-700"
+                  className="h-7 px-3 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -405,7 +405,7 @@ export function PromptDetailView({ promptId, onClose }: PromptDetailViewProps) {
               {isCreator && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="absolute top-0 right-0 p-1 rounded opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity"
+                  className="absolute top-0 right-0 p-1 rounded opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity dark:hover:text-gray-300"
                   title="Edit prompt"
                 >
                   <Pencil className="h-3.5 w-3.5" />

@@ -150,11 +150,11 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 pt-20">
-      <div className="bg-white rounded-lg w-full max-w-lg max-h-full flex flex-col">
+      <div className="bg-white rounded-lg w-full max-w-lg max-h-full flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900">Edit Stage</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Stage</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -164,12 +164,12 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
           <div className="px-6 py-4 space-y-4">
             {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Stage Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Stage Name</label>
               <input
                 type="text"
                 value={stageLabel}
                 onChange={(e) => setStageLabel(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                 required
                 autoFocus
               />
@@ -177,11 +177,11 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
               <textarea
                 value={stageDescription}
                 onChange={(e) => setStageDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                 rows={2}
                 placeholder="What happens in this stage?"
               />
@@ -190,7 +190,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
             {/* Target Duration + Default Assignee */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   <Clock className="w-3.5 h-3.5" />
                   Target Duration
                   <span className="text-xs text-gray-400 font-normal">(optional)</span>
@@ -201,14 +201,14 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                     min="1"
                     value={targetDays}
                     onChange={(e) => setTargetDays(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                     placeholder="—"
                   />
-                  <span className="text-sm text-gray-500 shrink-0">days</span>
+                  <span className="text-sm text-gray-500 shrink-0 dark:text-gray-400">days</span>
                 </div>
               </div>
               <div>
-                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   <User className="w-3.5 h-3.5" />
                   Default Assignee
                   <span className="text-xs text-gray-400 font-normal">(optional)</span>
@@ -216,7 +216,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                 <select
                   value={assigneeType}
                   onChange={(e) => { setAssigneeType(e.target.value as any); setAssigneeValue('') }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                 >
                   <option value="none">None</option>
                   <option value="role">By Role</option>
@@ -229,7 +229,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
               <select
                 value={assigneeValue}
                 onChange={(e) => setAssigneeValue(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
               >
                 <option value="">Select a role...</option>
                 {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -238,7 +238,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
 
             {/* Completion Criteria */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Completion Criteria
                 <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
               </label>
@@ -246,14 +246,14 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                 type="text"
                 value={completionCriteria}
                 onChange={(e) => setCompletionCriteria(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                 placeholder="e.g., All checklist items complete and thesis updated"
               />
             </div>
 
             {/* Checklist Items */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                 Checklist Items
                 {allItems.length > 0 && <span className="text-gray-400 font-normal ml-1">({allItems.length})</span>}
               </label>
@@ -264,7 +264,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                   {existingItems.filter(i => !deletedIds.has(i.id)).map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 bg-gray-50/50 group"
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 bg-gray-50/50 group dark:border-gray-700"
                     >
                       <GripVertical className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
                       <input
@@ -278,7 +278,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                           type="checkbox"
                           checked={item.is_required}
                           onChange={() => toggleExistingRequired(item.id)}
-                          className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5"
+                          className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5 dark:border-gray-600"
                         />
                         <span className="text-[11px] text-gray-400">Required</span>
                       </label>
@@ -310,7 +310,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                           type="checkbox"
                           checked={item.is_required}
                           onChange={() => toggleNewRequired(item.tempId)}
-                          className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5"
+                          className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5 dark:border-gray-600"
                         />
                         <span className="text-[11px] text-gray-400">Required</span>
                       </label>
@@ -336,7 +336,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') { e.preventDefault(); addItem() }
                   }}
-                  className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                   placeholder="Add a checklist item..."
                 />
                 <Button type="button" size="sm" variant="outline" onClick={addItem} disabled={!newItemText.trim()}>
@@ -347,7 +347,7 @@ export function EditStageModal({ stage, checklistItems = [], onClose, onSave }: 
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end space-x-3 px-6 py-4 border-t border-gray-100">
+          <div className="flex justify-end space-x-3 px-6 py-4 border-t border-gray-100 dark:border-gray-800">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>

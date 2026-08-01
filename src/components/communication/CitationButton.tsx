@@ -17,7 +17,7 @@ export function CitationButton({ onCite, content, fieldName, className }: Citati
     <button
       onClick={handleCite}
       className={clsx(
-        'inline-flex items-center px-2 py-1 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors',
+        'inline-flex items-center px-2 py-1 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors dark:text-gray-400',
         className
       )}
       title={`Cite ${fieldName ? `${fieldName} content` : 'this content'} in discussion`}

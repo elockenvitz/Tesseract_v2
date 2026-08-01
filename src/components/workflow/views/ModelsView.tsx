@@ -67,7 +67,7 @@ export function ModelsView({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <h3 className="text-lg font-semibold text-gray-900">Files</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Files</h3>
         </div>
         {canEdit && onUpload && (
           <Button onClick={onUpload}>
@@ -81,7 +81,7 @@ export function ModelsView({
       {isLoading && (
         <div className="text-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <p className="text-sm text-gray-500 mt-2">Loading templates...</p>
+          <p className="text-sm text-gray-500 mt-2 dark:text-gray-400">Loading templates...</p>
         </div>
       )}
 
@@ -97,10 +97,10 @@ export function ModelsView({
                     <FileText className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-medium text-gray-900 truncate">
+                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">
                       {template.template_name}
                     </h4>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                       {formatFileSize(template.file_size)}
                     </p>
                   </div>
@@ -108,7 +108,7 @@ export function ModelsView({
 
                 {/* Description */}
                 {template.template_description && (
-                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                  <p className="text-sm text-gray-600 mb-3 line-clamp-2 dark:text-gray-400">
                     {template.template_description}
                   </p>
                 )}
@@ -150,13 +150,13 @@ export function ModelsView({
 
       {/* Empty State */}
       {!isLoading && !hasTemplates && (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+        <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
           <div className="max-w-md mx-auto">
-            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
               <FileText className="w-6 h-6 text-gray-400" />
             </div>
-            <h4 className="text-lg font-medium text-gray-900 mb-2">No files yet</h4>
-            <p className="text-sm text-gray-500">
+            <h4 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No files yet</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Upload files using the button above. Files will be accessible when working through
               this workflow and stored in the Files tab for future use.
             </p>

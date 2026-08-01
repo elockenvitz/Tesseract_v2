@@ -132,26 +132,26 @@ export function StagesView({
   const getCategoryInfo = (type: string) => {
     if (type.startsWith('stage_')) return { label: 'Stage', color: 'bg-purple-100 text-purple-700' }
     if (type.startsWith('checklist_')) return { label: 'Checklist', color: 'bg-cyan-100 text-cyan-700' }
-    return { label: 'Other', color: 'bg-gray-100 text-gray-700' }
+    return { label: 'Other', color: 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800' }
   }
 
   return (
     <div>
       {/* Sticky Header */}
       <div
-        className="sticky top-0 z-10 px-6 py-4 border-b border-gray-200"
+        className="sticky top-0 z-10 px-6 py-4 border-b border-gray-200 dark:border-gray-700"
         style={{ backgroundColor: '#f9fafb' }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Workflow Stages
-              <span className="ml-2 text-sm font-normal text-gray-500">({stages.length})</span>
+              <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">({stages.length})</span>
             </h3>
             {hasStages && (
               <button
                 onClick={allCollapsed ? expandAll : collapseAll}
-                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 title={allCollapsed ? 'Expand all' : 'Collapse all'}
               >
                 {allCollapsed ? <ChevronsUpDown className="w-4 h-4" /> : <ChevronsDownUp className="w-4 h-4" />}
@@ -178,10 +178,10 @@ export function StagesView({
 
                     {/* Changes Dropdown */}
                     {showChangesList && (
-                      <div className="absolute right-0 mt-2 w-[380px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-80 overflow-y-auto">
-                        <div className="p-3 border-b border-gray-200 bg-gray-50">
-                          <h3 className="text-sm font-semibold text-gray-900">Pending Changes ({templateChanges.length})</h3>
-                          <p className="text-xs text-gray-500 mt-1">
+                      <div className="absolute right-0 mt-2 w-[380px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-80 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
+                        <div className="p-3 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Pending Changes ({templateChanges.length})</h3>
+                          <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                             Changes will create a new template version
                           </p>
                         </div>
@@ -189,7 +189,7 @@ export function StagesView({
                           {templateChanges.map((change, idx) => {
                             const categoryInfo = getCategoryInfo(change.type)
                             return (
-                              <div key={change.elementId || idx} className="px-3 py-2 hover:bg-gray-50 rounded text-sm">
+                              <div key={change.elementId || idx} className="px-3 py-2 hover:bg-gray-50 rounded text-sm dark:hover:bg-gray-800">
                                 <div className="flex items-start space-x-2">
                                   <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
                                     change.type.includes('added') ? 'bg-green-500' :
@@ -207,7 +207,7 @@ export function StagesView({
                                          change.type.includes('reordered') ? 'Reordered' : 'Modified'}
                                       </span>
                                     </div>
-                                    <p className="text-gray-900">{change.description}</p>
+                                    <p className="text-gray-900 dark:text-white">{change.description}</p>
                                     <p className="text-xs text-gray-400 mt-0.5">
                                       {new Date(change.timestamp).toLocaleTimeString()}
                                     </p>
@@ -320,10 +320,10 @@ export function StagesView({
       ) : (
         /* Empty State */
         <div className="p-6">
-          <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+          <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 dark:bg-gray-900">
             <div className="max-w-md mx-auto">
-              <h4 className="text-lg font-medium text-gray-900 mb-2">No stages defined yet</h4>
-              <p className="text-sm text-gray-500 mb-4">
+              <h4 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No stages defined yet</h4>
+              <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
                 Stages define the steps in your workflow process. Each stage can have checklist items
                 that guide users through the work.
               </p>

@@ -108,7 +108,7 @@ export function PortfolioHoldingsSourceSetting({ portfolioId }: Props) {
                       : 'border-gray-300 dark:border-gray-600',
                   ].join(' ')}
                 >
-                  {selected && <div className="w-1.5 h-1.5 rounded-full bg-white m-auto mt-[3px]" />}
+                  {selected && <div className="w-1.5 h-1.5 rounded-full bg-white m-auto mt-[3px] dark:bg-gray-800" />}
                 </div>
                 <div className="flex-1">
                   <div className="text-sm font-medium text-gray-900 dark:text-gray-100">

@@ -169,7 +169,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
         <button
           type="button"
           onClick={() => toggleTypeExpanded(type)}
-          className="w-full flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50"
+          className="w-full flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400"
         >
           {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           {label} ({nodes.length})
@@ -183,13 +183,13 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
               onClick={() => !isSelected && handleAddOrgNode(node.id)}
               disabled={isSelected || isAdding}
               className={clsx(
-                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50',
+                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                 isSelected && 'bg-primary-50 opacity-60'
               )}
             >
               <div className={clsx(
                 'w-4 h-4 border rounded flex items-center justify-center shrink-0',
-                isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
               )}>
                 {isSelected && <Check className="w-3 h-3 text-white" />}
               </div>
@@ -204,13 +204,13 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 min-h-[500px] max-h-[75vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 min-h-[500px] max-h-[75vh] flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Share Template</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Share Template</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
@@ -220,7 +220,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
           {/* Groups/Org Nodes Section */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-sm text-gray-600">
+              <label className="text-sm text-gray-600 dark:text-gray-400">
                 <span className="font-medium">Share with groups</span>
                 <span className="text-gray-400"> — divisions, departments, teams</span>
               </label>
@@ -230,9 +230,9 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
               <button
                 type="button"
                 onClick={() => setShowOrgDropdown(!showOrgDropdown)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:border-gray-400 bg-white"
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:border-gray-400 bg-white dark:border-gray-600 dark:bg-gray-800"
               >
-                <div className="flex items-center gap-2 text-gray-500">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                   <Building2 className="w-4 h-4" />
                   <span>Select groups to share with...</span>
                 </div>
@@ -242,7 +242,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
               {showOrgDropdown && (
                 <>
                   <div className="fixed inset-0 z-[60]" onClick={() => setShowOrgDropdown(false)} />
-                  <div className="absolute left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-64 overflow-y-auto z-[61]">
+                  <div className="absolute left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-64 overflow-y-auto z-[61] dark:border-gray-700 dark:bg-gray-800">
                     {/* Entire Organization option */}
                     <button
                       type="button"
@@ -250,13 +250,13 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
                         handleToggleOrgSharing()
                       }}
                       className={clsx(
-                        'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 border-b border-gray-100',
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800',
                         isSharedWithOrg && 'bg-primary-50'
                       )}
                     >
                       <div className={clsx(
                         'w-4 h-4 border rounded flex items-center justify-center shrink-0',
-                        isSharedWithOrg ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                        isSharedWithOrg ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
                       )}>
                         {isSharedWithOrg && <Check className="w-3 h-3 text-white" />}
                       </div>
@@ -271,7 +271,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
                     {renderNodeGroup(portfolios, 'portfolio', 'Portfolios')}
 
                     {orgNodes.length === 0 && !isSharedWithOrg && (
-                      <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                      <div className="px-3 py-4 text-sm text-gray-500 text-center dark:text-gray-400">
                         No groups available
                       </div>
                     )}
@@ -299,7 +299,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
                 {nodeCollaborations?.map(collab => (
                   <span
                     key={collab.id}
-                    className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-full border bg-gray-100 text-gray-700 border-gray-200"
+                    className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-full border bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                   >
                     {collab.org_node && NODE_TYPE_ICONS[collab.org_node.node_type]}
                     <span>{collab.org_node?.name || 'Unknown'}</span>
@@ -319,7 +319,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
           {/* Users */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-sm text-gray-600">
+              <label className="text-sm text-gray-600 dark:text-gray-400">
                 <span className="font-medium">Share with people</span>
                 <span className="text-gray-400"> — search by name or email</span>
               </label>
@@ -336,38 +336,38 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
                 }}
                 onFocus={() => setShowUserSearch(true)}
                 placeholder="Search by name or email..."
-                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
               />
 
               {showUserSearch && searchQuery.length >= 2 && (
                 <>
                   <div className="fixed inset-0 z-[60]" onClick={() => setShowUserSearch(false)} />
-                  <div className="absolute left-0 right-0 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-48 overflow-y-auto z-[61]">
+                  <div className="absolute left-0 right-0 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-48 overflow-y-auto z-[61] dark:border-gray-700 dark:bg-gray-800">
                     {isSearching ? (
                       <div className="flex items-center justify-center py-4">
                         <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                       </div>
                     ) : availableUsers.length === 0 ? (
-                      <p className="text-sm text-gray-500 py-3 px-3">No users found</p>
+                      <p className="text-sm text-gray-500 py-3 px-3 dark:text-gray-400">No users found</p>
                     ) : (
                       availableUsers.map(user => (
                         <button
                           key={user.id}
                           onClick={() => handleAddUser(user.id)}
                           disabled={isAdding}
-                          className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50"
+                          className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                         >
-                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600">
+                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
                             {user.first_name?.[0] || user.email[0].toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                               {user.first_name && user.last_name
                                 ? `${user.first_name} ${user.last_name}`
                                 : user.email}
                             </p>
                             {user.first_name && (
-                              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                              <p className="text-xs text-gray-500 truncate dark:text-gray-400">{user.email}</p>
                             )}
                           </div>
                         </button>
@@ -397,7 +397,7 @@ export function ModelTemplateSharingModal({ template, onClose }: ModelTemplateSh
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
           <Button onClick={onClose} className="w-full">
             Done
           </Button>
@@ -425,8 +425,8 @@ function PermissionSelect({ value, onChange, disabled }: PermissionSelectProps) 
         className={clsx(
           'flex items-center gap-1 px-2 py-1 text-sm rounded border transition-colors',
           disabled
-            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
+            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800'
+            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800'
         )}
       >
         {PERMISSION_LABELS[value].label}
@@ -436,7 +436,7 @@ function PermissionSelect({ value, onChange, disabled }: PermissionSelectProps) 
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[70]" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[71]">
+          <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[71] dark:border-gray-700 dark:bg-gray-800">
             {(Object.entries(PERMISSION_LABELS) as [PermissionLevel, { label: string; description: string }][]).map(
               ([level, { label, description }]) => (
                 <button
@@ -446,13 +446,13 @@ function PermissionSelect({ value, onChange, disabled }: PermissionSelectProps) 
                     setIsOpen(false)
                   }}
                   className={clsx(
-                    'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50',
+                    'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                     value === level && 'bg-primary-50'
                   )}
                 >
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{label}</p>
-                    <p className="text-xs text-gray-500">{description}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
                   </div>
                   {value === level && <Check className="w-4 h-4 text-primary-600" />}
                 </button>
@@ -493,18 +493,18 @@ function CollaboratorRow({
     : collaborator.team?.name[0] || '?'
 
   return (
-    <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg">
+    <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg dark:border-gray-700">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600">
+        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
           {collaborator.team ? (
-            <Users className="w-4 h-4 text-gray-500" />
+            <Users className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           ) : (
             initials
           )}
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-          {subtitle && <p className="text-xs text-gray-500 truncate">{subtitle}</p>}
+          <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{name}</p>
+          {subtitle && <p className="text-xs text-gray-500 truncate dark:text-gray-400">{subtitle}</p>}
         </div>
       </div>
 

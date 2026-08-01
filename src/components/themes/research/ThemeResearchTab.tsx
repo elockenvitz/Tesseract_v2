@@ -81,20 +81,20 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
   return (
     <div className="space-y-3">
       {/* Filter bar */}
-      <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+      <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           {/* Left: analyst pills */}
           <div className="flex items-center gap-3 min-w-0 flex-wrap">
             <span className="text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
             {analysts.length <= 5 ? (
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
                 <button
                   onClick={() => setViewFilter('aggregated')}
                   className={clsx(
                     'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                     viewFilter === 'aggregated'
                       ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                   )}
                 >
                   <Users className="w-3.5 h-3.5" />
@@ -108,7 +108,7 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                       viewFilter === a.id
                         ? 'bg-primary-600 text-white shadow-sm'
-                        : a.isSelf ? 'text-primary-600 hover:text-primary-700' : 'text-gray-600 hover:text-gray-900'
+                        : a.isSelf ? 'text-primary-600 hover:text-primary-700' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                     )}
                   >
                     {a.isSelf && viewFilter !== a.id && <Star className="w-3 h-3 text-primary-500" />}
@@ -120,7 +120,7 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
               <select
                 value={viewFilter}
                 onChange={(e) => setViewFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500"
+                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:text-gray-300 dark:bg-gray-800"
               >
                 <option value="aggregated">Our View (All Contributors)</option>
                 {analysts.map(a => (
@@ -132,12 +132,12 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
 
           {/* Right: view mode + manage */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
               <button
                 onClick={() => setViewMode('all')}
                 className={clsx(
                   'p-1.5 rounded-md transition-colors',
-                  viewMode === 'all' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  viewMode === 'all' ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
                 title="All sections"
               >
@@ -147,7 +147,7 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                 onClick={() => setViewMode('summary')}
                 className={clsx(
                   'p-1.5 rounded-md transition-colors',
-                  viewMode === 'summary' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  viewMode === 'summary' ? 'bg-white text-purple-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
                 title="Summary"
               >
@@ -157,7 +157,7 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                 onClick={() => setViewMode('history')}
                 className={clsx(
                   'p-1.5 rounded-md transition-colors',
-                  viewMode === 'history' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  viewMode === 'history' ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
                 title="History timeline"
               >
@@ -167,7 +167,7 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                 onClick={() => setViewMode('references')}
                 className={clsx(
                   'relative p-1.5 rounded-md transition-colors',
-                  viewMode === 'references' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  viewMode === 'references' ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
                 title="Key references"
               >
@@ -196,21 +196,21 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
         <ThemeKeyReferencesSection themeId={themeId} />
       ) : layoutLoading || contribsLoading ? (
         <div className="space-y-3">
-          {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse" />)}
+          {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse dark:bg-gray-800" />)}
         </div>
       ) : (
         layout.map(section => (
           <section key={section.id} className="space-y-2">
             <div className="px-1">
-              <h2 className="text-sm font-semibold text-gray-900">{section.name}</h2>
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{section.name}</h2>
               {section.description && (
-                <p className="text-xs text-gray-500">{section.description}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{section.description}</p>
               )}
             </div>
             <div className="space-y-2">
               {section.fields.length === 0 ? (
-                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  <p className="text-sm text-gray-500">
+                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center dark:border-gray-600 dark:bg-gray-900">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
                     No fields in this section yet. Click "Manage" to add one.
                   </p>
                 </div>

@@ -455,7 +455,7 @@ export function DocumentLibrarySection({
 
   // Content rendering (used in both embedded and non-embedded modes)
   const renderContent = () => (
-    <div className={isEmbedded ? "" : "border-t border-gray-100 px-6 py-4"}>
+    <div className={isEmbedded ? "" : "border-t border-gray-100 px-6 py-4 dark:border-gray-800"}>
             {/* Toolbar: Filters + Add Button */}
             <div className="flex items-center justify-between gap-4 mb-4">
               {/* Filter Pills */}
@@ -468,7 +468,7 @@ export function DocumentLibrarySection({
                       'flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-colors',
                       filter === opt.value
                         ? 'bg-primary-100 text-primary-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-100'
+                        : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                     )}
                   >
                     <opt.icon className="w-3.5 h-3.5" />
@@ -507,26 +507,26 @@ export function DocumentLibrarySection({
                         className="fixed inset-0 z-10"
                         onClick={() => setShowAddDropdown(false)}
                       />
-                      <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                      <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
                         <button
                           onClick={() => {
                             onCreateNote()
                             setShowAddDropdown(false)
                           }}
-                          className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left"
+                          className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left dark:hover:bg-gray-800"
                         >
-                          <Edit3 className="w-5 h-5 text-gray-500 mt-0.5" />
+                          <Edit3 className="w-5 h-5 text-gray-500 mt-0.5 dark:text-gray-400" />
                           <div>
-                            <div className="font-medium text-sm text-gray-900">Write Note</div>
-                            <div className="text-xs text-gray-500">Create a new note</div>
+                            <div className="font-medium text-sm text-gray-900 dark:text-white">Write Note</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Create a new note</div>
                           </div>
                         </button>
 
-                        <label className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left cursor-pointer">
-                          <Upload className="w-5 h-5 text-gray-500 mt-0.5" />
+                        <label className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left cursor-pointer dark:hover:bg-gray-800">
+                          <Upload className="w-5 h-5 text-gray-500 mt-0.5 dark:text-gray-400" />
                           <div>
-                            <div className="font-medium text-sm text-gray-900">Upload Document</div>
-                            <div className="text-xs text-gray-500">PDF, Word, Excel, PPT, etc.</div>
+                            <div className="font-medium text-sm text-gray-900 dark:text-white">Upload Document</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">PDF, Word, Excel, PPT, etc.</div>
                           </div>
                           <input
                             type="file"
@@ -545,12 +545,12 @@ export function DocumentLibrarySection({
                             setShowExcelSyncModal(true)
                             setShowAddDropdown(false)
                           }}
-                          className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left"
+                          className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left dark:hover:bg-gray-800"
                         >
-                          <RefreshCw className="w-5 h-5 text-gray-500 mt-0.5" />
+                          <RefreshCw className="w-5 h-5 text-gray-500 mt-0.5 dark:text-gray-400" />
                           <div>
-                            <div className="font-medium text-sm text-gray-900">Sync Excel Model</div>
-                            <div className="text-xs text-gray-500">Extract data to Outcomes</div>
+                            <div className="font-medium text-sm text-gray-900 dark:text-white">Sync Excel Model</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Extract data to Outcomes</div>
                           </div>
                         </button>
 
@@ -559,12 +559,12 @@ export function DocumentLibrarySection({
                             setShowExternalModal(true)
                             setShowAddDropdown(false)
                           }}
-                          className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left"
+                          className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-left dark:hover:bg-gray-800"
                         >
-                          <Link2 className="w-5 h-5 text-gray-500 mt-0.5" />
+                          <Link2 className="w-5 h-5 text-gray-500 mt-0.5 dark:text-gray-400" />
                           <div>
-                            <div className="font-medium text-sm text-gray-900">Link External</div>
-                            <div className="text-xs text-gray-500">Google Docs, Sheets, etc.</div>
+                            <div className="font-medium text-sm text-gray-900 dark:text-white">Link External</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Google Docs, Sheets, etc.</div>
                           </div>
                         </button>
                       </div>
@@ -590,26 +590,26 @@ export function DocumentLibrarySection({
                       <div
                         key={`${doc.type}-${doc.id}`}
                         onClick={() => handleDocumentClick(doc)}
-                        className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer transition-colors"
+                        className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
                       >
                         {/* Icon - smaller */}
                         <div className={clsx(
                           'w-7 h-7 rounded flex items-center justify-center flex-shrink-0',
                           doc.sourceType === 'external_link' ? 'bg-blue-50' :
                           isNote ? 'bg-amber-50' :
-                          'bg-gray-100'
+                          'bg-gray-100 dark:bg-gray-800'
                         )}>
                           <Icon className={clsx(
                             'w-4 h-4',
                             doc.sourceType === 'external_link' ? 'text-blue-500' :
                             isNote ? 'text-amber-600' :
-                            'text-gray-500'
+                            'text-gray-500 dark:text-gray-400'
                           )} />
                         </div>
 
                         {/* Content - single line */}
                         <div className="flex-1 min-w-0 flex items-center gap-2">
-                          <span className="text-sm text-gray-900 truncate">
+                          <span className="text-sm text-gray-900 truncate dark:text-white">
                             {doc.title}
                           </span>
                           {doc.isShared && !isOwner && (
@@ -638,7 +638,7 @@ export function DocumentLibrarySection({
                                   e.stopPropagation()
                                   setExportDropdownId(exportDropdownId === doc.id ? null : doc.id)
                                 }}
-                                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                                 title="Export"
                               >
                                 <FileDown className="w-3.5 h-3.5" />
@@ -652,14 +652,14 @@ export function DocumentLibrarySection({
                                       setExportDropdownId(null)
                                     }}
                                   />
-                                  <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                                  <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         // TODO: Implement PDF export
                                         setExportDropdownId(null)
                                       }}
-                                      className="w-full px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 text-left flex items-center gap-2"
+                                      className="w-full px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 text-left flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                                     >
                                       <File className="w-3.5 h-3.5" />
                                       PDF
@@ -670,7 +670,7 @@ export function DocumentLibrarySection({
                                         // TODO: Implement Word export
                                         setExportDropdownId(null)
                                       }}
-                                      className="w-full px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 text-left flex items-center gap-2"
+                                      className="w-full px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 text-left flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                                     >
                                       <FileText className="w-3.5 h-3.5" />
                                       Word
@@ -686,7 +686,7 @@ export function DocumentLibrarySection({
                                 e.stopPropagation()
                                 handleDocumentClick(doc)
                               }}
-                              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                               title="Download"
                             >
                               <Download className="w-3.5 h-3.5" />
@@ -708,9 +708,9 @@ export function DocumentLibrarySection({
                 )}
               </div>
             ) : (
-              <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+              <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                 <FolderOpen className="h-6 w-6 text-gray-400 mx-auto mb-1" />
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {filter === 'all' ? 'No documents yet' : `No ${filter} documents`}
                 </p>
               </div>
@@ -728,7 +728,7 @@ export function DocumentLibrarySection({
                     onViewAllNotes()
                   }
                 }}
-                className="w-full mt-3 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-50 rounded-lg transition-colors flex items-center justify-center gap-1"
+                className="w-full mt-3 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium hover:bg-gray-50 rounded-lg transition-colors flex items-center justify-center gap-1 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400"
               >
                 {filter === 'notes' ? 'View All Notes' : 'View All Files'}
                 <ArrowRight className="w-4 h-4" />
@@ -759,12 +759,12 @@ export function DocumentLibrarySection({
               className="absolute inset-0 bg-black/50"
               onClick={() => setShowExcelSyncModal(false)}
             />
-            <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4">
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Sync Excel Model</h3>
+            <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4 dark:bg-gray-800">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between dark:border-gray-700 dark:bg-gray-800">
+                <h3 className="font-semibold text-gray-900 dark:text-white">Sync Excel Model</h3>
                 <button
                   onClick={() => setShowExcelSyncModal(false)}
-                  className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -789,10 +789,10 @@ export function DocumentLibrarySection({
         {/* Section Header */}
         <button
           onClick={onToggleExpanded}
-          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
-          <span className="font-medium text-gray-900">Document Library</span>
-          <span className="text-sm text-gray-500">({filteredByPermission.length})</span>
+          <span className="font-medium text-gray-900 dark:text-white">Document Library</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">({filteredByPermission.length})</span>
           {isExpanded ? (
             <ChevronUp className="h-5 w-5 text-gray-400" />
           ) : (
@@ -820,12 +820,12 @@ export function DocumentLibrarySection({
             className="absolute inset-0 bg-black/50"
             onClick={() => setShowExcelSyncModal(false)}
           />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Sync Excel Model</h3>
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4 dark:bg-gray-800">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between dark:border-gray-700 dark:bg-gray-800">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Sync Excel Model</h3>
               <button
                 onClick={() => setShowExcelSyncModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <X className="w-5 h-5" />
               </button>

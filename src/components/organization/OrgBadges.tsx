@@ -36,7 +36,7 @@ export function StatusPill({ status }: { status: string }) {
     <span
       className={clsx(
         'inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full border',
-        STATUS_STYLES[key] || 'bg-gray-50 text-gray-600 border-gray-200',
+        STATUS_STYLES[key] || 'bg-gray-50 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900',
       )}
     >
       {STATUS_LABELS[key] || status}
@@ -74,7 +74,7 @@ const ROLE_CONFIG: Record<RoleBadgeProps['role'], { label: string; shortLabel: s
     label: 'Member',
     shortLabel: 'Member',
     icon: null,
-    style: 'bg-gray-50 text-gray-600 border-gray-200',
+    style: 'bg-gray-50 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900',
   },
 }
 
@@ -105,7 +105,7 @@ export function CountChip({ count, label, variant = 'default' }: CountChipProps)
         'inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded',
         variant === 'risk' && count > 0
           ? 'text-red-600 bg-red-50'
-          : 'text-gray-500 bg-gray-100',
+          : 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800',
       )}
     >
       {variant === 'risk' && count > 0 && <AlertTriangle className="w-3 h-3" />}
@@ -128,23 +128,23 @@ export function SeatSummaryBar({ seats }: { seats: SeatCounts }) {
     <div className="inline-flex items-center gap-3 text-xs">
       <span className="flex items-center gap-1.5">
         <span className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-gray-600">
-          <span className="font-semibold text-gray-900">{seats.active}</span> active
+        <span className="text-gray-600 dark:text-gray-400">
+          <span className="font-semibold text-gray-900 dark:text-white">{seats.active}</span> active
         </span>
       </span>
       {seats.invited > 0 && (
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span className="text-gray-600">
-            <span className="font-semibold text-gray-900">{seats.invited}</span> invited
+          <span className="text-gray-600 dark:text-gray-400">
+            <span className="font-semibold text-gray-900 dark:text-white">{seats.invited}</span> invited
           </span>
         </span>
       )}
       {seats.suspended > 0 && (
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-red-400" />
-          <span className="text-gray-600">
-            <span className="font-semibold text-gray-900">{seats.suspended}</span> suspended
+          <span className="text-gray-600 dark:text-gray-400">
+            <span className="font-semibold text-gray-900 dark:text-white">{seats.suspended}</span> suspended
           </span>
         </span>
       )}

@@ -217,7 +217,7 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search assets, projects, portfolios..."
-              className="w-full pl-7 pr-8 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-7 pr-8 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setIsOpen(false)
@@ -230,7 +230,7 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
                 setIsOpen(false)
                 setSearch('')
               }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-100 rounded"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
             >
               <X className="h-3.5 w-3.5 text-gray-400" />
             </button>
@@ -239,7 +239,7 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
           // Show "Add context" button
           <button
             onClick={() => setIsOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 border border-dashed border-gray-300 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 border border-dashed border-gray-300 transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-600 dark:text-gray-400"
           >
             <Plus className="h-3 w-3" />
             <span>Add context</span>
@@ -249,7 +249,7 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
 
       {/* Search results dropdown */}
       {isOpen && search.length >= 2 && (
-        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
           {isLoading ? (
             <div className="px-3 py-3 text-center text-xs text-gray-400">
               Searching...
@@ -263,11 +263,11 @@ export function ContextSelector({ value, onChange, compact = false }: ContextSel
                   <button
                     key={`${result.type}-${result.id}`}
                     onClick={() => handleSelect(result)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                   >
                     <TypeIcon className={clsx("h-3.5 w-3.5 flex-shrink-0", config.color.split(' ')[1])} />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-gray-900 truncate">
+                      <span className="text-sm text-gray-900 truncate dark:text-white">
                         {result.title}
                       </span>
                       {result.subtitle && (

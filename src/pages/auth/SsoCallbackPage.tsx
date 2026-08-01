@@ -153,7 +153,7 @@ export function SsoCallbackPage() {
             <AlertTriangle className="w-7 h-7 text-red-600" />
           </div>
         </div>
-        <p className="text-sm text-gray-600">{error}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
         <Button
           variant="primary"
           className="w-full"

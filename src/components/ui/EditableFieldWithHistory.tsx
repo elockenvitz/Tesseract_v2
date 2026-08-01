@@ -135,7 +135,7 @@ function EditableSectionWithHistoryInner(
   return (
     <div className={clsx('group', className)}>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
         <div className="flex items-center space-x-2">
           {onCite && content && (
             <CitationButton
@@ -151,7 +151,7 @@ function EditableSectionWithHistoryInner(
               'p-1 rounded transition-all',
               viewMode === 'history'
                 ? 'text-primary-600 hover:text-primary-700 opacity-100'
-                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600'
+                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
             )}
             title={viewMode === 'history' ? 'Back to content' : 'View change history'}
           >
@@ -164,7 +164,7 @@ function EditableSectionWithHistoryInner(
           {!isEditing && viewMode === 'content' && (
             <button
               onClick={handleEdit}
-              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 rounded transition-all"
+              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 rounded transition-all dark:hover:text-gray-300"
               title="Edit section"
             >
               <Edit3 className="h-4 w-4" />
@@ -192,10 +192,10 @@ function EditableSectionWithHistoryInner(
                 onKeyDown={handleKeyDown}
                 onBlur={handleBlur}
                 placeholder={placeholder}
-                className="w-full h-[120px] p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 overflow-y-auto"
+                className="w-full h-[120px] p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 overflow-y-auto dark:border-gray-600"
               />
               {isSaving && (
-                <div className="flex items-center text-xs text-gray-500">
+                <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
                   <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-2" />
                   Saving...
                 </div>
@@ -203,11 +203,11 @@ function EditableSectionWithHistoryInner(
             </div>
           ) : (
             <div
-              className="h-[120px] prose prose-sm max-w-none cursor-pointer hover:bg-gray-50 rounded-lg p-3 -m-3 transition-colors overflow-y-auto"
+              className="h-[120px] prose prose-sm max-w-none cursor-pointer hover:bg-gray-50 rounded-lg p-3 -m-3 transition-colors overflow-y-auto dark:hover:bg-gray-800"
               onClick={handleEdit}
             >
               {content ? (
-                <div className="text-gray-700 whitespace-pre-wrap group relative">
+                <div className="text-gray-700 whitespace-pre-wrap group relative dark:text-gray-300">
                   {content}
                   {onCite && (
                     <CitationButton
@@ -235,7 +235,7 @@ function EditableSectionWithHistoryInner(
         >
           <div
             className={clsx(
-              'transition-all duration-300 border border-gray-200 rounded-lg',
+              'transition-all duration-300 border border-gray-200 rounded-lg dark:border-gray-700',
               viewMode === 'history' ? 'h-[400px]' : 'h-[120px]'
             )}
           >

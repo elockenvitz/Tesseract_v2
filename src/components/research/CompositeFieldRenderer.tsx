@@ -255,7 +255,7 @@ export function CompositeFieldRenderer({
             return (
               <div key={item.i} className="overflow-auto">
                 {widget.label && (
-                  <div className="text-xs font-medium text-gray-500 mb-1 truncate flex items-center gap-1">
+                  <div className="text-xs font-medium text-gray-500 mb-1 truncate flex items-center gap-1 dark:text-gray-400">
                     {widget.label}
                     {isLinked && <Link2 className="w-3 h-3 text-primary-400" />}
                   </div>

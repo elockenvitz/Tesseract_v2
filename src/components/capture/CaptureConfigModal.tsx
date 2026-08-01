@@ -132,19 +132,19 @@ export function CaptureConfigModal() {
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
           <div className="flex items-center gap-2">
             {step !== 'type' && (
               <button
                 onClick={handleBack}
-                className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600"
+                className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <ChevronRight className="h-4 w-4 rotate-180" />
               </button>
             )}
-            <h3 className="font-semibold text-gray-900">
+            <h3 className="font-semibold text-gray-900 dark:text-white">
               {step === 'type' && 'What did you capture?'}
               {step === 'search' && `Find ${selectedType}`}
               {step === 'mode' && 'Choose capture mode'}
@@ -152,23 +152,23 @@ export function CaptureConfigModal() {
           </div>
           <button
             onClick={handleClose}
-            className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600"
+            className="p-1 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Preview of captured element */}
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+        <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Image className="h-5 w-5 text-gray-500" />
+            <div className="p-2 bg-gray-100 rounded-lg dark:bg-gray-800">
+              <Image className="h-5 w-5 text-gray-500 dark:text-gray-400" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-gray-700 truncate">
+              <div className="text-sm font-medium text-gray-700 truncate dark:text-gray-300">
                 {capturedElement.detectedTitle || 'Selected element'}
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 {capturedElement.detectedType
                   ? `Detected: ${ENTITY_TYPES.find(t => t.type === capturedElement.detectedType)?.label}`
                   : 'Select the type below'}
@@ -195,7 +195,7 @@ export function CaptureConfigModal() {
                   <div className={clsx('p-2 rounded-lg', color.split(' ').slice(0, 2).join(' '))}>
                     <Icon className="h-5 w-5" />
                   </div>
-                  <span className="text-xs font-medium text-gray-700">{label}</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</span>
                 </button>
               ))}
             </div>
@@ -212,13 +212,13 @@ export function CaptureConfigModal() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Search for ${ENTITY_TYPES.find(t => t.type === selectedType)?.label}...`}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:border-gray-700"
                 />
               </div>
 
               <div className="max-h-64 overflow-y-auto">
                 {isLoading ? (
-                  <div className="flex items-center justify-center py-8 text-gray-500">
+                  <div className="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
                     <RefreshCw className="h-5 w-5 animate-spin" />
                   </div>
                 ) : results.length > 0 ? (
@@ -231,15 +231,15 @@ export function CaptureConfigModal() {
                         <button
                           key={result.id}
                           onClick={() => handleEntitySelect({ id: result.id, title: result.title })}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
                         >
                           <div className={clsx('p-1.5 rounded-md', config?.color.split(' ').slice(0, 2).join(' '))}>
                             <Icon className="h-4 w-4" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-900 truncate">{result.title}</div>
+                            <div className="font-medium text-gray-900 truncate dark:text-white">{result.title}</div>
                             {result.subtitle && (
-                              <div className="text-xs text-gray-500 truncate">{result.subtitle}</div>
+                              <div className="text-xs text-gray-500 truncate dark:text-gray-400">{result.subtitle}</div>
                             )}
                           </div>
                           <ChevronRight className="h-4 w-4 text-gray-400" />
@@ -248,11 +248,11 @@ export function CaptureConfigModal() {
                     })}
                   </div>
                 ) : searchQuery.length > 0 ? (
-                  <div className="text-center py-8 text-gray-500 text-sm">
+                  <div className="text-center py-8 text-gray-500 text-sm dark:text-gray-400">
                     No results found
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500 text-sm">
+                  <div className="text-center py-8 text-gray-500 text-sm dark:text-gray-400">
                     Type to search
                   </div>
                 )}
@@ -264,20 +264,20 @@ export function CaptureConfigModal() {
           {step === 'mode' && selectedEntity && (
             <div className="space-y-3">
               <div className="text-center mb-4">
-                <div className="text-sm text-gray-600 mb-1">Capturing</div>
-                <div className="font-semibold text-gray-900">{selectedEntity.title}</div>
+                <div className="text-sm text-gray-600 mb-1 dark:text-gray-400">Capturing</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{selectedEntity.title}</div>
               </div>
 
               <button
                 onClick={() => handleModeSelect('live')}
-                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all group"
+                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all group dark:border-gray-700"
               >
                 <div className="p-3 rounded-lg bg-green-100 text-green-600 group-hover:bg-green-200">
                   <RefreshCw className="h-5 w-5" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="font-semibold text-gray-900">Live Reference</div>
-                  <div className="text-sm text-gray-500">
+                  <div className="font-semibold text-gray-900 dark:text-white">Live Reference</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     Always shows current state. Updates automatically when the source changes.
                   </div>
                 </div>
@@ -285,14 +285,14 @@ export function CaptureConfigModal() {
 
               <button
                 onClick={() => handleModeSelect('static')}
-                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all group"
+                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all group dark:border-gray-700"
               >
                 <div className="p-3 rounded-lg bg-amber-100 text-amber-600 group-hover:bg-amber-200">
                   <Clock className="h-5 w-5" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="font-semibold text-gray-900">Snapshot</div>
-                  <div className="text-sm text-gray-500">
+                  <div className="font-semibold text-gray-900 dark:text-white">Snapshot</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     Captures current state as a citation. Shows differences if source changes.
                   </div>
                 </div>
@@ -302,10 +302,10 @@ export function CaptureConfigModal() {
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+        <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between dark:border-gray-800 dark:bg-gray-900">
           <button
             onClick={handleCancel}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
           >
             Try another element
           </button>

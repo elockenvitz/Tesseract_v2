@@ -325,14 +325,14 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col dark:bg-gray-800"
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
+          <div className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0 dark:border-gray-800">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">New Portfolio</h2>
-              <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New Portfolio</h2>
+              <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -349,7 +349,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                       ? 'bg-indigo-100 text-indigo-700'
                       : s < step
                         ? 'bg-emerald-50 text-emerald-600'
-                        : 'bg-gray-100 text-gray-400'
+                        : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
                   }`}
                 >
                   {s < step ? <Check className="w-3 h-3" /> : STEP_LABELS[s].icon}
@@ -379,7 +379,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
             {step === 1 && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Portfolio Name <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -387,7 +387,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                     value={name}
                     onChange={e => setName(e.target.value)}
                     placeholder="e.g. Global Growth Equity"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                     autoFocus
                   />
                   {isDuplicateName && (
@@ -399,29 +399,29 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Benchmark</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Benchmark</label>
                   <input
                     type="text"
                     value={benchmark}
                     onChange={e => setBenchmark(e.target.value)}
                     placeholder="e.g. S&P 500, MSCI World"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
                   <textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
                     placeholder="Brief description of the portfolio's mandate or strategy..."
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none dark:border-gray-600"
                   />
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <label className="text-sm font-medium text-gray-700">Status</label>
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
                   <button
                     type="button"
                     onClick={() => setIsActive(!isActive)}
@@ -435,7 +435,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                       }`}
                     />
                   </button>
-                  <span className={`text-sm ${isActive ? 'text-emerald-600' : 'text-gray-500'}`}>
+                  <span className={`text-sm ${isActive ? 'text-emerald-600' : 'text-gray-500 dark:text-gray-400'}`}>
                     {isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
@@ -446,12 +446,12 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
             {step === 2 && (
               <div className="space-y-4">
                 <div>
-                  <p className="text-sm text-gray-600 mb-3">
+                  <p className="text-sm text-gray-600 mb-3 dark:text-gray-400">
                     Link organizational teams to this portfolio for ownership and reporting.
                     Access is still assigned per-person in the next step.
                   </p>
                   {selectedTeams.length > 0 && (
-                    <p className="text-xs text-gray-500 mb-2">
+                    <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">
                       {selectedTeams.length} team{selectedTeams.length > 1 ? 's' : ''} selected
                       {selectedTeams.find(t => t.isLead) && (
                         <> &middot; Lead: <span className="font-medium">{selectedTeams.find(t => t.isLead)?.name}</span></>
@@ -465,7 +465,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                     <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                   </div>
                 ) : teamNodes.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-gray-500">
+                  <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
                     No teams found in your organization. You can link teams later.
                   </div>
                 ) : (
@@ -478,7 +478,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                           className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                             selected
                               ? 'border-indigo-200 bg-indigo-50/50'
-                              : 'border-gray-200 bg-white hover:border-gray-300'
+                              : 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800'
                           }`}
                           onClick={() => toggleTeam(node.id, node.name)}
                         >
@@ -489,8 +489,8 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                             <Users className="w-4 h-4" style={{ color: node.color }} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">{node.name}</p>
-                            <p className="text-xs text-gray-500 capitalize">{node.node_type}</p>
+                            <p className="text-sm font-medium text-gray-800 truncate dark:text-gray-100">{node.name}</p>
+                            <p className="text-xs text-gray-500 capitalize dark:text-gray-400">{node.node_type}</p>
                           </div>
                           {selected && (
                             <div className="flex items-center gap-2 shrink-0">
@@ -523,7 +523,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
             {/* Step 3: Initial Access */}
             {step === 3 && (
               <div className="space-y-4">
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   Assign initial portfolio roles. Roles are portfolio-specific and do not include team roles.
                 </p>
 
@@ -533,7 +533,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                     {members.map(m => (
                       <div
                         key={m.id}
-                        className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white"
+                        className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
                       >
                         <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
                           <span className="text-xs font-medium text-indigo-600">
@@ -541,8 +541,8 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                           </span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{m.userName}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-sm font-medium text-gray-800 truncate dark:text-gray-100">{m.userName}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
                             {m.role}{m.focus ? ` · ${m.focus}` : ''}
                           </p>
                         </div>
@@ -587,7 +587,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
 
                     {newMemberRole && focusOptions.length > 0 && (
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">Focus</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Focus</label>
                         <div className="flex flex-wrap gap-1">
                           {focusOptions.map(f => {
                             const currentFocuses = newMemberFocus ? newMemberFocus.split(', ').filter(Boolean) : []
@@ -605,7 +605,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                                 className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
                                   isSelected
                                     ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                                 }`}
                               >
                                 {f}
@@ -624,7 +624,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                           setNewMemberRole('')
                           setNewMemberFocus('')
                         }}
-                        className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                        className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 transition-colors dark:text-gray-400"
                       >
                         Cancel
                       </button>
@@ -658,38 +658,38 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
             {/* Step 4: Review */}
             {step === 4 && (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">Review Portfolio</h3>
+                <h3 className="text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Review Portfolio</h3>
 
                 {/* Details card */}
-                <div className="rounded-lg border border-gray-200 p-4 space-y-2">
+                <div className="rounded-lg border border-gray-200 p-4 space-y-2 dark:border-gray-700">
                   <div className="flex items-center gap-2 mb-2">
                     <Briefcase className="w-4 h-4 text-indigo-500" />
-                    <span className="text-sm font-semibold text-gray-900">{name}</span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{name}</span>
                     <span className={`ml-auto px-2 py-0.5 text-[11px] font-medium rounded-full ${
                       isActive
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : 'bg-gray-100 text-gray-500 border border-gray-200'
+                        : 'bg-gray-100 text-gray-500 border border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     }`}>
                       {isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                   {benchmark && (
-                    <div className="text-xs text-gray-500">
-                      <span className="font-medium text-gray-600">Benchmark:</span> {benchmark}
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Benchmark:</span> {benchmark}
                     </div>
                   )}
                   {description && (
-                    <div className="text-xs text-gray-500">
-                      <span className="font-medium text-gray-600">Description:</span> {description}
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Description:</span> {description}
                     </div>
                   )}
                 </div>
 
                 {/* Teams card */}
-                <div className="rounded-lg border border-gray-200 p-4">
+                <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                   <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700">
+                    <Users className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {selectedTeams.length} team{selectedTeams.length !== 1 ? 's' : ''} linked
                     </span>
                   </div>
@@ -701,7 +701,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                           className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
                             t.isLead
                               ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : 'bg-gray-100 text-gray-600 border border-gray-200'
+                              : 'bg-gray-100 text-gray-600 border border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                           }`}
                         >
                           {t.isLead && <Star className="w-3 h-3 fill-current" />}
@@ -715,17 +715,17 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                 </div>
 
                 {/* Members card */}
-                <div className="rounded-lg border border-gray-200 p-4">
+                <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                   <div className="flex items-center gap-2 mb-2">
-                    <UserPlus className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700">
+                    <UserPlus className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {members.length} initial member{members.length !== 1 ? 's' : ''}
                     </span>
                   </div>
                   {members.length > 0 ? (
                     <div className="space-y-1">
                       {members.map(m => (
-                        <div key={m.id} className="text-xs text-gray-600">
+                        <div key={m.id} className="text-xs text-gray-600 dark:text-gray-400">
                           <span className="font-medium">{m.userName}</span>
                           <span className="text-gray-400"> &middot; </span>
                           <span>{m.role}</span>
@@ -749,9 +749,9 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl shrink-0">
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl shrink-0 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between">
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 Step {step} of 4
               </div>
               <div className="flex gap-2">
@@ -759,7 +759,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                   <button
                     onClick={goBack}
                     disabled={createMutation.isPending}
-                    className="flex items-center gap-1 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg transition-colors"
+                    className="flex items-center gap-1 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg transition-colors dark:text-gray-400"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     Back
@@ -768,7 +768,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
                 {step === 1 && (
                   <button
                     onClick={handleClose}
-                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg transition-colors dark:text-gray-400"
                   >
                     Cancel
                   </button>

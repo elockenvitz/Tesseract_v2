@@ -182,7 +182,7 @@ function TimelineItem({
                     {displayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </div>
                   {outcome.days_to_hit !== null && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
                       {outcome.days_to_hit} days to hit
                     </div>
                   )}
@@ -224,7 +224,7 @@ function TimelineItem({
                       <div className="text-gray-500 dark:text-gray-400">Overshoot</div>
                       <div className={clsx(
                         'font-medium',
-                        outcome.overshoot_pct > 0 ? 'text-green-600' : outcome.overshoot_pct < 0 ? 'text-red-600' : 'text-gray-600'
+                        outcome.overshoot_pct > 0 ? 'text-green-600' : outcome.overshoot_pct < 0 ? 'text-red-600' : 'text-gray-600 dark:text-gray-400'
                       )}>
                         {outcome.overshoot_pct > 0 ? '+' : ''}{outcome.overshoot_pct.toFixed(1)}%
                       </div>
@@ -388,14 +388,14 @@ export function OutcomesTimeline({
               <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {summary.hitRate.toFixed(0)}%
               </div>
-              <div className="text-xs text-gray-500">Hit Rate</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Hit Rate</div>
             </div>
             {summary.avgAccuracy !== null && (
               <div>
                 <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {summary.avgAccuracy.toFixed(0)}%
                 </div>
-                <div className="text-xs text-gray-500">Avg Accuracy</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Avg Accuracy</div>
               </div>
             )}
             {summary.avgDaysToHit !== null && (
@@ -403,7 +403,7 @@ export function OutcomesTimeline({
                 <div className="text-2xl font-bold text-gray-900 dark:text-white">
                   {summary.avgDaysToHit.toFixed(0)}
                 </div>
-                <div className="text-xs text-gray-500">Avg Days to Hit</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Avg Days to Hit</div>
               </div>
             )}
           </div>

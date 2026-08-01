@@ -140,9 +140,9 @@ function SimpleSummaryView({
 
   if (!hasContent) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center dark:border-gray-700 dark:bg-gray-900">
         <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No contributions to summarize</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No contributions to summarize</p>
       </div>
     )
   }
@@ -150,7 +150,7 @@ function SimpleSummaryView({
   return (
     <div className="space-y-4">
       {/* Combined Narrative Card */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
         {/* Primary Contribution Highlight */}
         {primaryContribution && (
           <div className="p-4 bg-primary-50 border-b border-primary-100">
@@ -166,10 +166,10 @@ function SimpleSummaryView({
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-800 leading-relaxed">
+            <p className="text-sm text-gray-800 leading-relaxed dark:text-gray-100">
               {truncateToSentences(primaryContribution.content, 3)}
             </p>
-            <p className="text-xs text-gray-500 mt-2">- {getAnalystName(primaryContribution)}</p>
+            <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">- {getAnalystName(primaryContribution)}</p>
           </div>
         )}
 
@@ -186,14 +186,14 @@ function SimpleSummaryView({
               <div key={section}>
                 <div className="flex items-center gap-2 mb-2">
                   <Target className="w-3.5 h-3.5 text-primary-600" />
-                  <span className="text-xs font-semibold text-gray-700">
+                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                     {formatSectionTitle(section)} ({displayContributions.length})
                   </span>
                 </div>
                 <ul className="space-y-1.5 pl-5">
                   {displayContributions.map((c) => (
-                    <li key={c.id} className="text-xs text-gray-600 leading-relaxed">
-                      <span className="font-medium text-gray-700">{getAnalystName(c)}:</span>{' '}
+                    <li key={c.id} className="text-xs text-gray-600 leading-relaxed dark:text-gray-400">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">{getAnalystName(c)}:</span>{' '}
                       {truncateToSentences(c.content, 2)}
                     </li>
                   ))}
@@ -236,15 +236,15 @@ function AggregationToolbar({
   ]
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+    <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-900">
       <div className="flex items-center gap-4">
         {/* Aggregation Method */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 font-medium">Weight:</span>
+          <span className="text-xs text-gray-500 font-medium dark:text-gray-400">Weight:</span>
           <select
             value={method}
             onChange={(e) => onMethodChange(e.target.value as AggregationMethod)}
-            className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+            className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700 dark:bg-gray-800"
           >
             {methods.map(m => (
               <option key={m.value} value={m.value}>{m.label}</option>
@@ -255,7 +255,7 @@ function AggregationToolbar({
 
       <div className="flex items-center gap-3">
         {/* Analyst Count */}
-        <div className="flex items-center gap-1 text-xs text-gray-500">
+        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
           <Users className="w-3 h-3" />
           {analystCount} analyst{analystCount !== 1 ? 's' : ''}
         </div>
@@ -268,7 +268,7 @@ function AggregationToolbar({
             'flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-colors',
             isStale
               ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',
+              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
             isGenerating && 'opacity-50 cursor-not-allowed'
           )}
         >
@@ -305,7 +305,7 @@ function ExecutiveSummary({
 }: ExecutiveSummaryProps) {
   const sentimentConfig = {
     bullish: { icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50', label: 'Bullish' },
-    neutral: { icon: Minus, color: 'text-gray-600', bg: 'bg-gray-100', label: 'Neutral' },
+    neutral: { icon: Minus, color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', label: 'Neutral' },
     bearish: { icon: TrendingDown, color: 'text-red-600', bg: 'bg-red-50', label: 'Bearish' }
   }
 
@@ -313,11 +313,11 @@ function ExecutiveSummary({
   const Icon = config.icon
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5">
+    <div className="bg-white border border-gray-200 rounded-lg p-5 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-purple-500" />
-          <h4 className="text-base font-semibold text-gray-900">Unified Thesis Summary</h4>
+          <h4 className="text-base font-semibold text-gray-900 dark:text-white">Unified Thesis Summary</h4>
         </div>
         <div className={clsx('flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium', config.bg, config.color)}>
           <Icon className="w-3 h-3" />
@@ -326,39 +326,39 @@ function ExecutiveSummary({
       </div>
 
       {/* Executive Summary */}
-      <p className="text-sm text-gray-700 leading-relaxed mb-5">{summary}</p>
+      <p className="text-sm text-gray-700 leading-relaxed mb-5 dark:text-gray-300">{summary}</p>
 
       {/* Section Summaries */}
-      <div className="space-y-4 border-t border-gray-100 pt-4">
+      <div className="space-y-4 border-t border-gray-100 pt-4 dark:border-gray-800">
         {/* Thesis */}
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Target className="w-3.5 h-3.5 text-primary-600" />
-            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Investment Thesis</span>
+            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Investment Thesis</span>
           </div>
-          <p className="text-sm text-gray-600 leading-relaxed pl-5">{thesisSummary}</p>
+          <p className="text-sm text-gray-600 leading-relaxed pl-5 dark:text-gray-400">{thesisSummary}</p>
         </div>
 
         {/* Differentiators */}
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Where Our Thesis Differs</span>
+            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Where Our Thesis Differs</span>
           </div>
-          <p className="text-sm text-gray-600 leading-relaxed pl-5">{differentiatorsSummary}</p>
+          <p className="text-sm text-gray-600 leading-relaxed pl-5 dark:text-gray-400">{differentiatorsSummary}</p>
         </div>
 
         {/* Risks */}
         <div>
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Key Risks</span>
+            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Key Risks</span>
           </div>
-          <p className="text-sm text-gray-600 leading-relaxed pl-5">{risksSummary}</p>
+          <p className="text-sm text-gray-600 leading-relaxed pl-5 dark:text-gray-400">{risksSummary}</p>
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-3 text-xs text-gray-400">
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-3 text-xs text-gray-400 dark:border-gray-800">
         <span>{analystCount} analyst{analystCount !== 1 ? 's' : ''}</span>
         <span>-</span>
         <span>Generated {formatDistanceToNow(new Date(generatedAt), { addSuffix: true })}</span>
@@ -387,8 +387,8 @@ function SentimentMeter({ breakdown }: SentimentMeterProps) {
   const circumference = 2 * Math.PI * radius
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">Sentiment Distribution</h4>
+    <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+      <h4 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Sentiment Distribution</h4>
       <div className="flex items-center gap-4">
         <div className="relative">
           <svg width={size} height={size} className="transform -rotate-90">
@@ -419,23 +419,23 @@ function SentimentMeter({ breakdown }: SentimentMeterProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-green-500" />
-              <span className="text-xs text-gray-600">Bullish</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Bullish</span>
             </div>
-            <span className="text-xs font-medium text-gray-900">{bullishPct}%</span>
+            <span className="text-xs font-medium text-gray-900 dark:text-white">{bullishPct}%</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-gray-400" />
-              <span className="text-xs text-gray-600">Neutral</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Neutral</span>
             </div>
-            <span className="text-xs font-medium text-gray-900">{neutralPct}%</span>
+            <span className="text-xs font-medium text-gray-900 dark:text-white">{neutralPct}%</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-red-500" />
-              <span className="text-xs text-gray-600">Bearish</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Bearish</span>
             </div>
-            <span className="text-xs font-medium text-gray-900">{bearishPct}%</span>
+            <span className="text-xs font-medium text-gray-900 dark:text-white">{bearishPct}%</span>
           </div>
         </div>
       </div>
@@ -457,15 +457,15 @@ function ConsensusCards({ consensusPoints, divergentViews, keyCatalysts }: Conse
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {/* Consensus Points */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ borderTopColor: '#22c55e', borderTopWidth: '3px' }}>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800" style={{ borderTopColor: '#22c55e', borderTopWidth: '3px' }}>
         <div className="flex items-center gap-2 mb-3">
           <Target className="w-4 h-4 text-green-600" />
-          <h4 className="text-sm font-semibold text-gray-900">Consensus Points</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Consensus Points</h4>
         </div>
         {consensusPoints.length > 0 ? (
           <ul className="space-y-2">
             {consensusPoints.slice(0, 5).map((point, idx) => (
-              <li key={idx} className="text-xs text-gray-700 flex items-start gap-2">
+              <li key={idx} className="text-xs text-gray-700 flex items-start gap-2 dark:text-gray-300">
                 <span className="text-green-500 mt-0.5">-</span>
                 {point}
               </li>
@@ -477,19 +477,19 @@ function ConsensusCards({ consensusPoints, divergentViews, keyCatalysts }: Conse
       </div>
 
       {/* Divergent Views */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ borderTopColor: '#f59e0b', borderTopWidth: '3px' }}>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800" style={{ borderTopColor: '#f59e0b', borderTopWidth: '3px' }}>
         <div className="flex items-center gap-2 mb-3">
           <GitBranch className="w-4 h-4 text-amber-600" />
-          <h4 className="text-sm font-semibold text-gray-900">Divergent Views</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Divergent Views</h4>
         </div>
         {divergentViews.length > 0 ? (
           <div className="space-y-3">
             {divergentViews.slice(0, 3).map((dv, idx) => (
               <div key={idx}>
-                <p className="text-xs font-medium text-gray-900 mb-1">{dv.topic}</p>
+                <p className="text-xs font-medium text-gray-900 mb-1 dark:text-white">{dv.topic}</p>
                 <div className="space-y-1">
                   {dv.views.slice(0, 2).map((v, vIdx) => (
-                    <p key={vIdx} className="text-xs text-gray-600">
+                    <p key={vIdx} className="text-xs text-gray-600 dark:text-gray-400">
                       <span className="font-medium">{v.analyst}:</span> {v.position}
                     </p>
                   ))}
@@ -503,10 +503,10 @@ function ConsensusCards({ consensusPoints, divergentViews, keyCatalysts }: Conse
       </div>
 
       {/* Key Catalysts */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ borderTopColor: '#6366f1', borderTopWidth: '3px' }}>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800" style={{ borderTopColor: '#6366f1', borderTopWidth: '3px' }}>
         <div className="flex items-center gap-2 mb-3">
           <Zap className="w-4 h-4 text-indigo-600" />
-          <h4 className="text-sm font-semibold text-gray-900">Key Catalysts</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Key Catalysts</h4>
         </div>
         {keyCatalysts.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -547,7 +547,7 @@ interface ComparisonTableProps {
 function ComparisonTable({ analysts }: ComparisonTableProps) {
   const sentimentConfig = {
     bullish: { color: 'text-green-600', bg: 'bg-green-50' },
-    neutral: { color: 'text-gray-600', bg: 'bg-gray-100' },
+    neutral: { color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
     bearish: { color: 'text-red-600', bg: 'bg-red-50' }
   }
 
@@ -558,21 +558,21 @@ function ComparisonTable({ analysts }: ComparisonTableProps) {
   })
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h4 className="text-sm font-semibold text-gray-900">Analyst Breakdown</h4>
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Analyst Breakdown</h4>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Analyst</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Key Point</th>
-              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sentiment</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Analyst</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Key Point</th>
+              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Sentiment</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Updated</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {sortedAnalysts.map((analyst) => {
               const config = sentimentConfig[analyst.sentiment]
               return (
@@ -580,11 +580,11 @@ function ComparisonTable({ analysts }: ComparisonTableProps) {
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       {analyst.isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
-                      <span className="text-sm font-medium text-gray-900">{analyst.name}</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{analyst.name}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-xs text-gray-600 line-clamp-2">{analyst.keyPoint}</p>
+                    <p className="text-xs text-gray-600 line-clamp-2 dark:text-gray-400">{analyst.keyPoint}</p>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={clsx('inline-flex px-2 py-0.5 rounded-full text-xs font-medium', config.bg, config.color)}>
@@ -637,12 +637,12 @@ function IndividualViews({
   const filteredRisks = filterContributions(risksContributions)
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
       >
-        <span className="text-sm font-medium text-gray-700">Individual Views</span>
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Individual Views</span>
         {isExpanded ? (
           <ChevronUp className="w-4 h-4 text-gray-400" />
         ) : (
@@ -650,18 +650,18 @@ function IndividualViews({
         )}
       </button>
       {isExpanded && (
-        <div className="p-4 space-y-6 bg-white">
+        <div className="p-4 space-y-6 bg-white dark:bg-gray-800">
           {filteredThesis.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-3.5 h-3.5 text-primary-600" />
-                <span className="text-xs font-semibold text-gray-700">Investment Thesis</span>
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Investment Thesis</span>
               </div>
               {filteredThesis.map((c) => {
                 const isCovering = coveringAnalystIds.has(c.created_by)
                 return (
-                  <div key={c.id} className="text-sm text-gray-700 leading-relaxed mb-2">
-                    <span className="font-medium text-gray-900 inline-flex items-center gap-1">
+                  <div key={c.id} className="text-sm text-gray-700 leading-relaxed mb-2 dark:text-gray-300">
+                    <span className="font-medium text-gray-900 inline-flex items-center gap-1 dark:text-white">
                       {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                       {c.user?.full_name}:
                     </span>{' '}
@@ -675,13 +675,13 @@ function IndividualViews({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                <span className="text-xs font-semibold text-gray-700">Where Our Thesis Differs</span>
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Where Our Thesis Differs</span>
               </div>
               {filteredDiff.map((c) => {
                 const isCovering = coveringAnalystIds.has(c.created_by)
                 return (
-                  <div key={c.id} className="text-sm text-gray-700 leading-relaxed mb-2">
-                    <span className="font-medium text-gray-900 inline-flex items-center gap-1">
+                  <div key={c.id} className="text-sm text-gray-700 leading-relaxed mb-2 dark:text-gray-300">
+                    <span className="font-medium text-gray-900 inline-flex items-center gap-1 dark:text-white">
                       {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                       {c.user?.full_name}:
                     </span>{' '}
@@ -695,13 +695,13 @@ function IndividualViews({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-xs font-semibold text-gray-700">Risks</span>
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Risks</span>
               </div>
               {filteredRisks.map((c) => {
                 const isCovering = coveringAnalystIds.has(c.created_by)
                 return (
-                  <div key={c.id} className="text-sm text-gray-700 leading-relaxed mb-2">
-                    <span className="font-medium text-gray-900 inline-flex items-center gap-1">
+                  <div key={c.id} className="text-sm text-gray-700 leading-relaxed mb-2 dark:text-gray-300">
+                    <span className="font-medium text-gray-900 inline-flex items-center gap-1 dark:text-white">
                       {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                       {c.user?.full_name}:
                     </span>{' '}
@@ -855,12 +855,12 @@ export function ThesisUnifiedSummary({
   if (isLoading) {
     return (
       <div className={clsx('space-y-4', className)}>
-        <div className="h-8 bg-gray-100 rounded animate-pulse" />
-        <div className="h-48 bg-gray-100 rounded animate-pulse" />
+        <div className="h-8 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
+        <div className="h-48 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
         <div className="grid grid-cols-3 gap-4">
-          <div className="h-40 bg-gray-100 rounded animate-pulse" />
-          <div className="h-40 bg-gray-100 rounded animate-pulse" />
-          <div className="h-40 bg-gray-100 rounded animate-pulse" />
+          <div className="h-40 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
+          <div className="h-40 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
+          <div className="h-40 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
         </div>
       </div>
     )
@@ -869,9 +869,9 @@ export function ThesisUnifiedSummary({
   // No contributions state
   if (uniqueAnalysts === 0) {
     return (
-      <div className={clsx('bg-gray-50 border border-gray-200 rounded-lg p-6 text-center', className)}>
+      <div className={clsx('bg-gray-50 border border-gray-200 rounded-lg p-6 text-center dark:border-gray-700 dark:bg-gray-900', className)}>
         <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No contributions yet</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No contributions yet</p>
         <p className="text-xs text-gray-400 mt-1">Add your view to start building the analysis</p>
       </div>
     )
@@ -880,10 +880,10 @@ export function ThesisUnifiedSummary({
   // Generating state (no analysis yet)
   if (!analysis && isGenerating) {
     return (
-      <div className={clsx('bg-white border border-gray-200 rounded-lg p-8 text-center', className)}>
+      <div className={clsx('bg-white border border-gray-200 rounded-lg p-8 text-center dark:border-gray-700 dark:bg-gray-800', className)}>
         <Loader2 className="w-8 h-8 text-primary-500 mx-auto mb-3 animate-spin" />
-        <p className="text-sm text-gray-700 font-medium">Analyzing Contributions</p>
-        <p className="text-xs text-gray-500 mt-1">Synthesizing views from {uniqueAnalysts} analyst{uniqueAnalysts !== 1 ? 's' : ''}...</p>
+        <p className="text-sm text-gray-700 font-medium dark:text-gray-300">Analyzing Contributions</p>
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Synthesizing views from {uniqueAnalysts} analyst{uniqueAnalysts !== 1 ? 's' : ''}...</p>
       </div>
     )
   }
@@ -891,10 +891,10 @@ export function ThesisUnifiedSummary({
   // No analysis yet - prompt to generate
   if (!analysis) {
     return (
-      <div className={clsx('bg-white border border-gray-200 rounded-lg p-6 text-center', className)}>
+      <div className={clsx('bg-white border border-gray-200 rounded-lg p-6 text-center dark:border-gray-700 dark:bg-gray-800', className)}>
         <Sparkles className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-        <p className="text-sm text-gray-700 font-medium">Ready to Analyze</p>
-        <p className="text-xs text-gray-500 mt-1 mb-4">
+        <p className="text-sm text-gray-700 font-medium dark:text-gray-300">Ready to Analyze</p>
+        <p className="text-xs text-gray-500 mt-1 mb-4 dark:text-gray-400">
           Generate a unified AI analysis of all thesis sections
         </p>
         <button

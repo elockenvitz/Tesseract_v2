@@ -32,10 +32,10 @@ const TYPE_CONFIG: Record<string, { icon: typeof TrendingUp; label: string; colo
   trade_sheet:    { icon: ClipboardCheck,  label: 'Trade Sheet',  color: 'bg-teal-50 text-teal-700 border-teal-200' },
   calendar_event: { icon: Calendar,        label: 'Meeting',      color: 'bg-sky-50 text-sky-700 border-sky-200' },
   user:           { icon: User,            label: 'User',         color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  asset_note:     { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200' },
-  portfolio_note: { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200' },
-  theme_note:     { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200' },
-  custom_note:    { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200' },
+  asset_note:     { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900' },
+  portfolio_note: { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900' },
+  theme_note:     { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900' },
+  custom_note:    { icon: FileText,        label: 'Note',         color: 'bg-gray-50 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900' },
   quick_thought:  { icon: Zap,             label: 'Thought',      color: 'bg-violet-50 text-violet-700 border-violet-200' },
   trade_proposal: { icon: ArrowRightLeft,  label: 'Recommendation', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   trade_idea_thesis: { icon: Zap,          label: 'Argument',       color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
@@ -73,7 +73,7 @@ const RELATIONSHIP_GROUPS = [
 const IDEA_TYPES = new Set<string>(['trade_idea', 'trade_idea_thesis'])
 
 function getConfig(type: LinkableEntityType) {
-  return TYPE_CONFIG[type] || { icon: Link2, label: type, color: 'bg-gray-50 text-gray-700 border-gray-200' }
+  return TYPE_CONFIG[type] || { icon: Link2, label: type, color: 'bg-gray-50 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900' }
 }
 
 /** Extract a short date from subtitle like "Crocs Inc · Eric L · Mar 16, 2026" */
@@ -172,7 +172,7 @@ function EvidenceBadge({
         className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 text-[11px] font-medium rounded-l-md border border-r-0 bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800/40 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all"
         title={[link.label, link.subtitle].filter(Boolean).join(' — ')}
       >
-        <span className={clsx('text-[10px] font-semibold', linkDisplay?.color || 'text-gray-500')}>
+        <span className={clsx('text-[10px] font-semibold', linkDisplay?.color || 'text-gray-500 dark:text-gray-400')}>
           {relationLabel}
         </span>
         <span className="truncate max-w-[160px]">{badgeText}</span>
@@ -309,7 +309,7 @@ export function LinkedObjectsPanel({ links, onDeleteLink, onUpdateLinkType, isLo
   const evidenceLinks = deduped.filter(l => IDEA_TYPES.has(l.target_type))   // ideas, arguments
 
   return (
-    <div className="px-4 py-1.5 border-b border-gray-100 bg-gray-50/60 dark:bg-gray-800/30">
+    <div className="px-4 py-1.5 border-b border-gray-100 bg-gray-50/60 dark:bg-gray-800/30 dark:border-gray-800">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"

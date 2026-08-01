@@ -25,7 +25,7 @@ type Sentiment = 'bullish' | 'bearish' | 'neutral' | 'curious' | 'concerned' | '
 const sentimentConfig: Record<Sentiment, { icon: typeof TrendingUp; color: string; bg: string; label: string }> = {
   bullish: { icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50', label: 'Bullish' },
   bearish: { icon: TrendingDown, color: 'text-red-600', bg: 'bg-red-50', label: 'Bearish' },
-  neutral: { icon: Minus, color: 'text-gray-600', bg: 'bg-gray-50', label: 'Neutral' },
+  neutral: { icon: Minus, color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-50 dark:bg-gray-900', label: 'Neutral' },
   curious: { icon: HelpCircle, color: 'text-blue-600', bg: 'bg-blue-50', label: 'Curious' },
   concerned: { icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Concerned' },
   excited: { icon: Sparkles, color: 'text-purple-600', bg: 'bg-purple-50', label: 'Excited' },
@@ -213,7 +213,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
           "p-3 rounded-lg border transition-all hover:shadow-sm cursor-pointer",
           thought.is_pinned
             ? "bg-amber-50/50 border-amber-200"
-            : "bg-white border-gray-100 hover:border-gray-200"
+            : "bg-white border-gray-100 hover:border-gray-200 dark:border-gray-800 dark:bg-gray-800"
         )}
       >
         <div className="flex items-start justify-between mb-2">
@@ -248,7 +248,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
           <span className="text-xs text-gray-400">Thought</span>
         </div>
 
-        <p className="text-sm text-gray-900 line-clamp-2 mb-2">
+        <p className="text-sm text-gray-900 line-clamp-2 mb-2 dark:text-white">
           {thought.content}
         </p>
 
@@ -258,7 +258,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
             {thought.tags.slice(0, 3).map((tag: string) => (
               <span
                 key={tag}
-                className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
+                className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800"
               >
                 <Hash className="h-3 w-3 mr-0.5" />
                 {tag}
@@ -287,7 +287,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
     const actionColors: Record<string, { bg: string; text: string }> = {
       buy: { bg: 'bg-green-100', text: 'text-green-700' },
       sell: { bg: 'bg-red-100', text: 'text-red-700' },
-      hold: { bg: 'bg-gray-100', text: 'text-gray-700' },
+      hold: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300' },
       trim: { bg: 'bg-amber-100', text: 'text-amber-700' },
       add: { bg: 'bg-blue-100', text: 'text-blue-700' },
     }
@@ -297,7 +297,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
       <div
         key={`trade-${trade.id}`}
         onClick={() => onTradeIdeaClick?.(trade.id)}
-        className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all hover:shadow-sm cursor-pointer"
+        className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all hover:shadow-sm cursor-pointer dark:border-gray-800 dark:bg-gray-800"
       >
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center space-x-2">
@@ -310,7 +310,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
                   e.stopPropagation()
                   onAssetClick?.(trade.assets.id, trade.assets.symbol)
                 }}
-                className="text-sm font-semibold text-gray-900 hover:text-primary-600"
+                className="text-sm font-semibold text-gray-900 hover:text-primary-600 dark:text-white"
               >
                 {trade.assets.symbol}
               </button>
@@ -326,7 +326,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
         </div>
 
         {trade.rationale && (
-          <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+          <p className="text-sm text-gray-600 line-clamp-2 mb-2 dark:text-gray-400">
             {trade.rationale}
           </p>
         )}
@@ -340,7 +340,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
               </Badge>
             )}
             {trade.proposed_weight && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 {trade.proposed_weight}% target
               </span>
             )}
@@ -367,18 +367,18 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
       <div
         key={`note-${note.id}`}
         onClick={() => onNoteClick?.(note.id, note.noteType, note)}
-        className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all hover:shadow-sm cursor-pointer"
+        className="p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-200 transition-all hover:shadow-sm cursor-pointer dark:border-gray-800 dark:bg-gray-800"
       >
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center space-x-2">
             <div className={clsx("p-1.5 rounded", typeConfig.bg)}>
               <TypeIcon className={clsx("h-3.5 w-3.5", typeConfig.color)} />
             </div>
-            <span className="text-sm font-medium text-gray-900">
+            <span className="text-sm font-medium text-gray-900 dark:text-white">
               {note.title || 'Untitled Note'}
             </span>
             {note.parentName && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 on {note.noteType === 'asset' ? '$' : ''}{note.parentName}
               </span>
             )}
@@ -387,7 +387,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
         </div>
 
         {note.content && (
-          <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+          <p className="text-sm text-gray-600 line-clamp-2 mb-2 dark:text-gray-400">
             {getContentPreview(note.content, 150)}
           </p>
         )}
@@ -410,7 +410,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="animate-pulse p-3 bg-gray-50 rounded-lg">
+            <div key={i} className="animate-pulse p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
               <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
               <div className="h-3 bg-gray-200 rounded w-1/2" />
             </div>
@@ -449,7 +449,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
 
     if (items.length === 0) {
       return (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <MessageSquare className="h-12 w-12 mx-auto mb-3 text-gray-300" />
           <p className="font-medium">No content yet</p>
           <p className="text-sm">
@@ -494,8 +494,8 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
             <FileText className="h-5 w-5 text-indigo-600" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Content</h2>
-            <p className="text-sm text-gray-500">Your thoughts, ideas, and notes</p>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Content</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Your thoughts, ideas, and notes</p>
           </div>
         </div>
         {viewAllConfig && (
@@ -512,7 +512,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex items-center space-x-1 mb-4 bg-gray-100 rounded-lg p-1">
+      <div className="flex items-center space-x-1 mb-4 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
         {contentTabs.map(tab => {
           const Icon = tab.icon
           const isActive = filter === tab.id
@@ -531,8 +531,8 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
               className={clsx(
                 "flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all flex-1 justify-center",
                 isActive
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  ? "bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800"
+                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400"
               )}
             >
               <Icon className={clsx("h-4 w-4", isActive && `text-${tab.color}-500`)} />
@@ -540,7 +540,7 @@ export function ContentSection({ onAssetClick, onNoteClick, onTradeIdeaClick }: 
               {count > 0 && (
                 <span className={clsx(
                   "px-1.5 py-0.5 rounded-full text-xs font-semibold",
-                  isActive ? `bg-${tab.color}-100 text-${tab.color}-700` : "bg-gray-200 text-gray-600"
+                  isActive ? `bg-${tab.color}-100 text-${tab.color}-700` : "bg-gray-200 text-gray-600 dark:text-gray-400"
                 )}>
                   {count}
                 </span>

@@ -105,7 +105,7 @@ export function AddStageModal({ workflowId, existingStages, teamMembers = [], on
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Stage</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -156,7 +156,7 @@ export function AddStageModal({ workflowId, existingStages, teamMembers = [], on
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="—"
                   />
-                  <span className="text-sm text-gray-500 shrink-0">days</span>
+                  <span className="text-sm text-gray-500 shrink-0 dark:text-gray-400">days</span>
                 </div>
               </div>
 
@@ -232,7 +232,7 @@ export function AddStageModal({ workflowId, existingStages, teamMembers = [], on
                       <GripVertical className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
                       {/* Type badge */}
                       <span className={`flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0 rounded flex-shrink-0 ${
-                        item.item_type === 'thinking' ? 'bg-purple-50 text-purple-600' : 'bg-gray-100 text-gray-500'
+                        item.item_type === 'thinking' ? 'bg-purple-50 text-purple-600' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                       }`}>
                         {item.item_type === 'thinking' ? <BrainCircuit className="w-2.5 h-2.5" /> : <Settings2 className="w-2.5 h-2.5" />}
                         {item.item_type === 'thinking' ? 'Analysis' : 'Task'}
@@ -248,7 +248,7 @@ export function AddStageModal({ workflowId, existingStages, teamMembers = [], on
                           type="checkbox"
                           checked={item.is_required}
                           onChange={() => toggleRequired(item.tempId)}
-                          className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5"
+                          className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5 dark:border-gray-600"
                         />
                         <span className="text-[11px] text-gray-400">Required</span>
                       </label>
@@ -272,7 +272,7 @@ export function AddStageModal({ workflowId, existingStages, teamMembers = [], on
                     type="button"
                     onClick={() => setNewItemType('operational')}
                     className={`flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
-                      newItemType === 'operational' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                      newItemType === 'operational' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     }`}
                   >
                     <Settings2 className="w-2.5 h-2.5" />Task
@@ -281,7 +281,7 @@ export function AddStageModal({ workflowId, existingStages, teamMembers = [], on
                     type="button"
                     onClick={() => setNewItemType('thinking')}
                     className={`flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
-                      newItemType === 'thinking' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                      newItemType === 'thinking' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                     }`}
                   >
                     <BrainCircuit className="w-2.5 h-2.5" />Analysis

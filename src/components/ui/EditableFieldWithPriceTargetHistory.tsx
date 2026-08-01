@@ -104,12 +104,12 @@ export function EditableFieldWithPriceTargetHistory({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className={clsx(
-              'w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500',
+              'w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600',
               inputClassName
             )}
           />
           {isSaving && (
-            <div className="absolute -bottom-5 left-0 flex items-center text-xs text-gray-500">
+            <div className="absolute -bottom-5 left-0 flex items-center text-xs text-gray-500 dark:text-gray-400">
               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary-500 mr-1" />
               Saving...
             </div>
@@ -118,13 +118,13 @@ export function EditableFieldWithPriceTargetHistory({
       ) : (
         <div 
           className={clsx(
-            'cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors group-hover:bg-gray-50',
+            'cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors group-hover:bg-gray-50 dark:hover:bg-gray-800',
             displayClassName
           )}
           onClick={handleEdit}
         >
           <div className="flex items-center justify-center w-full relative">
-            <span className={value ? 'text-gray-900' : 'text-gray-400 italic'}>
+            <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-400 italic'}>
               {displayValue}
             </span>
             <div className="absolute right-0 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">

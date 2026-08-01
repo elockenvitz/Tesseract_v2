@@ -160,11 +160,11 @@ export function OutdatedStageView({ assetId, assetSymbol }: OutdatedStageViewPro
       {/* Last Review Section */}
       <Card className="p-4">
         <div className="flex items-center space-x-2 mb-3">
-          <Calendar className="w-5 h-5 text-gray-600" />
-          <h4 className="font-semibold text-gray-900">Last Research Review</h4>
+          <Calendar className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          <h4 className="font-semibold text-gray-900 dark:text-white">Last Research Review</h4>
         </div>
         {lastReview ? (
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
             <p>Last updated: <span className="font-medium">{formatDate(lastReview.changed_at)}</span></p>
             <p>Field: <span className="font-medium">{lastReview.field_name}</span></p>
             {lastReview.old_value && lastReview.new_value && (
@@ -172,15 +172,15 @@ export function OutdatedStageView({ assetId, assetSymbol }: OutdatedStageViewPro
             )}
           </div>
         ) : (
-          <p className="text-sm text-gray-500">No research history found</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No research history found</p>
         )}
       </Card>
 
       {/* Portfolio Holdings Section */}
       <Card className="p-4">
         <div className="flex items-center space-x-2 mb-3">
-          <BarChart3 className="w-5 h-5 text-gray-600" />
-          <h4 className="font-semibold text-gray-900">Portfolio Holdings</h4>
+          <BarChart3 className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          <h4 className="font-semibold text-gray-900 dark:text-white">Portfolio Holdings</h4>
         </div>
         {holdingsLoading ? (
           <div className="flex items-center justify-center py-8">
@@ -189,49 +189,49 @@ export function OutdatedStageView({ assetId, assetSymbol }: OutdatedStageViewPro
         ) : holdings && holdings.length > 0 ? (
           <div className="space-y-3">
             {holdings.map((holding, index) => (
-              <div key={`${holding.portfolio_id}-${index}`} className="border border-gray-200 rounded-lg p-3">
+              <div key={`${holding.portfolio_id}-${index}`} className="border border-gray-200 rounded-lg p-3 dark:border-gray-700">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-gray-900">{holding.portfolio_name}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{holding.portfolio_name}</span>
                   <Badge variant="secondary" size="sm">
                     {holding.shares.toLocaleString()} shares
                   </Badge>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
-                    <span className="text-gray-500">Market Value</span>
+                    <span className="text-gray-500 dark:text-gray-400">Market Value</span>
                     <p className="font-medium">{formatCurrency(holding.shares * holding.price)}</p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Avg Cost</span>
+                    <span className="text-gray-500 dark:text-gray-400">Avg Cost</span>
                     <p className="font-medium">{formatCurrency(holding.cost / holding.shares || 0)}</p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Portfolio Weight</span>
+                    <span className="text-gray-500 dark:text-gray-400">Portfolio Weight</span>
                     <p className="font-medium text-blue-600">{formatPercentage(holding.weight)}</p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Active Weight</span>
-                    <p className={`font-medium ${holding.active_weight > 0 ? 'text-green-600' : holding.active_weight < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                    <span className="text-gray-500 dark:text-gray-400">Active Weight</span>
+                    <p className={`font-medium ${holding.active_weight > 0 ? 'text-green-600' : holding.active_weight < 0 ? 'text-red-600' : 'text-gray-600 dark:text-gray-400'}`}>
                       {holding.active_weight > 0 ? '+' : ''}{formatPercentage(holding.active_weight)}
                     </p>
                   </div>
                 </div>
-                <div className="mt-2 text-xs text-gray-500">
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   Last updated: {formatDate(holding.last_updated)}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-500">No portfolio holdings found</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No portfolio holdings found</p>
         )}
       </Card>
 
       {/* Portfolio Trading Activity */}
       <Card className="p-4">
         <div className="flex items-center space-x-2 mb-3">
-          <Activity className="w-5 h-5 text-gray-600" />
-          <h4 className="font-semibold text-gray-900">Portfolio Trading Activity</h4>
+          <Activity className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          <h4 className="font-semibold text-gray-900 dark:text-white">Portfolio Trading Activity</h4>
         </div>
         {tradesLoading ? (
           <div className="flex items-center justify-center py-8">
@@ -240,9 +240,9 @@ export function OutdatedStageView({ assetId, assetSymbol }: OutdatedStageViewPro
         ) : portfolioTrades && portfolioTrades.length > 0 ? (
           <div className="space-y-3">
             {portfolioTrades.map((trade) => (
-              <div key={trade.portfolio_id} className="border border-gray-200 rounded-lg p-3">
+              <div key={trade.portfolio_id} className="border border-gray-200 rounded-lg p-3 dark:border-gray-700">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-gray-900">{trade.portfolio_name}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{trade.portfolio_name}</span>
                   <div className="flex items-center space-x-2">
                     <Badge
                       variant={trade.last_trade_type === 'buy' ? 'success' : 'warning'}
@@ -250,29 +250,29 @@ export function OutdatedStageView({ assetId, assetSymbol }: OutdatedStageViewPro
                     >
                       Last: {trade.last_trade_type.toUpperCase()}
                     </Badge>
-                    <span className="text-xs text-gray-500">{formatDate(trade.last_trade_date)}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(trade.last_trade_date)}</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
-                    <span className="text-gray-500">Total Trades</span>
+                    <span className="text-gray-500 dark:text-gray-400">Total Trades</span>
                     <p className="font-medium">{trade.total_trades}</p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Shares Traded</span>
+                    <span className="text-gray-500 dark:text-gray-400">Shares Traded</span>
                     <p className="font-medium">{trade.shares_traded.toLocaleString()}</p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Weight Change</span>
+                    <span className="text-gray-500 dark:text-gray-400">Weight Change</span>
                     <p className={`font-medium ${
                       trade.weight_change > 0 ? 'text-green-600' :
-                      trade.weight_change < 0 ? 'text-red-600' : 'text-gray-600'
+                      trade.weight_change < 0 ? 'text-red-600' : 'text-gray-600 dark:text-gray-400'
                     }`}>
                       {trade.weight_change > 0 ? '+' : ''}{formatPercentage(trade.weight_change)}
                     </p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Last Price</span>
+                    <span className="text-gray-500 dark:text-gray-400">Last Price</span>
                     <p className="font-medium">{formatCurrency(trade.last_trade_price)}</p>
                   </div>
                 </div>
@@ -280,7 +280,7 @@ export function OutdatedStageView({ assetId, assetSymbol }: OutdatedStageViewPro
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-500">No trading activity recorded</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No trading activity recorded</p>
         )}
       </Card>
 

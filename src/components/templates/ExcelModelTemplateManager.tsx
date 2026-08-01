@@ -221,13 +221,13 @@ function PresetDropdown({
               onClick={closeDropdown}
             />
             {/* Modal */}
-            <div className="relative z-10 w-full max-w-xl bg-white rounded-xl shadow-2xl overflow-hidden">
+            <div className="relative z-10 w-full max-w-xl bg-white rounded-xl shadow-2xl overflow-hidden dark:bg-gray-800">
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-gray-900">Add New Field</h3>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">Add New Field</h3>
                   {pendingCell && (
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
                       for cell <code className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{pendingCell}</code>
                     </span>
                   )}
@@ -235,7 +235,7 @@ function PresetDropdown({
                 <button
                   type="button"
                   onClick={closeDropdown}
-                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors dark:hover:text-gray-300"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -254,7 +254,7 @@ function PresetDropdown({
                     )}>
                       {pendingCell ? '✓' : '1'}
                     </span>
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {pendingCell ? 'Cell Selected' : 'Select Cell'}
                     </span>
                   </div>
@@ -266,7 +266,7 @@ function PresetDropdown({
                       <button
                         type="button"
                         onClick={() => onSetPendingCell?.(null)}
-                        className="text-xs text-gray-500 hover:text-gray-700 hover:underline"
+                        className="text-xs text-gray-500 hover:text-gray-700 hover:underline dark:hover:text-gray-200 dark:text-gray-400"
                       >
                         Change
                       </button>
@@ -284,7 +284,7 @@ function PresetDropdown({
                           }
                         }}
                         placeholder="e.g., B5"
-                        className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono dark:border-gray-600"
                       />
                       <span className="text-xs text-gray-400">or</span>
                       <button
@@ -307,17 +307,17 @@ function PresetDropdown({
                 {/* Step 2: Select Field Header */}
                 <div className={clsx(
                   "px-4 py-2 border-b flex items-center gap-2",
-                  pendingCell ? "border-gray-200 bg-gray-50" : "border-gray-100 bg-gray-50/50"
+                  pendingCell ? "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900" : "border-gray-100 bg-gray-50/50 dark:border-gray-800"
                 )}>
                   <span className={clsx(
                     "flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold",
-                    pendingCell ? "bg-primary-500 text-white" : "bg-gray-300 text-gray-500"
+                    pendingCell ? "bg-primary-500 text-white" : "bg-gray-300 text-gray-500 dark:text-gray-400"
                   )}>
                     2
                   </span>
                   <span className={clsx(
                     "text-sm font-medium",
-                    pendingCell ? "text-gray-700" : "text-gray-400"
+                    pendingCell ? "text-gray-700 dark:text-gray-300" : "text-gray-400"
                   )}>
                     Select Field
                   </span>
@@ -329,7 +329,7 @@ function PresetDropdown({
                 {/* Field Selection Content - Disabled when no cell selected */}
                 <div className={clsx(!pendingCell && "opacity-50 pointer-events-none")}>
                   {/* Tabs */}
-                  <div className="flex border-b border-gray-200">
+                  <div className="flex border-b border-gray-200 dark:border-gray-700">
                     <button
                       type="button"
                       onClick={() => setActiveTab('metrics')}
@@ -337,7 +337,7 @@ function PresetDropdown({
                         'flex-1 px-4 py-2 text-sm font-medium',
                         activeTab === 'metrics'
                           ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
                       )}
                     >
                       <Calendar className="w-4 h-4 inline mr-1.5" />
@@ -350,7 +350,7 @@ function PresetDropdown({
                         'flex-1 px-4 py-2 text-sm font-medium',
                         activeTab === 'static'
                           ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
                       )}
                     >
                       <Settings className="w-4 h-4 inline mr-1.5" />
@@ -359,7 +359,7 @@ function PresetDropdown({
                   </div>
 
                 {/* Search */}
-                <div className="p-2 border-b border-gray-100">
+                <div className="p-2 border-b border-gray-100 dark:border-gray-800">
                   <div className="relative">
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -367,7 +367,7 @@ function PresetDropdown({
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search..."
-                      className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                       autoFocus
                     />
                   </div>
@@ -382,19 +382,19 @@ function PresetDropdown({
                       onAddCustomField()
                       closeDropdown()
                     }}
-                    className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left border-b border-gray-100 hover:bg-gray-50"
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-800"
                   >
                     <div className="flex items-center gap-2">
-                      <Edit2 className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-gray-700">Custom Field</span>
+                      <Edit2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Custom Field</span>
                     </div>
-                    <span className="text-xs text-gray-500">Enter your own field ID</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Enter your own field ID</span>
                   </button>
 
                   {activeTab === 'metrics' ? (
                     // Metrics tab
                     filteredMetricCategories.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No metrics found</p>
+                      <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">No metrics found</p>
                     ) : (
                       filteredMetricCategories.map((category) => {
                         const isExpanded = expandedCategories.has(category.name) || search.length > 0
@@ -403,13 +403,13 @@ function PresetDropdown({
                             <button
                               type="button"
                               onClick={() => toggleCategory(category.name)}
-                              className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0"
+                              className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0 dark:hover:bg-gray-700 dark:text-gray-300 dark:bg-gray-900"
                             >
                               <div className="flex items-center gap-2">
                                 {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                 {category.name}
                               </div>
-                              <span className="text-xs text-gray-500">{category.metrics.length}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{category.metrics.length}</span>
                             </button>
                             {isExpanded && (
                               <div className="py-1">
@@ -418,7 +418,7 @@ function PresetDropdown({
                                     key={metric.id}
                                     type="button"
                                     onClick={() => handleSelectMetric(metric)}
-                                    className="w-full flex items-center justify-between px-6 py-1.5 text-sm text-left text-gray-700 hover:bg-primary-50"
+                                    className="w-full flex items-center justify-between px-6 py-1.5 text-sm text-left text-gray-700 hover:bg-primary-50 dark:text-gray-300"
                                   >
                                     <span>{metric.label}</span>
                                     <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -433,7 +433,7 @@ function PresetDropdown({
                   ) : (
                     // Static presets tab
                     filteredStaticCategories.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No presets found</p>
+                      <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">No presets found</p>
                     ) : (
                       filteredStaticCategories.map((category) => {
                         const isExpanded = expandedCategories.has(category.name) || search.length > 0
@@ -445,13 +445,13 @@ function PresetDropdown({
                             <button
                               type="button"
                               onClick={() => toggleCategory(category.name)}
-                              className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0"
+                              className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0 dark:hover:bg-gray-700 dark:text-gray-300 dark:bg-gray-900"
                             >
                               <div className="flex items-center gap-2">
                                 {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                 {category.name}
                               </div>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {addedCount > 0 && `${addedCount}/`}{presetEntries.length}
                               </span>
                             </button>
@@ -469,7 +469,7 @@ function PresetDropdown({
                                       disabled={isUnavailable}
                                       className={clsx(
                                         'w-full flex items-center justify-between px-6 py-1.5 text-sm text-left',
-                                        isUnavailable ? 'text-gray-400 cursor-not-allowed bg-gray-50' : 'text-gray-700 hover:bg-primary-50'
+                                        isUnavailable ? 'text-gray-400 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : 'text-gray-700 hover:bg-primary-50 dark:text-gray-300'
                                       )}
                                     >
                                       <span>{preset.label}</span>
@@ -500,7 +500,7 @@ function PresetDropdown({
             ) : (
               // Period selection view - Two step: Period Type → Year
               <>
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                   <button
                     type="button"
                     onClick={() => {
@@ -516,11 +516,11 @@ function PresetDropdown({
                     <ArrowLeft className="w-4 h-4" />
                   </button>
                   <div className="flex-1">
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
                       {selectedMetric?.label}
                     </span>
                     {selectedPeriodType && (
-                      <span className="text-sm text-gray-500 ml-2">
+                      <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">
                         → {selectedPeriodType}
                       </span>
                     )}
@@ -531,7 +531,7 @@ function PresetDropdown({
                   {!selectedPeriodType ? (
                     // Step 1: Select period type
                     <>
-                      <p className="text-xs font-medium text-gray-500">Select period type</p>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Select period type</p>
 
                       {/* Current (no period) option */}
                       <div>
@@ -570,7 +570,7 @@ function PresetDropdown({
                                 key={pt.id}
                                 type="button"
                                 onClick={() => handleSelectPeriodType(pt.id)}
-                                className="flex-1 px-4 py-3 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                                className="flex-1 px-4 py-3 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                               >
                                 {pt.id}
                                 <span className="block text-xs font-normal text-gray-400 mt-0.5">
@@ -592,7 +592,7 @@ function PresetDropdown({
                                 key={pt.id}
                                 type="button"
                                 onClick={() => handleSelectPeriodType(pt.id)}
-                                className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                                className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                               >
                                 {pt.id}
                               </button>
@@ -604,7 +604,7 @@ function PresetDropdown({
                   ) : (
                     // Step 2: Select year(s)
                     <>
-                      <p className="text-xs font-medium text-gray-500">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                         Select year for {selectedMetric?.label} {selectedPeriodType}
                       </p>
                       <div className="grid grid-cols-4 gap-2">
@@ -626,7 +626,7 @@ function PresetDropdown({
                                   ? 'bg-green-50 border-green-200 text-green-700'
                                   : isDetected
                                   ? 'bg-amber-50 border-amber-200 text-amber-700'
-                                  : 'bg-white border-gray-200 text-gray-700 hover:border-primary-400 hover:bg-primary-50'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:border-primary-400 hover:bg-primary-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
                               )}
                             >
                               {year}
@@ -646,16 +646,16 @@ function PresetDropdown({
                       </div>
 
                       {/* Quick preview of what will be added */}
-                      <div className="mt-2 p-2 bg-gray-50 rounded-lg">
-                        <p className="text-xs text-gray-500">
-                          Click years to add: <span className="font-medium text-gray-700">{selectedPeriodType}{'{year}'} {selectedMetric?.label}</span>
+                      <div className="mt-2 p-2 bg-gray-50 rounded-lg dark:bg-gray-900">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Click years to add: <span className="font-medium text-gray-700 dark:text-gray-300">{selectedPeriodType}{'{year}'} {selectedMetric?.label}</span>
                         </p>
                       </div>
                     </>
                   )}
                 </div>
 
-                <div className="px-3 py-2 border-t border-gray-200 bg-gray-50">
+                <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                   <button
                     type="button"
                     onClick={closeDropdown}
@@ -1005,12 +1005,12 @@ function SpreadsheetViewer({
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white dark:border-gray-700 dark:bg-gray-800">
       {/* Header with sheet tabs */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center gap-2">
-          <Table className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">Spreadsheet Viewer</span>
+          <Table className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Spreadsheet Viewer</span>
           {isSelectingForNewField && (
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full animate-pulse">
@@ -1023,7 +1023,7 @@ function SpreadsheetViewer({
                     e.stopPropagation()
                     onCancelSelection()
                   }}
-                  className="text-xs text-gray-500 hover:text-gray-700 hover:underline"
+                  className="text-xs text-gray-500 hover:text-gray-700 hover:underline dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -1042,7 +1042,7 @@ function SpreadsheetViewer({
                     e.stopPropagation()
                     onCancelSelection()
                   }}
-                  className="text-xs text-gray-500 hover:text-gray-700 hover:underline"
+                  className="text-xs text-gray-500 hover:text-gray-700 hover:underline dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -1061,7 +1061,7 @@ function SpreadsheetViewer({
                     e.stopPropagation()
                     onCancelSelection()
                   }}
-                  className="text-xs text-gray-500 hover:text-gray-700 hover:underline"
+                  className="text-xs text-gray-500 hover:text-gray-700 hover:underline dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -1081,7 +1081,7 @@ function SpreadsheetViewer({
               <button
                 type="button"
                 onClick={() => onClearFocus?.()}
-                className="text-xs text-gray-500 hover:text-gray-700"
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 title="Clear selection"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1093,7 +1093,7 @@ function SpreadsheetViewer({
 
       {/* Sheet tabs */}
       {workbook.SheetNames.length > 1 && (
-        <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto">
+        <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto dark:border-gray-700 dark:bg-gray-900">
           {workbook.SheetNames.map(name => (
             <button
               key={name}
@@ -1101,8 +1101,8 @@ function SpreadsheetViewer({
               className={clsx(
                 'px-3 py-1.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
                 activeSheet === name
-                  ? 'border-primary-500 text-primary-600 bg-white'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  ? 'border-primary-500 text-primary-600 bg-white dark:bg-gray-800'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400'
               )}
             >
               {name}
@@ -1116,11 +1116,11 @@ function SpreadsheetViewer({
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-10">
             <tr>
-              <th className="w-10 px-2 py-1 bg-gray-100 border-b border-r border-gray-200 text-gray-500 font-medium"></th>
+              <th className="w-10 px-2 py-1 bg-gray-100 border-b border-r border-gray-200 text-gray-500 font-medium dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"></th>
               {Array.from({ length: maxCols }, (_, i) => (
                 <th
                   key={i}
-                  className="min-w-[60px] px-2 py-1 bg-gray-100 border-b border-r border-gray-200 text-gray-500 font-medium text-center"
+                  className="min-w-[60px] px-2 py-1 bg-gray-100 border-b border-r border-gray-200 text-gray-500 font-medium text-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                 >
                   {getColumnLabel(i)}
                 </th>
@@ -1136,7 +1136,7 @@ function SpreadsheetViewer({
 
               return (
               <tr key={rowIndex}>
-                <td className="px-2 py-1 bg-gray-50 border-b border-r border-gray-200 text-gray-500 font-medium text-center">
+                <td className="px-2 py-1 bg-gray-50 border-b border-r border-gray-200 text-gray-500 font-medium text-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
                   {rowNumber}
                 </td>
                 {Array.from({ length: maxCols }, (_, colIndex) => {
@@ -1180,7 +1180,7 @@ function SpreadsheetViewer({
                       onMouseEnter={() => setHoveredCell(cellRef)}
                       onMouseLeave={() => setHoveredCell(null)}
                       className={clsx(
-                        'relative px-2 py-1 border-b border-r border-gray-200 truncate max-w-[120px] cursor-pointer transition-colors',
+                        'relative px-2 py-1 border-b border-r border-gray-200 truncate max-w-[120px] cursor-pointer transition-colors dark:border-gray-700',
                         isFocused
                           ? 'bg-green-50 outline outline-2 outline-dashed outline-green-500 outline-offset-[-2px]'
                           : isEditing
@@ -1201,7 +1201,7 @@ function SpreadsheetViewer({
                           ? 'bg-purple-100 ring-1 ring-purple-300 ring-inset'
                           : isDetected
                           ? 'bg-amber-100 ring-1 ring-amber-300 ring-inset'
-                          : 'bg-white',
+                          : 'bg-white dark:bg-gray-800',
                         (isSelectingForNewField || isSelectingDynamicRow || isSelectingDynamicColumn || selectingForIndex !== null) ? 'cursor-crosshair' : !isAccepted && !isDetected && !isAcceptedDynamic ? 'cursor-cell' : 'cursor-pointer'
                       )}
                       title={
@@ -1307,7 +1307,7 @@ function SpreadsheetViewer({
       </div>
 
       {/* Footer info - fixed height to prevent layout shift */}
-      <div className="px-3 py-1.5 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 h-7 flex items-center">
+      <div className="px-3 py-1.5 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 h-7 flex items-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
         {hoveredCell ? (
           (() => {
             const hoveredDetectedField = getDetectedField(hoveredCell)
@@ -1322,7 +1322,7 @@ function SpreadsheetViewer({
                 </span>
                 {cellValue && (
                   <span>
-                    Value: <span className="font-medium text-gray-700">{cellValue}</span>
+                    Value: <span className="font-medium text-gray-700 dark:text-gray-300">{cellValue}</span>
                   </span>
                 )}
                 {hoveredDetectedField && (
@@ -1335,7 +1335,7 @@ function SpreadsheetViewer({
                         ? 'bg-green-200 text-green-800'
                         : hoveredDetectedField.confidence === 'medium'
                         ? 'bg-amber-200 text-amber-800'
-                        : 'bg-gray-200 text-gray-600'
+                        : 'bg-gray-200 text-gray-600 dark:text-gray-400'
                     )}>
                       {hoveredDetectedField.confidence}
                     </span>
@@ -1393,14 +1393,14 @@ function PatternSelector({
   return (
     <div className="space-y-2">
       {/* Category tabs */}
-      <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
+      <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800">
         <button
           type="button"
           onClick={() => setCategory('annual')}
           className={`flex-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
             category === 'annual'
-              ? 'bg-white text-purple-700 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-white text-purple-700 shadow-sm dark:bg-gray-800'
+              : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
           }`}
         >
           Annual
@@ -1410,8 +1410,8 @@ function PatternSelector({
           onClick={() => setCategory('quarterly')}
           className={`flex-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
             category === 'quarterly'
-              ? 'bg-white text-purple-700 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-white text-purple-700 shadow-sm dark:bg-gray-800'
+              : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
           }`}
         >
           Quarterly
@@ -1430,13 +1430,13 @@ function PatternSelector({
               className={`text-left px-2 py-1.5 rounded-lg border transition-all ${
                 isSelected
                   ? 'border-purple-400 bg-purple-50 ring-1 ring-purple-200'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
               }`}
             >
-              <div className={`text-xs font-medium ${isSelected ? 'text-purple-700' : 'text-gray-700'}`}>
+              <div className={`text-xs font-medium ${isSelected ? 'text-purple-700' : 'text-gray-700 dark:text-gray-300'}`}>
                 {p.label.split(',')[0]}
               </div>
-              <div className="text-[10px] text-gray-500">{p.description}</div>
+              <div className="text-[10px] text-gray-500 dark:text-gray-400">{p.description}</div>
             </button>
           )
         })}
@@ -1471,7 +1471,7 @@ function DynamicMappingsSection({
           >
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-600" />
-              <span className="text-sm font-medium text-gray-900">Dynamic Mappings Auto-Detected</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">Dynamic Mappings Auto-Detected</span>
               <span className="text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full">
                 {pendingDetected.length}
               </span>
@@ -1488,14 +1488,14 @@ function DynamicMappingsSection({
               {pendingDetected.map(detected => (
                 <div
                   key={detected.id}
-                  className="flex items-center justify-between p-2 bg-white rounded-lg border border-purple-200 gap-2"
+                  className="flex items-center justify-between p-2 bg-white rounded-lg border border-purple-200 gap-2 dark:bg-gray-800"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="font-medium text-gray-900 text-sm truncate">{detected.name}</span>
+                    <span className="font-medium text-gray-900 text-sm truncate dark:text-white">{detected.name}</span>
                     <code className="text-[10px] px-1 py-0.5 bg-purple-100 text-purple-700 rounded shrink-0">
                       {detected.field_pattern}
                     </code>
-                    <span className="text-[10px] text-gray-500 shrink-0">
+                    <span className="text-[10px] text-gray-500 shrink-0 dark:text-gray-400">
                       Row {detected.rowNumber} • {detected.sampleValues.length} values
                     </span>
                   </div>
@@ -1550,36 +1550,36 @@ function DynamicMappingForm({
       <div className="grid grid-cols-2 gap-3">
         {/* Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Name</label>
           <input
             type="text"
             value={formState.name || ''}
             onChange={(e) => setFormState({ ...formState, name: e.target.value })}
             placeholder="e.g., EPS by Year"
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:border-gray-600"
           />
         </div>
 
         {/* Field Pattern */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Field Pattern</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Field Pattern</label>
           <input
             type="text"
             value={formState.field_pattern || ''}
             onChange={(e) => setFormState({ ...formState, field_pattern: e.target.value })}
             placeholder="e.g., eps_fy{year}"
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono dark:border-gray-600"
           />
-          <p className="text-[10px] text-gray-500 mt-0.5">Use {'{year}'} and {'{quarter}'} as placeholders</p>
+          <p className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-400">Use {'{year}'} and {'{quarter}'} as placeholders</p>
         </div>
       </div>
 
       {/* Row matching */}
-      <div className="border-t border-gray-200 pt-3">
-        <p className="text-xs font-medium text-gray-600 mb-2">Find Row By Label</p>
+      <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+        <p className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Find Row By Label</p>
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="block text-[10px] text-gray-500 mb-0.5">Label Column</label>
+            <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Label Column</label>
             <input
               type="text"
               value={formState.row_match?.label_column || 'A'}
@@ -1587,12 +1587,12 @@ function DynamicMappingForm({
                 ...formState,
                 row_match: { ...formState.row_match!, label_column: e.target.value.toUpperCase() }
               })}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
               maxLength={2}
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-[10px] text-gray-500 mb-0.5">Label Contains</label>
+            <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Label Contains</label>
             <input
               type="text"
               value={formState.row_match?.label_contains || ''}
@@ -1601,18 +1601,18 @@ function DynamicMappingForm({
                 row_match: { ...formState.row_match!, label_contains: e.target.value }
               })}
               placeholder="e.g., EPS, Revenue, EBITDA"
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
             />
           </div>
         </div>
       </div>
 
       {/* Column matching */}
-      <div className="border-t border-gray-200 pt-3">
-        <p className="text-xs font-medium text-gray-600 mb-2">Find Columns By Header</p>
+      <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+        <p className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Find Columns By Header</p>
         <div className="space-y-3">
           <div>
-            <label className="block text-[10px] text-gray-500 mb-0.5">Header Row</label>
+            <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Header Row</label>
             <input
               type="number"
               value={formState.column_match?.header_row || 1}
@@ -1621,11 +1621,11 @@ function DynamicMappingForm({
                 column_match: { ...formState.column_match!, header_row: parseInt(e.target.value) || 1 }
               })}
               min={1}
-              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded dark:border-gray-600"
             />
           </div>
           <div>
-            <label className="block text-[10px] text-gray-500 mb-1">Column Pattern</label>
+            <label className="block text-[10px] text-gray-500 mb-1 dark:text-gray-400">Column Pattern</label>
             <PatternSelector
               value={formState.column_match?.year_pattern || ''}
               onChange={(value) => setFormState({
@@ -1638,12 +1638,12 @@ function DynamicMappingForm({
       </div>
 
       {/* Type */}
-      <div className="border-t border-gray-200 pt-3">
-        <label className="block text-xs font-medium text-gray-600 mb-1">Value Type</label>
+      <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+        <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Value Type</label>
         <select
           value={formState.type || 'number'}
           onChange={(e) => setFormState({ ...formState, type: e.target.value as FieldMapping['type'] })}
-          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded dark:border-gray-600"
         >
           <option value="number">Number</option>
           <option value="currency">Currency</option>
@@ -1655,8 +1655,8 @@ function DynamicMappingForm({
 
       {/* Preview */}
       {preview && (
-        <div className="border-t border-gray-200 pt-3">
-          <p className="text-xs font-medium text-gray-600 mb-2">Preview</p>
+        <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+          <p className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Preview</p>
           {preview.errors.length > 0 ? (
             <div className="text-xs text-red-600 space-y-1">
               {preview.errors.map((err, i) => (
@@ -1687,7 +1687,7 @@ function DynamicMappingForm({
       )}
 
       {/* Actions */}
-      <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+      <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
@@ -1852,7 +1852,7 @@ function AcceptedMappingsSection({
       >
         <div className="flex items-center gap-2">
           <CheckCircle className="w-4 h-4 text-green-600" />
-          <span className="text-sm font-medium text-gray-900">Accepted Mappings</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-white">Accepted Mappings</span>
           <div className="flex items-center gap-1.5">
             {hasFixed && (
               <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">
@@ -1885,7 +1885,7 @@ function AcceptedMappingsSection({
                 key={`fixed-${idx}`}
                 className={clsx(
                   'flex items-center justify-between px-2 py-1.5 rounded text-sm group',
-                  isFound ? 'bg-white border border-green-200' : isEmpty ? 'bg-amber-50 border border-amber-200' : 'bg-red-50 border border-red-200'
+                  isFound ? 'bg-white border border-green-200 dark:bg-gray-800' : isEmpty ? 'bg-amber-50 border border-amber-200' : 'bg-red-50 border border-red-200'
                 )}
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1896,9 +1896,9 @@ function AcceptedMappingsSection({
                   ) : (
                     <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
                   )}
-                  <span className="font-medium text-gray-900 shrink-0">{mapping.label || mapping.field}</span>
+                  <span className="font-medium text-gray-900 shrink-0 dark:text-white">{mapping.label || mapping.field}</span>
                   <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">Fixed</span>
-                  <code className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded font-mono">{mapping.field}</code>
+                  <code className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded font-mono dark:text-gray-400 dark:bg-gray-800">{mapping.field}</code>
                   <button
                     type="button"
                     onClick={() => onNavigateToCell({
@@ -1938,14 +1938,14 @@ function AcceptedMappingsSection({
             return (
               <div
                 key={`dynamic-${mapping.id}`}
-                className="flex items-center justify-between px-2 py-1.5 rounded bg-white border border-purple-200 group"
+                className="flex items-center justify-between px-2 py-1.5 rounded bg-white border border-purple-200 group dark:bg-gray-800"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
                   <CheckCircle className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                  <span className="font-medium text-gray-900 shrink-0">{mapping.name}</span>
+                  <span className="font-medium text-gray-900 shrink-0 dark:text-white">{mapping.name}</span>
                   <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full shrink-0">Dynamic</span>
                   {fieldIds.length > 0 && fieldIds.map((fieldId, idx) => (
-                    <code key={idx} className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded font-mono">
+                    <code key={idx} className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded font-mono dark:text-gray-400 dark:bg-gray-800">
                       {fieldId}
                     </code>
                   ))}
@@ -2495,17 +2495,17 @@ function FieldMappingEditor({
   )
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+    <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-2 hover:text-gray-700 transition-colors"
+            className="flex items-center gap-2 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
           >
-            <Grid3X3 className="w-4 h-4 text-gray-500" />
-            <span className="font-medium text-gray-900">Field Mappings</span>
-            <span className="text-sm text-gray-500">({mappings.length + dynamicMappings.length})</span>
+            <Grid3X3 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <span className="font-medium text-gray-900 dark:text-white">Field Mappings</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">({mappings.length + dynamicMappings.length})</span>
             {expanded ? (
               <ChevronDown className="w-4 h-4 text-gray-400" />
             ) : (
@@ -2532,7 +2532,7 @@ function FieldMappingEditor({
                     className="fixed inset-0 z-10"
                     onClick={() => setShowAddNewDropdown(false)}
                   />
-                  <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                  <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 dark:border-gray-700 dark:bg-gray-800">
                     <button
                       type="button"
                       onClick={() => {
@@ -2540,7 +2540,7 @@ function FieldMappingEditor({
                         setPendingNewFieldCell(null)
                         setShowPresetDropdown(true)
                       }}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700 dark:text-gray-300"
                     >
                       <Target className="w-4 h-4 text-blue-500" />
                       Fixed Field
@@ -2558,7 +2558,7 @@ function FieldMappingEditor({
                         })
                         setShowDynamicMappingModal(true)
                       }}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700 dark:text-gray-300"
                     >
                       <Grid3X3 className="w-4 h-4 text-purple-500" />
                       Dynamic Mapping
@@ -2573,7 +2573,7 @@ function FieldMappingEditor({
         <div className="flex items-center gap-3">
           {/* View toggle - only show when expanded and workbook loaded */}
           {expanded && workbook && (
-            <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
+            <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
               <button
                 type="button"
                 onClick={() => setViewMode('spreadsheet')}
@@ -2581,7 +2581,7 @@ function FieldMappingEditor({
                   'flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors',
                   viewMode === 'spreadsheet'
                     ? 'bg-primary-100 text-primary-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                 )}
               >
                 <Table className="w-4 h-4" />
@@ -2594,7 +2594,7 @@ function FieldMappingEditor({
                   'flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors',
                   viewMode === 'fields'
                     ? 'bg-primary-100 text-primary-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                 )}
               >
                 <Grid3X3 className="w-4 h-4" />
@@ -2602,7 +2602,7 @@ function FieldMappingEditor({
                 {(unmappedDetectedFields.length > 0 || dynamicMappings.length > 0 || mappings.length > 0) && (
                   <span className={clsx(
                     'text-xs px-1.5 py-0.5 rounded-full',
-                    viewMode === 'fields' ? 'bg-primary-200 text-primary-800' : 'bg-gray-200 text-gray-600'
+                    viewMode === 'fields' ? 'bg-primary-200 text-primary-800' : 'bg-gray-200 text-gray-600 dark:text-gray-400'
                   )}>
                     {unmappedDetectedFields.length + mappings.length + dynamicMappings.length}
                   </span>
@@ -2713,11 +2713,11 @@ function FieldMappingEditor({
                   ) : (
                     <Edit2 className="w-4 h-4 text-blue-600" />
                   )}
-                  <span className="font-medium text-gray-900">
+                  <span className="font-medium text-gray-900 dark:text-white">
                     {isAddingNewField ? 'Add New Field' : 'Edit Field Mapping'}
                   </span>
                   {mappings[editingFieldIndex].cell ? (
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
                       Cell: <code className="px-1.5 py-0.5 bg-blue-200 text-blue-800 rounded">{mappings[editingFieldIndex].cell}</code>
                     </span>
                   ) : (
@@ -2732,7 +2732,7 @@ function FieldMappingEditor({
                 {/* Field Selection - shows input for custom fields or preset selector */}
                 <div className="col-span-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <label className="text-xs font-medium text-gray-600">
+                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">
                       {mappings[editingFieldIndex].isPreset ? 'Tesseract Field' : 'Custom Field ID'}
                     </label>
                     {mappings[editingFieldIndex].isPreset ? (
@@ -2754,14 +2754,14 @@ function FieldMappingEditor({
                     <button
                       type="button"
                       onClick={() => setShowEditPresetModal(true)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:border-blue-400 hover:bg-blue-50 text-left flex items-center justify-between"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:border-blue-400 hover:bg-blue-50 text-left flex items-center justify-between dark:border-gray-600 dark:bg-gray-800"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className={mappings[editingFieldIndex].label || mappings[editingFieldIndex].field ? 'text-gray-900 truncate' : 'text-gray-400'}>
+                        <span className={mappings[editingFieldIndex].label || mappings[editingFieldIndex].field ? 'text-gray-900 truncate dark:text-white' : 'text-gray-400'}>
                           {mappings[editingFieldIndex].label || mappings[editingFieldIndex].field || 'Select field...'}
                         </span>
                         {mappings[editingFieldIndex].field && (
-                          <code className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded flex-shrink-0">
+                          <code className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded flex-shrink-0 dark:text-gray-400 dark:bg-gray-800">
                             {mappings[editingFieldIndex].field}
                           </code>
                         )}
@@ -2774,18 +2774,18 @@ function FieldMappingEditor({
                       value={mappings[editingFieldIndex].field}
                       onChange={(e) => updateMapping(editingFieldIndex, { field: e.target.value })}
                       placeholder="e.g., custom_metric_fy2027"
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono dark:border-gray-600"
                     />
                   )}
                 </div>
 
                 {/* Type */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Type</label>
                   <select
                     value={mappings[editingFieldIndex].type}
                     onChange={(e) => updateMapping(editingFieldIndex, { type: e.target.value as FieldMapping['type'] })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                   >
                     <option value="text">Text</option>
                     <option value="number">Number</option>
@@ -2815,7 +2815,7 @@ function FieldMappingEditor({
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  className="px-4 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+                  className="px-4 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium dark:text-gray-300"
                 >
                   Cancel
                 </button>
@@ -2837,14 +2837,14 @@ function FieldMappingEditor({
                 className="absolute inset-0 bg-black/30 backdrop-blur-sm"
                 onClick={closeEditPresetModal}
               />
-              <div className="relative z-10 w-full max-w-xl bg-white rounded-xl shadow-2xl overflow-hidden">
+              <div className="relative z-10 w-full max-w-xl bg-white rounded-xl shadow-2xl overflow-hidden dark:bg-gray-800">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-                  <h3 className="text-base font-semibold text-gray-900">Select Field Preset</h3>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">Select Field Preset</h3>
                   <button
                     type="button"
                     onClick={closeEditPresetModal}
-                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors dark:hover:text-gray-300"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -2868,7 +2868,7 @@ function FieldMappingEditor({
                     )}
 
                     {/* Tabs */}
-                    <div className="flex border-b border-gray-200">
+                    <div className="flex border-b border-gray-200 dark:border-gray-700">
                       <button
                         type="button"
                         onClick={() => setEditPresetTab('metrics')}
@@ -2876,7 +2876,7 @@ function FieldMappingEditor({
                           'flex-1 px-4 py-2 text-sm font-medium',
                           editPresetTab === 'metrics'
                             ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
                         )}
                       >
                         <Calendar className="w-4 h-4 inline mr-1.5" />
@@ -2889,7 +2889,7 @@ function FieldMappingEditor({
                           'flex-1 px-4 py-2 text-sm font-medium',
                           editPresetTab === 'static'
                             ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
                         )}
                       >
                         <Settings className="w-4 h-4 inline mr-1.5" />
@@ -2898,7 +2898,7 @@ function FieldMappingEditor({
                     </div>
 
                     {/* Search */}
-                    <div className="p-2 border-b border-gray-100">
+                    <div className="p-2 border-b border-gray-100 dark:border-gray-800">
                       <div className="relative">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
@@ -2906,7 +2906,7 @@ function FieldMappingEditor({
                           value={editPresetSearch}
                           onChange={(e) => setEditPresetSearch(e.target.value)}
                           placeholder="Search metrics..."
-                          className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                         />
                       </div>
                     </div>
@@ -2922,13 +2922,13 @@ function FieldMappingEditor({
                             closeEditPresetModal()
                           }
                         }}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left border-b border-gray-100 hover:bg-gray-50"
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-800"
                       >
                         <div className="flex items-center gap-2">
-                          <Edit2 className="w-4 h-4 text-gray-500" />
-                          <span className="font-medium text-gray-700">Custom Field</span>
+                          <Edit2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                          <span className="font-medium text-gray-700 dark:text-gray-300">Custom Field</span>
                         </div>
-                        <span className="text-xs text-gray-500">Enter your own field ID</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Enter your own field ID</span>
                       </button>
 
                       {editPresetTab === 'metrics' ? (
@@ -2946,11 +2946,11 @@ function FieldMappingEditor({
                           }).filter(category => category.metrics.length > 0)
 
                           return filteredCategories.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-4">No metrics found. Try a different search term.</p>
+                            <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">No metrics found. Try a different search term.</p>
                           ) : (
                             <>
                               {!editPresetSearch && (
-                                <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                                <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:text-gray-400 dark:bg-gray-900">
                                   Click a category to expand
                                 </p>
                               )}
@@ -2961,13 +2961,13 @@ function FieldMappingEditor({
                                     <button
                                       type="button"
                                       onClick={() => toggleEditPresetCategory(category.name)}
-                                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0 border-b border-gray-100"
+                                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0 border-b border-gray-100 dark:hover:bg-gray-700 dark:border-gray-800 dark:text-gray-300 dark:bg-gray-900"
                                     >
                                       <div className="flex items-center gap-2">
                                         {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                         {category.name}
                                       </div>
-                                      <span className="text-xs text-gray-500">{category.metrics.length}</span>
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">{category.metrics.length}</span>
                                     </button>
                                     {isExpanded && (
                                       <div className="py-1">
@@ -2976,7 +2976,7 @@ function FieldMappingEditor({
                                             key={metric.id}
                                             type="button"
                                             onClick={() => handleEditMetricSelect(metric)}
-                                            className="w-full flex items-center justify-between px-6 py-1.5 text-sm text-left text-gray-700 hover:bg-primary-50"
+                                            className="w-full flex items-center justify-between px-6 py-1.5 text-sm text-left text-gray-700 hover:bg-primary-50 dark:text-gray-300"
                                           >
                                             <span>{metric.label}</span>
                                             <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -3005,11 +3005,11 @@ function FieldMappingEditor({
                           }).filter(category => Object.keys(category.presets).length > 0)
 
                           return filteredCategories.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-4">No presets found. Try a different search term.</p>
+                            <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">No presets found. Try a different search term.</p>
                           ) : (
                             <>
                               {!editPresetSearch && (
-                                <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                                <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:text-gray-400 dark:bg-gray-900">
                                   Click a category to expand
                                 </p>
                               )}
@@ -3023,13 +3023,13 @@ function FieldMappingEditor({
                                     <button
                                       type="button"
                                       onClick={() => toggleEditPresetCategory(category.name)}
-                                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0 border-b border-gray-100"
+                                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 sticky top-0 border-b border-gray-100 dark:hover:bg-gray-700 dark:border-gray-800 dark:text-gray-300 dark:bg-gray-900"
                                     >
                                       <div className="flex items-center gap-2">
                                         {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                         {category.name}
                                       </div>
-                                      <span className="text-xs text-gray-500">
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">
                                         {addedCount > 0 && `${addedCount}/`}{presetEntries.length}
                                       </span>
                                     </button>
@@ -3048,7 +3048,7 @@ function FieldMappingEditor({
                                               disabled={isUnavailable}
                                               className={clsx(
                                                 'w-full flex items-center justify-between px-6 py-1.5 text-sm text-left',
-                                                isUnavailable ? 'text-gray-400 cursor-not-allowed bg-gray-50' : 'text-gray-700 hover:bg-primary-50'
+                                                isUnavailable ? 'text-gray-400 cursor-not-allowed bg-gray-50 dark:bg-gray-900' : 'text-gray-700 hover:bg-primary-50 dark:text-gray-300'
                                               )}
                                             >
                                               <span>{p.label}</span>
@@ -3080,7 +3080,7 @@ function FieldMappingEditor({
                 ) : (
                   // Period selection view - matches main PresetDropdown
                   <>
-                    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50">
+                    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                       <button
                         type="button"
                         onClick={() => {
@@ -3096,11 +3096,11 @@ function FieldMappingEditor({
                         <ArrowLeft className="w-4 h-4" />
                       </button>
                       <div className="flex-1">
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
                           {editPresetSelectedMetric?.label}
                         </span>
                         {editPresetSelectedPeriodType && (
-                          <span className="text-sm text-gray-500 ml-2">
+                          <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">
                             → {editPresetSelectedPeriodType}
                           </span>
                         )}
@@ -3111,7 +3111,7 @@ function FieldMappingEditor({
                       {!editPresetSelectedPeriodType ? (
                         // Step 1: Select period type
                         <>
-                          <p className="text-xs font-medium text-gray-500">Select period type</p>
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Select period type</p>
 
                           {/* Show already detected/mapped fields for this metric */}
                           {editPresetSelectedMetric && (() => {
@@ -3135,8 +3135,8 @@ function FieldMappingEditor({
                             }
 
                             return (
-                              <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                                <p className="text-xs font-medium text-gray-600 mb-1.5">Already in use for {editPresetSelectedMetric.label}:</p>
+                              <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                                <p className="text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Already in use for {editPresetSelectedMetric.label}:</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {mappedForMetric.map(f => (
                                     <span key={f} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
@@ -3184,7 +3184,7 @@ function FieldMappingEditor({
                                     key={pt.id}
                                     type="button"
                                     onClick={() => setEditPresetSelectedPeriodType(pt.id)}
-                                    className="flex-1 px-4 py-3 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors text-left"
+                                    className="flex-1 px-4 py-3 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors text-left dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                                   >
                                     <span>{pt.id}</span>
                                     <span className="block text-xs font-normal text-gray-400 mt-0.5">
@@ -3206,7 +3206,7 @@ function FieldMappingEditor({
                                     key={pt.id}
                                     type="button"
                                     onClick={() => setEditPresetSelectedPeriodType(pt.id)}
-                                    className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                                    className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50 transition-colors dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                                   >
                                     {pt.id}
                                   </button>
@@ -3218,7 +3218,7 @@ function FieldMappingEditor({
                       ) : (
                         // Step 2: Select year
                         <>
-                          <p className="text-xs font-medium text-gray-500">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                             Select year for {editPresetSelectedMetric?.label} {editPresetSelectedPeriodType}
                           </p>
                           <div className="grid grid-cols-4 gap-2">
@@ -3241,7 +3241,7 @@ function FieldMappingEditor({
                                       ? 'bg-green-50 border-green-200 text-green-700'
                                       : isDetected
                                       ? 'bg-amber-50 border-amber-200 text-amber-700'
-                                      : 'bg-white border-gray-200 text-gray-700 hover:border-primary-400 hover:bg-primary-50'
+                                      : 'bg-white border-gray-200 text-gray-700 hover:border-primary-400 hover:bg-primary-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
                                   )}
                                 >
                                   <span>{year}</span>
@@ -3264,7 +3264,7 @@ function FieldMappingEditor({
                     </div>
 
                     {/* Done button - matches main PresetDropdown */}
-                    <div className="px-3 py-2 border-t border-gray-200 bg-gray-50">
+                    <div className="px-3 py-2 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                       <button
                         type="button"
                         onClick={closeEditPresetModal}
@@ -3289,17 +3289,17 @@ function FieldMappingEditor({
                 onClick={() => setShowDynamicMappingModal(false)}
               />
               {/* Modal */}
-              <div className="relative z-10 w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden">
+              <div className="relative z-10 w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden dark:bg-gray-800">
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-purple-200 bg-purple-50">
                   <div className="flex items-center gap-2">
                     <Grid3X3 className="w-5 h-5 text-purple-600" />
-                    <h3 className="text-base font-semibold text-gray-900">Add Dynamic Mapping</h3>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">Add Dynamic Mapping</h3>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowDynamicMappingModal(false)}
-                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-purple-100 rounded-lg transition-colors"
+                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-purple-100 rounded-lg transition-colors dark:hover:text-gray-300"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -3309,7 +3309,7 @@ function FieldMappingEditor({
                 <div className="flex items-center justify-center gap-2 px-4 py-2 border-b border-purple-100 bg-purple-50/50">
                   <div className={clsx(
                     "flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium",
-                    dynamicMappingStep === 'row' ? "bg-purple-600 text-white" : pendingDynamicRowCell ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500"
+                    dynamicMappingStep === 'row' ? "bg-purple-600 text-white" : pendingDynamicRowCell ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500 dark:text-gray-400"
                   )}>
                     {pendingDynamicRowCell ? <Check className="w-3 h-3" /> : <span>1</span>}
                     <span>Row</span>
@@ -3317,7 +3317,7 @@ function FieldMappingEditor({
                   <ChevronRight className="w-4 h-4 text-gray-400" />
                   <div className={clsx(
                     "flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium",
-                    dynamicMappingStep === 'column' ? "bg-purple-600 text-white" : pendingDynamicColumnCell ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500"
+                    dynamicMappingStep === 'column' ? "bg-purple-600 text-white" : pendingDynamicColumnCell ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500 dark:text-gray-400"
                   )}>
                     {pendingDynamicColumnCell ? <Check className="w-3 h-3" /> : <span>2</span>}
                     <span>Column</span>
@@ -3325,7 +3325,7 @@ function FieldMappingEditor({
                   <ChevronRight className="w-4 h-4 text-gray-400" />
                   <div className={clsx(
                     "flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium",
-                    dynamicMappingStep === 'configure' ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
+                    dynamicMappingStep === 'configure' ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500 dark:text-gray-400"
                   )}>
                     <span>3</span>
                     <span>Configure</span>
@@ -3341,8 +3341,8 @@ function FieldMappingEditor({
                         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-purple-100 mb-3">
                           <MousePointer2 className="w-6 h-6 text-purple-600" />
                         </div>
-                        <h4 className="text-sm font-medium text-gray-900">Select a Row Label Cell</h4>
-                        <p className="text-xs text-gray-500 mt-1">Click on a cell that contains a metric label (e.g., "EPS", "Revenue")</p>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Select a Row Label Cell</h4>
+                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Click on a cell that contains a metric label (e.g., "EPS", "Revenue")</p>
                       </div>
                       <button
                         type="button"
@@ -3356,15 +3356,15 @@ function FieldMappingEditor({
                       </button>
                       <div className="relative">
                         <div className="absolute inset-0 flex items-center">
-                          <div className="w-full border-t border-gray-200"></div>
+                          <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
                         </div>
                         <div className="relative flex justify-center">
-                          <span className="px-2 bg-white text-xs text-gray-500">or enter manually</span>
+                          <span className="px-2 bg-white text-xs text-gray-500 dark:text-gray-400 dark:bg-gray-800">or enter manually</span>
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="block text-[10px] text-gray-500 mb-0.5">Label Column</label>
+                          <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Label Column</label>
                           <input
                             type="text"
                             value={newDynamicMapping.row_match?.label_column || 'A'}
@@ -3372,12 +3372,12 @@ function FieldMappingEditor({
                               ...newDynamicMapping,
                               row_match: { ...newDynamicMapping.row_match!, label_column: e.target.value.toUpperCase() }
                             })}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 dark:border-gray-600"
                             maxLength={2}
                           />
                         </div>
                         <div className="col-span-2">
-                          <label className="block text-[10px] text-gray-500 mb-0.5">Label Contains</label>
+                          <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Label Contains</label>
                           <input
                             type="text"
                             value={newDynamicMapping.row_match?.label_contains || ''}
@@ -3386,7 +3386,7 @@ function FieldMappingEditor({
                               row_match: { ...newDynamicMapping.row_match!, label_contains: e.target.value }
                             })}
                             placeholder="e.g., EPS, Revenue"
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 dark:border-gray-600"
                           />
                         </div>
                       </div>
@@ -3400,8 +3400,8 @@ function FieldMappingEditor({
                         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-purple-100 mb-3">
                           <Grid3X3 className="w-6 h-6 text-purple-600" />
                         </div>
-                        <h4 className="text-sm font-medium text-gray-900">Select a Column Header Cell</h4>
-                        <p className="text-xs text-gray-500 mt-1">Click on a cell in the header row (e.g., "2024", "FY25")</p>
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white">Select a Column Header Cell</h4>
+                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Click on a cell in the header row (e.g., "2024", "FY25")</p>
                       </div>
                       <button
                         type="button"
@@ -3415,15 +3415,15 @@ function FieldMappingEditor({
                       </button>
                       <div className="relative">
                         <div className="absolute inset-0 flex items-center">
-                          <div className="w-full border-t border-gray-200"></div>
+                          <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
                         </div>
                         <div className="relative flex justify-center">
-                          <span className="px-2 bg-white text-xs text-gray-500">or enter manually</span>
+                          <span className="px-2 bg-white text-xs text-gray-500 dark:text-gray-400 dark:bg-gray-800">or enter manually</span>
                         </div>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-[10px] text-gray-500 mb-0.5">Header Row</label>
+                          <label className="block text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Header Row</label>
                           <input
                             type="number"
                             value={newDynamicMapping.column_match?.header_row || 1}
@@ -3432,11 +3432,11 @@ function FieldMappingEditor({
                               column_match: { ...newDynamicMapping.column_match!, header_row: parseInt(e.target.value) || 1 }
                             })}
                             min={1}
-                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 dark:border-gray-600"
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] text-gray-500 mb-1">Column Pattern</label>
+                          <label className="block text-[10px] text-gray-500 mb-1 dark:text-gray-400">Column Pattern</label>
                           <PatternSelector
                             value={newDynamicMapping.column_match?.year_pattern || ''}
                             onChange={(value) => setNewDynamicMapping({
@@ -3453,15 +3453,15 @@ function FieldMappingEditor({
                   {dynamicMappingStep === 'configure' && (
                     <div className="space-y-3">
                       {/* Summary of selections */}
-                      <div className="grid grid-cols-2 gap-2 p-2 bg-gray-50 rounded-lg">
+                      <div className="grid grid-cols-2 gap-2 p-2 bg-gray-50 rounded-lg dark:bg-gray-900">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-500">Row:</span>
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">Row:</span>
                           <code className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
                             {newDynamicMapping.row_match?.label_column}:{newDynamicMapping.row_match?.label_contains || '?'}
                           </code>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-500">Header Row:</span>
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">Header Row:</span>
                           <code className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
                             {newDynamicMapping.column_match?.header_row}
                           </code>
@@ -3471,35 +3471,35 @@ function FieldMappingEditor({
                       {/* Name and Field Pattern */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Name</label>
                           <input
                             type="text"
                             value={newDynamicMapping.name || ''}
                             onChange={(e) => setNewDynamicMapping({ ...newDynamicMapping, name: e.target.value })}
                             placeholder="e.g., EPS by Year"
-                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:border-gray-600"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Field Pattern</label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Field Pattern</label>
                           <input
                             type="text"
                             value={newDynamicMapping.field_pattern || ''}
                             onChange={(e) => setNewDynamicMapping({ ...newDynamicMapping, field_pattern: e.target.value })}
                             placeholder="e.g., eps_fy{year}"
-                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono"
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono dark:border-gray-600"
                           />
-                          <p className="text-[10px] text-gray-500 mt-0.5">Use {'{year}'} and {'{quarter}'} as placeholders</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-400">Use {'{year}'} and {'{quarter}'} as placeholders</p>
                         </div>
                       </div>
 
                       {/* Type */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Value Type</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Value Type</label>
                         <select
                           value={newDynamicMapping.type || 'number'}
                           onChange={(e) => setNewDynamicMapping({ ...newDynamicMapping, type: e.target.value as FieldMapping['type'] })}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 dark:border-gray-600"
                         >
                           <option value="number">Number</option>
                           <option value="currency">Currency</option>
@@ -3513,7 +3513,7 @@ function FieldMappingEditor({
                 </div>
 
                 {/* Modal Footer */}
-                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                   <div>
                     {dynamicMappingStep !== 'row' && (
                       <Button
@@ -3667,12 +3667,12 @@ function FieldMappingEditor({
                   >
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm font-medium text-gray-900">Fixed Mappings Auto-Detected</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">Fixed Mappings Auto-Detected</span>
                       <span className="text-xs bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full">
                         {unmappedDetectedFields.length}
                       </span>
                       {rejectedDetectedFields.length > 0 && (
-                        <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+                        <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full dark:text-gray-400">
                           {rejectedDetectedFields.length} hidden
                         </span>
                       )}
@@ -3688,7 +3688,7 @@ function FieldMappingEditor({
                     <div className="px-3 pb-3 space-y-1">
                       {/* Select all + Add selected */}
                       <div className="flex items-center justify-between py-1">
-                        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer hover:text-gray-800">
+                        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer hover:text-gray-800 dark:text-gray-400">
                           <input
                             type="checkbox"
                             checked={selectedDetections.size === unmappedDetectedFields.length && unmappedDetectedFields.length > 0}
@@ -3699,7 +3699,7 @@ function FieldMappingEditor({
                                 setSelectedDetections(new Set())
                               }
                             }}
-                            className="h-3.5 w-3.5 text-primary-600 rounded border-gray-300"
+                            className="h-3.5 w-3.5 text-primary-600 rounded border-gray-300 dark:border-gray-600"
                           />
                           <span>Select all</span>
                         </label>
@@ -3727,19 +3727,19 @@ function FieldMappingEditor({
                               'flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors',
                               isSelected
                                 ? 'bg-primary-100 border border-primary-300'
-                                : 'bg-white border border-gray-200 hover:border-gray-300'
+                                : 'bg-white border border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800'
                             )}
                           >
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleDetection(field.cell)}
-                              className="h-3.5 w-3.5 text-primary-600 rounded border-gray-300 flex-shrink-0"
+                              className="h-3.5 w-3.5 text-primary-600 rounded border-gray-300 flex-shrink-0 dark:border-gray-600"
                             />
-                            <span className="text-xs text-gray-500 flex-shrink-0">{field.cell}</span>
-                            <span className="font-medium text-gray-900 truncate">{field.label}</span>
+                            <span className="text-xs text-gray-500 flex-shrink-0 dark:text-gray-400">{field.cell}</span>
+                            <span className="font-medium text-gray-900 truncate dark:text-white">{field.label}</span>
                             <span className="text-gray-400 flex-shrink-0">→</span>
-                            <code className="text-xs px-1 py-0.5 bg-gray-100 text-gray-600 rounded truncate max-w-[140px] flex-shrink-0">
+                            <code className="text-xs px-1 py-0.5 bg-gray-100 text-gray-600 rounded truncate max-w-[140px] flex-shrink-0 dark:text-gray-400 dark:bg-gray-800">
                               {field.suggestedField}
                             </code>
                             <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
@@ -3767,14 +3767,14 @@ function FieldMappingEditor({
                       {/* Rejected/hidden fields - can be un-rejected */}
                       {rejectedDetectedFields.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-amber-200">
-                          <p className="text-xs text-gray-500 mb-1">Hidden fields (click to restore):</p>
+                          <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Hidden fields (click to restore):</p>
                           <div className="flex flex-wrap gap-1">
                             {rejectedDetectedFields.map((field, idx) => (
                               <button
                                 key={idx}
                                 type="button"
                                 onClick={() => handleToggleRejection(field)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded hover:bg-gray-200 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400 dark:bg-gray-800"
                                 title="Click to restore"
                               >
                                 <X className="w-3 h-3" />
@@ -3828,7 +3828,7 @@ function FieldMappingEditor({
           />
 
           {mappings.length === 0 && unmappedDetectedFields.length === 0 && rejectedDetectedFields.length === 0 && dynamicMappings.length === 0 && (
-            <p className="text-sm text-gray-500 text-center py-4">
+            <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">
               No field mappings yet. Click "Add New" to get started.
             </p>
           )}
@@ -4012,16 +4012,16 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
       >
         <div className="flex items-center gap-2">
-          <Target className="w-4 h-4 text-gray-500" />
-          <span className="font-medium text-gray-900">Snapshot Ranges</span>
-          <span className="text-sm text-gray-500">({ranges.length})</span>
+          <Target className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <span className="font-medium text-gray-900 dark:text-white">Snapshot Ranges</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">({ranges.length})</span>
         </div>
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -4036,20 +4036,20 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
             const parsed = parseRangeString(range.range)
             const isPreviewOpen = previewingIndex === index && parsed
             return (
-              <div key={index} className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1">
+              <div key={index} className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1 dark:bg-gray-900">
                 <input
                   type="text"
                   value={range.name}
                   onChange={(e) => updateRange(index, { name: e.target.value })}
                   placeholder="Name"
-                  className="w-52 px-1.5 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent bg-white"
+                  className="w-52 px-1.5 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent bg-white dark:border-gray-600 dark:bg-gray-800"
                 />
                 <input
                   type="text"
                   value={range.range}
                   onChange={(e) => updateRange(index, { range: e.target.value })}
                   placeholder="A1:H30"
-                  className="w-40 px-1.5 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent font-mono bg-white"
+                  className="w-40 px-1.5 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent font-mono bg-white dark:border-gray-600 dark:bg-gray-800"
                 />
                 {workbook && (
                   <button
@@ -4069,7 +4069,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
                   <button
                     type="button"
                     onClick={() => setPreviewingIndex(index)}
-                    className="p-1 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                    className="p-1 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors dark:text-gray-400"
                     title="Preview Snapshot"
                   >
                     <Eye className="w-3.5 h-3.5" />
@@ -4090,7 +4090,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
           })}
 
           {ranges.length === 0 && (
-            <p className="text-xs text-gray-500 text-center py-1">
+            <p className="text-xs text-gray-500 text-center py-1 dark:text-gray-400">
               No snapshot ranges defined.
             </p>
           )}
@@ -4109,22 +4109,22 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
       {/* Range Selection Modal */}
       {selectingForIndex !== null && workbook && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col dark:bg-gray-800">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-3">
                 <Target className="w-5 h-5 text-primary-600" />
                 <div>
-                  <h3 className="font-semibold text-gray-900">
+                  <h3 className="font-semibold text-gray-900 dark:text-white">
                     Select Range for "{ranges[selectingForIndex]?.name || `Range ${selectingForIndex + 1}`}"
                   </h3>
-                  <p className="text-xs text-gray-500">Click and drag to select a range of cells</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Click and drag to select a range of cells</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={closeModal}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4132,7 +4132,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
 
             {/* Sheet tabs */}
             {workbook.SheetNames.length > 1 && (
-              <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto px-2">
+              <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto px-2 dark:border-gray-700 dark:bg-gray-900">
                 {workbook.SheetNames.map(name => (
                   <button
                     key={name}
@@ -4145,8 +4145,8 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
                     className={clsx(
                       'px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
                       activeSheet === name
-                        ? 'border-primary-500 text-primary-600 bg-white'
-                        : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                        ? 'border-primary-500 text-primary-600 bg-white dark:bg-gray-800'
+                        : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400'
                     )}
                   >
                     {name}
@@ -4166,11 +4166,11 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
               <table className="w-full border-collapse text-xs select-none">
                 <thead className="sticky top-0 z-10">
                   <tr>
-                    <th className="w-12 px-2 py-2 bg-gray-100 border-b border-r border-gray-300 text-gray-600 font-semibold"></th>
+                    <th className="w-12 px-2 py-2 bg-gray-100 border-b border-r border-gray-300 text-gray-600 font-semibold dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800"></th>
                     {Array.from({ length: maxCols }, (_, i) => (
                       <th
                         key={i}
-                        className="min-w-[80px] px-2 py-2 bg-gray-100 border-b border-r border-gray-300 text-gray-600 font-semibold text-center"
+                        className="min-w-[80px] px-2 py-2 bg-gray-100 border-b border-r border-gray-300 text-gray-600 font-semibold text-center dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800"
                       >
                         {getColumnLabel(i)}
                       </th>
@@ -4180,7 +4180,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
                 <tbody>
                   {Array.from({ length: maxRows }, (_, rowIndex) => (
                     <tr key={rowIndex}>
-                      <td className="px-2 py-1.5 bg-gray-50 border-b border-r border-gray-300 text-gray-600 font-semibold text-center sticky left-0 z-[5]">
+                      <td className="px-2 py-1.5 bg-gray-50 border-b border-r border-gray-300 text-gray-600 font-semibold text-center sticky left-0 z-[5] dark:border-gray-600 dark:text-gray-400 dark:bg-gray-900">
                         {rowIndex + 1}
                       </td>
                       {Array.from({ length: maxCols }, (_, colIndex) => {
@@ -4194,7 +4194,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
                             onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex)}
                             className={clsx(
                               'px-2 py-1.5 truncate max-w-[120px] cursor-crosshair transition-colors',
-                              inSelection ? 'bg-primary-100' : 'bg-white hover:bg-primary-50 border-b border-r border-gray-200'
+                              inSelection ? 'bg-primary-100' : 'bg-white hover:bg-primary-50 border-b border-r border-gray-200 dark:border-gray-700 dark:bg-gray-800'
                             )}
                             style={inSelection && edges ? {
                               borderTop: edges.top ? '2px solid rgb(99, 102, 241)' : 'none',
@@ -4214,8 +4214,8 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-              <div className="text-sm text-gray-600">
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 {selectionRangeString ? (
                   <>
                     Selected: <code className="px-2 py-1 bg-primary-100 text-primary-700 rounded font-mono font-medium">{selectionRangeString}</code>
@@ -4273,30 +4273,30 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-            <div className="bg-white rounded-xl shadow-2xl max-w-[90vw] max-h-[90vh] flex flex-col">
+            <div className="bg-white rounded-xl shadow-2xl max-w-[90vw] max-h-[90vh] flex flex-col dark:bg-gray-800">
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-xl dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center gap-3">
                   <Eye className="w-5 h-5 text-primary-600" />
                   <div>
-                    <h3 className="font-semibold text-gray-900">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">
                       Snapshot Preview: {previewRange.name || previewRange.range}
                     </h3>
-                    <p className="text-xs text-gray-500">This is how the range will appear when captured</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">This is how the range will appear when captured</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPreviewingIndex(null)}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Preview Content */}
-              <div className="p-6 overflow-auto bg-gray-100">
-                <div className="inline-block bg-white shadow-lg">
+              <div className="p-6 overflow-auto bg-gray-100 dark:bg-gray-800">
+                <div className="inline-block bg-white shadow-lg dark:bg-gray-800">
                   <table className="border-collapse" style={{ borderSpacing: 0 }}>
                     <tbody>
                       {Array.from({ length: numRows }, (_, rowIdx) => (
@@ -4345,7 +4345,7 @@ function SnapshotRangeEditor({ ranges, onChange, workbook }: SnapshotRangeEditor
               </div>
 
               {/* Modal Footer */}
-              <div className="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+              <div className="flex items-center justify-end px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
                 <Button variant="outline" size="sm" onClick={() => setPreviewingIndex(null)}>
                   Close
                 </Button>
@@ -4389,16 +4389,16 @@ function DetectionRulesEditor({ rules, onChange }: DetectionRulesEditorProps) {
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
       >
         <div className="flex items-center gap-2">
-          <Settings className="w-4 h-4 text-gray-500" />
-          <span className="font-medium text-gray-900">Detection Rules</span>
-          <span className="text-sm text-gray-500">(Optional)</span>
+          <Settings className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <span className="font-medium text-gray-900 dark:text-white">Detection Rules</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">(Optional)</span>
         </div>
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -4409,12 +4409,12 @@ function DetectionRulesEditor({ rules, onChange }: DetectionRulesEditorProps) {
 
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-3">
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             When uploading Excel files, these rules help automatically match files to this template.
           </p>
 
           <div>
-            <label className="block text-xs text-gray-700 mb-1">
+            <label className="block text-xs text-gray-700 mb-1 dark:text-gray-300">
               <span className="font-medium">Filename Patterns</span> <span className="text-gray-400">— match files by name, one per line, use * as wildcard</span>
             </label>
             <textarea
@@ -4423,12 +4423,12 @@ function DetectionRulesEditor({ rules, onChange }: DetectionRulesEditorProps) {
               onBlur={saveFilenamePatterns}
               placeholder="*Model*&#10;*DCF*&#10;*Valuation*"
               rows={3}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent resize-none font-mono"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent resize-none font-mono dark:border-gray-600"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-700 mb-1">
+            <label className="block text-xs text-gray-700 mb-1 dark:text-gray-300">
               <span className="font-medium">Required Sheet Names</span> <span className="text-gray-400">— only match files containing these tabs, one per line</span>
             </label>
             <textarea
@@ -4437,7 +4437,7 @@ function DetectionRulesEditor({ rules, onChange }: DetectionRulesEditorProps) {
               onBlur={saveSheetNames}
               placeholder="Summary&#10;Model&#10;Assumptions"
               rows={3}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent resize-none font-mono"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent resize-none font-mono dark:border-gray-600"
             />
           </div>
         </div>
@@ -4591,10 +4591,10 @@ function ModelTemplateCard({
   const hasSharing = collaborations.length > 0
 
   return (
-    <div className="border border-gray-200 hover:border-gray-300 rounded-lg transition-colors overflow-hidden">
+    <div className="border border-gray-200 hover:border-gray-300 rounded-lg transition-colors overflow-hidden dark:border-gray-700">
       {/* Main row - clickable to expand */}
       <div
-        className="px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-gray-50"
+        className="px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
         onClick={() => setExpanded(!expanded)}
       >
         <button type="button" className="p-0.5 text-gray-400">
@@ -4604,12 +4604,12 @@ function ModelTemplateCard({
         <FileSpreadsheet className="w-4 h-4 text-green-600 flex-shrink-0" />
 
         <div className="flex-1 min-w-0 flex items-center gap-3">
-          <span className="font-medium text-gray-900 truncate">{template.name}</span>
+          <span className="font-medium text-gray-900 truncate dark:text-white">{template.name}</span>
 
           {/* Field counts */}
           <div className="flex items-center gap-1.5 text-[10px]">
             {fixedFieldCount > 0 && (
-              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">
                 {fixedFieldCount} fixed field{fixedFieldCount !== 1 ? 's' : ''}
               </span>
             )}
@@ -4652,7 +4652,7 @@ function ModelTemplateCard({
             <button
               type="button"
               onClick={onDuplicate}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
               title="Duplicate"
             >
               <Copy className="w-3.5 h-3.5" />
@@ -4672,7 +4672,7 @@ function ModelTemplateCard({
             <button
               type="button"
               onClick={onEdit}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
               title="Edit"
             >
               <Edit2 className="w-3.5 h-3.5" />
@@ -4693,10 +4693,10 @@ function ModelTemplateCard({
 
       {/* Expanded details */}
       {expanded && (
-        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-3">
+        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-3 dark:border-gray-700 dark:bg-gray-900">
           {/* Description */}
           {template.description && (
-            <p className="text-sm text-gray-600">{template.description}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{template.description}</p>
           )}
 
           {/* Field Mappings Summary */}
@@ -4706,7 +4706,7 @@ function ModelTemplateCard({
               {fixedFieldCount > 0 && (
                 <div className="flex items-start gap-2">
                   <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                    <span className="text-[10px] font-medium text-gray-500">Fixed</span>
+                    <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">Fixed</span>
                     {template.base_template_path && (
                       <button
                         type="button"
@@ -4715,7 +4715,7 @@ function ModelTemplateCard({
                           if (onExcelPreview) onExcelPreview('field', undefined)
                         }}
                         disabled={loadingExcelPreview}
-                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
                         title="Preview in spreadsheet"
                       >
                         <Eye className="w-3 h-3" />
@@ -4726,7 +4726,7 @@ function ModelTemplateCard({
                     {template.field_mappings?.slice(0, 8).map((m, i) => (
                       <span
                         key={i}
-                        className="text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-600"
+                        className="text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-600 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                       >
                         {m.label || m.field} → <code className="text-gray-400">{m.cell}</code>
                       </span>
@@ -4742,7 +4742,7 @@ function ModelTemplateCard({
               {dynamicFieldCount > 0 && (
                 <div className="flex items-start gap-2">
                   <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                    <span className="text-[10px] font-medium text-gray-500">Dynamic</span>
+                    <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">Dynamic</span>
                     {template.base_template_path && (
                       <button
                         type="button"
@@ -4751,7 +4751,7 @@ function ModelTemplateCard({
                           if (onExcelPreview && template.dynamic_mappings?.[0]) onExcelPreview('dynamic', template.dynamic_mappings[0])
                         }}
                         disabled={loadingExcelPreview}
-                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
                         title="Preview in spreadsheet"
                       >
                         <Eye className="w-3 h-3" />
@@ -4778,7 +4778,7 @@ function ModelTemplateCard({
               {snapshotCount > 0 && (
                 <div className="flex items-start gap-2">
                   <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                    <span className="text-[10px] font-medium text-gray-500">Snapshots</span>
+                    <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">Snapshots</span>
                     {template.base_template_path && (
                       <button
                         type="button"
@@ -4787,7 +4787,7 @@ function ModelTemplateCard({
                           if (onExcelPreview && template.snapshot_ranges?.[0]) onExcelPreview('snapshot', template.snapshot_ranges[0])
                         }}
                         disabled={loadingExcelPreview}
-                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
                         title="Preview in spreadsheet"
                       >
                         <Eye className="w-3 h-3" />
@@ -4815,7 +4815,7 @@ function ModelTemplateCard({
           {/* Sharing Details */}
           {hasSharing && (
             <div>
-              <h5 className="text-xs font-medium text-gray-500 mb-1">Shared With</h5>
+              <h5 className="text-xs font-medium text-gray-500 mb-1 dark:text-gray-400">Shared With</h5>
               <div className="flex flex-wrap gap-1.5">
                 {orgWideShare && (
                   <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
@@ -4830,7 +4830,7 @@ function ModelTemplateCard({
                   </span>
                 ))}
                 {userShares.map((c, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded">
+                  <span key={i} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded dark:text-gray-300 dark:bg-gray-800">
                     <User className="w-3 h-3" />
                     {(c.target_user as any)?.first_name} {(c.target_user as any)?.last_name}
                   </span>
@@ -4842,8 +4842,8 @@ function ModelTemplateCard({
           {/* Detection Rules */}
           {(template.detection_rules?.filename_patterns?.length || template.detection_rules?.sheet_names?.length) && (
             <div>
-              <h5 className="text-xs font-medium text-gray-500 mb-1">Detection Rules</h5>
-              <div className="text-[10px] text-gray-600 space-y-0.5">
+              <h5 className="text-xs font-medium text-gray-500 mb-1 dark:text-gray-400">Detection Rules</h5>
+              <div className="text-[10px] text-gray-600 space-y-0.5 dark:text-gray-400">
                 {template.detection_rules.filename_patterns?.length > 0 && (
                   <div>Filename patterns: {template.detection_rules.filename_patterns.join(', ')}</div>
                 )}
@@ -4858,7 +4858,7 @@ function ModelTemplateCard({
           {isOwner && (
             <div
               className={clsx(
-                "border-t border-gray-200 pt-3 mt-3 transition-colors",
+                "border-t border-gray-200 pt-3 mt-3 transition-colors dark:border-gray-700",
                 isDraggingOver && "bg-primary-50 rounded-lg"
               )}
               onDragEnter={handleDragEnter}
@@ -4866,7 +4866,7 @@ function ModelTemplateCard({
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
-              <h5 className="text-xs font-medium text-gray-500 mb-2">Base Template File</h5>
+              <h5 className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Base Template File</h5>
               <input
                 ref={baseFileInputRef}
                 type="file"
@@ -4881,12 +4881,12 @@ function ModelTemplateCard({
                 }}
               />
               {template.base_template_path && !isDraggingOver ? (
-                <div className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-center gap-2 min-w-0">
                     <FileSpreadsheet className="w-4 h-4 text-green-600 flex-shrink-0" />
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{template.base_template_filename}</div>
-                      <div className="text-[10px] text-gray-500">
+                      <div className="text-sm font-medium text-gray-900 truncate dark:text-white">{template.base_template_filename}</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400">
                         {template.base_template_size ? `${Math.round(template.base_template_size / 1024)} KB` : ''}
                         {template.base_template_uploaded_at && ` • Uploaded ${new Date(template.base_template_uploaded_at).toLocaleDateString()}`}
                       </div>
@@ -4932,7 +4932,7 @@ function ModelTemplateCard({
                     "w-full flex flex-col items-center justify-center gap-1 px-3 py-4 border-2 border-dashed rounded-lg text-sm cursor-pointer transition-colors",
                     isDraggingOver
                       ? "border-primary-500 bg-primary-50 text-primary-600"
-                      : "border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50",
+                      : "border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50 dark:border-gray-600 dark:text-gray-400",
                     isUploadingBase && "opacity-50 cursor-not-allowed"
                   )}
                 >
@@ -5902,15 +5902,15 @@ export function ExcelModelTemplateManager() {
               <button
                 type="button"
                 onClick={resetForm}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div>
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                   {editingId ? 'Edit Template' : 'Create Template'}
                 </h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {editingId ? 'Modify your template settings' : 'Configure how Excel files map to Tesseract data'}
                 </p>
               </div>
@@ -5919,8 +5919,8 @@ export function ExcelModelTemplateManager() {
         ) : (
           <>
             <div>
-              <h3 className="text-lg font-medium text-gray-900">Excel Extraction Templates</h3>
-              <p className="text-sm text-gray-500 mt-1">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Excel Extraction Templates</h3>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
                 Configure how Excel files map to Tesseract data. Define cell references for price targets, estimates, and more.
               </p>
             </div>
@@ -5946,13 +5946,13 @@ export function ExcelModelTemplateManager() {
               e.preventDefault()
             }
           }}
-          className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200"
+          className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900"
         >
           <div className="space-y-4">
             {/* Basic Info */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Template Name *
                 </label>
                 <div className="relative">
@@ -5969,7 +5969,7 @@ export function ExcelModelTemplateManager() {
                     className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
                       error === 'Template name is required'
                         ? 'border-red-400 bg-red-50/50 pr-10'
-                        : 'border-gray-300'
+                        : 'border-gray-300 dark:border-gray-600'
                     }`}
                   />
                   {error === 'Template name is required' && (
@@ -5983,7 +5983,7 @@ export function ExcelModelTemplateManager() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Description
                 </label>
                 <input
@@ -5991,7 +5991,7 @@ export function ExcelModelTemplateManager() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Brief description of this template"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                 />
               </div>
             </div>
@@ -6045,15 +6045,15 @@ export function ExcelModelTemplateManager() {
             />
 
             {/* Sharing - Compact */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
               <button
                 type="button"
                 onClick={() => setShowSharingSection(!showSharingSection)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
               >
                 <div className="flex items-center gap-2">
-                  <Share2 className="w-4 h-4 text-gray-500" />
-                  <span className="font-medium text-gray-900">Sharing</span>
+                  <Share2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                  <span className="font-medium text-gray-900 dark:text-white">Sharing</span>
                   {(formData.shareWithOrg || formData.shareEntries.length > 0) && (
                     <span className="text-xs px-1.5 py-0.5 bg-primary-100 text-primary-700 rounded">
                       {formData.shareWithOrg ? 'Org' : ''}{formData.shareWithOrg && formData.shareEntries.length > 0 ? ' + ' : ''}{formData.shareEntries.length > 0 ? formData.shareEntries.length : ''}
@@ -6072,7 +6072,7 @@ export function ExcelModelTemplateManager() {
                   {/* Org Groups Multiselect */}
                   {orgNodes.length > 0 && (
                     <div>
-                      <label className="block text-xs text-gray-700 mb-1">
+                      <label className="block text-xs text-gray-700 mb-1 dark:text-gray-300">
                         <span className="font-medium">Share with groups</span> <span className="text-gray-400">— select divisions, departments, teams, or portfolios</span>
                       </label>
 
@@ -6081,9 +6081,9 @@ export function ExcelModelTemplateManager() {
                           type="button"
                           data-org-dropdown-trigger
                           onClick={() => setShowOrgDropdown(!showOrgDropdown)}
-                          className="w-full flex items-center justify-between px-2.5 py-1.5 text-sm border border-gray-300 rounded bg-white hover:border-gray-400"
+                          className="w-full flex items-center justify-between px-2.5 py-1.5 text-sm border border-gray-300 rounded bg-white hover:border-gray-400 dark:border-gray-600 dark:bg-gray-800"
                         >
-                          <span className="text-gray-500 text-xs">
+                          <span className="text-gray-500 text-xs dark:text-gray-400">
                             {formData.shareEntries.filter(e => e.type !== 'user').length > 0
                               ? 'Add more groups...'
                               : 'Click to select groups...'}
@@ -6097,7 +6097,7 @@ export function ExcelModelTemplateManager() {
                             onClick={() => setShowOrgDropdown(false)}
                           >
                             <div
-                              className="absolute bg-white border border-gray-200 rounded-lg shadow-xl w-64 overflow-hidden"
+                              className="absolute bg-white border border-gray-200 rounded-lg shadow-xl w-64 overflow-hidden dark:border-gray-700 dark:bg-gray-800"
                               style={{
                                 top: Math.min(
                                   (document.querySelector('[data-org-dropdown-trigger]') as HTMLElement)?.getBoundingClientRect().bottom + 4 || 200,
@@ -6116,9 +6116,9 @@ export function ExcelModelTemplateManager() {
                                       const isSelected = formData.shareWithOrg
                                       setFormData({ ...formData, shareWithOrg: !isSelected })
                                     }}
-                                    className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 border-b border-gray-100', formData.shareWithOrg && 'bg-primary-50')}
+                                    className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 border-b border-gray-100 dark:hover:bg-gray-800 dark:border-gray-800', formData.shareWithOrg && 'bg-primary-50')}
                                   >
-                                    <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', formData.shareWithOrg ? 'bg-primary-600 border-primary-600' : 'border-gray-300')}>
+                                    <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', formData.shareWithOrg ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600')}>
                                       {formData.shareWithOrg && <Check className="w-3 h-3 text-white" />}
                                     </div>
                                     <Building2 className="w-3.5 h-3.5 text-blue-600" />
@@ -6127,7 +6127,7 @@ export function ExcelModelTemplateManager() {
                                 </div>
                                 {divisions.length > 0 && (
                                   <div>
-                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2">
+                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                                       <Building2 className="w-3.5 h-3.5" />
                                       Divisions
                                     </div>
@@ -6144,9 +6144,9 @@ export function ExcelModelTemplateManager() {
                                               setFormData({ ...formData, shareEntries: [...formData.shareEntries, { id: node.id, type: 'division', name: node.name, permission: 'view' }] })
                                             }
                                           }}
-                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50', isSelected && 'bg-primary-50')}
+                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800', isSelected && 'bg-primary-50')}
                                         >
-                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300')}>
+                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600')}>
                                             {isSelected && <Check className="w-3 h-3 text-white" />}
                                           </div>
                                           <span className="truncate">{node.name}</span>
@@ -6157,7 +6157,7 @@ export function ExcelModelTemplateManager() {
                                 )}
                                 {departments.length > 0 && (
                                   <div>
-                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2">
+                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                                       <Users className="w-3.5 h-3.5" />
                                       Departments
                                     </div>
@@ -6174,9 +6174,9 @@ export function ExcelModelTemplateManager() {
                                               setFormData({ ...formData, shareEntries: [...formData.shareEntries, { id: node.id, type: 'department', name: node.name, permission: 'view' }] })
                                             }
                                           }}
-                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50', isSelected && 'bg-primary-50')}
+                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800', isSelected && 'bg-primary-50')}
                                         >
-                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300')}>
+                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600')}>
                                             {isSelected && <Check className="w-3 h-3 text-white" />}
                                           </div>
                                           <span className="truncate">{node.name}</span>
@@ -6187,7 +6187,7 @@ export function ExcelModelTemplateManager() {
                                 )}
                                 {teams.length > 0 && (
                                   <div>
-                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2">
+                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                                       <Users className="w-3.5 h-3.5" />
                                       Teams
                                     </div>
@@ -6204,9 +6204,9 @@ export function ExcelModelTemplateManager() {
                                               setFormData({ ...formData, shareEntries: [...formData.shareEntries, { id: node.id, type: 'team', name: node.name, permission: 'view' }] })
                                             }
                                           }}
-                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50', isSelected && 'bg-primary-50')}
+                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800', isSelected && 'bg-primary-50')}
                                         >
-                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300')}>
+                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600')}>
                                             {isSelected && <Check className="w-3 h-3 text-white" />}
                                           </div>
                                           <span className="truncate">{node.name}</span>
@@ -6217,7 +6217,7 @@ export function ExcelModelTemplateManager() {
                                 )}
                                 {portfolios.length > 0 && (
                                   <div>
-                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2">
+                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 sticky top-0 border-b border-gray-200 flex items-center gap-2 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                                       <FileSpreadsheet className="w-3.5 h-3.5" />
                                       Portfolios
                                     </div>
@@ -6234,9 +6234,9 @@ export function ExcelModelTemplateManager() {
                                               setFormData({ ...formData, shareEntries: [...formData.shareEntries, { id: node.id, type: 'portfolio', name: node.name, permission: 'view' }] })
                                             }
                                           }}
-                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50', isSelected && 'bg-primary-50')}
+                                          className={clsx('w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800', isSelected && 'bg-primary-50')}
                                         >
-                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300')}>
+                                          <div className={clsx('w-4 h-4 border rounded flex items-center justify-center shrink-0', isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600')}>
                                             {isSelected && <Check className="w-3 h-3 text-white" />}
                                           </div>
                                           <span className="truncate">{node.name}</span>
@@ -6246,7 +6246,7 @@ export function ExcelModelTemplateManager() {
                                   </div>
                                 )}
                                 {orgNodes.length === 0 && (
-                                  <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                                  <div className="px-3 py-4 text-sm text-gray-500 text-center dark:text-gray-400">
                                     No groups available
                                   </div>
                                 )}
@@ -6261,7 +6261,7 @@ export function ExcelModelTemplateManager() {
 
                   {/* User Search */}
                   <div>
-                    <label className="block text-xs text-gray-700 mb-1">
+                    <label className="block text-xs text-gray-700 mb-1 dark:text-gray-300">
                       <span className="font-medium">Share with people</span> <span className="text-gray-400">— search by name or email</span>
                     </label>
                     <div className="relative z-[62]">
@@ -6272,7 +6272,7 @@ export function ExcelModelTemplateManager() {
                         value={userSearchQuery}
                         onChange={(e) => setUserSearchQuery(e.target.value)}
                         placeholder="Type to search..."
-                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
+                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded bg-white dark:border-gray-600 dark:bg-gray-800"
                       />
                       {userSearchQuery.length >= 2 && createPortal(
                         <>
@@ -6281,7 +6281,7 @@ export function ExcelModelTemplateManager() {
                             onClick={() => setUserSearchQuery('')}
                           />
                           <div
-                            className="fixed bg-white border border-gray-200 rounded shadow-lg w-64 max-h-48 overflow-y-auto z-[61]"
+                            className="fixed bg-white border border-gray-200 rounded shadow-lg w-64 max-h-48 overflow-y-auto z-[61] dark:border-gray-700 dark:bg-gray-800"
                             style={{
                               top: Math.min(
                                 (document.querySelector('[data-user-search-input]') as HTMLElement)?.getBoundingClientRect().bottom + 4 || 200,
@@ -6295,7 +6295,7 @@ export function ExcelModelTemplateManager() {
                                 <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                               </div>
                             ) : searchResults.filter(u => !formData.shareEntries.some(s => s.id === u.id)).length === 0 ? (
-                              <p className="text-xs text-gray-500 py-2 px-3">No users found</p>
+                              <p className="text-xs text-gray-500 py-2 px-3 dark:text-gray-400">No users found</p>
                             ) : (
                               searchResults.filter(u => !formData.shareEntries.some(s => s.id === u.id)).map(u => (
                                 <button
@@ -6312,7 +6312,7 @@ export function ExcelModelTemplateManager() {
                                     })
                                     setUserSearchQuery('')
                                   }}
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-gray-50 text-xs"
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-gray-50 text-xs dark:hover:bg-gray-800"
                                 >
                                   <div className="w-5 h-5 rounded-full bg-primary-100 flex items-center justify-center text-xs font-medium text-primary-700 shrink-0">
                                     {u.first_name?.[0] || u.email[0].toUpperCase()}
@@ -6333,7 +6333,7 @@ export function ExcelModelTemplateManager() {
 
                   {/* Selected Items - Compact chips */}
                   {(formData.shareWithOrg || formData.shareEntries.length > 0) && (
-                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
+                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100 dark:border-gray-800">
                       {formData.shareWithOrg && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border bg-blue-100 text-blue-700 border-blue-200">
                           <Building2 className="w-3 h-3" />
@@ -6427,13 +6427,13 @@ export function ExcelModelTemplateManager() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search templates..."
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -6444,10 +6444,10 @@ export function ExcelModelTemplateManager() {
 
           {/* My Templates */}
           <div className="space-y-2">
-            <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">My Templates ({myTemplates.length})</h4>
+            <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">My Templates ({myTemplates.length})</h4>
 
             {myTemplates.length === 0 ? (
-              <p className="text-sm text-gray-500 py-4 text-center">
+              <p className="text-sm text-gray-500 py-4 text-center dark:text-gray-400">
                 No Excel templates yet. Create one to define how your Excel models map to Tesseract.
               </p>
             ) : (
@@ -6480,8 +6480,8 @@ export function ExcelModelTemplateManager() {
 
           {/* Shared With Me */}
           {sharedTemplates.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-2">
+            <div className="mt-4 pt-4 border-t border-gray-200 space-y-2 dark:border-gray-700">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-2 dark:text-gray-400">
                 <Share2 className="w-3.5 h-3.5 text-blue-500" />
                 Shared With Me ({sharedTemplates.length})
               </h4>
@@ -6518,34 +6518,34 @@ export function ExcelModelTemplateManager() {
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden dark:bg-gray-800">
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-3 bg-red-100 rounded-full">
                   <Trash2 className="w-6 h-6 text-red-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Delete Template</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Delete Template</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
                 </div>
               </div>
 
-              <p className="text-gray-700 mb-2">
+              <p className="text-gray-700 mb-2 dark:text-gray-300">
                 Are you sure you want to permanently delete{' '}
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-gray-900 dark:text-white">
                   "{templates.find(t => t.id === deleteConfirm)?.name || 'this template'}"
                 </span>?
               </p>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 All field mappings, snapshot ranges, and sharing settings will be permanently removed.
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-300"
               >
                 Cancel
               </button>
@@ -6564,18 +6564,18 @@ export function ExcelModelTemplateManager() {
       {/* Preview Modal */}
       {previewTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden dark:bg-gray-800">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">{previewTemplate.name}</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{previewTemplate.name}</h3>
                 {previewTemplate.description && (
-                  <p className="text-sm text-gray-500 mt-0.5">{previewTemplate.description}</p>
+                  <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{previewTemplate.description}</p>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => setPreviewTemplate(null)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -6585,7 +6585,7 @@ export function ExcelModelTemplateManager() {
               {/* Snapshot Ranges */}
               {previewTemplate.snapshot_ranges && previewTemplate.snapshot_ranges.length > 0 ? (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2 dark:text-white">
                     <Grid3X3 className="w-4 h-4 text-blue-600" />
                     Snapshot Ranges ({previewTemplate.snapshot_ranges.length})
                   </h4>
@@ -6601,7 +6601,7 @@ export function ExcelModelTemplateManager() {
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-6 text-gray-500">
+                <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                   <Grid3X3 className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No snapshot ranges defined for this template</p>
                 </div>
@@ -6610,22 +6610,22 @@ export function ExcelModelTemplateManager() {
               {/* Fixed Field Mappings */}
               {previewTemplate.field_mappings?.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
-                    <Target className="w-4 h-4 text-gray-600" />
+                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2 dark:text-white">
+                    <Target className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     Fixed Field Mappings ({previewTemplate.field_mappings.length})
                   </h4>
                   <div className="grid gap-2 max-h-48 overflow-y-auto">
                     {previewTemplate.field_mappings.map((mapping, i) => (
-                      <div key={i} className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                      <div key={i} className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-900">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-medium text-gray-900 truncate">{mapping.label || mapping.field}</span>
+                          <span className="font-medium text-gray-900 truncate dark:text-white">{mapping.label || mapping.field}</span>
                           {mapping.format && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded shrink-0">
+                            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded shrink-0 dark:text-gray-400 dark:bg-gray-800">
                               {mapping.format}
                             </span>
                           )}
                         </div>
-                        <code className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded shrink-0">{mapping.cell}</code>
+                        <code className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded shrink-0 dark:text-gray-300 dark:bg-gray-800">{mapping.cell}</code>
                       </div>
                     ))}
                   </div>
@@ -6635,7 +6635,7 @@ export function ExcelModelTemplateManager() {
               {/* Dynamic Field Mappings */}
               {previewTemplate.dynamic_mappings?.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2 dark:text-white">
                     <Sparkles className="w-4 h-4 text-purple-600" />
                     Dynamic Field Mappings ({previewTemplate.dynamic_mappings.length})
                   </h4>
@@ -6661,7 +6661,7 @@ export function ExcelModelTemplateManager() {
               {/* Base Template */}
               {previewTemplate.base_template_path && (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2 dark:text-white">
                     <FileSpreadsheet className="w-4 h-4 text-green-600" />
                     Base Template
                   </h4>
@@ -6678,7 +6678,7 @@ export function ExcelModelTemplateManager() {
                     <button
                       type="button"
                       onClick={() => handleDownloadBaseTemplate(previewTemplate)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 bg-white border border-green-300 rounded hover:bg-green-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 bg-white border border-green-300 rounded hover:bg-green-50 dark:bg-gray-800"
                     >
                       <Download className="w-4 h-4" />
                       Download
@@ -6690,27 +6690,27 @@ export function ExcelModelTemplateManager() {
               {/* Detection Rules */}
               {(previewTemplate.detection_rules?.filename_patterns?.length > 0 || previewTemplate.detection_rules?.sheet_names?.length > 0) && (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
-                    <Settings className="w-4 h-4 text-gray-600" />
+                  <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2 dark:text-white">
+                    <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     Detection Rules
                   </h4>
-                  <div className="text-sm text-gray-600 space-y-2">
+                  <div className="text-sm text-gray-600 space-y-2 dark:text-gray-400">
                     {previewTemplate.detection_rules.filename_patterns?.length > 0 && (
                       <div className="flex items-start gap-2">
-                        <span className="text-gray-500 shrink-0">Filename patterns:</span>
+                        <span className="text-gray-500 shrink-0 dark:text-gray-400">Filename patterns:</span>
                         <div className="flex flex-wrap gap-1">
                           {previewTemplate.detection_rules.filename_patterns.map((p, i) => (
-                            <code key={i} className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">{p}</code>
+                            <code key={i} className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-xs dark:text-gray-300 dark:bg-gray-800">{p}</code>
                           ))}
                         </div>
                       </div>
                     )}
                     {previewTemplate.detection_rules.sheet_names?.length > 0 && (
                       <div className="flex items-start gap-2">
-                        <span className="text-gray-500 shrink-0">Required sheets:</span>
+                        <span className="text-gray-500 shrink-0 dark:text-gray-400">Required sheets:</span>
                         <div className="flex flex-wrap gap-1">
                           {previewTemplate.detection_rules.sheet_names.map((s, i) => (
-                            <code key={i} className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">{s}</code>
+                            <code key={i} className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-xs dark:text-gray-300 dark:bg-gray-800">{s}</code>
                           ))}
                         </div>
                       </div>
@@ -6720,11 +6720,11 @@ export function ExcelModelTemplateManager() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <button
                 type="button"
                 onClick={() => setPreviewTemplate(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors dark:hover:text-white dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800"
               >
                 Close
               </button>
@@ -6736,9 +6736,9 @@ export function ExcelModelTemplateManager() {
       {/* Excel Data Preview Modal */}
       {excelPreviewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col dark:bg-gray-800">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-3">
                 {excelPreviewData.type === 'field' && (
                   <div className="p-2 bg-green-100 rounded-lg">
@@ -6756,11 +6756,11 @@ export function ExcelModelTemplateManager() {
                   </div>
                 )}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     {excelPreviewData.type === 'field' && (
                       <>
                         Field Mappings Preview
-                        <span className="ml-2 text-sm font-normal text-gray-500">
+                        <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
                           {excelPreviewData.allMappings?.length || 0} fields mapped
                         </span>
                       </>
@@ -6768,7 +6768,7 @@ export function ExcelModelTemplateManager() {
                     {excelPreviewData.type === 'snapshot' && excelPreviewData.item && (
                       <>
                         Snapshot Preview
-                        <span className="ml-2 text-sm font-normal text-gray-500">
+                        <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
                           {(excelPreviewData.item as SnapshotRange).name || 'Unnamed'} • {(excelPreviewData.item as SnapshotRange).range}
                         </span>
                       </>
@@ -6776,13 +6776,13 @@ export function ExcelModelTemplateManager() {
                     {excelPreviewData.type === 'dynamic' && excelPreviewData.item && (
                       <>
                         Dynamic Mapping Preview
-                        <span className="ml-2 text-sm font-normal text-gray-500">
+                        <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
                           {(excelPreviewData.item as DynamicFieldMapping).name} • Col {(excelPreviewData.item as DynamicFieldMapping).row_match?.label_column || 'A'}, Row {(excelPreviewData.item as DynamicFieldMapping).column_match?.header_row || 1}
                         </span>
                       </>
                     )}
                   </h3>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
                     Sheet: {excelPreviewData.sheetName} • From: {excelPreviewData.template.base_template_filename}
                   </p>
                 </div>
@@ -6790,7 +6790,7 @@ export function ExcelModelTemplateManager() {
               <button
                 type="button"
                 onClick={() => { setExcelPreviewData(null); setSelectedCellFieldId(null) }}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -6803,7 +6803,7 @@ export function ExcelModelTemplateManager() {
                 <div className="space-y-3">
                   {/* Sheet Tabs - show if multiple sheets have mappings */}
                   {excelPreviewData.sheetPreviews && excelPreviewData.sheetPreviews.length > 1 && (
-                    <div className="flex items-center gap-1 border-b border-gray-200 pb-2">
+                    <div className="flex items-center gap-1 border-b border-gray-200 pb-2 dark:border-gray-700">
                       {excelPreviewData.sheetPreviews.map((preview) => (
                         <button
                           key={preview.sheetName}
@@ -6824,8 +6824,8 @@ export function ExcelModelTemplateManager() {
                           className={clsx(
                             "px-3 py-1.5 text-xs font-medium rounded-t-lg border-b-2 transition-colors",
                             (selectedPreviewSheet || excelPreviewData.sheetName) === preview.sheetName
-                              ? "bg-white text-green-700 border-green-500"
-                              : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100"
+                              ? "bg-white text-green-700 border-green-500 dark:bg-gray-800"
+                              : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400 dark:bg-gray-900"
                           )}
                         >
                           {preview.sheetName}
@@ -6841,7 +6841,7 @@ export function ExcelModelTemplateManager() {
                   <div className="flex items-center gap-4 px-2 flex-shrink-0">
                     <div className="flex items-center gap-2 text-sm">
                       <div className="w-4 h-4 bg-green-200 border-2 border-green-500 rounded" />
-                      <span className="text-gray-600">Mapped Field</span>
+                      <span className="text-gray-600 dark:text-gray-400">Mapped Field</span>
                     </div>
                     <div className="text-xs text-gray-400">
                       Hover over highlighted cells to see field IDs
@@ -6849,17 +6849,17 @@ export function ExcelModelTemplateManager() {
                   </div>
 
                   {/* Spreadsheet Table */}
-                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-[50vh]">
+                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-[50vh] dark:border-gray-700">
                     <table className="min-w-full border-collapse text-sm">
                       <thead className="sticky top-0 z-20">
                         <tr>
-                          <th className="sticky left-0 z-30 bg-gray-100 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-b border-gray-200 w-12">
+                          <th className="sticky left-0 z-30 bg-gray-100 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-b border-gray-200 w-12 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
 
                           </th>
                           {excelPreviewData.spreadsheetData.headers.map((header, i) => (
                             <th
                               key={i}
-                              className="px-2 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-200 bg-gray-100 min-w-[80px] text-center"
+                              className="px-2 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-200 bg-gray-100 min-w-[80px] text-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                             >
                               {header}
                             </th>
@@ -6869,7 +6869,7 @@ export function ExcelModelTemplateManager() {
                       <tbody>
                         {excelPreviewData.spreadsheetData.rows.map((row, rowIdx) => (
                           <tr key={rowIdx}>
-                            <td className="sticky left-0 z-10 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-gray-200 text-center">
+                            <td className="sticky left-0 z-10 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-gray-200 text-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
                               {row.rowNum}
                             </td>
                             {row.cells.map((cell, cellIdx) => (
@@ -6877,10 +6877,10 @@ export function ExcelModelTemplateManager() {
                                 key={cellIdx}
                                 title={cell.isMapped ? `${cell.fieldId}${cell.mappingLabel && cell.mappingLabel !== cell.fieldId ? ` (${cell.mappingLabel})` : ''}` : undefined}
                                 className={clsx(
-                                  "px-2 py-1.5 border-b border-gray-100 transition-colors whitespace-nowrap",
+                                  "px-2 py-1.5 border-b border-gray-100 transition-colors whitespace-nowrap dark:border-gray-800",
                                   cell.isMapped
                                     ? "bg-green-100 border-2 border-green-400 font-medium text-green-900 cursor-help relative"
-                                    : "bg-white text-gray-700"
+                                    : "bg-white text-gray-700 dark:text-gray-300 dark:bg-gray-800"
                                 )}
                               >
                                 {cell.isMapped && (
@@ -6900,8 +6900,8 @@ export function ExcelModelTemplateManager() {
                   </div>
 
                   {/* Field Mappings List */}
-                  <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                    <h4 className="text-xs font-medium text-gray-500 mb-2">Mapped Tesseract Fields</h4>
+                  <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                    <h4 className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Mapped Tesseract Fields</h4>
                     <div className="flex flex-wrap gap-2">
                       {excelPreviewData.allMappings?.map((m, i) => (
                         <span
@@ -6923,7 +6923,7 @@ export function ExcelModelTemplateManager() {
               {excelPreviewData.type === 'snapshot' && excelPreviewData.rangeData && (
                 <div className="space-y-4">
                   {/* Snapshot frame */}
-                  <div className="border-4 border-blue-200 rounded-lg overflow-hidden shadow-lg bg-white">
+                  <div className="border-4 border-blue-200 rounded-lg overflow-hidden shadow-lg bg-white dark:bg-gray-800">
                     <div className="bg-blue-50 px-3 py-2 border-b border-blue-200 flex items-center gap-2">
                       <Grid3X3 className="w-4 h-4 text-blue-600" />
                       <span className="text-sm font-medium text-blue-800">
@@ -6933,7 +6933,7 @@ export function ExcelModelTemplateManager() {
                         {excelPreviewData.item && (excelPreviewData.item as SnapshotRange).range}
                       </span>
                     </div>
-                    <div ref={snapshotPreviewRef} className="p-3 overflow-auto max-h-[60vh] bg-white">
+                    <div ref={snapshotPreviewRef} className="p-3 overflow-auto max-h-[60vh] bg-white dark:bg-gray-800">
                       <table className="min-w-full">
                         <tbody>
                           {excelPreviewData.rangeData.rows.map((row, rowIdx) => (
@@ -6941,7 +6941,7 @@ export function ExcelModelTemplateManager() {
                               {row.map((cell, cellIdx) => (
                                 <td
                                   key={cellIdx}
-                                  className="px-2 py-1 text-sm bg-white text-gray-900 min-w-[50px] whitespace-nowrap"
+                                  className="px-2 py-1 text-sm bg-white text-gray-900 min-w-[50px] whitespace-nowrap dark:text-white dark:bg-gray-800"
                                 >
                                   {cell !== '' && cell !== null && cell !== undefined ? String(cell) : ''}
                                 </td>
@@ -6952,7 +6952,7 @@ export function ExcelModelTemplateManager() {
                       </table>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-500 text-center">
+                  <p className="text-xs text-gray-500 text-center dark:text-gray-400">
                     This is how the snapshot will appear when captured from the spreadsheet
                   </p>
                 </div>
@@ -6966,11 +6966,11 @@ export function ExcelModelTemplateManager() {
                     <div className="flex items-center gap-4">
                       <div className="flex items-center gap-2 text-sm">
                         <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded-sm" />
-                        <span className="text-gray-600">Header/Label</span>
+                        <span className="text-gray-600 dark:text-gray-400">Header/Label</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <div className="w-4 h-4 bg-green-100 border border-green-300 rounded-sm" />
-                        <span className="text-gray-600">Data Cell</span>
+                        <span className="text-gray-600 dark:text-gray-400">Data Cell</span>
                       </div>
                     </div>
                     {selectedCellFieldId && (
@@ -6989,17 +6989,17 @@ export function ExcelModelTemplateManager() {
                   </div>
 
                   {/* Spreadsheet Table */}
-                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-[50vh]">
+                  <div className="overflow-auto border border-gray-200 rounded-lg max-h-[50vh] dark:border-gray-700">
                     <table className="min-w-full border-collapse text-sm">
                       <thead className="sticky top-0 z-20">
                         <tr>
-                          <th className="sticky left-0 z-30 bg-gray-100 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-b border-gray-200 w-12">
+                          <th className="sticky left-0 z-30 bg-gray-100 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-b border-gray-200 w-12 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
 
                           </th>
                           {excelPreviewData.spreadsheetData.headers.map((header, i) => (
                             <th
                               key={i}
-                              className="px-2 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-200 bg-gray-100 min-w-[80px] text-center"
+                              className="px-2 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-200 bg-gray-100 min-w-[80px] text-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                             >
                               {header}
                             </th>
@@ -7009,7 +7009,7 @@ export function ExcelModelTemplateManager() {
                       <tbody>
                         {excelPreviewData.spreadsheetData.rows.map((row, rowIdx) => (
                           <tr key={rowIdx}>
-                            <td className="sticky left-0 z-10 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-gray-200 text-center">
+                            <td className="sticky left-0 z-10 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-500 border-r border-gray-200 text-center dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">
                               {row.rowNum}
                             </td>
                             {row.cells.map((cell, cellIdx) => {
@@ -7024,12 +7024,12 @@ export function ExcelModelTemplateManager() {
                                     }
                                   }}
                                   className={clsx(
-                                    "px-2 py-1.5 border-b border-gray-100 whitespace-nowrap",
+                                    "px-2 py-1.5 border-b border-gray-100 whitespace-nowrap dark:border-gray-800",
                                     cell.isMapped
                                       ? "bg-purple-100 text-purple-800 font-medium"
                                       : isDataCell
                                       ? "bg-green-50 text-green-800 cursor-pointer hover:bg-green-200 hover:ring-2 hover:ring-green-400"
-                                      : "bg-white text-gray-700"
+                                      : "bg-white text-gray-700 dark:text-gray-300 dark:bg-gray-800"
                                   )}
                                 >
                                   {cell.value !== '' && cell.value !== null && cell.value !== undefined
@@ -7047,7 +7047,7 @@ export function ExcelModelTemplateManager() {
                   </div>
 
                   {/* Info */}
-                  <p className="text-xs text-gray-500 text-center">
+                  <p className="text-xs text-gray-500 text-center dark:text-gray-400">
                     Click on green data cells to see the calculated field ID
                   </p>
                 </div>
@@ -7055,11 +7055,11 @@ export function ExcelModelTemplateManager() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <button
                 type="button"
                 onClick={() => { setExcelPreviewData(null); setSelectedCellFieldId(null) }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors dark:hover:text-white dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800"
               >
                 Close
               </button>
@@ -7071,9 +7071,9 @@ export function ExcelModelTemplateManager() {
       {/* Loading overlay for Excel preview */}
       {loadingExcelPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-lg shadow-xl p-6 flex items-center gap-3">
+          <div className="bg-white rounded-lg shadow-xl p-6 flex items-center gap-3 dark:bg-gray-800">
             <Loader2 className="w-5 h-5 animate-spin text-primary-600" />
-            <span className="text-gray-700">Loading Excel preview...</span>
+            <span className="text-gray-700 dark:text-gray-300">Loading Excel preview...</span>
           </div>
         </div>
       )}

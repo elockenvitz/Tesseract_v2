@@ -166,13 +166,13 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Share with Team</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Share with Team</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
           >
             <X className="h-5 w-5" />
           </button>
@@ -184,15 +184,15 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
               <Check className="h-8 w-8 text-green-600" />
             </div>
-            <h4 className="text-lg font-medium text-gray-900">Shared Successfully!</h4>
-            <p className="text-sm text-gray-500 mt-1">
+            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Shared Successfully!</h4>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
               Sent to {selectedUsers.length} {selectedUsers.length === 1 ? 'person' : 'people'}
             </p>
           </div>
         ) : (
           <>
             {/* Search */}
-            <div className="px-4 py-3 border-b border-gray-100">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
@@ -200,7 +200,7 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
                   placeholder="Search team members..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   autoFocus
                 />
               </div>
@@ -213,7 +213,7 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
                   <Loader2 className="h-6 w-6 text-gray-400 animate-spin" />
                 </div>
               ) : filteredUsers.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   <User className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm">No users found</p>
                 </div>
@@ -239,7 +239,7 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
                           {isSelected ? (
                             <Check className="h-4 w-4 text-white" />
                           ) : (
-                            <span className="text-sm font-medium text-gray-600">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
                               {getUserInitials(u)}
                             </span>
                           )}
@@ -247,11 +247,11 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
                         <div className="flex-1 min-w-0">
                           <p className={clsx(
                             'text-sm font-medium truncate',
-                            isSelected ? 'text-primary-900' : 'text-gray-900'
+                            isSelected ? 'text-primary-900' : 'text-gray-900 dark:text-white'
                           )}>
                             {getUserDisplayName(u)}
                           </p>
-                          <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                          <p className="text-xs text-gray-500 truncate dark:text-gray-400">{u.email}</p>
                         </div>
                       </button>
                     )
@@ -261,22 +261,22 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
             </div>
 
             {/* Message input */}
-            <div className="px-4 py-3 border-t border-gray-100">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Add a message (optional)
               </label>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Write a message..."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none dark:border-gray-600"
                 rows={2}
               />
             </div>
 
             {/* Footer */}
-            <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-              <span className="text-sm text-gray-500">
+            <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between dark:border-gray-700">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {selectedUsers.length > 0
                   ? `${selectedUsers.length} selected`
                   : 'Select team members to share with'}
@@ -288,7 +288,7 @@ export function ShareToUserModal({ isOpen, onClose, item }: ShareToUserModalProp
                   'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                   selectedUsers.length > 0
                     ? 'bg-primary-600 text-white hover:bg-primary-700'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800'
                 )}
               >
                 {shareMutation.isPending ? (

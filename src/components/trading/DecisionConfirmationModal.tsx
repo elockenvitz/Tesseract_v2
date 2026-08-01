@@ -329,13 +329,13 @@ export function DecisionConfirmationModal({
           <div className="relative bg-gradient-to-br from-emerald-50 via-white to-primary-50 dark:from-emerald-900/20 dark:via-gray-900 dark:to-primary-900/20 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
             <button
               onClick={handleStay}
-              className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-white/60 rounded-lg"
+              className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-white/60 rounded-lg dark:hover:text-gray-300"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
             </button>
             <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 ring-1 ring-emerald-100 dark:ring-emerald-900/50">
+              <div className="w-12 h-12 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 ring-1 ring-emerald-100 dark:ring-emerald-900/50 dark:bg-gray-800">
                 {isMulti
                   ? <Layers className="w-7 h-7 text-emerald-500" />
                   : <CheckCircle2 className="w-7 h-7 text-emerald-500" />}
@@ -773,7 +773,7 @@ function CapturedBlock({ decision: d, isMulti }: { decision: RecordedDecision; i
       {isMulti && (
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">{d.symbol}</span>
-          <span className="text-[10px] text-gray-500 capitalize">{d.action}</span>
+          <span className="text-[10px] text-gray-500 capitalize dark:text-gray-400">{d.action}</span>
         </div>
       )}
 

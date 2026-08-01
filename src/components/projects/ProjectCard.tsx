@@ -125,7 +125,7 @@ function InlineDropdown<T extends string>({
     <>
       <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); onClose() }} />
       <div
-        className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[140px] z-20"
+        className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[140px] z-20 dark:border-gray-700 dark:bg-gray-800"
         style={{ left: `${anchorRect.left}px`, top: `${anchorRect.bottom + 4}px` }}
       >
         {items.map(item => (
@@ -134,7 +134,7 @@ function InlineDropdown<T extends string>({
             onClick={(e) => { e.stopPropagation(); onSelect(item.id); onClose() }}
             className={clsx(
               'w-full flex items-center gap-2 px-3 py-[6px] text-[12px] transition-colors',
-              activeValue === item.id ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+              activeValue === item.id ? 'bg-gray-50 font-medium text-gray-900 dark:text-white dark:bg-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             {item.dotColor && <span className={clsx('w-2 h-2 rounded-full', item.dotColor)} />}
@@ -252,7 +252,7 @@ export function ProjectCard({
           <div className="flex-shrink-0" ref={kebabRef}>
             <button
               onClick={(e) => openDropdown('kebab', e)}
-              className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 text-gray-400"
+              className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 text-gray-400 dark:hover:bg-gray-700"
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
@@ -352,7 +352,7 @@ export function ProjectCard({
         <>
           <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setDropdown(null) }} />
           <div
-            className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[160px] z-20"
+            className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[160px] z-20 dark:border-gray-700 dark:bg-gray-800"
             style={{ left: `${dropdown.rect.right - 160}px`, top: `${dropdown.rect.bottom + 4}px` }}
           >
             {/* Add tag */}
@@ -362,7 +362,7 @@ export function ProjectCard({
                 setDropdown({ type: 'tags', rect: dropdown.rect })
                 setTagSearch('')
               }}
-              className="w-full flex items-center gap-2 px-3 py-[6px] text-[12px] text-gray-600 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-[6px] text-[12px] text-gray-600 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:text-gray-400"
             >
               <Tag className="w-3.5 h-3.5" />
               Manage tags
@@ -390,7 +390,7 @@ export function ProjectCard({
         <>
           <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setDropdown(null) }} />
           <div
-            className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 w-60 z-20"
+            className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 w-60 z-20 dark:border-gray-700 dark:bg-gray-800"
             style={{ left: `${dropdown.rect.left}px`, top: `${dropdown.rect.bottom + 4}px` }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -400,7 +400,7 @@ export function ProjectCard({
                 placeholder="Search tags..."
                 value={tagSearch}
                 onChange={(e) => setTagSearch(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-400"
+                className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
                 autoFocus
               />
               <div className="max-h-32 overflow-y-auto space-y-0.5">
@@ -415,14 +415,14 @@ export function ProjectCard({
                     <button
                       key={tag.id}
                       onClick={() => onAddTag?.(project.id, tag.id)}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[12px] hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[12px] hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                     >
                       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
                       {tag.name}
                     </button>
                   ))}
               </div>
-              <div className="border-t border-gray-100 pt-2 flex gap-1.5">
+              <div className="border-t border-gray-100 pt-2 flex gap-1.5 dark:border-gray-800">
                 <input
                   type="text"
                   placeholder="New tag..."
@@ -434,7 +434,7 @@ export function ProjectCard({
                       setNewTagName('')
                     }
                   }}
-                  className="flex-1 min-w-0 px-2 py-1.5 text-[12px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-400"
+                  className="flex-1 min-w-0 px-2 py-1.5 text-[12px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
                 />
                 <button
                   onClick={() => {

@@ -168,15 +168,15 @@ export function AttentionSection({
 
       {/* Content */}
       {isExpanded && (
-        <div className="bg-white">
+        <div className="bg-white dark:bg-gray-800">
           {isEmpty ? (
             // Empty state
             <div className="px-4 py-6 text-center">
-              <p className="text-sm text-gray-500">{EMPTY_MESSAGES[type]}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{EMPTY_MESSAGES[type]}</p>
             </div>
           ) : compact ? (
             // Compact list view
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 dark:divide-gray-800">
               {displayItems.map((item) => (
                 <AttentionCard
                   key={item.attention_id}
@@ -229,7 +229,7 @@ export function AttentionSection({
                 }}
                 className={clsx(
                   'w-full py-2 text-sm font-medium text-center rounded-lg',
-                  'border border-gray-200 hover:bg-gray-50 transition-colors',
+                  'border border-gray-200 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700',
                   config.color
                 )}
               >

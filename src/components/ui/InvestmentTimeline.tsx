@@ -933,8 +933,8 @@ export function InvestmentTimeline({
     switch (status) {
       case 'completed': return 'text-green-700'
       case 'current': return 'text-blue-700'
-      case 'future': return 'text-gray-500'
-      default: return 'text-gray-500'
+      case 'future': return 'text-gray-500 dark:text-gray-400'
+      default: return 'text-gray-500 dark:text-gray-400'
     }
   }
 
@@ -1252,7 +1252,7 @@ export function InvestmentTimeline({
     return (
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-center py-16">
-          <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
         </div>
       </div>
     )
@@ -1261,15 +1261,15 @@ export function InvestmentTimeline({
   if (!workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null' || (workflowStages && timelineStages.length === 0)) {
     return (
       <div className={`space-y-6 ${className}`}>
-        <div className="bg-white border border-gray-200 rounded-lg p-12">
+        <div className="bg-white border border-gray-200 rounded-lg p-12 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4 dark:bg-gray-800">
               <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Active Processes</h3>
-            <p className="text-sm text-gray-500 max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No Active Processes</h3>
+            <p className="text-sm text-gray-500 max-w-md dark:text-gray-400">
               This asset is not currently assigned to any process. Select a process from the dropdown above to get started.
             </p>
           </div>
@@ -1281,7 +1281,7 @@ export function InvestmentTimeline({
   return (
     <div className={`space-y-6 ${className}`}>
       {/* Timeline Visualization */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-gray-200 rounded-lg p-6 dark:border-gray-700 dark:bg-gray-800">
         <div className="mb-4 flex items-center justify-between">
           {/* Workflow Priority on the left */}
           {assetId && workflowId && (
@@ -1321,7 +1321,7 @@ export function InvestmentTimeline({
                             className="fixed inset-0 z-10"
                             onClick={() => setShowPriorityDropdown(false)}
                           />
-                          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
                             <div className="p-2">
                               <button
                                 onClick={() => {
@@ -1424,14 +1424,14 @@ export function InvestmentTimeline({
                     text: 'text-white',
                     accent: 'text-emerald-50',
                     progressTrack: 'bg-emerald-700/30',
-                    progressFill: 'bg-white'
+                    progressFill: 'bg-white dark:bg-gray-800'
                   },
                   current: {
                     bg: 'bg-gradient-to-br from-blue-600 to-indigo-600',
                     text: 'text-white',
                     accent: 'text-blue-50',
                     progressTrack: 'bg-white/20',
-                    progressFill: 'bg-white'
+                    progressFill: 'bg-white dark:bg-gray-800'
                   },
                   future: {
                     bg: 'bg-slate-100',
@@ -1508,13 +1508,13 @@ export function InvestmentTimeline({
                             {index + 1}
                             {/* Completed checkmark - upper right of stage number */}
                             {status === 'completed' && (
-                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm">
+                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm dark:bg-gray-800">
                                 <Check className="w-3 h-3 text-green-600" strokeWidth={3} />
                               </div>
                             )}
                             {/* Current stage indicator */}
                             {status === 'current' && (
-                              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-sm" />
+                              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-sm dark:bg-gray-800" />
                             )}
                           </div>
                           {/* Stage Name - Left aligned */}
@@ -1599,7 +1599,7 @@ export function InvestmentTimeline({
                       ? 'border-blue-500 bg-blue-50'
                       : status === 'completed'
                       ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200 bg-gray-50'
+                      : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900'
                   } hover:shadow-md cursor-pointer ${
                     showStageDetails === stage.id ? 'ring-2 ring-blue-200' : ''
                   }`}
@@ -1609,9 +1609,9 @@ export function InvestmentTimeline({
                     {status === 'completed' ? (
                       <Check className="w-4 h-4 text-white" />
                     ) : status === 'current' ? (
-                      <div className="w-2 h-2 bg-white rounded-full" />
+                      <div className="w-2 h-2 bg-white rounded-full dark:bg-gray-800" />
                     ) : (
-                      <div className="w-2 h-2 bg-white rounded-full" />
+                      <div className="w-2 h-2 bg-white rounded-full dark:bg-gray-800" />
                     )}
 
                     {/* Deadline Indicator for Mobile */}
@@ -1639,7 +1639,7 @@ export function InvestmentTimeline({
                     <div className={`font-medium ${getTextColor(status)}`}>
                       {stage.label}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
                       {stage.description}
                     </div>
                     {(() => {
@@ -1700,10 +1700,10 @@ export function InvestmentTimeline({
                 )}
               </div>
               <div className="flex-1">
-                <h4 className="text-lg font-semibold text-gray-900">
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
                   {timelineStages.find(s => s.id === showStageDetails)?.label} Stage
                 </h4>
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="text-sm text-gray-600 mb-3 dark:text-gray-400">
                   {assetSymbol && `For ${assetSymbol} • `}
                   {timelineStages.find(s => s.id === showStageDetails)?.description}
                 </p>
@@ -1760,7 +1760,7 @@ export function InvestmentTimeline({
               return (
                 <div className="space-y-4">
                   {/* Stats row */}
-                  <div className="flex items-center gap-4 text-[12px] text-gray-500">
+                  <div className="flex items-center gap-4 text-[12px] text-gray-500 dark:text-gray-400">
                     <span>{realStages.length} stages</span>
                     <span className="text-gray-300">·</span>
                     <span>{totalDone} completed</span>
@@ -1770,17 +1770,17 @@ export function InvestmentTimeline({
                   {/* Key findings — grouped by item, showing each person's commentary */}
                   {findings.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5">Key Findings</h4>
+                      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5 dark:text-gray-400">Key Findings</h4>
                       <div className="space-y-4">
                         {findings.map(({ item: fi, stageLabel, entries }) => (
                           <div key={fi.id}>
-                            <p className="text-[11px] font-medium text-gray-500 mb-1">{fi.text} <span className="text-gray-400 font-normal">· {stageLabel}</span></p>
-                            <div className="space-y-1.5 pl-2 border-l-2 border-gray-100">
+                            <p className="text-[11px] font-medium text-gray-500 mb-1 dark:text-gray-400">{fi.text} <span className="text-gray-400 font-normal">· {stageLabel}</span></p>
+                            <div className="space-y-1.5 pl-2 border-l-2 border-gray-100 dark:border-gray-800">
                               {entries.map((entry: any) => {
                                 const u = Array.isArray(entry.user) ? entry.user[0] : entry.user
                                 return (
                                   <div key={entry.checklist_item_id + '-' + entry.user_id}>
-                                    <p className="text-[13px] text-gray-800 leading-relaxed">{entry.comment_text}</p>
+                                    <p className="text-[13px] text-gray-800 leading-relaxed dark:text-gray-100">{entry.comment_text}</p>
                                     <p className="text-[10px] text-gray-400 mt-0.5">{u ? `${u.first_name || u.email?.split('@')[0] || 'Unknown'}` : 'Unknown'}</p>
                                   </div>
                                 )
@@ -1833,7 +1833,7 @@ export function InvestmentTimeline({
                   {showStageDetails && showStageDetails !== 'outdated' && !workflowProgress?.is_completed && (
                     <div className="mt-2">
                       {addingItemToStage === showStageDetails ? (
-                        <div className="p-2.5 rounded-md border border-gray-200 bg-gray-50/50">
+                        <div className="p-2.5 rounded-md border border-gray-200 bg-gray-50/50 dark:border-gray-700">
                           {/* Type selector */}
                           <div className="flex items-center gap-1.5 mb-2">
                             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Type</span>
@@ -1842,7 +1842,7 @@ export function InvestmentTimeline({
                               className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded border transition-colors ${
                                 newItemType === 'operational'
                                   ? 'bg-gray-900 text-white border-gray-900'
-                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                               }`}
                             >
                               <Settings2 className="w-3 h-3" />Task
@@ -1852,7 +1852,7 @@ export function InvestmentTimeline({
                               className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded border transition-colors ${
                                 newItemType === 'thinking'
                                   ? 'bg-gray-900 text-white border-gray-900'
-                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                               }`}
                             >
                               <BrainCircuit className="w-3 h-3" />Analysis
@@ -1865,7 +1865,7 @@ export function InvestmentTimeline({
                               value={newItemText}
                               onChange={(e) => setNewItemText(e.target.value)}
                               placeholder={newItemType === 'thinking' ? "What question needs answering?" : "What task needs to be done?"}
-                              className="flex-1 px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                              className="flex-1 px-2.5 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white dark:border-gray-700 dark:bg-gray-800"
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' && newItemText.trim()) handleAddCustomItem(showStageDetails)
@@ -1885,7 +1885,7 @@ export function InvestmentTimeline({
                             </button>
                             <button
                               onClick={() => { setAddingItemToStage(null); setNewItemText('') }}
-                              className="text-gray-400 hover:text-gray-600 p-1"
+                              className="text-gray-400 hover:text-gray-600 p-1 dark:hover:text-gray-300"
                             >
                               <Plus className="w-3.5 h-3.5 rotate-45" />
                             </button>
@@ -1894,7 +1894,7 @@ export function InvestmentTimeline({
                       ) : (
                         <button
                           onClick={() => setAddingItemToStage(showStageDetails)}
-                          className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-2 py-1.5 rounded transition-colors w-full"
+                          className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-2 py-1.5 rounded transition-colors w-full dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400"
                         >
                           <Plus className="w-3 h-3" />
                           <span>Add item</span>
@@ -1939,9 +1939,9 @@ export function InvestmentTimeline({
           </div>
 
           {/* Stage Progression Actions */}
-          <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 <div>Stage {currentIndex + 1} of {timelineStages.length}</div>
                 {showStageDetails === effectiveCurrentStage && (
                   <div className="text-xs mt-1 text-blue-600">
@@ -1960,7 +1960,7 @@ export function InvestmentTimeline({
                     size="sm"
                     variant="outline"
                     onClick={handleRegressStage}
-                    className="text-gray-600 hover:text-gray-800"
+                    className="text-gray-600 hover:text-gray-800 dark:text-gray-400"
                   >
                     ← Move to {timelineStages[currentIndex - 1]?.label}
                   </Button>

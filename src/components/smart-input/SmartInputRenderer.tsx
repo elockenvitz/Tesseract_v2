@@ -249,7 +249,7 @@ function FormattedTextBlock({ text }: { text: string }) {
   const flushBullets = () => {
     if (bulletGroup.length === 0) return
     elements.push(
-      <ul key={`ul-${elements.length}`} className="list-disc pl-5 my-1.5 space-y-0.5 text-sm text-gray-700">
+      <ul key={`ul-${elements.length}`} className="list-disc pl-5 my-1.5 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
         {bulletGroup.map((b, i) => <li key={i}>{applyInlineFormatting(b.content)}</li>)}
       </ul>
     )
@@ -259,7 +259,7 @@ function FormattedTextBlock({ text }: { text: string }) {
   const flushOrdered = () => {
     if (orderedGroup.length === 0) return
     elements.push(
-      <ol key={`ol-${elements.length}`} className="list-decimal pl-5 my-1.5 space-y-0.5 text-sm text-gray-700">
+      <ol key={`ol-${elements.length}`} className="list-decimal pl-5 my-1.5 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
         {orderedGroup.map((b, i) => <li key={i}>{applyInlineFormatting(b.content)}</li>)}
       </ol>
     )
@@ -295,7 +295,7 @@ function FormattedTextBlock({ text }: { text: string }) {
 
     // Regular text paragraph
     elements.push(
-      <p key={`p-${elements.length}`} className="text-sm text-gray-700 my-0.5 leading-relaxed">
+      <p key={`p-${elements.length}`} className="text-sm text-gray-700 my-0.5 leading-relaxed dark:text-gray-300">
         {applyInlineFormatting(line)}
       </p>
     )
@@ -497,7 +497,7 @@ function ReferenceChip({ display, entityType, entityId, onClick }: ReferenceChip
     green: 'bg-green-100 text-green-800 hover:bg-green-200',
     purple: 'bg-purple-100 text-purple-800 hover:bg-purple-200',
     orange: 'bg-orange-100 text-orange-800 hover:bg-orange-200',
-    gray: 'bg-gray-100 text-gray-800 hover:bg-gray-200',
+    gray: 'bg-gray-100 text-gray-800 hover:bg-gray-200 dark:text-gray-100 dark:bg-gray-800',
     cyan: 'bg-cyan-100 text-cyan-800 hover:bg-cyan-200',
     pink: 'bg-pink-100 text-pink-800 hover:bg-pink-200'
   }
@@ -530,8 +530,8 @@ function DataSnapshotChip({ dataType, value, date }: DataSnapshotChipProps) {
   const Icon = getDataIcon(dataType)
 
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-sm">
-      <Icon className="w-3 h-3 mr-1 text-gray-500" />
+    <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-sm dark:text-gray-300 dark:bg-gray-800">
+      <Icon className="w-3 h-3 mr-1 text-gray-500 dark:text-gray-400" />
       {value}
       <span className="ml-1 text-xs text-gray-400">({date})</span>
     </span>
@@ -569,7 +569,7 @@ function ChartEmbed({ chartType, symbol }: { chartType: string; symbol: string }
   }, [])
 
   return (
-    <div className="my-2 rounded-lg border border-gray-200 overflow-hidden">
+    <div className="my-2 rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700">
       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-50 border-b border-cyan-100">
         <BarChart3 className="w-3.5 h-3.5 text-cyan-600" />
         <span className="text-xs font-semibold text-cyan-800">{symbol}</span>
@@ -593,7 +593,7 @@ function AIContentBlock({ prompt, content }: AIContentBlockProps) {
   return (
     <span className="inline-flex items-start bg-purple-50 border-l-2 border-purple-400 px-2 py-1 rounded-r text-sm">
       <Sparkles className="w-3 h-3 mr-1.5 mt-0.5 text-purple-500 flex-shrink-0" />
-      <span className="text-gray-700">{content}</span>
+      <span className="text-gray-700 dark:text-gray-300">{content}</span>
     </span>
   )
 }
@@ -659,7 +659,7 @@ function VisibilityBlock({ type, label, children }: VisibilityBlockProps) {
         <Icon className="w-3 h-3" />
         {label}
       </span>
-      <span className="text-gray-700">{children}</span>
+      <span className="text-gray-700 dark:text-gray-300">{children}</span>
     </span>
   )
 }

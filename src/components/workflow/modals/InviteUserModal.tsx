@@ -78,19 +78,19 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Invite User</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Invite User</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="mb-4">
-          <p className="text-sm text-gray-600 mb-2">
+          <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">
             Invite a team member to collaborate on "{workflowName}"
           </p>
         </div>
@@ -98,7 +98,7 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Search User or Enter Email
               </label>
               <div className="relative">
@@ -107,7 +107,7 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
                   value={searchTerm}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   onFocus={() => setShowDropdown(true)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                   placeholder="Search by name or enter email..."
                 />
                 <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -120,21 +120,21 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
                     className="fixed inset-0 z-10"
                     onClick={() => setShowDropdown(false)}
                   />
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-20 max-h-48 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-20 max-h-48 overflow-y-auto dark:border-gray-600 dark:bg-gray-800">
                     {filteredUsers.length > 0 ? (
                       filteredUsers.map((user) => (
                         <button
                           key={user.id}
                           type="button"
                           onClick={() => handleUserSelect(user)}
-                          className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:hover:bg-gray-700"
                         >
-                          <div className="font-medium text-gray-900">{user.name}</div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
+                          <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
                         </button>
                       ))
                     ) : (
-                      <div className="px-3 py-2 text-gray-500 text-sm">
+                      <div className="px-3 py-2 text-gray-500 text-sm dark:text-gray-400">
                         No users found. You can still enter an email manually.
                       </div>
                     )}
@@ -149,7 +149,7 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     placeholder="Or enter email manually"
                   />
                 </div>
@@ -157,13 +157,13 @@ export function InviteUserModal({ workflowId, workflowName, onClose, onInvite }:
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Permission Level
               </label>
               <select
                 value={permission}
                 onChange={(e) => setPermission(e.target.value as 'read' | 'write' | 'admin')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               >
                 <option value="read">Read Only - Can view workflow</option>
                 <option value="write">Write - Can edit checklist items</option>

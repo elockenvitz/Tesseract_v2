@@ -529,36 +529,36 @@ export function OpsDashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
-      <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+      <h1 className="text-xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
 
       {/* Top-level metrics */}
       <div className="grid grid-cols-4 gap-3">
         <MetricCard icon={Activity} label="Active Now" value={totalActiveNow} accent="text-green-600" />
         <MetricCard icon={Building2} label="Clients" value={totalClients} accent="text-indigo-600" />
-        <MetricCard icon={Users} label="Total Users" value={totalMembers} accent="text-gray-700" />
+        <MetricCard icon={Users} label="Total Users" value={totalMembers} accent="text-gray-700 dark:text-gray-300" />
         <MetricCard icon={AlertTriangle} label="Open Bugs" value={clientHealth.reduce((s, c) => s + c.openBugReports, 0)} accent="text-red-600" />
       </div>
 
       {/* Client health table */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800">Client Health</h2>
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
+          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Client Health</h2>
           <span className="text-xs text-gray-400">{clientsWithActivity} of {totalClients} active</span>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
             <tr>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Client</th>
-              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Active Now</th>
-              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Users</th>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Last Login</th>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Holdings</th>
-              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Onboarding</th>
-              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Engagement</th>
-              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Bugs</th>
+              <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Client</th>
+              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Active Now</th>
+              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Users</th>
+              <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Last Login</th>
+              <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Holdings</th>
+              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Onboarding</th>
+              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Engagement</th>
+              <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Bugs</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {clientHealth.map((client) => (
               <tr
                 key={client.org.id}
@@ -566,7 +566,7 @@ export function OpsDashboardPage() {
                 className="hover:bg-gray-50 cursor-pointer transition-colors"
               >
                 <td className="px-5 py-3">
-                  <p className="font-medium text-gray-900">{client.org.name}</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{client.org.name}</p>
                   <p className="text-[10px] text-gray-400">{client.org.slug}</p>
                 </td>
                 <td className="px-5 py-3 text-center">
@@ -579,8 +579,8 @@ export function OpsDashboardPage() {
                     <span className="text-gray-300 text-xs">0</span>
                   )}
                 </td>
-                <td className="px-5 py-3 text-center text-xs text-gray-600">{client.totalMembers}</td>
-                <td className="px-5 py-3 text-xs text-gray-600">
+                <td className="px-5 py-3 text-center text-xs text-gray-600 dark:text-gray-400">{client.totalMembers}</td>
+                <td className="px-5 py-3 text-xs text-gray-600 dark:text-gray-400">
                   {client.lastLoginAt ? formatTimeAgo(client.lastLoginAt) : <span className="text-gray-300">Never</span>}
                 </td>
                 <td className="px-5 py-3">
@@ -619,25 +619,25 @@ export function OpsDashboardPage() {
         </table>
       </div>
       {/* Top Users */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-800">Top Users (Last 30 Days)</h2>
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+        <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800">
+          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Top Users (Last 30 Days)</h2>
         </div>
         {topUsers.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-gray-400">No activity in the last 30 days</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <tr>
-                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">User</th>
-                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Organization</th>
-                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
-                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Sessions</th>
-                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500">Time</th>
-                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500">Most Used For</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">User</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Organization</th>
+                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Actions</th>
+                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Sessions</th>
+                <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Time</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Most Used For</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {topUsers.map((u, i) => (
                 <tr key={u.userId} className="hover:bg-gray-50">
                   <td className="px-5 py-3">
@@ -649,15 +649,15 @@ export function OpsDashboardPage() {
                         {i + 1}
                       </span>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{u.name || u.email}</p>
+                        <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{u.name || u.email}</p>
                         {u.name && <p className="text-[10px] text-gray-400 truncate">{u.email}</p>}
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-xs text-gray-500">{u.orgName}</td>
-                  <td className="px-5 py-3 text-center text-xs font-semibold text-gray-800">{u.totalActions}</td>
-                  <td className="px-5 py-3 text-center text-xs text-gray-600">{u.sessions}</td>
-                  <td className="px-5 py-3 text-center text-xs text-gray-600">
+                  <td className="px-5 py-3 text-xs text-gray-500 dark:text-gray-400">{u.orgName}</td>
+                  <td className="px-5 py-3 text-center text-xs font-semibold text-gray-800 dark:text-gray-100">{u.totalActions}</td>
+                  <td className="px-5 py-3 text-center text-xs text-gray-600 dark:text-gray-400">{u.sessions}</td>
+                  <td className="px-5 py-3 text-center text-xs text-gray-600 dark:text-gray-400">
                     {u.totalTimeMin > 60 ? `${Math.round(u.totalTimeMin / 60)}h` : `${u.totalTimeMin}m`}
                   </td>
                   <td className="px-5 py-3">
@@ -696,10 +696,10 @@ const ACTIVITY_LABELS: Record<string, string> = {
 
 function MetricCard({ icon: Icon, label, value, accent }: { icon: typeof Activity; label: string; value: number; accent: string }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
+    <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center gap-2 mb-1">
         <Icon className={clsx('w-4 h-4', accent)} />
-        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
       </div>
       <p className={clsx('text-2xl font-bold', accent)}>{value}</p>
     </div>
@@ -728,7 +728,7 @@ function ProgressBar({ pct, tooltip }: { pct: number; tooltip?: string }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[10px] text-gray-500 tabular-nums w-7">{pct}%</span>
+      <span className="text-[10px] text-gray-500 tabular-nums w-7 dark:text-gray-400">{pct}%</span>
     </div>
   )
 }
@@ -738,7 +738,7 @@ function EngagementDot({ score }: { score: number }) {
   return (
     <div className="flex items-center justify-center gap-1">
       <span className={clsx('w-2 h-2 rounded-full', color)} />
-      <span className="text-[10px] text-gray-500 tabular-nums">{score}</span>
+      <span className="text-[10px] text-gray-500 tabular-nums dark:text-gray-400">{score}</span>
     </div>
   )
 }

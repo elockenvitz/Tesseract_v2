@@ -49,7 +49,7 @@ export function EmptyState({
           <div className="mb-6" aria-hidden="true">{illustration}</div>
         ) : Icon ? (
           <div className="flex justify-center mb-6" aria-hidden="true">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center dark:bg-gray-800">
               <Icon className="w-8 h-8 text-gray-400" />
             </div>
           </div>
@@ -103,7 +103,7 @@ interface SimpleEmptyStateProps {
 export function NoResultsFound({ message = 'No results found', compact }: SimpleEmptyStateProps) {
   return (
     <div className={compact ? 'py-6 text-center' : 'py-12 text-center'}>
-      <p className="text-gray-500 text-sm">{message}</p>
+      <p className="text-gray-500 text-sm dark:text-gray-400">{message}</p>
       <p className="text-gray-400 text-xs mt-1">Try adjusting your search or filters</p>
     </div>
   )
@@ -112,7 +112,7 @@ export function NoResultsFound({ message = 'No results found', compact }: Simple
 export function NoDataAvailable({ message = 'No data available', compact }: SimpleEmptyStateProps) {
   return (
     <div className={compact ? 'py-6 text-center' : 'py-12 text-center'}>
-      <p className="text-gray-500 text-sm">{message}</p>
+      <p className="text-gray-500 text-sm dark:text-gray-400">{message}</p>
     </div>
   )
 }

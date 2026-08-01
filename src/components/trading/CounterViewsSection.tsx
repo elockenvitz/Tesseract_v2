@@ -84,7 +84,7 @@ function CounterViewCard({
   counterView: CounterViewSummary
   onNavigate?: () => void
 }) {
-  const actionColor = ACTION_COLOR[counterView.action] || { text: 'text-gray-600', bg: 'bg-gray-100' }
+  const actionColor = ACTION_COLOR[counterView.action] || { text: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' }
   const stageLabel = STAGE_LABEL[counterView.stage] || counterView.stage
 
   return (

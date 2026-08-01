@@ -115,18 +115,18 @@ export function ReelsChartPanel({
   return (
     <div className="w-full h-full flex flex-col">
       {/* Header with symbol info */}
-      <div className="flex items-center justify-between px-2 py-2 bg-white border-b border-gray-200 rounded-t-xl relative z-30">
+      <div className="flex items-center justify-between px-2 py-2 bg-white border-b border-gray-200 rounded-t-xl relative z-30 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center gap-3">
           <div>
-            <h3 className="text-lg font-bold text-gray-900">${symbol}</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">${symbol}</h3>
             {companyName && (
-              <p className="text-xs text-gray-500">{companyName}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{companyName}</p>
             )}
           </div>
 
           {quote && stats && (
-            <div className="flex items-center gap-2 pl-3 border-l border-gray-200">
-              <span className="text-lg font-semibold text-gray-900">
+            <div className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-gray-700">
+              <span className="text-lg font-semibold text-gray-900 dark:text-white">
                 ${quote.price.toFixed(2)}
               </span>
               <span className={clsx(
@@ -151,7 +151,7 @@ export function ReelsChartPanel({
               e.stopPropagation()
               onOpenFullChart(symbol)
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors text-sm dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
             title="Open full chart"
           >
             <BarChart3 className="h-4 w-4" />
@@ -161,7 +161,7 @@ export function ReelsChartPanel({
       </div>
 
       {/* Timeframe selector */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 overflow-x-auto">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 overflow-x-auto dark:border-gray-700 dark:bg-gray-900">
         {timeframes.map(tf => (
           <button
             key={tf.value}
@@ -173,7 +173,7 @@ export function ReelsChartPanel({
               'px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
               selectedTimeframe === tf.value
                 ? 'bg-primary-100 text-primary-700'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
             )}
           >
             {tf.label}
@@ -182,7 +182,7 @@ export function ReelsChartPanel({
       </div>
 
       {/* Chart container */}
-      <div className="flex-1 relative bg-white rounded-b-xl overflow-hidden border border-t-0 border-gray-200">
+      <div className="flex-1 relative bg-white rounded-b-xl overflow-hidden border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
         {quoteLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />

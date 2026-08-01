@@ -116,7 +116,7 @@ export function SearchableSelect({
             <button
               type="button"
               onClick={handleClearSelection}
-              className="p-1 text-gray-400 hover:text-gray-600 rounded-full"
+              className="p-1 text-gray-400 hover:text-gray-600 rounded-full dark:hover:text-gray-300"
               aria-label="Clear selection"
             >
               <X className="h-4 w-4" />
@@ -128,24 +128,24 @@ export function SearchableSelect({
       />
 
       {isOpen && (searchQuery.length > 0 || filteredOptions.length > 0) && (
-        <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto custom-scrollbar">
+        <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto custom-scrollbar dark:border-gray-700 dark:bg-gray-800">
           {filteredOptions.length > 0 ? (
             filteredOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => handleSelectOption(option)}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 dark:hover:bg-gray-700 dark:text-gray-300"
               >
                 <Search className="h-4 w-4 text-gray-400" /> {/* Or a user icon */}
                 <div>
                   <p className="font-medium">{option.label}</p>
-                  {option.email && <p className="text-xs text-gray-500">{option.email}</p>}
+                  {option.email && <p className="text-xs text-gray-500 dark:text-gray-400">{option.email}</p>}
                 </div>
               </button>
             ))
           ) : (
-            <div className="px-4 py-2 text-sm text-gray-500">No matching options</div>
+            <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">No matching options</div>
           )}
         </div>
       )}

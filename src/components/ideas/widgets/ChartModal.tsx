@@ -123,23 +123,23 @@ export function ChartModal({
       {/* Modal */}
       <div
         className={clsx(
-          'relative bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-200',
+          'relative bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-200 dark:bg-gray-800',
           isExpanded ? 'w-full h-full max-w-none max-h-none m-0' : 'w-full max-w-2xl'
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">${symbol}</h2>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">${symbol}</h2>
               {companyName && (
-                <p className="text-sm text-gray-500">{companyName}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{companyName}</p>
               )}
             </div>
 
             {quote && (
-              <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-300">
+              <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-300 dark:border-gray-600">
                 <span className="text-lg font-semibold">${quote.price.toFixed(2)}</span>
                 {stats && (
                   <span className={clsx(
@@ -158,7 +158,7 @@ export function ChartModal({
             {onNavigateToAsset && (
               <button
                 onClick={() => onNavigateToAsset(symbol)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
                 title="View full details"
               >
                 <ExternalLink className="h-4 w-4" />
@@ -166,14 +166,14 @@ export function ChartModal({
             )}
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
               title={isExpanded ? 'Minimize' : 'Maximize'}
             >
               {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
             >
               <X className="h-5 w-5" />
             </button>
@@ -181,7 +181,7 @@ export function ChartModal({
         </div>
 
         {/* Timeframe selector */}
-        <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-100 bg-white">
+        <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
           {timeframes.map(tf => (
             <button
               key={tf.value}
@@ -190,7 +190,7 @@ export function ChartModal({
                 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
                 selectedTimeframe === tf.value
                   ? 'bg-gray-900 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
               )}
             >
               {tf.label}
@@ -281,24 +281,24 @@ export function ChartModal({
 
         {/* Stats footer */}
         {stats && (
-          <div className="grid grid-cols-4 gap-4 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <div className="grid grid-cols-4 gap-4 px-4 py-3 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
             <div>
-              <p className="text-xs text-gray-500">Period Change</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Period Change</p>
               <p className={clsx('text-sm font-medium', stats.isPositive ? 'text-green-600' : 'text-red-600')}>
                 {stats.isPositive ? '+' : ''}{stats.change.toFixed(2)} ({stats.isPositive ? '+' : ''}{stats.changePercent.toFixed(2)}%)
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Period High</p>
-              <p className="text-sm font-medium text-gray-900">${stats.high.toFixed(2)}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Period High</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">${stats.high.toFixed(2)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Period Low</p>
-              <p className="text-sm font-medium text-gray-900">${stats.low.toFixed(2)}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Period Low</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">${stats.low.toFixed(2)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Data Points</p>
-              <p className="text-sm font-medium text-gray-900">{chartData.length}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Data Points</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">{chartData.length}</p>
             </div>
           </div>
         )}

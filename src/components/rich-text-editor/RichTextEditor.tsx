@@ -967,7 +967,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
 
   if (!editor) {
     return (
-      <div className={clsx('animate-pulse bg-gray-100 rounded-lg', className)} style={{ minHeight }} />
+      <div className={clsx('animate-pulse bg-gray-100 rounded-lg dark:bg-gray-800', className)} style={{ minHeight }} />
     )
   }
 
@@ -975,7 +975,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
     <div className={clsx('rich-text-editor relative', className)}>
       {/* Toolbar - Sticky */}
       {!readOnly && (
-        <div className="sticky top-[41px] z-10 bg-white">
+        <div className="sticky top-[41px] z-10 bg-white dark:bg-gray-800">
           <EditorToolbar
             editor={editor}
             onInsertEvent={onInsertEvent}
@@ -985,7 +985,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       )}
 
       {/* Editor Content */}
-      <div className="editor-container border border-gray-200 border-t-0 rounded-b-lg bg-white overflow-hidden relative">
+      <div className="editor-container border border-gray-200 border-t-0 rounded-b-lg bg-white overflow-hidden relative dark:border-gray-700 dark:bg-gray-800">
         <EditorContent editor={editor} className="editor-content" />
       </div>
 
@@ -1031,14 +1031,14 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       {isHelpModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setIsHelpModalOpen(false)}>
           <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden dark:bg-gray-800"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Dot Commands Reference</h2>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Dot Commands Reference</h2>
               <button
                 onClick={() => setIsHelpModalOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1051,9 +1051,9 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-purple-600 mb-2">AI Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI</span><span className="text-gray-600">Generate content with AI (type prompt, press Enter)</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI.claude</span><span className="text-gray-600">Generate with Claude model</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI.gpt</span><span className="text-gray-600">Generate with GPT model</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI</span><span className="text-gray-600 dark:text-gray-400">Generate content with AI (type prompt, press Enter)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI.claude</span><span className="text-gray-600 dark:text-gray-400">Generate with Claude model</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.AI.gpt</span><span className="text-gray-600 dark:text-gray-400">Generate with GPT model</span></div>
                   </div>
                 </div>
 
@@ -1061,12 +1061,12 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-emerald-600 mb-2">Data Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.price</span><span className="text-gray-600">Current stock price</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.volume</span><span className="text-gray-600">Trading volume</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.marketcap</span><span className="text-gray-600">Market capitalization</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.change</span><span className="text-gray-600">Price change %</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.pe</span><span className="text-gray-600">P/E ratio</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.dividend</span><span className="text-gray-600">Dividend yield</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.price</span><span className="text-gray-600 dark:text-gray-400">Current stock price</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.volume</span><span className="text-gray-600 dark:text-gray-400">Trading volume</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.marketcap</span><span className="text-gray-600 dark:text-gray-400">Market capitalization</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.change</span><span className="text-gray-600 dark:text-gray-400">Price change %</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.pe</span><span className="text-gray-600 dark:text-gray-400">P/E ratio</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-emerald-600">.dividend</span><span className="text-gray-600 dark:text-gray-400">Dividend yield</span></div>
                   </div>
                 </div>
 
@@ -1074,9 +1074,9 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-violet-600 mb-2">Capture Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-violet-600">.capture</span><span className="text-gray-600">Capture a platform element (live or static)</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-amber-600">.screenshot</span><span className="text-gray-600">Take a screenshot of your screen</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-blue-600">.embed</span><span className="text-gray-600">Embed a URL with rich preview</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-violet-600">.capture</span><span className="text-gray-600 dark:text-gray-400">Capture a platform element (live or static)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-amber-600">.screenshot</span><span className="text-gray-600 dark:text-gray-400">Take a screenshot of your screen</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-blue-600">.embed</span><span className="text-gray-600 dark:text-gray-400">Embed a URL with rich preview</span></div>
                   </div>
                 </div>
 
@@ -1084,12 +1084,12 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-cyan-600 mb-2">Chart Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart</span><span className="text-gray-600">Insert an embedded chart</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.price</span><span className="text-gray-600">Price chart (line/area)</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.volume</span><span className="text-gray-600">Volume chart</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.performance</span><span className="text-gray-600">Performance chart (%)</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.comparison</span><span className="text-gray-600">Multi-asset comparison</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.technicals</span><span className="text-gray-600">Chart with indicators</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart</span><span className="text-gray-600 dark:text-gray-400">Insert an embedded chart</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.price</span><span className="text-gray-600 dark:text-gray-400">Price chart (line/area)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.volume</span><span className="text-gray-600 dark:text-gray-400">Volume chart</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.performance</span><span className="text-gray-600 dark:text-gray-400">Performance chart (%)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.comparison</span><span className="text-gray-600 dark:text-gray-400">Multi-asset comparison</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.chart.technicals</span><span className="text-gray-600 dark:text-gray-400">Chart with indicators</span></div>
                   </div>
                 </div>
 
@@ -1097,9 +1097,9 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-cyan-600 mb-2">Content Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.task</span><span className="text-gray-600">Add an inline task</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-pink-600">.event</span><span className="text-gray-600">Add a calendar event</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-orange-600">.template</span><span className="text-gray-600">Insert a template</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-cyan-600">.task</span><span className="text-gray-600 dark:text-gray-400">Add an inline task</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-pink-600">.event</span><span className="text-gray-600 dark:text-gray-400">Add a calendar event</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-orange-600">.template</span><span className="text-gray-600 dark:text-gray-400">Insert a template</span></div>
                   </div>
                 </div>
 
@@ -1107,24 +1107,24 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 <div>
                   <h3 className="text-sm font-semibold text-amber-600 mb-2">Visibility Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-amber-600">.private</span><span className="text-gray-600">Private note (only you can see)</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-blue-600">.team</span><span className="text-gray-600">Visible to your team only</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.portfolio</span><span className="text-gray-600">Visible to portfolio members</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-amber-600">.private</span><span className="text-gray-600 dark:text-gray-400">Private note (only you can see)</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-blue-600">.team</span><span className="text-gray-600 dark:text-gray-400">Visible to your team only</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-purple-600">.portfolio</span><span className="text-gray-600 dark:text-gray-400">Visible to portfolio members</span></div>
                   </div>
                 </div>
 
                 {/* Other Commands */}
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Other Commands</h3>
+                  <h3 className="text-sm font-semibold text-gray-600 mb-2 dark:text-gray-400">Other Commands</h3>
                   <div className="space-y-1 text-sm">
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-indigo-600">.toc</span><span className="text-gray-600">Insert table of contents</span></div>
-                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-gray-500">.divider</span><span className="text-gray-600">Insert a horizontal divider</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-indigo-600">.toc</span><span className="text-gray-600 dark:text-gray-400">Insert table of contents</span></div>
+                    <div className="flex gap-3"><span className="w-36 flex-shrink-0 font-mono text-gray-500 dark:text-gray-400">.divider</span><span className="text-gray-600 dark:text-gray-400">Insert a horizontal divider</span></div>
                   </div>
                 </div>
 
                 {/* Tips */}
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
-                  <p className="font-medium text-gray-700 mb-1">Tips:</p>
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-600 dark:text-gray-400 dark:bg-gray-900">
+                  <p className="font-medium text-gray-700 mb-1 dark:text-gray-300">Tips:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li>Type <code className="px-1 bg-gray-200 rounded">.command</code> then <code className="px-1 bg-gray-200 rounded">Space</code> to activate</li>
                     <li>Use <code className="px-1 bg-gray-200 rounded">@</code> to mention users, <code className="px-1 bg-gray-200 rounded">$</code> for assets, <code className="px-1 bg-gray-200 rounded">#</code> for tags</li>

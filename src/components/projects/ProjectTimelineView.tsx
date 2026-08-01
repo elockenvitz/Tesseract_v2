@@ -475,7 +475,7 @@ export function ProjectTimelineView({
             })}
 
             {timelineProjects.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-gray-500">
+              <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                 No projects with dates
               </div>
             )}

@@ -236,19 +236,19 @@ export function MentionInput({ value, onChange, placeholder, className, disabled
 
       {/* Suggestions dropdown */}
       {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto dark:border-gray-600 dark:bg-gray-800">
           {suggestions.map((suggestion, index) => (
             <button
               key={suggestion.id}
               onClick={() => handleSelectSuggestion(suggestion)}
-              className="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center space-x-2"
+              className="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center space-x-2 dark:hover:bg-gray-700"
             >
               {suggestionType === 'mention' ? (
                 <AtSign className="w-4 h-4 text-blue-500 flex-shrink-0" />
               ) : (
                 <Hash className="w-4 h-4 text-green-500 flex-shrink-0" />
               )}
-              <span className="text-sm text-gray-900 truncate">{suggestion.display}</span>
+              <span className="text-sm text-gray-900 truncate dark:text-white">{suggestion.display}</span>
             </button>
           ))}
         </div>
@@ -256,7 +256,7 @@ export function MentionInput({ value, onChange, placeholder, className, disabled
 
       {/* Helper text */}
       {!hideHelper && (
-        <div className="mt-1 text-xs text-gray-500 flex items-center space-x-4">
+        <div className="mt-1 text-xs text-gray-500 flex items-center space-x-4 dark:text-gray-400">
           <span className="flex items-center">
             <AtSign className="w-3 h-3 mr-1" />
             Type @ to mention someone

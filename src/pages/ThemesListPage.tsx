@@ -348,8 +348,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Themes</h1>
-          <p className="text-gray-600">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Themes</h1>
+          <p className="text-gray-600 dark:text-gray-400">
             {filteredThemes ? `${filteredThemes.length} of ${themes?.length || 0} themes` : 'Loading...'}
           </p>
         </div>
@@ -370,7 +370,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
               placeholder="Search by theme name or description..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
@@ -378,7 +378,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
           <div className="flex items-center justify-between">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400"
             >
               <Filter className="h-4 w-4" />
               <span>Filters</span>
@@ -405,7 +405,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
 
           {/* Filter Controls */}
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <Select
                 label="Theme Type"
                 value={typeFilter}
@@ -442,14 +442,14 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
             <ListSkeleton count={5} />
           </div>
         ) : filteredThemes.length > 0 ? (
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {/* Table Header */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                 <div className="col-span-5">
                   <button
                     onClick={() => handleSort('name')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
                   >
                     <span>Theme</span>
                     <ArrowUpDown className="h-3 w-3" />
@@ -458,7 +458,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 <div className="col-span-2">
                   <button
                     onClick={() => handleSort('theme_type')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
                   >
                     <span>Type</span>
                     <ArrowUpDown className="h-3 w-3" />
@@ -467,7 +467,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 <div className="col-span-5">
                   <button
                     onClick={() => handleSort('created_at')}
-                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors"
+                    className="flex items-center space-x-1 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
                   >
                     <span>Created</span>
                     <ArrowUpDown className="h-3 w-3" />
@@ -481,7 +481,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
               <div
                 key={theme.id}
                 onClick={() => handleThemeClick(theme)}
-                className="px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                className="px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
               >
                 <div className="grid grid-cols-12 gap-4 items-center">
                   {/* Theme Info */}
@@ -493,12 +493,12 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center space-x-2">
-                          <p className="text-sm font-semibold text-gray-900 truncate">
+                          <p className="text-sm font-semibold text-gray-900 truncate dark:text-white">
                             {theme.name}
                           </p>
                         </div>
                         {theme.description && (
-                          <p className="text-sm text-gray-600 truncate">
+                          <p className="text-sm text-gray-600 truncate dark:text-gray-400">
                             {theme.description}
                           </p>
                         )}
@@ -515,7 +515,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
 
                   {/* Created Date */}
                   <div className="col-span-5">
-                    <div className="flex items-center text-sm text-gray-500">
+                    <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                       <Calendar className="h-3 w-3 mr-1" />
                       {formatDistanceToNow(new Date(theme.created_at || 0), { addSuffix: true })}
                     </div>
@@ -555,16 +555,16 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
           
           {/* Dialog */}
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all h-[600px] flex flex-col">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all h-[600px] flex flex-col dark:bg-gray-800">
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Create New Theme</h3>
-                  <p className="text-sm text-gray-600 mt-1">Organize your investment ideas by theme</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Theme</h3>
+                  <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Organize your investment ideas by theme</p>
                 </div>
                 <button
                   onClick={() => setShowCreateForm(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -613,7 +613,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                               <div
                                 key={theme.id}
                                 onClick={() => handleSimilarThemeClick(theme)}
-                                className="flex items-center justify-between p-3 bg-white border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors"
+                                className="flex items-center justify-between p-3 bg-white border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-50 transition-colors dark:bg-gray-800"
                               >
                                 <div className="flex items-center space-x-3">
                                   <div 
@@ -621,9 +621,9 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                                     style={{ backgroundColor: theme.color || '#3b82f6' }}
                                   />
                                   <div>
-                                    <p className="text-sm font-medium text-gray-900">{theme.name}</p>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{theme.name}</p>
                                     {theme.description && (
-                                      <p className="text-xs text-gray-600 line-clamp-1">
+                                      <p className="text-xs text-gray-600 line-clamp-1 dark:text-gray-400">
                                         {theme.description}
                                       </p>
                                     )}
@@ -670,27 +670,27 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                     onChange={(e) => setNewThemeIsPublic(e.target.checked)}
                     className="rounded"
                   />
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
                     Make public — visible to your whole org
                   </span>
                 </label>
 
                 {/* Description */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     Description (optional)
                   </label>
                   <textarea
                     value={newThemeDescription}
                     onChange={(e) => setNewThemeDescription(e.target.value)}
                     placeholder="Describe this investment theme..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                     rows={3}
                   />
                 </div>
               </div>
               {/* Footer */}
-              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0">
+              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <Button
                   variant="outline"
                   onClick={() => {

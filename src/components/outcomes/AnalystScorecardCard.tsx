@@ -23,7 +23,7 @@ interface AnalystScorecardCardProps {
 }
 
 function getTier(score: number | null): { label: string; color: string; bgColor: string } {
-  if (score === null) return { label: 'N/A', color: 'text-gray-500', bgColor: 'bg-gray-100' }
+  if (score === null) return { label: 'N/A', color: 'text-gray-500 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   if (score >= 90) return { label: 'Elite', color: 'text-purple-700', bgColor: 'bg-purple-100' }
   if (score >= 80) return { label: 'Excellent', color: 'text-green-700', bgColor: 'bg-green-100' }
   if (score >= 70) return { label: 'Good', color: 'text-blue-700', bgColor: 'bg-blue-100' }
@@ -35,8 +35,8 @@ function MetricBar({ value, label, color = 'bg-blue-500' }: { value: number | nu
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] text-gray-500">{label}</span>
-        <span className="text-[11px] font-semibold text-gray-900">
+        <span className="text-[11px] text-gray-500 dark:text-gray-400">{label}</span>
+        <span className="text-[11px] font-semibold text-gray-900 dark:text-white">
           {value != null ? `${value.toFixed(0)}%` : '—'}
         </span>
       </div>
@@ -57,11 +57,11 @@ function StatPill({ icon: Icon, label, value, iconColor }: {
   iconColor?: string
 }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg dark:bg-gray-900">
       <Icon className={clsx('w-3.5 h-3.5', iconColor || 'text-gray-400')} />
       <div>
-        <div className="text-[10px] text-gray-500">{label}</div>
-        <div className="text-sm font-semibold text-gray-900">{value}</div>
+        <div className="text-[10px] text-gray-500 dark:text-gray-400">{label}</div>
+        <div className="text-sm font-semibold text-gray-900 dark:text-white">{value}</div>
       </div>
     </div>
   )
@@ -77,7 +77,7 @@ export function AnalystScorecardCard({
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-5', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-5 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="animate-pulse space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-gray-200 rounded-full" />
@@ -96,10 +96,10 @@ export function AnalystScorecardCard({
 
   if (error || !scorecard) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-5', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-5 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="text-center py-6">
           <Target className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">No performance data</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No performance data</p>
           <p className="text-[10px] text-gray-400 mt-1">Set price targets and ratings to build a track record</p>
         </div>
       </div>
@@ -111,7 +111,7 @@ export function AnalystScorecardCard({
 
   if (compact) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative w-11 h-11">
@@ -127,14 +127,14 @@ export function AnalystScorecardCard({
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[10px] font-bold text-gray-900">
+                <span className="text-[10px] font-bold text-gray-900 dark:text-white">
                   {scorecard.compositeScore?.toFixed(0) || '—'}
                 </span>
               </div>
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-900">{displayName}</div>
-              <div className="flex items-center gap-2 text-[10px] text-gray-500">
+              <div className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</div>
+              <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
                 <span>{scorecard.priceTargets.total} targets</span>
                 <span>·</span>
                 <span>{scorecard.ratings.totalRated} ratings</span>
@@ -146,19 +146,19 @@ export function AnalystScorecardCard({
           <div className="flex items-center gap-3 text-[11px]">
             {scorecard.priceTargets.hitRate != null && (
               <div className="text-center">
-                <div className="font-semibold text-gray-900">{scorecard.priceTargets.hitRate.toFixed(0)}%</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{scorecard.priceTargets.hitRate.toFixed(0)}%</div>
                 <div className="text-gray-400">PT Hit</div>
               </div>
             )}
             {scorecard.ratings.directionalHitRate != null && (
               <div className="text-center">
-                <div className="font-semibold text-gray-900">{scorecard.ratings.directionalHitRate.toFixed(0)}%</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{scorecard.ratings.directionalHitRate.toFixed(0)}%</div>
                 <div className="text-gray-400">Rating</div>
               </div>
             )}
             {scorecard.decisions.executedHitRate != null && (
               <div className="text-center">
-                <div className="font-semibold text-gray-900">{scorecard.decisions.executedHitRate.toFixed(0)}%</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{scorecard.decisions.executedHitRate.toFixed(0)}%</div>
                 <div className="text-gray-400">Decisions</div>
               </div>
             )}
@@ -169,14 +169,14 @@ export function AnalystScorecardCard({
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
       {/* Header */}
-      <div className="p-4 border-b border-gray-100">
+      <div className="p-4 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Award className="w-5 h-5 text-yellow-500" />
             <div>
-              <h3 className="font-semibold text-gray-900">{displayName}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{displayName}</h3>
               <div className="text-[11px] text-gray-400">Analyst Performance</div>
             </div>
           </div>
@@ -191,7 +191,7 @@ export function AnalystScorecardCard({
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Target className="w-4 h-4 text-blue-500" />
-            <span className="text-[12px] font-semibold text-gray-700">Price Targets</span>
+            <span className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Price Targets</span>
             <span className="text-[10px] text-gray-400 ml-auto">{scorecard.priceTargets.total} total</span>
           </div>
 
@@ -221,11 +221,11 @@ export function AnalystScorecardCard({
                 return (
                   <div
                     key={scenario}
-                    className="p-2 rounded border border-gray-100 text-center"
+                    className="p-2 rounded border border-gray-100 text-center dark:border-gray-800"
                     style={{ borderLeftWidth: 3, borderLeftColor: isBull ? '#22c55e' : isBear ? '#ef4444' : '#3b82f6' }}
                   >
                     <div className="text-[9px] text-gray-400 uppercase tracking-wide">{scenario}</div>
-                    <div className="text-sm font-bold text-gray-900">{metrics.hit_rate?.toFixed(0) || '—'}%</div>
+                    <div className="text-sm font-bold text-gray-900 dark:text-white">{metrics.hit_rate?.toFixed(0) || '—'}%</div>
                     <div className="text-[9px] text-gray-400">{metrics.count} targets</div>
                   </div>
                 )
@@ -239,7 +239,7 @@ export function AnalystScorecardCard({
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Star className="w-4 h-4 text-amber-500" />
-              <span className="text-[12px] font-semibold text-gray-700">Ratings Accuracy</span>
+              <span className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Ratings Accuracy</span>
               <span className="text-[10px] text-gray-400 ml-auto">{scorecard.ratings.totalRated} rated</span>
             </div>
 
@@ -261,7 +261,7 @@ export function AnalystScorecardCard({
           <div>
             <div className="flex items-center gap-2 mb-3">
               <BarChart3 className="w-4 h-4 text-indigo-500" />
-              <span className="text-[12px] font-semibold text-gray-700">Decision Outcomes</span>
+              <span className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Decision Outcomes</span>
               <span className="text-[10px] text-gray-400 ml-auto">{scorecard.decisions.totalProposed} proposed</span>
             </div>
 

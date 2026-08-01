@@ -464,27 +464,27 @@ export function CoverageWorkloadView({
       {/* ── Left Sidebar: Team Health ──────────────────────────────── */}
       <div className="col-span-12 lg:col-span-2 flex flex-col min-h-0">
         <Card className="flex flex-col h-full overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-200 flex-shrink-0 bg-gray-50">
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Team Health</p>
+          <div className="px-3 py-2 border-b border-gray-200 flex-shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide dark:text-gray-400">Team Health</p>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {totalAnalysts > 0 ? (
               <>
                 {/* Key metrics */}
-                <div className="px-3 py-3 space-y-2.5 border-b border-gray-100">
+                <div className="px-3 py-3 space-y-2.5 border-b border-gray-100 dark:border-gray-800">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-gray-500">Coverage Spread</span>
-                    <span className="text-[12px] font-bold text-gray-900">{maxCoverage - minCoverage}</span>
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">Coverage Spread</span>
+                    <span className="text-[12px] font-bold text-gray-900 dark:text-white">{maxCoverage - minCoverage}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-gray-500">Overloaded Analysts</span>
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">Overloaded Analysts</span>
                     <span className={clsx('text-[12px] font-bold', overloadedCount > 0 ? 'text-amber-600' : 'text-gray-400')}>
                       {overloadedCount}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-gray-500">Underutilized Analysts</span>
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">Underutilized Analysts</span>
                     <span className={clsx('text-[12px] font-bold', workloadCounts.available > 0 ? 'text-blue-600' : 'text-gray-400')}>
                       {workloadCounts.available}
                     </span>
@@ -492,15 +492,15 @@ export function CoverageWorkloadView({
                 </div>
 
                 {/* Extremes */}
-                <div className="px-3 py-3 space-y-3 border-b border-gray-100">
+                <div className="px-3 py-3 space-y-3 border-b border-gray-100 dark:border-gray-800">
                   {highestAnalyst && (
                     <div>
                       <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Largest Coverage</p>
                       <button
                         onClick={() => selectAnalyst(highestAnalyst[0])}
-                        className="text-[12px] text-gray-700 hover:text-primary-600 transition-colors"
+                        className="text-[12px] text-gray-700 hover:text-primary-600 transition-colors dark:text-gray-300"
                       >
-                        {highestAnalyst[1].name} <span className="font-bold text-gray-900">({highestAnalyst[1].count})</span>
+                        {highestAnalyst[1].name} <span className="font-bold text-gray-900 dark:text-white">({highestAnalyst[1].count})</span>
                       </button>
                     </div>
                   )}
@@ -509,9 +509,9 @@ export function CoverageWorkloadView({
                       <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Smallest Coverage</p>
                       <button
                         onClick={() => selectAnalyst(lowestAnalyst[0])}
-                        className="text-[12px] text-gray-700 hover:text-primary-600 transition-colors"
+                        className="text-[12px] text-gray-700 hover:text-primary-600 transition-colors dark:text-gray-300"
                       >
-                        {lowestAnalyst[1].name} <span className="font-bold text-gray-900">({lowestAnalyst[1].count})</span>
+                        {lowestAnalyst[1].name} <span className="font-bold text-gray-900 dark:text-white">({lowestAnalyst[1].count})</span>
                       </button>
                     </div>
                   )}
@@ -549,24 +549,24 @@ export function CoverageWorkloadView({
               onClick={() => selectStatCard('capacity')}
             >
               <div className="flex items-baseline justify-between mb-2">
-                <p className="text-[13px] font-semibold text-gray-900">Capacity</p>
+                <p className="text-[13px] font-semibold text-gray-900 dark:text-white">Capacity</p>
                 <span className="text-[11px] text-gray-400">Target: ~{Math.round(avgCoverage)} names</span>
               </div>
               <div className="flex items-center gap-5">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-blue-400 flex-shrink-0" />
                   <span className="text-lg font-bold text-blue-600">{workloadCounts.available}</span>
-                  <span className="text-[11px] text-gray-500">Available</span>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Available</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
                   <span className="text-lg font-bold text-green-600">{workloadCounts.balanced}</span>
-                  <span className="text-[11px] text-gray-500">Balanced</span>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Balanced</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0" />
                   <span className="text-lg font-bold text-amber-600">{overloadedCount}</span>
-                  <span className="text-[11px] text-gray-500">Overloaded</span>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Overloaded</span>
                 </div>
               </div>
             </Card>
@@ -575,11 +575,11 @@ export function CoverageWorkloadView({
             <Card
               className={clsx(
                 'p-2.5 cursor-pointer transition-all hover:shadow-sm col-span-1',
-                selectedStatCard === 'analysts' && !selectedAnalystId && 'ring-1 ring-gray-400 bg-gray-50'
+                selectedStatCard === 'analysts' && !selectedAnalystId && 'ring-1 ring-gray-400 bg-gray-50 dark:bg-gray-900'
               )}
               onClick={() => selectStatCard('analysts')}
             >
-              <p className="text-xl font-bold text-gray-500">{totalAnalysts}</p>
+              <p className="text-xl font-bold text-gray-500 dark:text-gray-400">{totalAnalysts}</p>
               <p className="text-[10px] text-gray-400">Analysts</p>
             </Card>
 
@@ -587,11 +587,11 @@ export function CoverageWorkloadView({
             <Card
               className={clsx(
                 'p-2.5 cursor-pointer transition-all hover:shadow-sm col-span-2',
-                selectedStatCard === 'average' && !selectedAnalystId && 'ring-1 ring-gray-400 bg-gray-50'
+                selectedStatCard === 'average' && !selectedAnalystId && 'ring-1 ring-gray-400 bg-gray-50 dark:bg-gray-900'
               )}
               onClick={() => selectStatCard('average')}
             >
-              <p className="text-xl font-bold text-gray-500">{avgCoverage.toFixed(1)}</p>
+              <p className="text-xl font-bold text-gray-500 dark:text-gray-400">{avgCoverage.toFixed(1)}</p>
               <p className="text-[10px] text-gray-400">
                 Avg Names / Analyst{medianCoverage !== Math.round(avgCoverage) ? ` · Median ${medianCoverage}` : ''}
               </p>
@@ -697,7 +697,7 @@ function AnalystDetailPanel({
   return (
     <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Compact header */}
-      <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
+      <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 bg-white dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={clsx('w-9 h-9 rounded-full flex items-center justify-center', workload.bgColor)}>
@@ -706,10 +706,10 @@ function AnalystDetailPanel({
               </span>
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">{analyst.name}</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{analyst.name}</h3>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] text-gray-600">
-                  <span className="font-bold text-gray-900">{analyst.count}</span> names
+                <span className="text-[12px] text-gray-600 dark:text-gray-400">
+                  <span className="font-bold text-gray-900 dark:text-white">{analyst.count}</span> names
                 </span>
                 <span className={clsx('px-1.5 py-0.5 text-[10px] font-medium rounded-full', workload.bgColor, workload.textColor)}>
                   {workload.label}
@@ -721,9 +721,9 @@ function AnalystDetailPanel({
                 )}
                 {/* Role breakdown pills */}
                 <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                  {analyst.primaryCount > 0 && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{analyst.primaryCount} primary</span>}
-                  {analyst.secondaryCount > 0 && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{analyst.secondaryCount} secondary</span>}
-                  {analyst.tertiaryCount > 0 && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{analyst.tertiaryCount} tertiary</span>}
+                  {analyst.primaryCount > 0 && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 dark:text-gray-400 dark:bg-gray-800">{analyst.primaryCount} primary</span>}
+                  {analyst.secondaryCount > 0 && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 dark:text-gray-400 dark:bg-gray-800">{analyst.secondaryCount} secondary</span>}
+                  {analyst.tertiaryCount > 0 && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 dark:text-gray-400 dark:bg-gray-800">{analyst.tertiaryCount} tertiary</span>}
                 </span>
               </div>
             </div>
@@ -734,9 +734,9 @@ function AnalystDetailPanel({
       {/* Body: 2 sections */}
       <div className="flex-1 overflow-auto flex min-h-0">
         {/* Section A: Coverage Breakdown (left, wider) */}
-        <div className="flex-1 flex flex-col min-h-0 border-r border-gray-100">
+        <div className="flex-1 flex flex-col min-h-0 border-r border-gray-100 dark:border-gray-800">
           {/* Tab strip */}
-          <div className="px-4 py-2 border-b border-gray-100 flex gap-1 flex-shrink-0">
+          <div className="px-4 py-2 border-b border-gray-100 flex gap-1 flex-shrink-0 dark:border-gray-800">
             {(['assets', 'portfolios', 'teams'] as const).map(tab => (
               <button
                 key={tab}
@@ -745,7 +745,7 @@ function AnalystDetailPanel({
                   'px-3 py-1 text-[11px] font-medium rounded transition-colors capitalize',
                   detailTab === tab
                     ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-500 hover:bg-gray-100'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                 )}
               >
                 {tab === 'assets' ? `Assets (${analystCoverage.length})` : tab === 'portfolios' ? `Portfolios (${sortedPortfolios.length})` : `Teams (${sortedTeams.length})`}
@@ -763,15 +763,15 @@ function AnalystDetailPanel({
                 {analystCoverage.map(c => {
                   const tenure = calculateTenure(c.start_date)
                   return (
-                    <div key={c.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 group">
-                      <span className="text-[12px] font-semibold text-gray-900 w-16 flex-shrink-0">{c.assets?.symbol || '??'}</span>
-                      <span className="text-[11px] text-gray-500 truncate flex-1">{c.assets?.company_name || 'Unknown'}</span>
+                    <div key={c.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 group dark:hover:bg-gray-800">
+                      <span className="text-[12px] font-semibold text-gray-900 w-16 flex-shrink-0 dark:text-white">{c.assets?.symbol || '??'}</span>
+                      <span className="text-[11px] text-gray-500 truncate flex-1 dark:text-gray-400">{c.assets?.company_name || 'Unknown'}</span>
                       {c.role && (
                         <span className={clsx(
                           'text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0',
                           c.role === 'primary' ? 'bg-indigo-50 text-indigo-600'
                             : c.role === 'secondary' ? 'bg-purple-50 text-purple-600'
-                            : 'bg-gray-100 text-gray-500'
+                            : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                         )}>
                           {c.role}
                         </span>
@@ -809,11 +809,11 @@ function AnalystDetailPanel({
                     : hasHoldings && pct >= 70 ? { label: 'Primary coverage', color: 'text-indigo-600 bg-indigo-50' }
                     : null
                   return (
-                    <div key={key} className={clsx('rounded-lg p-3 border', coveredAssets > 0 ? 'bg-white border-gray-200' : 'bg-gray-50/50 border-gray-100')}>
+                    <div key={key} className={clsx('rounded-lg p-3 border', coveredAssets > 0 ? 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800' : 'bg-gray-50/50 border-gray-100 dark:border-gray-800')}>
                       {/* Row 1: Name + insight badge */}
                       <div className="flex items-center gap-2 mb-1.5">
                         <span
-                          className={clsx('text-[12px] font-semibold truncate', bucket.entityId ? 'text-primary-600 hover:text-primary-700 cursor-pointer hover:underline' : 'text-gray-900')}
+                          className={clsx('text-[12px] font-semibold truncate', bucket.entityId ? 'text-primary-600 hover:text-primary-700 cursor-pointer hover:underline' : 'text-gray-900 dark:text-white')}
                           title={bucket.name}
                           onClick={bucket.entityId ? () => {
                             window.dispatchEvent(new CustomEvent('open-portfolio', { detail: { id: bucket.entityId, name: bucket.name } }))
@@ -827,28 +827,28 @@ function AnalystDetailPanel({
                         <>
                           {/* Row 2: Count label + percentage */}
                           <div className="flex items-baseline justify-between mb-1.5">
-                            <span className="text-[11px] text-gray-600">
+                            <span className="text-[11px] text-gray-600 dark:text-gray-400">
                               {hasHoldings ? (
                                 <>
-                                  <span className="font-semibold text-gray-900">{holdingsCovered}</span>
+                                  <span className="font-semibold text-gray-900 dark:text-white">{holdingsCovered}</span>
                                   <span className="text-gray-400"> of </span>
                                   <span className="font-medium">{totalHoldings}</span>
                                   <span className="text-gray-400"> holdings covered</span>
                                 </>
                               ) : (
                                 <>
-                                  <span className="font-semibold text-gray-900">{coveredAssets}</span>
+                                  <span className="font-semibold text-gray-900 dark:text-white">{coveredAssets}</span>
                                   <span className="text-gray-400"> asset{coveredAssets !== 1 ? 's' : ''} covered</span>
                                 </>
                               )}
                             </span>
                             {hasHoldings && (
-                              <span className="text-[12px] font-bold text-gray-900 tabular-nums">{pct.toFixed(0)}%</span>
+                              <span className="text-[12px] font-bold text-gray-900 tabular-nums dark:text-white">{pct.toFixed(0)}%</span>
                             )}
                           </div>
                           {/* Row 3: Progress bar — represents analyst's coverage of portfolio holdings */}
                           {hasHoldings && (
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5">
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5 dark:bg-gray-800">
                               <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                             </div>
                           )}
@@ -891,10 +891,10 @@ function AnalystDetailPanel({
                     : pct >= 70 ? { label: 'Primary coverage', color: 'text-indigo-600 bg-indigo-50' }
                     : null
                   return (
-                    <div key={id} className={clsx('rounded-lg p-3 border', coveredAssets > 0 ? 'bg-white border-gray-200' : 'bg-gray-50/50 border-gray-100')}>
+                    <div key={id} className={clsx('rounded-lg p-3 border', coveredAssets > 0 ? 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800' : 'bg-gray-50/50 border-gray-100 dark:border-gray-800')}>
                       {/* Row 1: Name + insight badge */}
                       <div className="flex items-center gap-2 mb-1.5">
-                        <span className="text-[12px] font-semibold text-gray-900 truncate" title={bucket.name}>{bucket.name}</span>
+                        <span className="text-[12px] font-semibold text-gray-900 truncate dark:text-white" title={bucket.name}>{bucket.name}</span>
                         {insight && (
                           <span className={clsx('text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded', insight.color)}>{insight.label}</span>
                         )}
@@ -903,16 +903,16 @@ function AnalystDetailPanel({
                         <>
                           {/* Row 2: Count label + percentage */}
                           <div className="flex items-baseline justify-between mb-1.5">
-                            <span className="text-[11px] text-gray-600">
-                              <span className="font-semibold text-gray-900">{coveredAssets}</span>
+                            <span className="text-[11px] text-gray-600 dark:text-gray-400">
+                              <span className="font-semibold text-gray-900 dark:text-white">{coveredAssets}</span>
                               <span className="text-gray-400"> of </span>
                               <span className="font-medium">{totalAssets}</span>
                               <span className="text-gray-400"> assets covered</span>
                             </span>
-                            <span className="text-[12px] font-bold text-gray-900 tabular-nums">{pct.toFixed(0)}%</span>
+                            <span className="text-[12px] font-bold text-gray-900 tabular-nums dark:text-white">{pct.toFixed(0)}%</span>
                           </div>
                           {/* Row 3: Progress bar — represents analyst's share of team coverage universe */}
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5">
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1.5 dark:bg-gray-800">
                             <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
                           {/* Row 4: Secondary context */}
@@ -937,7 +937,7 @@ function AnalystDetailPanel({
         <div className="w-64 flex-shrink-0 p-3 space-y-4 overflow-auto">
           {/* Sector expertise */}
           <div>
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Sector Expertise</p>
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">Sector Expertise</p>
             {analyst.sectors.length === 0 && <p className="text-[11px] text-gray-400">No sectors set</p>}
             <div className="flex flex-wrap gap-1">
               {analyst.sectors.map(s => (
@@ -948,8 +948,8 @@ function AnalystDetailPanel({
 
           {/* Capacity gauge */}
           <div>
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Capacity</p>
-            <div className="relative h-4 bg-gray-100 rounded-full overflow-hidden">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">Capacity</p>
+            <div className="relative h-4 bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
               <div
                 className={clsx('h-full rounded-full transition-all', workload.color)}
                 style={{ width: `${gaugePercent}%` }}
@@ -962,7 +962,7 @@ function AnalystDetailPanel({
             </div>
             <div className="flex justify-between mt-1">
               <span className="text-[10px] text-gray-400">0</span>
-              <span className="text-[10px] text-gray-500 font-medium">
+              <span className="text-[10px] text-gray-500 font-medium dark:text-gray-400">
                 avg: {avgCoverage.toFixed(1)}
               </span>
               <span className="text-[10px] text-gray-400">{Math.round(avgCoverage * 2)}</span>
@@ -1004,23 +1004,23 @@ function AnalystsTablePanel({
 }) {
   return (
     <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 bg-gray-50">
+      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-gray-600" />
-          <h3 className="text-[12px] font-semibold text-gray-900">All Analysts ({totalAnalysts})</h3>
+          <Users className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+          <h3 className="text-[12px] font-semibold text-gray-900 dark:text-white">All Analysts ({totalAnalysts})</h3>
         </div>
       </div>
       <div className="flex-1 overflow-auto">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 dark:border-gray-700 dark:bg-gray-900">
             <tr>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">Analyst</th>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">Coverage</th>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">Status</th>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase">Sectors</th>
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase dark:text-gray-400">Analyst</th>
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase dark:text-gray-400">Coverage</th>
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase dark:text-gray-400">Status</th>
+              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-600 uppercase dark:text-gray-400">Sectors</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {sortedAnalysts.map(([id, analyst]) => {
               const workload = getWorkloadLevel(analyst.count, avgCoverage)
               const diff = analyst.count - avgCoverage
@@ -1031,12 +1031,12 @@ function AnalystsTablePanel({
                       <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center', workload.bgColor)}>
                         <span className={clsx('text-[10px] font-semibold', workload.textColor)}>{getInitials(analyst.name)}</span>
                       </div>
-                      <span className="text-[12px] font-medium text-gray-900">{analyst.name}</span>
+                      <span className="text-[12px] font-medium text-gray-900 dark:text-white">{analyst.name}</span>
                     </div>
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-base font-bold text-gray-900">{analyst.count}</span>
+                      <span className="text-base font-bold text-gray-900 dark:text-white">{analyst.count}</span>
                       {diff !== 0 && (
                         <span className={clsx('text-[12px]', diff > 0 ? 'text-amber-600' : 'text-blue-600')}>
                           ({diff > 0 ? '+' : ''}{diff.toFixed(1)})
@@ -1049,7 +1049,7 @@ function AnalystsTablePanel({
                       {workload.label}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-[12px] text-gray-500">
+                  <td className="px-4 py-2.5 text-[12px] text-gray-500 dark:text-gray-400">
                     {analyst.sectors.slice(0, 2).join(', ')}{analyst.sectors.length > 2 ? '...' : ''}{analyst.sectors.length === 0 && '\u2014'}
                   </td>
                 </tr>
@@ -1080,35 +1080,35 @@ function DistributionPanel({
 }) {
   return (
     <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 bg-primary-50">
+      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 bg-primary-50 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-primary-600" />
-          <h3 className="text-[12px] font-semibold text-gray-900">Coverage Distribution</h3>
+          <h3 className="text-[12px] font-semibold text-gray-900 dark:text-white">Coverage Distribution</h3>
         </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
         {/* Stats row */}
         <div className="grid grid-cols-4 gap-3 mb-5">
-          <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <p className="text-2xl font-bold text-gray-900">{avgCoverage.toFixed(1)}</p>
-            <p className="text-[11px] text-gray-500">Average</p>
+          <div className="text-center p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{avgCoverage.toFixed(1)}</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">Average</p>
           </div>
-          <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <p className="text-2xl font-bold text-gray-700">{medianCoverage}</p>
-            <p className="text-[11px] text-gray-500">Median</p>
+          <div className="text-center p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
+            <p className="text-2xl font-bold text-gray-700 dark:text-gray-300">{medianCoverage}</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">Median</p>
           </div>
           <div className="text-center p-3 bg-green-50 rounded-lg">
             <p className="text-2xl font-bold text-green-700">{maxCoverage}</p>
-            <p className="text-[11px] text-gray-500">Highest</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">Highest</p>
           </div>
           <div className="text-center p-3 bg-blue-50 rounded-lg">
             <p className="text-2xl font-bold text-blue-700">{minCoverage}</p>
-            <p className="text-[11px] text-gray-500">Lowest</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">Lowest</p>
           </div>
         </div>
 
         {/* Distribution bars with role segments */}
-        <h4 className="text-[12px] font-semibold text-gray-700 mb-3">Coverage by Analyst</h4>
+        <h4 className="text-[12px] font-semibold text-gray-700 mb-3 dark:text-gray-300">Coverage by Analyst</h4>
         <div className="space-y-2">
           {sortedAnalysts.map(([id, analyst]) => {
             const workload = getWorkloadLevel(analyst.count, avgCoverage)
@@ -1122,11 +1122,11 @@ function DistributionPanel({
             return (
               <div
                 key={id}
-                className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-1.5 rounded-lg"
+                className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-1.5 rounded-lg dark:hover:bg-gray-800"
                 onClick={() => selectAnalyst(id)}
               >
-                <span className="text-[12px] text-gray-700 w-32 truncate">{analyst.name}</span>
-                <div className="flex-1 h-6 bg-gray-100 rounded relative overflow-hidden">
+                <span className="text-[12px] text-gray-700 w-32 truncate dark:text-gray-300">{analyst.name}</span>
+                <div className="flex-1 h-6 bg-gray-100 rounded relative overflow-hidden dark:bg-gray-800">
                   {/* Average line */}
                   <div
                     className="absolute top-0 bottom-0 w-0.5 bg-gray-600 z-10"
@@ -1160,7 +1160,7 @@ function DistributionPanel({
                     )}
                   </div>
                 </div>
-                <span className="text-[12px] font-bold text-gray-700 w-6 text-right">{analyst.count}</span>
+                <span className="text-[12px] font-bold text-gray-700 w-6 text-right dark:text-gray-300">{analyst.count}</span>
                 <span className={clsx('text-[10px] w-20 text-right flex-shrink-0', (analyst.count - avgCoverage) > 0 ? 'text-amber-600' : (analyst.count - avgCoverage) < 0 ? 'text-blue-600' : 'text-gray-400')}>
                   ({(analyst.count - avgCoverage) > 0 ? '+' : ''}{(analyst.count - avgCoverage).toFixed(1)} vs avg)
                 </span>
@@ -1170,22 +1170,22 @@ function DistributionPanel({
         </div>
 
         {/* Legend */}
-        <div className="flex items-center justify-center gap-4 mt-4 pt-3 border-t border-gray-100">
+        <div className="flex items-center justify-center gap-4 mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-green-500" />
-            <span className="text-[11px] text-gray-500">Primary</span>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">Primary</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-green-500 opacity-60" />
-            <span className="text-[11px] text-gray-500">Secondary</span>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">Secondary</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-green-500 opacity-30" />
-            <span className="text-[11px] text-gray-500">Tertiary</span>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">Tertiary</span>
           </div>
           <div className="flex items-center gap-1 ml-3">
             <div className="w-0.5 h-4 bg-gray-600" />
-            <span className="text-[11px] text-gray-500">Avg ({avgCoverage.toFixed(1)})</span>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">Avg ({avgCoverage.toFixed(1)})</span>
           </div>
         </div>
       </div>
@@ -1219,13 +1219,13 @@ function CapacityPanel({
 
   return (
     <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 bg-purple-50">
+      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 bg-purple-50 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <Scale className="h-4 w-4 text-purple-600" />
-          <h3 className="text-[12px] font-semibold text-gray-900">Capacity Planning</h3>
+          <h3 className="text-[12px] font-semibold text-gray-900 dark:text-white">Capacity Planning</h3>
         </div>
         {(workloadCounts.available > 0 || stretchedTotal > 0) && (
-          <p className="text-[11px] text-gray-500 mt-0.5">
+          <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
             {workloadCounts.available > 0 && <>{workloadCounts.available} analyst{workloadCounts.available > 1 ? 's have' : ' has'} available capacity</>}
             {workloadCounts.available > 0 && stretchedTotal > 0 && ', '}
             {stretchedTotal > 0 && <>{stretchedTotal} {stretchedTotal > 1 ? 'are' : 'is'} overloaded</>}
@@ -1238,17 +1238,17 @@ function CapacityPanel({
           <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3 space-y-3">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
-              <h4 className="text-[12px] font-semibold text-gray-800">Suggested Rebalance</h4>
+              <h4 className="text-[12px] font-semibold text-gray-800 dark:text-gray-100">Suggested Rebalance</h4>
             </div>
             {rebalanceRecommendations.map((rec, i) => (
               <div key={i} className="space-y-1">
-                <p className="text-[12px] text-gray-800">
+                <p className="text-[12px] text-gray-800 dark:text-gray-100">
                   <span className="font-semibold">{rec.source.name}</span> is{' '}
                   <span className="font-bold text-amber-700">+{rec.source.delta} names</span> above average.
                 </p>
-                <p className="text-[11px] text-gray-500">Recommended redistribution:</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">Recommended redistribution:</p>
                 {rec.targets.map((t, j) => (
-                  <div key={j} className="flex items-center gap-1.5 text-[11px] text-gray-700 ml-2">
+                  <div key={j} className="flex items-center gap-1.5 text-[11px] text-gray-700 ml-2 dark:text-gray-300">
                     <ArrowRight className="h-3 w-3 text-blue-400 flex-shrink-0" />
                     <span>Move <span className="font-medium">{t.suggested}</span> assets to <span className="font-medium">{t.name}</span></span>
                   </div>
@@ -1261,7 +1261,7 @@ function CapacityPanel({
         <div>
           <div className="flex items-center gap-2 mb-2">
             <div className="w-2.5 h-2.5 rounded bg-blue-400" />
-            <h4 className="text-[12px] font-semibold text-gray-700">Available Capacity ({workloadCounts.available})</h4>
+            <h4 className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Available Capacity ({workloadCounts.available})</h4>
             <span className="text-[10px] text-gray-400">These analysts can take on more names</span>
           </div>
           {analystsByCategory.available.length > 0 ? (
@@ -1279,8 +1279,8 @@ function CapacityPanel({
                         <span className="text-[10px] font-bold text-blue-700">{getInitials(analyst.name)}</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-gray-900 truncate">{analyst.name}</p>
-                        <p className="text-[11px] text-gray-500">
+                        <p className="text-[12px] font-medium text-gray-900 truncate dark:text-white">{analyst.name}</p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
                           {analyst.count} names <span className="text-blue-600 font-medium">+{capacity} available</span>
                         </p>
                       </div>
@@ -1305,7 +1305,7 @@ function CapacityPanel({
         <div>
           <div className="flex items-center gap-2 mb-2">
             <div className="w-2.5 h-2.5 rounded bg-green-500" />
-            <h4 className="text-[12px] font-semibold text-gray-700">At Capacity ({workloadCounts.balanced})</h4>
+            <h4 className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">At Capacity ({workloadCounts.balanced})</h4>
             <span className="text-[10px] text-gray-400">At target workload</span>
           </div>
           {analystsByCategory.balanced.length > 0 ? (
@@ -1318,8 +1318,8 @@ function CapacityPanel({
                     className="p-2 bg-green-50/50 rounded border border-green-100 cursor-pointer hover:bg-green-50 transition-colors"
                     onClick={() => selectAnalyst(id)}
                   >
-                    <p className="text-[11px] font-medium text-gray-900 truncate">{formatAnalystShortName(analyst.name)}</p>
-                    <p className="text-[10px] text-gray-500">
+                    <p className="text-[11px] font-medium text-gray-900 truncate dark:text-white">{formatAnalystShortName(analyst.name)}</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
                       {analyst.count} {diff !== 0 && <span className="text-green-600">({diff > 0 ? '+' : ''}{diff.toFixed(1)})</span>}
                     </p>
                   </div>
@@ -1335,7 +1335,7 @@ function CapacityPanel({
         <div>
           <div className="flex items-center gap-2 mb-2">
             <div className="w-2.5 h-2.5 rounded bg-amber-500" />
-            <h4 className="text-[12px] font-semibold text-gray-700">Overloaded ({stretchedTotal})</h4>
+            <h4 className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Overloaded ({stretchedTotal})</h4>
             <span className="text-[10px] text-gray-400">May need workload relief</span>
           </div>
           {(analystsByCategory.watch.length > 0 || analystsByCategory.stretched.length > 0) ? (
@@ -1359,8 +1359,8 @@ function CapacityPanel({
                         <span className={clsx('text-[10px] font-bold', wl.textColor)}>{getInitials(analyst.name)}</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-gray-900 truncate">{analyst.name}</p>
-                        <p className="text-[11px] text-gray-500">
+                        <p className="text-[12px] font-medium text-gray-900 truncate dark:text-white">{analyst.name}</p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
                           {analyst.count} names <span className={wl.textColor}>+{overload} over</span>
                         </p>
                       </div>
@@ -1419,13 +1419,13 @@ function DefaultOverviewPanel({
       <div
         key={analystId}
         onClick={() => selectAnalyst(analystId)}
-        className="flex items-center gap-3 p-1.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
+        className="flex items-center gap-3 p-1.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group dark:hover:bg-gray-800"
       >
         <div className="w-28 flex-shrink-0">
-          <p className="text-[12px] font-medium text-gray-900 truncate group-hover:text-primary-600">{analyst.name}</p>
+          <p className="text-[12px] font-medium text-gray-900 truncate group-hover:text-primary-600 dark:text-white">{analyst.name}</p>
         </div>
         <div className="flex-1 relative">
-          <div className="h-6 bg-gray-100 rounded relative overflow-hidden">
+          <div className="h-6 bg-gray-100 rounded relative overflow-hidden dark:bg-gray-800">
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-gray-600 z-10"
               style={{ left: `${avgPosition}%` }}
@@ -1436,7 +1436,7 @@ function DefaultOverviewPanel({
             />
           </div>
         </div>
-        <span className="text-[12px] font-bold text-gray-700 w-6 text-right flex-shrink-0">{analyst.count}</span>
+        <span className="text-[12px] font-bold text-gray-700 w-6 text-right flex-shrink-0 dark:text-gray-300">{analyst.count}</span>
         <span className={clsx(
           'text-[10px] w-20 text-right flex-shrink-0',
           diff > 0 ? 'text-amber-600' : diff < 0 ? 'text-blue-600' : 'text-gray-400'
@@ -1449,10 +1449,10 @@ function DefaultOverviewPanel({
 
   return (
     <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0">
+      <div className="px-4 py-2.5 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
         <div className="flex items-center justify-between">
-          <h3 className="text-[12px] font-semibold text-gray-900">Coverage Distribution</h3>
-          <span className="text-[11px] text-gray-500">Click a metric above or an analyst to see details</span>
+          <h3 className="text-[12px] font-semibold text-gray-900 dark:text-white">Coverage Distribution</h3>
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">Click a metric above or an analyst to see details</span>
         </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
@@ -1461,7 +1461,7 @@ function DefaultOverviewPanel({
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1.5">
               <div className="w-2.5 h-2.5 rounded bg-amber-500" />
-              <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+              <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide dark:text-gray-400">
                 Overloaded ({overloadedCount})
               </h4>
             </div>
@@ -1476,7 +1476,7 @@ function DefaultOverviewPanel({
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1.5">
               <div className="w-2.5 h-2.5 rounded bg-green-500" />
-              <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+              <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide dark:text-gray-400">
                 Balanced ({workloadCounts.balanced})
               </h4>
             </div>
@@ -1491,7 +1491,7 @@ function DefaultOverviewPanel({
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1.5">
               <div className="w-2.5 h-2.5 rounded bg-blue-400" />
-              <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+              <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide dark:text-gray-400">
                 Available ({workloadCounts.available})
               </h4>
             </div>
@@ -1502,7 +1502,7 @@ function DefaultOverviewPanel({
         )}
 
         {totalAnalysts === 0 && (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
             <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
             <p className="text-[12px]">No coverage data available</p>
           </div>
@@ -1510,21 +1510,21 @@ function DefaultOverviewPanel({
 
         {/* Rebalance Recommendations */}
         {rebalanceRecommendations.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3 space-y-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
-                <h4 className="text-[12px] font-semibold text-gray-800">Suggested Rebalance</h4>
+                <h4 className="text-[12px] font-semibold text-gray-800 dark:text-gray-100">Suggested Rebalance</h4>
               </div>
               {rebalanceRecommendations.map((rec, i) => (
                 <div key={i} className="space-y-1">
-                  <p className="text-[12px] text-gray-800">
+                  <p className="text-[12px] text-gray-800 dark:text-gray-100">
                     <span className="font-semibold">{rec.source.name}</span> is{' '}
                     <span className="font-bold text-amber-700">+{rec.source.delta} names</span> above average.
                   </p>
-                  <p className="text-[11px] text-gray-500">Recommended redistribution:</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">Recommended redistribution:</p>
                   {rec.targets.map((t, j) => (
-                    <div key={j} className="flex items-center gap-1.5 text-[11px] text-gray-700 ml-2">
+                    <div key={j} className="flex items-center gap-1.5 text-[11px] text-gray-700 ml-2 dark:text-gray-300">
                       <ArrowRight className="h-3 w-3 text-blue-400 flex-shrink-0" />
                       <span>Move <span className="font-medium">{t.suggested}</span> assets to <span className="font-medium">{t.name}</span></span>
                     </div>
@@ -1535,23 +1535,23 @@ function DefaultOverviewPanel({
           </div>
         )}
       </div>
-      <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+      <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-center gap-4">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-blue-400" />
-            <span className="text-[11px] text-gray-600">Available</span>
+            <span className="text-[11px] text-gray-600 dark:text-gray-400">Available</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-green-500" />
-            <span className="text-[11px] text-gray-600">Balanced</span>
+            <span className="text-[11px] text-gray-600 dark:text-gray-400">Balanced</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-amber-500" />
-            <span className="text-[11px] text-gray-600">Overloaded</span>
+            <span className="text-[11px] text-gray-600 dark:text-gray-400">Overloaded</span>
           </div>
           <div className="flex items-center gap-1 ml-3">
             <div className="w-0.5 h-4 bg-gray-600" />
-            <span className="text-[11px] text-gray-600">Avg ({avgCoverage.toFixed(1)})</span>
+            <span className="text-[11px] text-gray-600 dark:text-gray-400">Avg ({avgCoverage.toFixed(1)})</span>
           </div>
         </div>
       </div>

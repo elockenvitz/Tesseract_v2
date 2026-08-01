@@ -46,7 +46,7 @@ function VisibilityPill({ visibility, myOrgId, postOrgId, className }: {
   const sameOrg = myOrgId === postOrgId
   return (
     <span
-      className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium', sameOrg ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600', className)}
+      className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium', sameOrg ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800', className)}
       title={sameOrg ? 'Visible to your org only' : "Visible only to the poster's org"}
     >
       <Building2 className="w-3 h-3" />
@@ -114,13 +114,13 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
   return (
     <div className="space-y-4">
       {/* Composer */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Start a discussion about this theme..."
           rows={3}
-          className="w-full text-sm text-gray-900 bg-white border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-300"
+          className="w-full text-sm text-gray-900 bg-white border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:border-gray-700 dark:text-white dark:bg-gray-800"
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
               e.preventDefault()
@@ -129,21 +129,21 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
           }}
         />
         <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             {themeIsPublic ? (
               <>
                 <span>Visible to:</span>
                 <select
                   value={visibility}
                   onChange={(e) => setVisibility(e.target.value as ThemeDiscussionVisibility)}
-                  className="text-xs px-2 py-1 border border-gray-200 rounded bg-white"
+                  className="text-xs px-2 py-1 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800"
                 >
                   <option value="org">My org only</option>
                   <option value="shared">Everyone who sees this theme</option>
                 </select>
               </>
             ) : (
-              <span className="inline-flex items-center gap-1 text-gray-500">
+              <span className="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
                 <Building2 className="w-3 h-3" />
                 Visible to collaborators in your org
               </span>
@@ -160,14 +160,14 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
       {isLoading ? (
         <div className="space-y-3 animate-pulse">
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="bg-gray-100 rounded-lg h-20" />
+            <div key={i} className="bg-gray-100 rounded-lg h-20 dark:bg-gray-800" />
           ))}
         </div>
       ) : orderedPosts.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
+        <div className="text-center py-12 bg-gray-50 rounded-lg dark:bg-gray-900">
           <MessageSquare className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-          <h3 className="text-base font-medium text-gray-900">No discussion yet</h3>
-          <p className="text-sm text-gray-500">Be the first to share a take on this theme.</p>
+          <h3 className="text-base font-medium text-gray-900 dark:text-white">No discussion yet</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Be the first to share a take on this theme.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -175,17 +175,17 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
             const isOwn = p.author_id === user?.id
             const isEditing = editingId === p.id
             return (
-              <div key={p.id} className={clsx('bg-white border rounded-lg p-4', isOwn ? 'border-primary-200' : 'border-gray-200')}>
+              <div key={p.id} className={clsx('bg-white border rounded-lg p-4 dark:bg-gray-800', isOwn ? 'border-primary-200' : 'border-gray-200 dark:border-gray-700')}>
                 <div className="flex items-start gap-3">
-                  <div className={clsx('w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0', isOwn ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-700')}>
+                  <div className={clsx('w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0', isOwn ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-700 dark:text-gray-300')}>
                     {authorInitials(p)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-sm font-semibold text-gray-900 truncate">{authorName(p)}</span>
+                      <span className="text-sm font-semibold text-gray-900 truncate dark:text-white">{authorName(p)}</span>
                       {isOwn && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary-100 text-primary-700">You</span>}
                       <VisibilityPill visibility={p.visibility} myOrgId={currentOrgId} postOrgId={p.organization_id} />
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
                         {formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}
                         {p.is_edited && <span className="ml-1 text-gray-400">(edited)</span>}
                       </span>
@@ -196,7 +196,7 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
                           value={editDraft}
                           onChange={(e) => setEditDraft(e.target.value)}
                           rows={3}
-                          className="w-full text-sm text-gray-900 bg-white border border-primary-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                          className="w-full text-sm text-gray-900 bg-white border border-primary-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-white dark:bg-gray-800"
                           autoFocus
                         />
                         <div className="flex items-center gap-2">
@@ -211,14 +211,14 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
                         </div>
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{p.content}</p>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap break-words dark:text-gray-100">{p.content}</p>
                     )}
                   </div>
                   {isOwn && !isEditing && (
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => startEdit(p)}
-                        className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+                        className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded dark:hover:text-gray-200 dark:hover:bg-gray-700"
                         title="Edit"
                       >
                         <Edit3 className="w-3.5 h-3.5" />

@@ -258,7 +258,7 @@ export function VersionComparisonModal({
       case 'added': return 'bg-green-50 border-green-300'
       case 'removed': return 'bg-red-50 border-red-300'
       case 'modified': return 'bg-blue-50 border-blue-300'
-      default: return 'bg-white border-gray-200'
+      default: return 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800'
     }
   }
 
@@ -288,15 +288,15 @@ export function VersionComparisonModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Version Comparison</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Version Comparison</h2>
               <div className="flex items-center space-x-2 mt-2">
-                <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg">
-                  <span className="text-sm font-medium text-gray-700">
+                <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg dark:bg-gray-800">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {formatVersion(olderVersion.version_number, olderVersion.major_version, olderVersion.minor_version)}
                   </span>
                 </div>
@@ -307,13 +307,13 @@ export function VersionComparisonModal({
                   </span>
                 </div>
               </div>
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-gray-500 mt-2 dark:text-gray-400">
                 {changesCount} {changesCount === 1 ? 'change' : 'changes'} detected
               </p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-5 h-5" />
             </button>
@@ -327,14 +327,14 @@ export function VersionComparisonModal({
             <div>
               <button
                 onClick={() => toggleSection('stages')}
-                className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700"
+                className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700 dark:hover:text-gray-200"
               >
                 {expandedSections.has('stages') ? (
-                  <ChevronDown className="w-5 h-5 text-gray-500" />
+                  <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                 ) : (
-                  <ChevronRight className="w-5 h-5 text-gray-500" />
+                  <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                 )}
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Stages {stageDiffs.filter(d => d.type !== 'unchanged').length > 0 && `(${stageDiffs.filter(d => d.type !== 'unchanged').length} changes)`}
                 </h3>
               </button>
@@ -355,11 +355,11 @@ export function VersionComparisonModal({
                                 className="w-3 h-3 rounded-full"
                                 style={{ backgroundColor: diff.stage.stage_color }}
                               />
-                              <h4 className="font-medium text-gray-900">{diff.stage.stage_label}</h4>
+                              <h4 className="font-medium text-gray-900 dark:text-white">{diff.stage.stage_label}</h4>
                               {getDiffBadge(diff.type)}
                             </div>
                             {diff.stage.stage_description && (
-                              <p className="text-sm text-gray-600 mb-2">{diff.stage.stage_description}</p>
+                              <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">{diff.stage.stage_description}</p>
                             )}
                             {diff.type === 'modified' && diff.changes && (
                               <div className="mt-2 space-y-1">
@@ -385,25 +385,25 @@ export function VersionComparisonModal({
               <div>
                 <button
                   onClick={() => toggleSection('universe')}
-                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700"
+                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700 dark:hover:text-gray-200"
                 >
                   {expandedSections.has('universe') ? (
-                    <ChevronDown className="w-5 h-5 text-gray-500" />
+                    <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-500" />
+                    <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   )}
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Universe Rules {universeRulesDiff.hasChanges && '(Modified)'}
                   </h3>
                 </button>
 
                 {expandedSections.has('universe') && (
-                  <div className={`p-4 rounded-lg border ${universeRulesDiff.hasChanges ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
+                  <div className={`p-4 rounded-lg border ${universeRulesDiff.hasChanges ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
                         <div>
-                          <p className="text-sm text-gray-600">Rule count changed</p>
-                          <p className="text-lg font-semibold text-gray-900">
+                          <p className="text-sm text-gray-600 dark:text-gray-400">Rule count changed</p>
+                          <p className="text-lg font-semibold text-gray-900 dark:text-white">
                             {universeRulesDiff.oldCount} → {universeRulesDiff.newCount}
                           </p>
                         </div>
@@ -422,14 +422,14 @@ export function VersionComparisonModal({
               <div>
                 <button
                   onClick={() => toggleSection('cadence')}
-                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700"
+                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700 dark:hover:text-gray-200"
                 >
                   {expandedSections.has('cadence') ? (
-                    <ChevronDown className="w-5 h-5 text-gray-500" />
+                    <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-500" />
+                    <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   )}
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Cadence Settings (Modified)
                   </h3>
                 </button>
@@ -454,25 +454,25 @@ export function VersionComparisonModal({
               <div>
                 <button
                   onClick={() => toggleSection('automation')}
-                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700"
+                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700 dark:hover:text-gray-200"
                 >
                   {expandedSections.has('automation') ? (
-                    <ChevronDown className="w-5 h-5 text-gray-500" />
+                    <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-500" />
+                    <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   )}
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Automation Rules {automationRulesDiff.hasChanges && '(Modified)'}
                   </h3>
                 </button>
 
                 {expandedSections.has('automation') && (
-                  <div className={`p-4 rounded-lg border ${automationRulesDiff.hasChanges ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
+                  <div className={`p-4 rounded-lg border ${automationRulesDiff.hasChanges ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
                         <div>
-                          <p className="text-sm text-gray-600">Rule count changed</p>
-                          <p className="text-lg font-semibold text-gray-900">
+                          <p className="text-sm text-gray-600 dark:text-gray-400">Rule count changed</p>
+                          <p className="text-lg font-semibold text-gray-900 dark:text-white">
                             {automationRulesDiff.oldCount} → {automationRulesDiff.newCount}
                           </p>
                         </div>
@@ -491,14 +491,14 @@ export function VersionComparisonModal({
               <div>
                 <button
                   onClick={() => toggleSection('checklists')}
-                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700"
+                  className="flex items-center space-x-2 w-full mb-3 hover:text-gray-700 dark:hover:text-gray-200"
                 >
                   {expandedSections.has('checklists') ? (
-                    <ChevronDown className="w-5 h-5 text-gray-500" />
+                    <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-500" />
+                    <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   )}
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Checklist Items ({checklistDiffs.length} changes)
                   </h3>
                 </button>
@@ -515,7 +515,7 @@ export function VersionComparisonModal({
                             {getDiffIcon(diff.type)}
                             <div className="flex-1">
                               <div className="flex items-center space-x-2 mb-1 flex-wrap">
-                                <h4 className="font-medium text-gray-900">{diff.item.item_text}</h4>
+                                <h4 className="font-medium text-gray-900 dark:text-white">{diff.item.item_text}</h4>
                                 {getDiffBadge(diff.type)}
                                 {diff.item.is_required && (
                                   <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
@@ -523,7 +523,7 @@ export function VersionComparisonModal({
                                   </span>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500 mb-1">
+                              <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">
                                 Stage: {diff.stageName}
                               </p>
                               {diff.type === 'modified' && diff.changes && (
@@ -549,11 +549,11 @@ export function VersionComparisonModal({
             {/* No changes message */}
             {changesCount === 0 && (
               <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4 dark:bg-gray-800">
                   <Check className="w-8 h-8 text-gray-400" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Changes Detected</h3>
-                <p className="text-sm text-gray-500">
+                <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No Changes Detected</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   These versions appear to be identical
                 </p>
               </div>
@@ -562,7 +562,7 @@ export function VersionComparisonModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end">
+        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end dark:border-gray-700 dark:bg-gray-900">
           <Button onClick={onClose} variant="outline">
             Close
           </Button>

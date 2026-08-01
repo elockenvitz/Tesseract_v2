@@ -22,7 +22,7 @@ interface InconsistencyBadgeProps {
 
 const DIRECTION_PILL: Record<RatingDirection, { label: string; bg: string; text: string }> = {
   positive: { label: 'Positive', bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  neutral: { label: 'Neutral', bg: 'bg-gray-100', text: 'text-gray-700' },
+  neutral: { label: 'Neutral', bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300' },
   negative: { label: 'Negative', bg: 'bg-red-50', text: 'text-red-700' },
 }
 
@@ -92,42 +92,42 @@ export function InconsistencyBadge({
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed z-50 w-80 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+            className="fixed z-50 w-80 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800"
             style={{ left: position.x, top: position.y }}
           >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
-              <span className="text-sm font-medium text-gray-900">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+              <span className="text-sm font-medium text-gray-900 dark:text-white">
                 Rating vs Expected Value
               </span>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                className="p-0.5 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <div className="p-3 space-y-3">
-              <p className="text-xs text-gray-600 leading-relaxed">
+              <p className="text-xs text-gray-600 leading-relaxed dark:text-gray-400">
                 {conflictDescription}
               </p>
 
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-gray-500">Rating:</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Rating:</span>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${pill.bg} ${pill.text}`}>
                     {pill.label}
                   </span>
                 </div>
                 <ArrowRight className="w-3 h-3 text-gray-300" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-gray-500">EV:</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">EV:</span>
                   <span className={`text-xs font-semibold ${evColor}`}>
                     {evReturn >= 0 ? '+' : ''}{evPct}%
                   </span>
                 </div>
               </div>
 
-              <div className="pt-1 border-t border-gray-100">
+              <div className="pt-1 border-t border-gray-100 dark:border-gray-800">
                 {canSuppress ? (
                   <button
                     onClick={async (e) => {
@@ -136,7 +136,7 @@ export function InconsistencyBadge({
                       setIsOpen(false)
                     }}
                     disabled={isSuppressing}
-                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50 dark:hover:text-gray-200 dark:text-gray-400"
                   >
                     <Clock className="w-3 h-3" />
                     {isSuppressing ? 'Ignoring...' : 'Ignore for 24 hours'}

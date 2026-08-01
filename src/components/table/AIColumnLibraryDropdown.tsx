@@ -142,25 +142,25 @@ export function AIColumnLibraryDropdown({
   return createPortal(
     <div
       ref={dropdownRef}
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-80 animate-in fade-in slide-in-from-top-2 duration-150"
+      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-80 animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
       style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-purple-500" />
-          <h3 className="text-sm font-medium text-gray-900">AI Columns</h3>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white">AI Columns</h3>
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          className="p-1 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
         >
           <X className="h-4 w-4 text-gray-400" />
         </button>
       </div>
 
       {/* Search */}
-      <div className="px-3 py-2 border-b border-gray-100">
+      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
@@ -168,7 +168,7 @@ export function AIColumnLibraryDropdown({
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search columns..."
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 dark:border-gray-700"
             autoFocus
           />
         </div>
@@ -184,8 +184,8 @@ export function AIColumnLibraryDropdown({
             <Sparkles className="h-4 w-4 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900">Quick Prompt</p>
-            <p className="text-xs text-gray-500">Ask anything about assets</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">Quick Prompt</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Ask anything about assets</p>
           </div>
           <ChevronRight className="h-4 w-4 text-gray-400" />
         </button>
@@ -194,7 +194,7 @@ export function AIColumnLibraryDropdown({
       {/* Content */}
       <div className="max-h-80 overflow-y-auto px-3 pb-3">
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-gray-500">
+          <div className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
             Loading columns...
           </div>
         ) : (
@@ -224,7 +224,7 @@ export function AIColumnLibraryDropdown({
                           <Icon className="h-3.5 w-3.5 text-purple-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 truncate">{tpl.name}</p>
+                          <p className="text-sm text-gray-900 truncate dark:text-white">{tpl.name}</p>
                           <p className="text-xs text-gray-400 truncate">{tpl.description}</p>
                         </div>
                         {isAdding ? (
@@ -258,20 +258,20 @@ export function AIColumnLibraryDropdown({
                         className={clsx(
                           'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors',
                           inView
-                            ? 'bg-gray-50 cursor-not-allowed'
+                            ? 'bg-gray-50 cursor-not-allowed dark:bg-gray-900'
                             : 'hover:bg-gray-50'
                         )}
                       >
                         <div className={clsx(
                           'w-7 h-7 rounded-lg flex items-center justify-center',
-                          inView ? 'bg-gray-100' : 'bg-purple-100'
+                          inView ? 'bg-gray-100 dark:bg-gray-800' : 'bg-purple-100'
                         )}>
                           <Icon className={clsx('h-3.5 w-3.5', inView ? 'text-gray-400' : 'text-purple-600')} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={clsx(
                             'text-sm',
-                            inView ? 'text-gray-400' : 'text-gray-900'
+                            inView ? 'text-gray-400' : 'text-gray-900 dark:text-white'
                           )}>
                             {column.name}
                           </p>
@@ -308,20 +308,20 @@ export function AIColumnLibraryDropdown({
                         className={clsx(
                           'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors',
                           inView
-                            ? 'bg-gray-50 cursor-not-allowed'
+                            ? 'bg-gray-50 cursor-not-allowed dark:bg-gray-900'
                             : 'hover:bg-gray-50'
                         )}
                       >
                         <div className={clsx(
                           'w-7 h-7 rounded-lg flex items-center justify-center',
-                          inView ? 'bg-gray-100' : 'bg-blue-100'
+                          inView ? 'bg-gray-100 dark:bg-gray-800' : 'bg-blue-100'
                         )}>
                           <Icon className={clsx('h-3.5 w-3.5', inView ? 'text-gray-400' : 'text-blue-600')} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={clsx(
                             'text-sm',
-                            inView ? 'text-gray-400' : 'text-gray-900'
+                            inView ? 'text-gray-400' : 'text-gray-900 dark:text-white'
                           )}>
                             {column.name}
                           </p>
@@ -343,7 +343,7 @@ export function AIColumnLibraryDropdown({
             {filteredSystemColumns.length === 0 && filteredCustomColumns.length === 0 && visibleTemplates.length === 0 && (
               <div className="py-6 text-center">
                 <Sparkles className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {searchQuery ? 'No columns match your search' : 'No AI columns available'}
                 </p>
               </div>
@@ -353,7 +353,7 @@ export function AIColumnLibraryDropdown({
       </div>
 
       {/* Footer */}
-      <div className="px-3 py-2 border-t border-gray-100 flex items-center gap-2">
+      <div className="px-3 py-2 border-t border-gray-100 flex items-center gap-2 dark:border-gray-800">
         <button
           onClick={() => { onCreateColumn(); onClose(); }}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -364,7 +364,7 @@ export function AIColumnLibraryDropdown({
         {onManageColumns && (
           <button
             onClick={() => { onManageColumns(); onClose(); }}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
             title="Manage columns"
           >
             <Settings className="h-4 w-4" />

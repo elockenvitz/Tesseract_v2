@@ -141,7 +141,7 @@ export function FinancialChart({
     return (
       <div className={`w-full ${className}`} style={{ height }}>
         <div className="animate-pulse bg-gray-200 rounded-lg h-full flex items-center justify-center">
-          <div className="text-gray-500">Loading chart data...</div>
+          <div className="text-gray-500 dark:text-gray-400">Loading chart data...</div>
         </div>
       </div>
     )
@@ -150,10 +150,10 @@ export function FinancialChart({
   if (!currentQuote || chartData.length === 0) {
     return (
       <div className={`w-full ${className}`} style={{ height }}>
-        <div className="bg-gray-50 rounded-lg h-full flex items-center justify-center">
+        <div className="bg-gray-50 rounded-lg h-full flex items-center justify-center dark:bg-gray-900">
           <div className="text-center">
             <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-            <div className="text-gray-500">No chart data available</div>
+            <div className="text-gray-500 dark:text-gray-400">No chart data available</div>
             <div className="text-sm text-gray-400">Financial data for {symbol} could not be loaded</div>
           </div>
         </div>
@@ -164,11 +164,11 @@ export function FinancialChart({
   return (
     <div className={`w-full space-y-4 ${className}`}>
       {/* Chart Header with Controls */}
-      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg">
+      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center space-x-4">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">{symbol}</h3>
-            <div className="text-sm text-gray-500">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{symbol}</h3>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               {selectedChartType === 'price' && 'Price Chart'}
               {selectedChartType === 'volume' && 'Volume Chart'}
               {selectedChartType === 'percentage' && 'Percentage Change'}
@@ -179,11 +179,11 @@ export function FinancialChart({
           {selectedChartType === 'price' && currentQuote && (
             <div className="flex items-center space-x-4 text-sm">
               <div>
-                <span className="text-gray-600">Current:</span>
+                <span className="text-gray-600 dark:text-gray-400">Current:</span>
                 <span className="ml-1 font-medium">${currentQuote.price.toFixed(2)}</span>
               </div>
               <div>
-                <span className="text-gray-600">Change:</span>
+                <span className="text-gray-600 dark:text-gray-400">Change:</span>
                 <span className={`ml-1 font-medium ${
                   currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
@@ -197,13 +197,13 @@ export function FinancialChart({
 
         <div className="flex items-center space-x-2">
           {/* Chart Type Selector */}
-          <div className="flex items-center space-x-1 border-r border-gray-300 pr-3">
+          <div className="flex items-center space-x-1 border-r border-gray-300 pr-3 dark:border-gray-600">
             <button
               onClick={() => setSelectedChartType('price')}
               className={`px-3 py-1 rounded text-sm ${
                 selectedChartType === 'price'
                   ? 'bg-blue-100 text-blue-600 font-medium'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
               }`}
             >
               <TrendingUp className="h-4 w-4 inline mr-1" />
@@ -214,7 +214,7 @@ export function FinancialChart({
               className={`px-3 py-1 rounded text-sm ${
                 selectedChartType === 'volume'
                   ? 'bg-blue-100 text-blue-600 font-medium'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
               }`}
             >
               <BarChart3 className="h-4 w-4 inline mr-1" />
@@ -225,7 +225,7 @@ export function FinancialChart({
               className={`px-3 py-1 rounded text-sm ${
                 selectedChartType === 'percentage'
                   ? 'bg-blue-100 text-blue-600 font-medium'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
               }`}
             >
               <span className="inline mr-1">%</span>
@@ -242,7 +242,7 @@ export function FinancialChart({
                 className={`px-3 py-1 rounded text-sm ${
                   selectedTimeframe === tf
                     ? 'bg-gray-900 text-white font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
                 }`}
               >
                 {tf}
@@ -253,7 +253,7 @@ export function FinancialChart({
       </div>
 
       {/* Interactive Chart */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
         <InteractiveChart
           data={chartData}
           type={selectedChartType === 'volume' ? 'bar' : selectedChartType === 'percentage' ? 'area' : 'line'}
@@ -269,10 +269,10 @@ export function FinancialChart({
       {/* Chart Insights */}
       {chartData.length > 1 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center space-x-2 mb-2">
               <TrendingUp className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-900">Trend Analysis</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">Trend Analysis</span>
             </div>
             <div className="space-y-1 text-sm">
               {(() => {
@@ -286,8 +286,8 @@ export function FinancialChart({
 
                 return (
                   <>
-                    <div className="text-gray-600">Direction: <span className="font-medium">{trend}</span></div>
-                    <div className="text-gray-600">
+                    <div className="text-gray-600 dark:text-gray-400">Direction: <span className="font-medium">{trend}</span></div>
+                    <div className="text-gray-600 dark:text-gray-400">
                       {selectedTimeframe} Change:
                       <span className={`font-medium ml-1 ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {change >= 0 ? '+' : ''}{change.toFixed(2)}%
@@ -299,10 +299,10 @@ export function FinancialChart({
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center space-x-2 mb-2">
               <Zap className="h-4 w-4 text-orange-600" />
-              <span className="text-sm font-medium text-gray-900">Volatility</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">Volatility</span>
             </div>
             <div className="space-y-1 text-sm">
               {(() => {
@@ -314,28 +314,28 @@ export function FinancialChart({
 
                 return (
                   <>
-                    <div className="text-gray-600">Level: <span className="font-medium">{level}</span></div>
-                    <div className="text-gray-600">Coefficient: <span className="font-medium">{volatility.toFixed(2)}%</span></div>
+                    <div className="text-gray-600 dark:text-gray-400">Level: <span className="font-medium">{level}</span></div>
+                    <div className="text-gray-600 dark:text-gray-400">Coefficient: <span className="font-medium">{volatility.toFixed(2)}%</span></div>
                   </>
                 )
               })()}
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center space-x-2 mb-2">
               <Clock className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-gray-900">Data Quality</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">Data Quality</span>
             </div>
             <div className="space-y-1 text-sm">
-              <div className="text-gray-600">Points: <span className="font-medium">{chartData.length}</span></div>
-              <div className="text-gray-600">
+              <div className="text-gray-600 dark:text-gray-400">Points: <span className="font-medium">{chartData.length}</span></div>
+              <div className="text-gray-600 dark:text-gray-400">
                 Last Updated:
                 <span className="font-medium ml-1">
                   {currentQuote ? new Date(currentQuote.timestamp).toLocaleTimeString() : 'Unknown'}
                 </span>
               </div>
-              <div className="text-gray-600">
+              <div className="text-gray-600 dark:text-gray-400">
                 Status: <span className="font-medium text-green-600">Live</span>
               </div>
             </div>

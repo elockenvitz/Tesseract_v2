@@ -78,12 +78,12 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
 
   const getStatusColor = (status: ProjectStatus) => {
     switch (status) {
-      case 'planning': return 'text-gray-500 bg-gray-100'
+      case 'planning': return 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
       case 'in_progress': return 'text-blue-600 bg-blue-100'
       case 'blocked': return 'text-error-600 bg-error-100'
       case 'completed': return 'text-success-600 bg-success-100'
-      case 'cancelled': return 'text-gray-400 bg-gray-50'
-      default: return 'text-gray-500 bg-gray-100'
+      case 'cancelled': return 'text-gray-400 bg-gray-50 dark:bg-gray-900'
+      default: return 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
     }
   }
 
@@ -101,8 +101,8 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
     return (
       <Card>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Projects Overview</h2>
-          <p className="text-sm text-gray-500">Your active projects and tasks</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Projects Overview</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Your active projects and tasks</p>
         </div>
         <div className="animate-pulse space-y-3">
           <div className="h-20 bg-gray-200 rounded"></div>
@@ -116,8 +116,8 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
   return (
     <Card>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Projects Overview</h2>
-        <p className="text-sm text-gray-500">Your active projects and tasks</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Projects Overview</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Your active projects and tasks</p>
       </div>
 
       {/* Quick Stats Grid */}
@@ -125,7 +125,7 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
         <div className="p-3 bg-blue-50 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-600">In Progress</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">In Progress</p>
               <p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p>
             </div>
             <TrendingUp className="h-6 w-6 text-blue-600" />
@@ -135,7 +135,7 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
         <div className="p-3 bg-error-50 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-600">Overdue</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">Overdue</p>
               <p className="text-2xl font-bold text-error-600">{stats.overdue}</p>
             </div>
             <AlertCircle className="h-6 w-6 text-error-600" />
@@ -145,7 +145,7 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
         <div className="p-3 bg-warning-50 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-600">Urgent</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">Urgent</p>
               <p className="text-2xl font-bold text-warning-600">{stats.urgent}</p>
             </div>
             <AlertCircle className="h-6 w-6 text-warning-600" />
@@ -155,7 +155,7 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
         <div className="p-3 bg-success-50 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-600">Completed</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">Completed</p>
               <p className="text-2xl font-bold text-success-600">{stats.completed}</p>
             </div>
             <CheckCircle2 className="h-6 w-6 text-success-600" />
@@ -179,15 +179,15 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
               <div
                 key={project.id}
                 onClick={() => onProjectSelect?.(project)}
-                className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2 mb-1">
-                      <span className="font-semibold text-gray-900 truncate">{project.title}</span>
+                      <span className="font-semibold text-gray-900 truncate dark:text-white">{project.title}</span>
                     </div>
                     {project.description && (
-                      <p className="text-xs text-gray-600 line-clamp-1">{project.description}</p>
+                      <p className="text-xs text-gray-600 line-clamp-1 dark:text-gray-400">{project.description}</p>
                     )}
                   </div>
                   <Badge variant={getPriorityColor(project.priority)} size="sm" className="ml-2">
@@ -203,14 +203,14 @@ export function ProjectOverviewWidget({ onProjectSelect }: ProjectOverviewWidget
                     </div>
 
                     {totalDeliverables > 0 && (
-                      <div className="text-gray-600">
+                      <div className="text-gray-600 dark:text-gray-400">
                         {completedDeliverables}/{totalDeliverables} done
                       </div>
                     )}
                   </div>
 
                   {project.due_date && (
-                    <div className={`flex items-center space-x-1 ${isOverdue ? 'text-error-600' : 'text-gray-600'}`}>
+                    <div className={`flex items-center space-x-1 ${isOverdue ? 'text-error-600' : 'text-gray-600 dark:text-gray-400'}`}>
                       <Clock className="h-3 w-3" />
                       <span>{formatDistanceToNow(new Date(project.due_date), { addSuffix: true })}</span>
                     </div>

@@ -88,7 +88,7 @@ export const SignalFeedCard = React.memo(function SignalFeedCard({
           <Zap className="w-2.5 h-2.5" />
           {config.label}
         </span>
-        <h3 className="text-[15px] font-bold text-gray-900 leading-snug tracking-tight">
+        <h3 className="text-[15px] font-bold text-gray-900 leading-snug tracking-tight dark:text-white">
           {signal.headline}
         </h3>
       </div>
@@ -100,13 +100,13 @@ export const SignalFeedCard = React.memo(function SignalFeedCard({
 
       {/* Consequence line + metric */}
       <div className="px-4 pt-2 pb-3.5">
-        <p className="text-[12px] text-gray-600 leading-relaxed mb-3">{signal.body}</p>
+        <p className="text-[12px] text-gray-600 leading-relaxed mb-3 dark:text-gray-400">{signal.body}</p>
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             {signal.relatedAssets.map(a => (
               <button key={a.id} onClick={e => { e.stopPropagation(); onAssetClick?.(a.id, a.symbol) }}
-                className="text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 px-2 py-0.5 rounded border border-primary-200 transition-colors">
+                className="text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 px-2 py-0.5 rounded border border-primary-200 transition-colors dark:bg-gray-800">
                 ${a.symbol}
               </button>
             ))}
@@ -114,7 +114,7 @@ export const SignalFeedCard = React.memo(function SignalFeedCard({
           {signal.metric && (
             <div className="flex items-center gap-1.5">
               <Icon className="w-4 h-4 text-gray-400" />
-              <span className="text-[18px] font-black text-gray-900 tabular-nums leading-none">{signal.metric}</span>
+              <span className="text-[18px] font-black text-gray-900 tabular-nums leading-none dark:text-white">{signal.metric}</span>
               {signal.metricLabel && <span className="text-[9px] text-gray-400 leading-none">{signal.metricLabel}</span>}
             </div>
           )}

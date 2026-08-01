@@ -75,7 +75,7 @@ export function ListRowExpansion({
             {onOpenAsset && (
               <button
                 onClick={onOpenAsset}
-                className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:text-primary-300 dark:hover:bg-primary-900/20 rounded-md transition-colors flex-shrink-0"
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:text-primary-300 dark:hover:bg-primary-900/20 rounded-md transition-colors flex-shrink-0 dark:text-gray-400"
               >
                 Open case
                 <ExternalLink className="h-3 w-3" />
@@ -134,7 +134,7 @@ export function ListRowExpansion({
                   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors',
                   isFlagged
                     ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-900/30'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-800',
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400',
                   !canEdit && 'cursor-default'
                 )}
               >

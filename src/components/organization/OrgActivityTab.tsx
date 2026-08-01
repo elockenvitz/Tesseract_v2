@@ -71,14 +71,14 @@ const TONE_BORDER: Record<ActivityTone, string> = {
 }
 
 const TONE_ICON_BG: Record<ActivityTone, string> = {
-  neutral: 'bg-gray-100',
+  neutral: 'bg-gray-100 dark:bg-gray-800',
   success: 'bg-emerald-50',
   warning: 'bg-amber-50',
   danger: 'bg-red-50',
 }
 
 const TONE_ICON_TEXT: Record<ActivityTone, string> = {
-  neutral: 'text-gray-500',
+  neutral: 'text-gray-500 dark:text-gray-400',
   success: 'text-emerald-600',
   warning: 'text-amber-600',
   danger: 'text-red-600',
@@ -361,10 +361,10 @@ export function OrgActivityTab({
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+          <h3 className="text-sm font-medium text-gray-700 flex items-center dark:text-gray-300">
             <Activity className="w-4 h-4 mr-1.5 text-indigo-500" />
             Activity Log
-            <span className="ml-2 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
+            <span className="ml-2 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">
               {totalCount}
             </span>
           </h3>
@@ -385,7 +385,7 @@ export function OrgActivityTab({
                 className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full border transition-colors ${
                   activeQuickFilter === qf.label
                     ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700 dark:hover:text-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 }`}
               >
                 {qf.icon}
@@ -402,7 +402,7 @@ export function OrgActivityTab({
               <select
                 value={personFilter}
                 onChange={(e) => setPersonFilter(e.target.value)}
-                className="text-xs border border-gray-300 rounded-lg pl-7 pr-8 py-1.5 bg-white appearance-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="text-xs border border-gray-300 rounded-lg pl-7 pr-8 py-1.5 bg-white appearance-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
               >
                 <option value="">All people</option>
                 {personOptions.map((a) => (
@@ -413,13 +413,13 @@ export function OrgActivityTab({
               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
             </div>
             {personFilter && (
-              <div className="flex rounded-md border border-gray-300 overflow-hidden ml-1">
+              <div className="flex rounded-md border border-gray-300 overflow-hidden ml-1 dark:border-gray-600">
                 <button
                   onClick={() => setPersonFilterMode('target')}
                   className={`px-1.5 py-1 text-[10px] font-medium transition-colors ${
                     personFilterMode === 'target'
                       ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                      : 'bg-white text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
                   }`}
                 >
                   Target
@@ -429,7 +429,7 @@ export function OrgActivityTab({
                   className={`px-1.5 py-1 text-[10px] font-medium border-l border-gray-300 transition-colors ${
                     personFilterMode === 'initiator'
                       ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                      : 'bg-white text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400 dark:bg-gray-800'
                   }`}
                 >
                   Initiator
@@ -443,7 +443,7 @@ export function OrgActivityTab({
             <select
               value={activeQuickFilter ? '' : entityTypeFilter}
               onChange={(e) => { setEntityTypeFilter(e.target.value); setActiveQuickFilter(null) }}
-              className="text-xs border border-gray-300 rounded-lg pl-7 pr-8 py-1.5 bg-white appearance-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="text-xs border border-gray-300 rounded-lg pl-7 pr-8 py-1.5 bg-white appearance-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
             >
               <option value="">All objects</option>
               {ENTITY_TYPE_OPTIONS.map((o) => (
@@ -459,7 +459,7 @@ export function OrgActivityTab({
             <select
               value={sourceTypeFilter}
               onChange={(e) => setSourceTypeFilter(e.target.value)}
-              className="text-xs border border-gray-300 rounded-lg pl-7 pr-8 py-1.5 bg-white appearance-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="text-xs border border-gray-300 rounded-lg pl-7 pr-8 py-1.5 bg-white appearance-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
             >
               <option value="">How it happened</option>
               {SOURCE_TYPE_OPTIONS.map((o) => (
@@ -475,14 +475,14 @@ export function OrgActivityTab({
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
             title="From date"
           />
           <input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
             title="To date"
           />
 
@@ -507,15 +507,15 @@ export function OrgActivityTab({
       {isLoading ? (
         <div className="text-center py-12">
           <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Loading activity...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading activity...</p>
         </div>
       ) : allEntries.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
+        <div className="text-center py-12 bg-gray-50 rounded-lg dark:bg-gray-900">
           <Activity className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-500">No activity recorded yet</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No activity recorded yet</p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
+        <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800 dark:bg-gray-800">
           {allEntries.map((entry) => {
             const row = formatActivityRow(entry, userNameMap)
             const isExpanded = expandedIds.has(entry.id)
@@ -542,10 +542,10 @@ export function OrgActivityTab({
 
                   {/* Title + subtitle */}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">
+                    <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                       {row.title}
                     </p>
-                    <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                    <p className="text-[11px] text-gray-500 mt-0.5 truncate dark:text-gray-400">
                       {row.subtitle}
                     </p>
                   </div>
@@ -555,7 +555,7 @@ export function OrgActivityTab({
                     {row.chips?.map((chip) => (
                       <span
                         key={chip}
-                        className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded whitespace-nowrap"
+                        className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded whitespace-nowrap dark:text-gray-400 dark:bg-gray-800"
                       >
                         {chip}
                       </span>
@@ -615,21 +615,21 @@ function ExpandedActivityDetails({
 
   return (
     <div className="px-4 pb-3 pl-14">
-      <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-3">
+      <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-3 dark:bg-gray-900">
         {/* 1. Change (diff) block */}
         {details.diff && details.diff.length > 0 && (
           <div>
-            <span className="text-gray-500 font-medium text-[11px] uppercase tracking-wide">Change</span>
+            <span className="text-gray-500 font-medium text-[11px] uppercase tracking-wide dark:text-gray-400">Change</span>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {details.diff.map((d) => (
                 <div
                   key={d.label}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded border border-gray-200"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded border border-gray-200 dark:border-gray-700 dark:bg-gray-800"
                 >
-                  <span className="text-[11px] text-gray-500 font-medium">{d.label}:</span>
+                  <span className="text-[11px] text-gray-500 font-medium dark:text-gray-400">{d.label}:</span>
                   <span className="text-[11px] text-gray-400 line-through">{d.left}</span>
                   <ArrowRight className="w-3 h-3 text-gray-400" />
-                  <span className="text-[11px] text-gray-900 font-semibold">{d.right}</span>
+                  <span className="text-[11px] text-gray-900 font-semibold dark:text-white">{d.right}</span>
                 </div>
               ))}
             </div>
@@ -639,7 +639,7 @@ function ExpandedActivityDetails({
         {/* 2. Context block */}
         {details.context && details.context.length > 0 && (
           <div>
-            <span className="text-gray-500 font-medium text-[11px] uppercase tracking-wide">Context</span>
+            <span className="text-gray-500 font-medium text-[11px] uppercase tracking-wide dark:text-gray-400">Context</span>
             <div className="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-1.5">
               {details.context.map((c) => (
                 <Detail key={c.label} label={c.label} value={c.value} />
@@ -663,18 +663,18 @@ function ExpandedActivityDetails({
           </button>
 
           {showAudit && (
-            <div className="mt-2 grid grid-cols-1 gap-y-1.5 bg-white rounded border border-gray-200 p-2.5">
+            <div className="mt-2 grid grid-cols-1 gap-y-1.5 bg-white rounded border border-gray-200 p-2.5 dark:border-gray-700 dark:bg-gray-800">
               {details.audit.map((a) => {
                 const isJson = a.label.includes('JSON')
                 return (
                   <div key={a.label}>
-                    <span className="text-gray-500 text-[11px]">{a.label}:</span>{' '}
+                    <span className="text-gray-500 text-[11px] dark:text-gray-400">{a.label}:</span>{' '}
                     {isJson ? (
-                      <pre className="mt-0.5 text-[10px] text-gray-700 font-mono bg-gray-50 rounded p-1.5 overflow-x-auto whitespace-pre-wrap break-all">
+                      <pre className="mt-0.5 text-[10px] text-gray-700 font-mono bg-gray-50 rounded p-1.5 overflow-x-auto whitespace-pre-wrap break-all dark:text-gray-300 dark:bg-gray-900">
                         {a.value}
                       </pre>
                     ) : (
-                      <span className="text-gray-700 font-medium text-[11px] font-mono">{a.value}</span>
+                      <span className="text-gray-700 font-medium text-[11px] font-mono dark:text-gray-300">{a.value}</span>
                     )}
                   </div>
                 )
@@ -692,8 +692,8 @@ function ExpandedActivityDetails({
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <span className="text-gray-500">{label}:</span>{' '}
-      <span className="text-gray-700 font-medium">{value}</span>
+      <span className="text-gray-500 dark:text-gray-400">{label}:</span>{' '}
+      <span className="text-gray-700 font-medium dark:text-gray-300">{value}</span>
     </div>
   )
 }

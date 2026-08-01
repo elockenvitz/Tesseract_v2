@@ -640,9 +640,9 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
   const currentPanel = panels.find(p => p.id === activePanel) || panels[0]
 
   return (
-    <div className="h-full flex flex-col bg-white overflow-hidden">
+    <div className="h-full flex flex-col bg-white overflow-hidden dark:bg-gray-800">
       {/* Header Toolbar */}
-      <div className="bg-gray-50 border-b border-gray-200 px-4 py-2">
+      <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between">
           {/* Left: Symbol Search & Info */}
           <div className="flex items-center space-x-4">
@@ -653,19 +653,19 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 placeholder="Search symbol..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
               />
               {/* Search Results Dropdown */}
               {searchQuery && searchResults.length > 0 && (
-                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto">
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
                   {searchResults.map((asset: any) => (
                     <button
                       key={asset.id}
                       onClick={() => selectAsset(asset)}
-                      className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between"
+                      className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between dark:hover:bg-gray-700"
                     >
-                      <span className="font-medium text-gray-900">{asset.symbol}</span>
-                      <span className="text-xs text-gray-500 truncate ml-2">{asset.company_name}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                      <span className="text-xs text-gray-500 truncate ml-2 dark:text-gray-400">{asset.company_name}</span>
                     </button>
                   ))}
                 </div>
@@ -674,8 +674,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
 
             {currentPanel.symbol && (
               <div className="flex items-center space-x-3">
-                <span className="text-lg font-bold text-gray-900">{currentPanel.symbol}</span>
-                <span className="text-sm text-gray-500">{currentPanel.companyName}</span>
+                <span className="text-lg font-bold text-gray-900 dark:text-white">{currentPanel.symbol}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{currentPanel.companyName}</span>
               </div>
             )}
           </div>
@@ -691,7 +691,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
                   currentPanel.timeFrame === tf && !currentPanel.selectedFreq
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 {tf}
@@ -705,7 +705,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 className={`px-2 py-1 text-xs font-medium rounded transition-colors flex items-center space-x-1 ${
                   showFreqPicker || currentPanel.selectedFreq
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 <Clock className="w-3 h-3" />
@@ -716,19 +716,19 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
               {showFreqPicker && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowFreqPicker(false)} />
-                  <div className="absolute left-0 top-full mt-2 bg-gradient-to-b from-white to-gray-50 border border-gray-200 rounded-xl shadow-2xl z-50 p-4 backdrop-blur-sm">
+                  <div className="absolute left-0 top-full mt-2 bg-gradient-to-b from-white to-gray-50 border border-gray-200 rounded-xl shadow-2xl z-50 p-4 backdrop-blur-sm dark:border-gray-700">
                     {/* Long Term Section */}
                     <div className="mb-4">
                       <div className="flex items-center gap-2 mb-3">
                         <div className="w-1.5 h-4 bg-gradient-to-b from-emerald-500 to-emerald-600 rounded-full" />
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Long Term</span>
+                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">Long Term</span>
                       </div>
-                      <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
+                      <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden dark:border-gray-800 dark:bg-gray-800">
                         <table className="w-full">
                           <tbody>
                             {Object.entries(historicalFrequencies).map(([key, config], idx) => (
-                              <tr key={key} className={idx % 2 === 0 ? 'bg-gray-50/50' : 'bg-white'}>
-                                <td className="py-1.5 pl-3 pr-4 text-xs font-medium text-gray-600 whitespace-nowrap">
+                              <tr key={key} className={idx % 2 === 0 ? 'bg-gray-50/50' : 'bg-white dark:bg-gray-800'}>
+                                <td className="py-1.5 pl-3 pr-4 text-xs font-medium text-gray-600 whitespace-nowrap dark:text-gray-400">
                                   {config.label}
                                 </td>
                                 {config.intervals.map((interval) => {
@@ -742,7 +742,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                                         className={`w-full px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-150 text-center border ${
                                           isSelected
                                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                            : 'bg-gradient-to-b from-gray-50 to-gray-100 hover:from-emerald-50 hover:to-emerald-100 hover:text-emerald-700 text-gray-600 border-gray-200 hover:border-emerald-300 hover:shadow-sm'
+                                            : 'bg-gradient-to-b from-gray-50 to-gray-100 hover:from-emerald-50 hover:to-emerald-100 hover:text-emerald-700 text-gray-600 border-gray-200 hover:border-emerald-300 hover:shadow-sm dark:border-gray-700 dark:text-gray-400'
                                         }`}
                                       >
                                         {interval}
@@ -764,14 +764,14 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <div className="w-1.5 h-4 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full" />
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Short Term</span>
+                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">Short Term</span>
                       </div>
-                      <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
+                      <div className="bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden dark:border-gray-800 dark:bg-gray-800">
                         <table className="w-full">
                           <tbody>
                             {Object.entries(intradayFrequencies).map(([key, config], idx) => (
-                              <tr key={key} className={idx % 2 === 0 ? 'bg-gray-50/50' : 'bg-white'}>
-                                <td className="py-1.5 pl-3 pr-4 text-xs font-medium text-gray-600 whitespace-nowrap">
+                              <tr key={key} className={idx % 2 === 0 ? 'bg-gray-50/50' : 'bg-white dark:bg-gray-800'}>
+                                <td className="py-1.5 pl-3 pr-4 text-xs font-medium text-gray-600 whitespace-nowrap dark:text-gray-400">
                                   {config.label}
                                 </td>
                                 {config.intervals.map((interval) => {
@@ -785,7 +785,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                                         className={`w-full px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-150 text-center border ${
                                           isSelected
                                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                            : 'bg-gradient-to-b from-gray-50 to-gray-100 hover:from-blue-50 hover:to-blue-100 hover:text-blue-700 text-gray-600 border-gray-200 hover:border-blue-300 hover:shadow-sm'
+                                            : 'bg-gradient-to-b from-gray-50 to-gray-100 hover:from-blue-50 hover:to-blue-100 hover:text-blue-700 text-gray-600 border-gray-200 hover:border-blue-300 hover:shadow-sm dark:border-gray-700 dark:text-gray-400'
                                         }`}
                                       >
                                         {interval}
@@ -814,7 +814,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 className={`px-2 py-1 text-xs font-medium rounded transition-colors flex items-center space-x-1 ${
                   currentPanel.timeFrame === 'CUSTOM' && !currentPanel.selectedFreq
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 <Calendar className="w-3 h-3" />
@@ -825,12 +825,12 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
               {showCustomDatePicker && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowCustomDatePicker(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-4">
+                  <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-4 dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-medium text-gray-900 text-sm">Custom Date Range</h3>
+                      <h3 className="font-medium text-gray-900 text-sm dark:text-white">Custom Date Range</h3>
                       <button
                         onClick={() => setShowCustomDatePicker(false)}
-                        className="text-gray-400 hover:text-gray-600"
+                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -839,39 +839,39 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                     <div className="space-y-3">
                       {/* Start Date */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                           Start Date
                         </label>
                         <input
                           type="date"
                           value={customStartDate}
                           onChange={(e) => setCustomStartDate(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                         />
                       </div>
 
                       {/* End Date */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                           End Date
                         </label>
                         <input
                           type="date"
                           value={customEndDate}
                           onChange={(e) => setCustomEndDate(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                         />
                       </div>
 
                       {/* Interval/Frequency */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                           Frequency
                         </label>
                         <select
                           value={customInterval}
                           onChange={(e) => setCustomInterval(e.target.value as CustomDateRange['interval'])}
-                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                         >
                           <option value="1m">1 Minute</option>
                           <option value="5m">5 Minutes</option>
@@ -910,7 +910,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                     className={`p-1.5 rounded transition-colors ${
                       currentPanel.chartType === ct.value
                         ? 'bg-blue-600 text-white'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -924,7 +924,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
               <button
                 onClick={() => setShowMetricMenu(!showMetricMenu)}
                 className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  showMetricMenu ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                  showMetricMenu ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 {(() => {
@@ -939,9 +939,9 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
               {showMetricMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowMetricMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 dark:border-gray-700 dark:bg-gray-800">
                     <div className="p-2">
-                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1">Select Metric</div>
+                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1 dark:text-gray-400">Select Metric</div>
                       {metricOptions.map((metric) => {
                         const Icon = metric.icon
                         const isSelected = currentPanel.metric === metric.value
@@ -953,13 +953,13 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                               setShowMetricMenu(false)
                             }}
                             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${
-                              isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
+                              isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300'
                             }`}
                           >
                             <Icon className="w-4 h-4" />
                             <div className="text-left">
                               <div className="text-sm font-medium">{metric.label}</div>
-                              <div className="text-xs text-gray-500">{metric.description}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">{metric.description}</div>
                             </div>
                             {isSelected && <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />}
                           </button>
@@ -975,7 +975,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             <div className="relative">
               <button
                 onClick={() => setShowIndicatorMenu(!showIndicatorMenu)}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-gray-200 text-gray-600 hover:text-gray-900 rounded-lg text-sm transition-colors"
+                className="flex items-center space-x-1 px-3 py-1.5 bg-gray-200 text-gray-600 hover:text-gray-900 rounded-lg text-sm transition-colors dark:hover:text-white dark:text-gray-400"
               >
                 <Layers className="w-4 h-4" />
                 <span>Indicators</span>
@@ -989,19 +989,19 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
               {showIndicatorMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowIndicatorMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-80 overflow-auto">
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-80 overflow-auto dark:border-gray-700 dark:bg-gray-800">
                     {['Moving Averages', 'Oscillators', 'Volume', 'Volatility', 'Trend'].map((category) => (
                       <div key={category}>
-                        <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide bg-gray-50">
+                        <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide bg-gray-50 dark:text-gray-400 dark:bg-gray-900">
                           {category}
                         </div>
                         {indicators.filter(i => i.category === category).map((indicator) => (
                           <button
                             key={indicator.id}
                             onClick={() => toggleIndicator(indicator.id)}
-                            className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between"
+                            className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between dark:hover:bg-gray-700"
                           >
-                            <span className="text-sm text-gray-700">{indicator.name}</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">{indicator.name}</span>
                             {currentPanel.indicators.includes(indicator.id) && (
                               <span className="w-2 h-2 bg-blue-500 rounded-full" />
                             )}
@@ -1021,7 +1021,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                   showCompareMenu || (currentPanel.compareSymbols?.length || 0) > 0
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                    : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 <TrendingUp className="w-4 h-4" />
@@ -1036,8 +1036,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
               {showCompareMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowCompareMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50">
-                    <div className="p-3 border-b border-gray-100">
+                  <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50 dark:border-gray-700 dark:bg-gray-800">
+                    <div className="p-3 border-b border-gray-100 dark:border-gray-800">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -1045,21 +1045,21 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                           placeholder="Add symbol to compare..."
                           value={compareSearchQuery}
                           onChange={(e) => setCompareSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
                           autoFocus
                         />
                       </div>
                       {compareSearchQuery && compareSearchResults.length > 0 && (
-                        <div className="mt-2 max-h-40 overflow-auto border border-gray-200 rounded-lg">
+                        <div className="mt-2 max-h-40 overflow-auto border border-gray-200 rounded-lg dark:border-gray-700">
                           {compareSearchResults.map((asset: any) => (
                             <button
                               key={asset.id}
                               onClick={() => addCompareSymbol(asset)}
                               disabled={asset.symbol === currentPanel.symbol || currentPanel.compareSymbols?.some(s => s.symbol === asset.symbol)}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
                             >
-                              <span className="font-medium text-gray-900">{asset.symbol}</span>
-                              <span className="text-xs text-gray-500 truncate ml-2">{asset.company_name}</span>
+                              <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                              <span className="text-xs text-gray-500 truncate ml-2 dark:text-gray-400">{asset.company_name}</span>
                             </button>
                           ))}
                         </div>
@@ -1069,14 +1069,14 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                     {/* Current comparisons */}
                     {currentPanel.compareSymbols && currentPanel.compareSymbols.length > 0 && (
                       <div className="p-2">
-                        <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1">Comparing</div>
+                        <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1 dark:text-gray-400">Comparing</div>
                         {currentPanel.compareSymbols.map((s) => (
                           <div
                             key={s.symbol}
-                            className="flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 rounded"
+                            className="flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 rounded dark:hover:bg-gray-800"
                           >
                             <div className="flex items-center space-x-2">
-                              <span className="text-sm font-medium text-gray-700">{s.symbol}</span>
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{s.symbol}</span>
                               <span className="text-xs text-gray-400">{s.companyName}</span>
                             </div>
                             <button
@@ -1091,8 +1091,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                     )}
 
                     {/* Display Mode */}
-                    <div className="p-2 border-t border-gray-100">
-                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1">Display Mode</div>
+                    <div className="p-2 border-t border-gray-100 dark:border-gray-800">
+                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1 dark:text-gray-400">Display Mode</div>
                       <div className="flex gap-1 px-2">
                         {displayModeOptions.map((mode) => (
                           <button
@@ -1101,7 +1101,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                             className={`flex-1 px-2 py-1.5 text-xs font-medium rounded transition-colors ${
                               currentPanel.displayMode === mode.value
                                 ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                             }`}
                             title={mode.description}
                           >
@@ -1112,13 +1112,13 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                       {/* Index base input - shown when Indexed mode is selected */}
                       {currentPanel.displayMode === 'indexed' && (
                         <div className="mt-2 px-2">
-                          <label className="flex items-center gap-2 text-xs text-gray-600">
+                          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                             <span>Index to:</span>
                             <input
                               type="number"
                               value={currentPanel.indexBase || DEFAULT_INDEX_BASE}
                               onChange={(e) => updatePanel(activePanel, { indexBase: Number(e.target.value) || DEFAULT_INDEX_BASE })}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                               min="1"
                               step="1"
                             />
@@ -1140,7 +1140,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 className={`p-1.5 rounded transition-colors ${
                   viewMode === 'single'
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 <Maximize2 className="w-4 h-4" />
@@ -1151,7 +1151,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 className={`p-1.5 rounded transition-colors ${
                   viewMode === 'grid'
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
                 }`}
               >
                 <Grid3X3 className="w-4 h-4" />
@@ -1161,7 +1161,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             {/* Add Panel */}
             <button
               onClick={addPanel}
-              className="p-1.5 bg-gray-200 text-gray-600 hover:text-gray-900 rounded-lg transition-colors"
+              className="p-1.5 bg-gray-200 text-gray-600 hover:text-gray-900 rounded-lg transition-colors dark:hover:text-white dark:text-gray-400"
               title="Add Chart Panel"
             >
               <Plus className="w-4 h-4" />
@@ -1172,14 +1172,14 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
 
       {/* Panel Tabs (if multiple panels) */}
       {panels.length > 1 && (
-        <div className="bg-gray-100 border-b border-gray-200 px-4 py-1 flex items-center space-x-1">
+        <div className="bg-gray-100 border-b border-gray-200 px-4 py-1 flex items-center space-x-1 dark:border-gray-700 dark:bg-gray-800">
           {panels.map((panel) => (
             <div
               key={panel.id}
               className={`flex items-center space-x-2 px-3 py-1 rounded-t text-sm cursor-pointer transition-colors ${
                 activePanel === panel.id
-                  ? 'bg-white text-gray-900 border-t border-l border-r border-gray-200'
-                  : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-gray-900 border-t border-l border-r border-gray-200 dark:border-gray-700 dark:text-white dark:bg-gray-800'
+                  : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
               }`}
               onClick={() => setActivePanel(panel.id)}
             >
@@ -1205,7 +1205,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
         {/* Chart Canvas */}
         <div className="flex-1 overflow-hidden">
           {viewMode === 'single' ? (
-            <div className="h-full bg-white">
+            <div className="h-full bg-white dark:bg-gray-800">
               {currentPanel.symbol ? (
                 <ProChart
                   symbol={currentPanel.symbol}
@@ -1228,7 +1228,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center">
                     <LineChart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-500 mb-2">No Symbol Selected</h3>
+                    <h3 className="text-lg font-medium text-gray-500 mb-2 dark:text-gray-400">No Symbol Selected</h3>
                     <p className="text-gray-400 text-sm">
                       Search for a symbol above
                     </p>
@@ -1286,11 +1286,11 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
         <>
           <div className="fixed inset-0 z-50" onClick={closeContextMenu} />
           <div
-            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-2 min-w-[200px]"
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-2 min-w-[200px] dark:border-gray-700 dark:bg-gray-800"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {/* Drawing Tools Section */}
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">
               Add Annotation
             </div>
             {annotationTools.map((tool) => {
@@ -1299,16 +1299,16 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                 <button
                   key={tool.type}
                   onClick={() => addAnnotation(tool.type)}
-                  className="w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-100 transition-colors text-left"
+                  className="w-full flex items-center space-x-3 px-3 py-2 hover:bg-gray-100 transition-colors text-left dark:hover:bg-gray-700"
                 >
-                  <Icon className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-700">{tool.label}</span>
+                  <Icon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{tool.label}</span>
                 </button>
               )
             })}
 
             {/* Divider */}
-            <div className="my-2 border-t border-gray-200" />
+            <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
 
             {/* Actions */}
             {currentPanel.annotations.length > 0 && (
@@ -1324,7 +1324,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             )}
 
             {/* Price/Time at cursor */}
-            <div className="px-3 py-2 text-xs text-gray-500 border-t border-gray-200 mt-2">
+            <div className="px-3 py-2 text-xs text-gray-500 border-t border-gray-200 mt-2 dark:border-gray-700 dark:text-gray-400">
               <div>Price: ${contextMenu.chartY.toFixed(2)}</div>
               <div>Time: {new Date(contextMenu.chartX * 1000).toLocaleDateString()}</div>
             </div>
@@ -1336,17 +1336,17 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
       {lineContextMenu.visible && (
           <div
             data-line-context-menu
-            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-2 min-w-[220px]"
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-2 min-w-[220px] dark:border-gray-700 dark:bg-gray-800"
             style={{ left: lineContextMenu.x, top: lineContextMenu.y }}
           >
             {/* Header */}
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide border-b border-gray-100 mb-1">
+            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide border-b border-gray-100 mb-1 dark:border-gray-800 dark:text-gray-400">
               Format: {lineContextMenu.symbol}
             </div>
 
             {/* Color Selection */}
             <div className="px-3 py-2">
-              <div className="text-xs font-medium text-gray-600 mb-2">Color</div>
+              <div className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Color</div>
               <div className="flex flex-wrap gap-1.5">
                 {LINE_COLORS.map((color) => {
                   const currentStyle = lineContextMenu.isMainSymbol
@@ -1376,8 +1376,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             </div>
 
             {/* Line Width */}
-            <div className="px-3 py-2 border-t border-gray-100">
-              <div className="text-xs font-medium text-gray-600 mb-2">Line Width</div>
+            <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-800">
+              <div className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Line Width</div>
               <div className="flex gap-1">
                 {LINE_WIDTHS.map((width) => {
                   const currentStyle = lineContextMenu.isMainSymbol
@@ -1397,7 +1397,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                       className={`flex-1 py-1.5 text-xs font-medium rounded transition-colors ${
                         isSelected
                           ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                       }`}
                     >
                       {width}px
@@ -1408,8 +1408,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             </div>
 
             {/* Line Style */}
-            <div className="px-3 py-2 border-t border-gray-100">
-              <div className="text-xs font-medium text-gray-600 mb-2">Line Style</div>
+            <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-800">
+              <div className="text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Line Style</div>
               <div className="flex gap-1">
                 {LINE_STYLES.map((style) => {
                   const currentStyle = lineContextMenu.isMainSymbol
@@ -1429,7 +1429,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
                       className={`flex-1 py-1.5 text-xs font-medium rounded transition-colors ${
                         isSelected
                           ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                       }`}
                     >
                       {style.label}
@@ -1441,7 +1441,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
 
             {/* Remove Line - only for comparison symbols */}
             {!lineContextMenu.isMainSymbol && (
-              <div className="px-3 py-2 border-t border-gray-100">
+              <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-800">
                 <button
                   onClick={() => {
                     removeCompareSymbol(lineContextMenu.symbol)

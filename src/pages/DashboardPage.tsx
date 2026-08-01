@@ -77,7 +77,7 @@ function AssetLoadingState() {
   return (
     <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
       <div className="text-center">
-        <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3 dark:border-gray-700" />
         <p className="text-sm text-gray-400">Loading…</p>
       </div>
     </div>
@@ -1040,7 +1040,7 @@ export function DashboardPage() {
               selectedNoteId={noteId}
               onNoteSelect={handleNoteSelect}
             />
-          ) : <div className="p-4 text-gray-500">Portfolio note data not available</div>
+          ) : <div className="p-4 text-gray-500 dark:text-gray-400">Portfolio note data not available</div>
         }
 
         if (entityType === 'theme') {
@@ -1053,7 +1053,7 @@ export function DashboardPage() {
               selectedNoteId={noteId}
               onNoteSelect={handleNoteSelect}
             />
-          ) : <div className="p-4 text-gray-500">Theme note data not available</div>
+          ) : <div className="p-4 text-gray-500 dark:text-gray-400">Theme note data not available</div>
         }
 
         // Default: asset notes (handle both formats from AssetTab and search)
@@ -1067,7 +1067,7 @@ export function DashboardPage() {
             selectedNoteId={noteId}
             onNoteSelect={handleNoteSelect}
           />
-        ) : <div className="p-4 text-gray-500">Note data not available</div>
+        ) : <div className="p-4 text-gray-500 dark:text-gray-400">Note data not available</div>
       }
       case 'theme':
         return <ThemeTab theme={activeTab.data} />
@@ -1199,7 +1199,7 @@ export function DashboardPage() {
       return (
         <div className="h-full flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-gray-400">
-            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-primary-500 animate-spin" />
+            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-primary-500 animate-spin dark:border-gray-700" />
             <p className="text-xs">Loading your workspace…</p>
           </div>
         </div>
@@ -1375,7 +1375,7 @@ export function DashboardPage() {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+          <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3 dark:border-gray-700" />
           <p className="text-sm text-gray-400">Loading…</p>
         </div>
       </div>
@@ -1469,7 +1469,7 @@ export function DashboardPage() {
         >
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
             <div className="text-[13px] font-semibold text-gray-900 dark:text-white">Open a tab</div>
-            <div className="text-[11px] text-gray-500">Pilot surfaces available to your workspace.</div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">Pilot surfaces available to your workspace.</div>
           </div>
           <div className="p-2 grid grid-cols-2 gap-1">
             {[

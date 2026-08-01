@@ -153,7 +153,7 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-gray-900">SSO / Identity Provider</h3>
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white">SSO / Identity Provider</h3>
               {!isLoading && (
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                   provider?.enabled && provider?.sso_only
@@ -161,8 +161,8 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
                     : provider?.enabled
                       ? 'bg-green-100 text-green-700'
                       : provider
-                        ? 'bg-gray-100 text-gray-600'
-                        : 'bg-gray-100 text-gray-500'
+                        ? 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
+                        : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                 }`}>
                   {provider?.enabled && provider?.sso_only
                     ? 'SSO-Only Mode'
@@ -174,7 +174,7 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Configure OIDC single sign-on for your organization
             </p>
             {provider?.updated_at && (
@@ -203,14 +203,14 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600"
             />
-            <span className="text-sm text-gray-700">Enable SSO</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Enable SSO</span>
           </label>
 
           {/* Discovery URL */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">
               Discovery URL (OpenID Configuration)
             </label>
             <input
@@ -218,13 +218,13 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
               value={discoveryUrl}
               onChange={(e) => setDiscoveryUrl(e.target.value)}
               placeholder="https://login.example.com/.well-known/openid-configuration"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
           </div>
 
           {/* Client ID */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">
               Client ID
             </label>
             <input
@@ -232,13 +232,13 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               placeholder="your-oidc-client-id"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
           </div>
 
           {/* Client Secret (optional, for confidential clients) */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">
               Client Secret <span className="text-gray-400">(optional)</span>
             </label>
             <input
@@ -247,7 +247,7 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder={provider ? '••••••••  (leave blank to keep existing)' : 'For confidential OIDC clients'}
               autoComplete="off"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
             <p className="text-xs text-gray-400 mt-1">
               Required for confidential clients. Not needed for PKCE-only (public) clients.
@@ -260,11 +260,11 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
               type="checkbox"
               checked={ssoOnly}
               onChange={(e) => setSsoOnly(e.target.checked)}
-              className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600"
             />
             <div>
-              <span className="text-sm text-gray-700">SSO-only mode</span>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <span className="text-sm text-gray-700 dark:text-gray-300">SSO-only mode</span>
+              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                 Require SSO for all users — password login will be disabled.
                 Requires at least one verified domain.
               </p>
@@ -299,14 +299,14 @@ export function OrgIdentityProviderSection({ organizationId, verifiedDomainCount
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4 dark:bg-gray-800">
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Disconnect SSO?</h3>
-                <p className="text-sm text-gray-500">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Disconnect SSO?</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   This will remove the identity provider configuration. Users will need to use password login.
                 </p>
               </div>

@@ -70,14 +70,14 @@ const SOURCE_ICONS: Record<string, React.ElementType> = {
 
 // Severity colors
 const SEVERITY_COLORS = {
-  low: 'text-gray-500',
+  low: 'text-gray-500 dark:text-gray-400',
   medium: 'text-amber-500',
   high: 'text-orange-500',
   critical: 'text-red-500',
 }
 
 const SEVERITY_BG = {
-  low: 'bg-gray-50',
+  low: 'bg-gray-50 dark:bg-gray-900',
   medium: 'bg-amber-50',
   high: 'bg-orange-50',
   critical: 'bg-red-50',
@@ -340,12 +340,12 @@ function NotRelevantPopover({
   return (
     <div
       ref={popoverRef}
-      className="absolute right-0 top-full mt-1 w-72 p-3 bg-white border border-gray-200 rounded-lg shadow-lg z-20"
+      className="absolute right-0 top-full mt-1 w-72 p-3 bg-white border border-gray-200 rounded-lg shadow-lg z-20 dark:border-gray-700 dark:bg-gray-800"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-2 mb-3">
         <XCircle className="w-4 h-4 text-gray-400" />
-        <span className="text-sm font-medium text-gray-700">Why isn't this relevant?</span>
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Why isn't this relevant?</span>
       </div>
 
       <div className="space-y-2 mb-3">
@@ -354,7 +354,7 @@ function NotRelevantPopover({
             key={option.value}
             className={clsx(
               'flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors',
-              selectedReason === option.value ? 'bg-gray-100' : 'hover:bg-gray-50'
+              selectedReason === option.value ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50'
             )}
           >
             <input
@@ -365,7 +365,7 @@ function NotRelevantPopover({
               onChange={() => setSelectedReason(option.value)}
               className="w-3.5 h-3.5 text-blue-600"
             />
-            <span className="text-sm text-gray-700">{option.label}</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">{option.label}</span>
           </label>
         ))}
       </div>
@@ -375,14 +375,14 @@ function NotRelevantPopover({
         placeholder="Optional note..."
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded mb-3 focus:outline-none focus:ring-1 focus:ring-blue-400"
+        className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded mb-3 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-gray-700"
         onClick={(e) => e.stopPropagation()}
       />
 
       <div className="flex items-center gap-2">
         <button
           onClick={onClose}
-          className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
+          className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700 dark:text-gray-400"
         >
           Cancel
         </button>
@@ -571,7 +571,7 @@ export function AttentionCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-900 truncate">
+            <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
               {actionTitle}
             </span>
             {urgencyLine && urgencyLine.includes('Overdue') && (
@@ -663,7 +663,7 @@ export function AttentionCard({
                     setShowDeferMenu(!showDeferMenu)
                   }}
                   disabled={isActionPending === 'defer'}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50 dark:hover:bg-gray-700 dark:text-gray-400"
                 >
                   {isActionPending === 'defer' ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -675,7 +675,7 @@ export function AttentionCard({
                 </button>
 
                 {showDeferMenu && (
-                  <div className="absolute left-0 top-full mt-1 py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[120px]">
+                  <div className="absolute left-0 top-full mt-1 py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[120px] dark:border-gray-700 dark:bg-gray-800">
                     {[
                       { hours: 4, label: '4 hours' },
                       { hours: 24, label: 'Tomorrow' },
@@ -684,7 +684,7 @@ export function AttentionCard({
                       <button
                         key={hours}
                         onClick={(e) => handleDefer(e, hours)}
-                        className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+                        className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                       >
                         {label}
                       </button>
@@ -750,7 +750,7 @@ export function AttentionCard({
                     setShowDeferMenu(!showDeferMenu)
                   }}
                   disabled={isActionPending === 'defer'}
-                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
                 >
                   {isActionPending === 'defer' ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -761,7 +761,7 @@ export function AttentionCard({
                 </button>
 
                 {showDeferMenu && (
-                  <div className="absolute left-0 top-full mt-1 py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[120px]">
+                  <div className="absolute left-0 top-full mt-1 py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[120px] dark:border-gray-700 dark:bg-gray-800">
                     {[
                       { hours: 4, label: '4 hours' },
                       { hours: 24, label: 'Tomorrow' },
@@ -770,7 +770,7 @@ export function AttentionCard({
                       <button
                         key={hours}
                         onClick={(e) => handleDefer(e, hours)}
-                        className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+                        className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                       >
                         {label}
                       </button>
@@ -811,7 +811,7 @@ export function AttentionCard({
         {attention_type === 'decision_required' && onQuickCapture && (
           <button
             onClick={handleAddRationale}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <PenLine className="w-3.5 h-3.5 text-gray-400" />
             Add rationale
@@ -822,7 +822,7 @@ export function AttentionCard({
         {attention_type !== 'alignment' && onDismissWithReason && (
           <>
             {attention_type === 'decision_required' && onQuickCapture && (
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
             )}
             <button
               onClick={(e) => {
@@ -850,7 +850,7 @@ export function AttentionCard({
       className={clsx(
         'relative p-4 rounded-lg border cursor-pointer transition-all duration-200',
         'hover:shadow-md hover:border-gray-300',
-        item.read_state === 'unread' ? 'bg-white border-blue-200' : 'bg-white border-gray-200',
+        item.read_state === 'unread' ? 'bg-white border-blue-200 dark:bg-gray-800' : 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800',
         item.severity === 'critical' && 'border-l-4 border-l-red-500',
         item.severity === 'high' && 'border-l-4 border-l-orange-500',
         resolutionState === 'resolving' && 'opacity-60 scale-[0.98] translate-x-1'
@@ -859,7 +859,7 @@ export function AttentionCard({
       {/* Resolution overlay */}
       {resolutionState === 'resolving' && resolutionMessage && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-lg z-10">
-          <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
             <Check className="w-4 h-4 text-green-500" />
             {resolutionMessage}
           </div>
@@ -875,7 +875,7 @@ export function AttentionCard({
         <div className="flex-1 min-w-0">
           {/* Action-forward title */}
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold text-gray-900">
+            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
               {actionTitle}
             </h4>
             {item.read_state === 'unread' && (
@@ -894,7 +894,7 @@ export function AttentionCard({
               'text-sm mt-2 font-medium',
               urgencyLine.includes('Overdue') ? 'text-red-600' :
               urgencyLine.includes('Due today') || urgencyLine.includes('Due tomorrow') ? 'text-amber-600' :
-              'text-gray-600'
+              'text-gray-600 dark:text-gray-400'
             )}>
               {urgencyLine}
             </p>
@@ -902,15 +902,15 @@ export function AttentionCard({
 
           {/* Fallback to reason_text */}
           {!urgencyLine && item.reason_text && (
-            <p className="text-sm text-gray-600 mt-2">
+            <p className="text-sm text-gray-600 mt-2 dark:text-gray-400">
               {item.reason_text}
             </p>
           )}
 
           {/* Next action */}
           {item.next_action && (
-            <div className="mt-2 py-1.5 px-2 bg-gray-50 rounded border-l-2 border-blue-400">
-              <p className="text-sm text-gray-700">
+            <div className="mt-2 py-1.5 px-2 bg-gray-50 rounded border-l-2 border-blue-400 dark:bg-gray-900">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
                 <span className="font-semibold text-blue-600">Next action:</span>{' '}
                 {item.next_action}
               </p>
@@ -920,7 +920,7 @@ export function AttentionCard({
           {/* Memory badge */}
           {memoryBadge && (
             <div className="mt-2">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs text-gray-500 bg-gray-100 rounded-full">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs text-gray-500 bg-gray-100 rounded-full dark:text-gray-400 dark:bg-gray-800">
                 <memoryBadge.icon className="w-3 h-3" />
                 {memoryBadge.label}
               </span>
@@ -933,7 +933,7 @@ export function AttentionCard({
               {item.tags.slice(0, 3).map((tag, i) => (
                 <span
                   key={i}
-                  className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500"
+                  className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800"
                 >
                   {tag}
                 </span>
@@ -949,12 +949,12 @@ export function AttentionCard({
             onMouseEnter={() => setShowScoreTooltip(true)}
             onMouseLeave={() => setShowScoreTooltip(false)}
           >
-            <span className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-200 text-gray-500 rounded cursor-help">
+            <span className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-200 text-gray-500 rounded cursor-help dark:text-gray-400">
               {item.score.toFixed(0)}
             </span>
             {showScoreTooltip && item.score_breakdown && (
-              <div className="absolute right-0 top-full mt-2 p-3 bg-white border border-gray-200 rounded-lg shadow-xl z-20 min-w-[180px]">
-                <div className="text-xs font-medium text-gray-700 mb-2 pb-2 border-b border-gray-100">
+              <div className="absolute right-0 top-full mt-2 p-3 bg-white border border-gray-200 rounded-lg shadow-xl z-20 min-w-[180px] dark:border-gray-700 dark:bg-gray-800">
+                <div className="text-xs font-medium text-gray-700 mb-2 pb-2 border-b border-gray-100 dark:border-gray-800 dark:text-gray-300">
                   Score Breakdown
                 </div>
                 <div className="space-y-1.5">
@@ -965,7 +965,7 @@ export function AttentionCard({
                       .join(' ')
                     return (
                       <div key={i} className="flex justify-between items-center gap-3">
-                        <span className="text-xs text-gray-500">{formattedKey}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{formattedKey}</span>
                         <span className={clsx(
                           'text-xs font-medium tabular-nums',
                           b.value > 0 ? 'text-green-600' : b.value < 0 ? 'text-red-500' : 'text-gray-400'
@@ -976,9 +976,9 @@ export function AttentionCard({
                     )
                   })}
                 </div>
-                <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center">
-                  <span className="text-xs font-medium text-gray-700">Total</span>
-                  <span className="text-sm font-semibold text-gray-900">{item.score.toFixed(0)}</span>
+                <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center dark:border-gray-800">
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Total</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{item.score.toFixed(0)}</span>
                 </div>
               </div>
             )}
@@ -987,7 +987,7 @@ export function AttentionCard({
       </div>
 
       {/* Action row */}
-      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
         {renderActions()}
 
         <div className="flex-1" />
@@ -1000,13 +1000,13 @@ export function AttentionCard({
                 e.stopPropagation()
                 setShowOverflowMenu(!showOverflowMenu)
               }}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
 
             {showOverflowMenu && (
-              <div className="absolute right-0 top-full mt-1 py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
+              <div className="absolute right-0 top-full mt-1 py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px] dark:border-gray-700 dark:bg-gray-800">
                 {renderOverflowItems()}
               </div>
             )}

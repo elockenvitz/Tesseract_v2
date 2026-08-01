@@ -210,7 +210,7 @@ export function FullScreenFeed({
         className
       )}>
         <div className="text-center text-white">
-          <Lightbulb className="w-16 h-16 mx-auto mb-4 text-gray-500" />
+          <Lightbulb className="w-16 h-16 mx-auto mb-4 text-gray-500 dark:text-gray-400" />
           <p className="text-xl">No ideas to show</p>
           <p className="text-gray-400 mt-2">Start by adding some content!</p>
         </div>
@@ -238,7 +238,7 @@ export function FullScreenFeed({
             key={index}
             className={clsx(
               'h-0.5 flex-1 rounded-full transition-all duration-300',
-              index === currentIndex ? 'bg-white' : 'bg-white/30'
+              index === currentIndex ? 'bg-white dark:bg-gray-800' : 'bg-white/30'
             )}
           />
         ))}

@@ -61,13 +61,13 @@ export function UserWidgetRenderer({
   return (
     <Card padding="none" className="border-l-4 border-l-cyan-400">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+      <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
         <button
           onClick={onToggleCollapse}
           className="flex items-center gap-2 flex-1"
         >
           <Icon className="w-4 h-4 text-cyan-600" />
-          <span className="font-medium text-gray-900">{widget.title}</span>
+          <span className="font-medium text-gray-900 dark:text-white">{widget.title}</span>
           <span className="text-xs text-cyan-600 bg-cyan-50 px-1.5 py-0.5 rounded">
             Custom
           </span>
@@ -94,9 +94,9 @@ export function UserWidgetRenderer({
 
       {/* Content */}
       {!isCollapsed && (
-        <div className="border-t border-gray-100 px-4 py-4">
+        <div className="border-t border-gray-100 px-4 py-4 dark:border-gray-800">
           {widget.description && (
-            <p className="text-xs text-gray-500 mb-3">{widget.description}</p>
+            <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{widget.description}</p>
           )}
 
           {/* Render based on widget type */}
@@ -258,9 +258,9 @@ function ChecklistWidgetContent({
             checked={item.checked}
             onChange={() => handleToggle(item.id)}
             disabled={!isOwner}
-            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
           />
-          <span className={item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}>
+          <span className={item.checked ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300'}>
             {item.text}
           </span>
           {isOwner && (
@@ -282,7 +282,7 @@ function ChecklistWidgetContent({
             onChange={(e) => setNewItemText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
             placeholder="Add item..."
-            className="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+            className="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700"
           />
           <button
             onClick={handleAddItem}
@@ -334,15 +334,15 @@ function NumericWidgetContent({
           type="number"
           value={numValue ?? ''}
           onChange={(e) => handleChange(e.target.value)}
-          className="w-32 px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+          className="w-32 px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700"
           placeholder="Enter value..."
         />
       ) : (
-        <span className="text-2xl font-semibold text-gray-900">
+        <span className="text-2xl font-semibold text-gray-900 dark:text-white">
           {numValue !== undefined ? numValue.toLocaleString() : '—'}
         </span>
       )}
-      {unit && <span className="text-gray-500">{unit}</span>}
+      {unit && <span className="text-gray-500 dark:text-gray-400">{unit}</span>}
     </div>
   )
 }
@@ -378,10 +378,10 @@ function DateWidgetContent({
           type="date"
           value={dateValue || ''}
           onChange={(e) => handleChange(e.target.value)}
-          className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+          className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700"
         />
       ) : (
-        <span className="text-gray-900">
+        <span className="text-gray-900 dark:text-white">
           {dateValue ? new Date(dateValue).toLocaleDateString() : '—'}
         </span>
       )}
@@ -426,20 +426,20 @@ function MetricWidgetContent({
             value={metricValue || ''}
             onChange={(e) => handleChange('metric', e.target.value)}
             placeholder="Value (e.g., $150)"
-            className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-lg font-semibold"
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-lg font-semibold dark:border-gray-700"
           />
           <input
             type="text"
             value={metricLabel || ''}
             onChange={(e) => handleChange('label', e.target.value)}
             placeholder="Label (e.g., Target Price)"
-            className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-sm"
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-sm dark:border-gray-700"
           />
         </div>
       ) : (
-        <div className="bg-gray-50 rounded-lg px-4 py-3">
-          <div className="text-2xl font-bold text-gray-900">{metricValue || '—'}</div>
-          {metricLabel && <div className="text-xs text-gray-500 mt-1">{metricLabel}</div>}
+        <div className="bg-gray-50 rounded-lg px-4 py-3 dark:bg-gray-900">
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">{metricValue || '—'}</div>
+          {metricLabel && <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">{metricLabel}</div>}
         </div>
       )}
     </div>
@@ -511,12 +511,12 @@ function TimelineWidgetContent({
           <div className="flex-1 pb-4">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
                   {new Date(event.date).toLocaleDateString()}
                 </div>
-                <div className="font-medium text-gray-900">{event.title}</div>
+                <div className="font-medium text-gray-900 dark:text-white">{event.title}</div>
                 {event.description && (
-                  <div className="text-sm text-gray-600 mt-0.5">{event.description}</div>
+                  <div className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">{event.description}</div>
                 )}
               </div>
               {isOwner && (
@@ -535,26 +535,26 @@ function TimelineWidgetContent({
       {/* Add event form */}
       {isOwner && (
         showAddForm ? (
-          <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+          <div className="bg-gray-50 rounded-lg p-3 space-y-2 dark:bg-gray-900">
             <input
               type="date"
               value={newEvent.date}
               onChange={(e) => setNewEvent(prev => ({ ...prev, date: e.target.value }))}
-              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500"
+              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-700"
             />
             <input
               type="text"
               value={newEvent.title}
               onChange={(e) => setNewEvent(prev => ({ ...prev, title: e.target.value }))}
               placeholder="Event title"
-              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500"
+              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-700"
             />
             <input
               type="text"
               value={newEvent.description}
               onChange={(e) => setNewEvent(prev => ({ ...prev, description: e.target.value }))}
               placeholder="Description (optional)"
-              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500"
+              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-700"
             />
             <div className="flex gap-2">
               <button
@@ -566,7 +566,7 @@ function TimelineWidgetContent({
               </button>
               <button
                 onClick={() => setShowAddForm(false)}
-                className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded"
+                className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded dark:text-gray-400"
               >
                 Cancel
               </button>

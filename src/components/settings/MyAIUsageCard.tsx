@@ -43,7 +43,7 @@ export function MyAIUsageCard() {
   if (isError) {
     return (
       <Card>
-        <div className="text-sm text-gray-500">Could not load usage history.</div>
+        <div className="text-sm text-gray-500 dark:text-gray-400">Could not load usage history.</div>
       </Card>
     )
   }
@@ -65,7 +65,7 @@ export function MyAIUsageCard() {
             </p>
           </div>
           {totalRequests30d > 0 && (
-            <span className="text-xs text-gray-500 shrink-0">
+            <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">
               {totalRequests30d.toLocaleString()} requests · last 30 days
             </span>
           )}
@@ -76,7 +76,7 @@ export function MyAIUsageCard() {
             {[...Array(3)].map((_, i) => <div key={i} className="h-20 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />)}
           </div>
         ) : totalRequests30d === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+          <div className="py-10 text-center text-sm text-gray-500 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg dark:text-gray-400">
             <Sparkles className="w-6 h-6 mx-auto mb-2 text-gray-300" />
             No AI activity yet. Start using AI features and your usage will appear here.
           </div>
@@ -113,7 +113,7 @@ export function MyAIUsageCard() {
                 <h4 className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
                   Daily cost · last 14 days
                 </h4>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {fmtUsd(daily.reduce((s, d) => s + d.cost, 0))} total
                 </span>
               </div>

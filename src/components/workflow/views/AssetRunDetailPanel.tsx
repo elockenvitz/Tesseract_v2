@@ -178,29 +178,29 @@ export function AssetRunDetailPanel({
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortKey !== col || !sortDir) return <ChevronsUpDown className="w-3 h-3 text-gray-300" />
     return sortDir === 'asc'
-      ? <ChevronUp className="w-3 h-3 text-gray-600" />
-      : <ChevronDown className="w-3 h-3 text-gray-600" />
+      ? <ChevronUp className="w-3 h-3 text-gray-600 dark:text-gray-400" />
+      : <ChevronDown className="w-3 h-3 text-gray-600 dark:text-gray-400" />
   }
 
-  const thClass = 'text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 transition-colors'
+  const thClass = 'text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400'
 
   return (
     <>
       {/* Big metric card */}
-      <Card className="bg-white">
+      <Card className="bg-white dark:bg-gray-800">
         <div className="p-6 text-center">
           {totalAssets === 0 ? (
             <>
               <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-              <div className="text-sm font-medium text-gray-600">No assets assigned</div>
+              <div className="text-sm font-medium text-gray-600 dark:text-gray-400">No assets assigned</div>
               <div className="text-xs text-gray-400 mt-1">
                 Add assets from the process universe to start tracking progress.
               </div>
             </>
           ) : (
             <>
-              <div className="text-4xl font-bold text-gray-900">{isRunEnded ? completedAssets : remainingAssets}</div>
-              <div className="text-sm text-gray-500 mt-1">{isRunEnded ? 'Assets Completed' : 'Assets Remaining'}</div>
+              <div className="text-4xl font-bold text-gray-900 dark:text-white">{isRunEnded ? completedAssets : remainingAssets}</div>
+              <div className="text-sm text-gray-500 mt-1 dark:text-gray-400">{isRunEnded ? 'Assets Completed' : 'Assets Remaining'}</div>
               <div className="text-xs text-gray-400 mt-1">
                 {isRunEnded ? `${remainingAssets} not completed` : `${completedAssets} completed`} &middot; {totalAssets} total
               </div>
@@ -230,7 +230,7 @@ export function AssetRunDetailPanel({
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               filterMode === tab.mode
                 ? 'bg-blue-100 text-blue-800 font-medium'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
             }`}
           >
             {tab.label} ({tab.count})
@@ -253,9 +253,9 @@ export function AssetRunDetailPanel({
               ))}
             </div>
           ) : filteredAssets.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
               <Filter className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm font-medium text-gray-600">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
                 {filterMode === 'in_progress'
                   ? 'All assets completed'
                   : filterMode === 'mine'
@@ -266,7 +266,7 @@ export function AssetRunDetailPanel({
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50">
+                <tr className="border-b border-gray-200 bg-gray-50/50 dark:border-gray-700">
                   <th className={thClass} onClick={() => handleSort('symbol')}>
                     <span className="inline-flex items-center gap-1">Symbol <SortIcon col="symbol" /></span>
                   </th>
@@ -292,8 +292,8 @@ export function AssetRunDetailPanel({
                       className={`border-b border-gray-100 hover:bg-gray-50 ${onNavigate ? 'cursor-pointer' : ''}`}
                       onClick={() => handleAssetClick(record)}
                     >
-                      <td className="py-2.5 px-4 font-medium text-gray-900">{asset?.symbol || '—'}</td>
-                      <td className="py-2.5 px-4 text-gray-600 truncate max-w-[200px]">{asset?.company_name || '—'}</td>
+                      <td className="py-2.5 px-4 font-medium text-gray-900 dark:text-white">{asset?.symbol || '—'}</td>
+                      <td className="py-2.5 px-4 text-gray-600 truncate max-w-[200px] dark:text-gray-400">{asset?.company_name || '—'}</td>
                       <td className="py-2.5 px-4">
                         {stage ? (
                           <Badge variant="outline" className="text-xs py-0" style={{ borderColor: stage.stage_color, color: stage.stage_color }}>

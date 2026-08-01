@@ -134,7 +134,7 @@ const EXEC_STATUS_CONFIG: Record<ExecutionMatchStatus, {
   pending:        { label: 'Pending',        color: 'text-amber-700',   bgColor: 'bg-amber-50',    icon: Clock },
   possible_match: { label: 'Possible',       color: 'text-blue-700',    bgColor: 'bg-blue-50',     icon: HelpCircle },
   unmatched:      { label: 'Unmatched',      color: 'text-red-700',     bgColor: 'bg-red-50',      icon: AlertTriangle },
-  not_applicable: { label: 'No trade',       color: 'text-gray-500',    bgColor: 'bg-gray-100',    icon: XCircle },
+  not_applicable: { label: 'No trade',       color: 'text-gray-500 dark:text-gray-400',    bgColor: 'bg-gray-100 dark:bg-gray-800',    icon: XCircle },
 }
 
 const DIRECTION_CONFIG: Record<string, { color: string; bgColor: string }> = {
@@ -149,7 +149,7 @@ const DIRECTION_CONFIG: Record<string, { color: string; bgColor: string }> = {
 const STAGE_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
   approved:  { label: 'Approved',  color: 'text-emerald-700', bgColor: 'bg-emerald-50' },
   rejected:  { label: 'Rejected',  color: 'text-red-700',     bgColor: 'bg-red-50' },
-  cancelled: { label: 'Cancelled', color: 'text-gray-500',    bgColor: 'bg-gray-100' },
+  cancelled: { label: 'Cancelled', color: 'text-gray-500 dark:text-gray-400',    bgColor: 'bg-gray-100 dark:bg-gray-800' },
 }
 
 const RESULT_CONFIG: Record<ResultDirection, { color: string; icon: typeof TrendingUp; label: string }> = {
@@ -323,13 +323,13 @@ function FilterBar({
     <div className="flex items-center gap-2.5">
       {/* Date range */}
       <div className="relative">
-        <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
+        <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800">
           {(['7d', '30d', '90d', 'QTD', 'YTD', '1Y', 'ALL'] as DatePreset[]).map(p => (
             <button
               key={p}
               onClick={() => handlePreset(p)}
               className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
-                activePreset === p ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                activePreset === p ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               {p}
@@ -338,7 +338,7 @@ function FilterBar({
           <button
             onClick={() => handlePreset('custom')}
             className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
-              showCustom || activePreset === 'custom' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              showCustom || activePreset === 'custom' ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
             }`}
           >
             Custom
@@ -348,19 +348,19 @@ function FilterBar({
         {showCustom && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowCustom(false)} />
-            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 flex items-center gap-2">
+            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 flex items-center gap-2 dark:border-gray-700 dark:bg-gray-800">
               <input
                 type="date"
                 value={customStart}
                 onChange={e => setCustomStart(e.target.value)}
-                className="text-[11px] border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                className="text-[11px] border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
               />
               <span className="text-[11px] text-gray-400">to</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={e => setCustomEnd(e.target.value)}
-                className="text-[11px] border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                className="text-[11px] border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
               />
               <button
                 onClick={applyCustomRange}
@@ -406,7 +406,7 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
       highlight: hasReviewWork,
       sub: hasReviewWork ? `${summary.needsReviewCount} missing \u00B7 ${summary.reviewInProgressCount} draft` : undefined,
     },
-    { label: 'Decisions', value: summary.approvedCount, icon: Target, color: 'text-gray-700' },
+    { label: 'Decisions', value: summary.approvedCount, icon: Target, color: 'text-gray-700 dark:text-gray-300' },
     {
       label: 'Exec Rate',
       value: summary.executionRate !== null ? `${summary.executionRate}%` : '\u2014',
@@ -418,7 +418,7 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
       label: 'Avg Lag',
       value: summary.avgLagDays !== null ? `${summary.avgLagDays}d` : '\u2014',
       icon: Timer,
-      color: summary.avgLagDays !== null && summary.avgLagDays > 7 ? 'text-amber-600' : 'text-gray-600',
+      color: summary.avgLagDays !== null && summary.avgLagDays > 7 ? 'text-amber-600' : 'text-gray-600 dark:text-gray-400',
     },
     {
       label: 'Since Decision',
@@ -443,7 +443,7 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
       value: summary.totalWeightedDelayCost !== null ? formatDollarCompact(-summary.totalWeightedDelayCost) : '\u2014',
       icon: Timer,
       color: summary.totalWeightedDelayCost !== null
-        ? summary.totalWeightedDelayCost > 500 ? 'text-red-600' : 'text-gray-600'
+        ? summary.totalWeightedDelayCost > 500 ? 'text-red-600' : 'text-gray-600 dark:text-gray-400'
         : 'text-gray-400',
       tooltip: 'Total dollar-equivalent delay cost across sized decisions (proxy)',
     },
@@ -459,14 +459,14 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
   ]
 
   return (
-    <div className="grid grid-cols-8 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+    <div className="grid grid-cols-8 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
       {tiles.map((t, i) => {
         const Icon = t.icon
         return (
           <div
             key={t.label}
             className={`px-3 py-2.5 ${
-              t.highlight ? 'bg-red-50/60' : 'bg-white'
+              t.highlight ? 'bg-red-50/60' : 'bg-white dark:bg-gray-800'
             } ${i === 0 ? 'border-r-2 border-r-gray-300' : ''}`}
             title={t.tooltip}
           >
@@ -561,12 +561,12 @@ function ExecStatusPill({ status, interactive = false, row }: {
   if (status === 'not_applicable' && row) {
     if (row.stage === 'rejected') {
       displayLabel = 'Not traded'
-      displayColor = 'text-gray-500'
-      displayBg = 'bg-gray-100'
+      displayColor = 'text-gray-500 dark:text-gray-400'
+      displayBg = 'bg-gray-100 dark:bg-gray-800'
     } else if (row.stage === 'cancelled') {
       displayLabel = 'Withdrawn'
       displayColor = 'text-gray-400'
-      displayBg = 'bg-gray-50'
+      displayBg = 'bg-gray-50 dark:bg-gray-900'
     }
   }
 
@@ -591,12 +591,12 @@ function ExecStatusPill({ status, interactive = false, row }: {
       {showTip && explanation && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowTip(false)} />
-          <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+          <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-white border border-gray-200 rounded-lg shadow-lg p-3 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-start gap-2">
               <cfg.icon className={`w-4 h-4 mt-0.5 shrink-0 ${displayColor}`} />
               <div>
-                <p className="text-[11px] font-semibold text-gray-900 mb-1">{displayLabel}</p>
-                <p className="text-[10px] text-gray-500 leading-relaxed">{explanation}</p>
+                <p className="text-[11px] font-semibold text-gray-900 mb-1 dark:text-white">{displayLabel}</p>
+                <p className="text-[10px] text-gray-500 leading-relaxed dark:text-gray-400">{explanation}</p>
               </div>
             </div>
           </div>
@@ -626,7 +626,7 @@ function DecisionRow({
   showPortfolio: boolean
 }) {
   const vd = VERDICT_DISPLAY[intel.verdict]
-  const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600', bgColor: 'bg-gray-100' }
+  const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
 
   // Selected rows get a strong primary-tinted treatment so the user
   // can scan back to the row that's driving the right pane without
@@ -689,7 +689,7 @@ function DecisionRow({
 
       {/* Ticker */}
       <div className="px-1 py-2 flex items-center">
-        <span className="text-[12px] font-semibold text-gray-900">{row.asset_symbol || '?'}</span>
+        <span className="text-[12px] font-semibold text-gray-900 dark:text-white">{row.asset_symbol || '?'}</span>
       </div>
 
       {/* Name */}
@@ -722,7 +722,7 @@ function DecisionRow({
               className={`text-[10px] font-medium truncate ${
                 intel.urgency === 'critical' ? 'text-red-600'
                 : intel.urgency === 'high' ? 'text-amber-700'
-                : 'text-gray-600'
+                : 'text-gray-600 dark:text-gray-400'
               }`}
               title={intel.primaryIssue}
             >
@@ -739,7 +739,7 @@ function DecisionRow({
             const textClass =
               insight.tone === 'positive' ? 'text-emerald-700'
               : insight.tone === 'negative' ? 'text-red-600'
-              : 'text-gray-500'
+              : 'text-gray-500 dark:text-gray-400'
             return (
               <>
                 <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${dotClass}`} />
@@ -792,7 +792,7 @@ function DecisionRow({
           <span className={`text-[9px] font-semibold px-1.5 py-[3px] rounded ${
             intel.urgency === 'critical' ? 'text-red-700 bg-red-100 border border-red-200' :
             intel.urgency === 'high' ? 'text-amber-700 bg-amber-50 border border-amber-200' :
-            'text-gray-600 bg-gray-100'
+            'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
           }`}>
             {intel.actionNeeded}
           </span>
@@ -883,7 +883,7 @@ function StorySection({ icon: Icon, title, children, defaultOpen = false, badge,
       >
         {open ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
         <Icon className={`w-4 h-4 ${needsAttention ? 'text-amber-500' : 'text-gray-400'}`} />
-        <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 flex-1">{title}</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 flex-1 dark:text-gray-400">{title}</span>
         {needsAttention && (
           <span
             className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-[2px] rounded"
@@ -947,11 +947,11 @@ function AddThesisForm({ decisionId }: { decisionId: string }) {
   const directions: Array<{ key: 'bull' | 'bear' | 'neutral'; label: string; cls: string }> = [
     { key: 'bull',    label: 'Bull',    cls: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
     { key: 'bear',    label: 'Bear',    cls: 'bg-red-100 text-red-700 border-red-300' },
-    { key: 'neutral', label: 'Neutral', cls: 'bg-gray-100 text-gray-600 border-gray-300' },
+    { key: 'neutral', label: 'Neutral', cls: 'bg-gray-100 text-gray-600 border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800' },
   ]
 
   return (
-    <div className="mt-3 rounded border border-gray-200 bg-gray-50/40 p-2.5 space-y-2">
+    <div className="mt-3 rounded border border-gray-200 bg-gray-50/40 p-2.5 space-y-2 dark:border-gray-700">
       <div className="flex items-center gap-1.5">
         {directions.map(d => (
           <button
@@ -960,7 +960,7 @@ function AddThesisForm({ decisionId }: { decisionId: string }) {
             className={`text-[9px] font-bold uppercase tracking-wider px-2 py-[3px] rounded border transition-colors ${
               direction === d.key
                 ? d.cls
-                : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800'
             }`}
             type="button"
           >
@@ -973,7 +973,7 @@ function AddThesisForm({ decisionId }: { decisionId: string }) {
         onChange={(e) => { setRationale(e.target.value); if (error) setError(null) }}
         rows={3}
         placeholder="Why this view? What drives the direction?"
-        className="w-full px-2 py-1.5 rounded border border-gray-200 bg-white text-[11px] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-300 resize-none"
+        className="w-full px-2 py-1.5 rounded border border-gray-200 bg-white text-[11px] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-300 resize-none dark:border-gray-700 dark:text-gray-100 dark:bg-gray-800"
         disabled={addThesis.isPending}
       />
       {error && (
@@ -982,7 +982,7 @@ function AddThesisForm({ decisionId }: { decisionId: string }) {
       <div className="flex items-center justify-end gap-2">
         <button
           onClick={() => { setOpen(false); setRationale(''); setError(null) }}
-          className="text-[10px] text-gray-500 hover:text-gray-700"
+          className="text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
           type="button"
           disabled={addThesis.isPending}
         >
@@ -1007,7 +1007,7 @@ function RationaleField({ label, value }: { label: string; value: string | null 
   return (
     <div className="mb-2">
       <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
-      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{value}</p>
+      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{value}</p>
     </div>
   )
 }
@@ -1066,11 +1066,11 @@ function InsightBanner({ row }: { row: AccountabilityRow }) {
     <div className={`rounded-md border-l-2 ${tone.rail} ${tone.bg} px-2.5 py-2`}>
       <div className="flex items-center gap-1.5 mb-1">
         <Sparkles className={`w-3 h-3 ${tone.icon}`} />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">System Insight</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">System Insight</span>
       </div>
-      <p className="text-[12px] leading-snug font-medium text-gray-800">{insight.text}</p>
+      <p className="text-[12px] leading-snug font-medium text-gray-800 dark:text-gray-100">{insight.text}</p>
       {insight.conclusion && (
-        <p className="text-[11px] leading-snug text-gray-600 mt-1 flex gap-1">
+        <p className="text-[11px] leading-snug text-gray-600 mt-1 flex gap-1 dark:text-gray-400">
           <span className="text-gray-400 flex-shrink-0">→</span>
           <span>{insight.conclusion}</span>
         </p>
@@ -1094,14 +1094,14 @@ function ConsiderationsSection({ row }: { row: AccountabilityRow }) {
   const items = useMemo(() => buildConsiderations(row), [row])
   if (items.length === 0) return null
   return (
-    <div className="mx-4 mt-4 mb-1.5 px-2.5 pt-3 border-t border-gray-100">
+    <div className="mx-4 mt-4 mb-1.5 px-2.5 pt-3 border-t border-gray-100 dark:border-gray-800">
       <div className="flex items-center gap-1.5 mb-1.5">
         <HelpCircle className="w-3 h-3 text-gray-400" />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Things to consider</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Things to consider</span>
       </div>
       <ul className="space-y-0.5">
         {items.map((q, i) => (
-          <li key={i} className="text-[11px] leading-snug text-gray-600 flex gap-1.5">
+          <li key={i} className="text-[11px] leading-snug text-gray-600 flex gap-1.5 dark:text-gray-400">
             <span className="text-gray-300 mt-0.5">·</span>
             <span>{q}</span>
           </li>
@@ -1260,7 +1260,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
             {/* Thesis evolution — single segmented row, four
                 observational choices, auto-save on click. */}
             <div className="space-y-1">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">How did the thesis evolve?</div>
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">How did the thesis evolve?</div>
               <div className="flex flex-wrap gap-1">
                 {REFLECTION_THESIS_OPTIONS.map(opt => {
                   const selected = review?.thesis_played_out === opt.value
@@ -1273,7 +1273,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                       className={`text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
                         selected
                           ? 'border-primary-400 bg-primary-50 text-primary-700 ring-2 ring-primary-200'
-                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                       } ${upsert.isPending ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       {opt.label}
@@ -1296,7 +1296,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
               always go into the thread. */}
           {(reflections.length > 0 || (review?.process_note || '').trim() || canAddThreadEntry || (isPassed && row.decision_note)) && (
             <div className="space-y-2 pt-3 border-t border-gray-100 dark:border-gray-800">
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Reflection notes
                 {reflections.length > 0 && (
                   <span className="text-gray-400 normal-case font-normal ml-1.5">({reflections.length})</span>
@@ -1313,7 +1313,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                     <Pencil className="w-3 h-3 text-emerald-500" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{review!.process_note}</p>
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{review!.process_note}</p>
                     <p className="text-[9px] text-gray-400 mt-0.5">
                       Initial reflection
                       {review?.created_at && (
@@ -1332,7 +1332,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                         <User className="w-3 h-3 text-indigo-400" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{r.content}</p>
+                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{r.content}</p>
                         <p className="text-[9px] text-gray-400 mt-0.5">
                           {r.user_name} &middot; {format(new Date(r.created_at), 'MMM d')}
                         </p>
@@ -1344,9 +1344,9 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
 
               {/* Decision note from rejection/deferral (for passed decisions) */}
               {isPassed && row.decision_note && reflections.length === 0 && !(review?.process_note || '').trim() && (
-                <div className="rounded-md bg-gray-50 border border-gray-100 px-3 py-2.5">
+                <div className="rounded-md bg-gray-50 border border-gray-100 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
                   <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Decision note</div>
-                  <p className="text-[11px] text-gray-600 leading-relaxed">{row.decision_note}</p>
+                  <p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{row.decision_note}</p>
                 </div>
               )}
 
@@ -1358,7 +1358,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddThreadEntry() } }}
                     placeholder={threadPlaceholder}
                     rows={2}
-                    className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none"
+                    className="w-full text-[11px] px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 leading-relaxed resize-none dark:border-gray-700 dark:text-white dark:bg-gray-800"
                   />
                   {threadDraft.trim() && (
                     <div className="flex items-center gap-2 mt-1.5">
@@ -1369,7 +1369,7 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
                       >
                         {addReflection.isPending ? 'Saving…' : 'Post note'}
                       </button>
-                      <button onClick={() => setThreadDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700">Cancel</button>
+                      <button onClick={() => setThreadDraft('')} className="text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">Cancel</button>
                       <span className="text-[9px] text-gray-300 ml-auto">Enter to save, Shift+Enter for new line</span>
                     </div>
                   )}
@@ -1473,10 +1473,10 @@ function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <div className="mx-4 my-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2">
+    <div className="mx-4 my-2 rounded-md border border-gray-100 bg-gray-50/50 px-3 py-2 dark:border-gray-800">
       <div className="flex items-center gap-1.5 mb-1">
         <Zap className="w-3 h-3 text-primary-500" />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Suggested next action</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Suggested next action</span>
       </div>
       <div className="flex flex-wrap gap-1">
         {actions.map((a, i) => (
@@ -1487,7 +1487,7 @@ function SuggestedActionsSection({ row }: { row: AccountabilityRow }) {
             className={`text-[10px] font-semibold px-2.5 py-1 rounded border transition-colors ${
               a.primary
                 ? 'border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100'
-                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
             }`}
             title={a.label}
           >
@@ -1538,7 +1538,7 @@ function LoopFooter({ row }: { row: AccountabilityRow }) {
   const stageIndex = stages.findIndex(s => s.key === currentStage)
 
   return (
-    <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/40">
+    <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/40 dark:border-gray-800">
       <div className="flex items-center gap-1 text-[10px]">
         {stages.map((s, i) => {
           const passed = i < stageIndex
@@ -1547,7 +1547,7 @@ function LoopFooter({ row }: { row: AccountabilityRow }) {
             <React.Fragment key={s.key}>
               <span
                 className={`font-semibold ${
-                  active ? 'text-gray-900' : passed ? 'text-gray-500' : 'text-gray-300'
+                  active ? 'text-gray-900 dark:text-white' : passed ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300'
                 }`}
               >
                 {s.label}
@@ -1571,7 +1571,7 @@ function DetailPanel({
   row: AccountabilityRow
   onClose: () => void
 }) {
-  const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600', bgColor: 'bg-gray-100' }
+  const dirCfg = DIRECTION_CONFIG[row.direction] || { color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   const baseIntel = inferDecisionIntelligence(row)
 
   // Read the user's reflection so the header verdict matches the
@@ -1605,7 +1605,7 @@ function DetailPanel({
       ? 'border-red-300 bg-red-50/40'
       : intel.urgency === 'high'
         ? 'border-amber-200 bg-amber-50/30'
-        : 'border-gray-200'
+        : 'border-gray-200 dark:border-gray-700'
   const resultColor =
     intel.resultDirection === 'positive'
       ? 'text-emerald-600'
@@ -1614,7 +1614,7 @@ function DetailPanel({
         : 'text-gray-400'
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white dark:bg-gray-800">
       {/* ── Header: identity + verdict + result + action ─────────────
           Single dense block so the reader sees "what is this, how is
           it doing, what's next" without scanning through card chrome.
@@ -1630,16 +1630,16 @@ function DetailPanel({
             <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded flex-shrink-0 ${dirCfg.color} ${dirCfg.bgColor}`}>
               {row.direction}
             </span>
-            <span className="text-[15px] font-semibold text-gray-900 truncate flex-shrink-0">{row.asset_symbol}</span>
+            <span className="text-[15px] font-semibold text-gray-900 truncate flex-shrink-0 dark:text-white">{row.asset_symbol}</span>
             {row.asset_name && (
               <span className="text-[11px] text-gray-400 truncate min-w-0">{row.asset_name}</span>
             )}
             <span className="text-gray-300 text-[10px] flex-shrink-0">·</span>
-            <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0">{ageLabel}</span>
+            <span className="text-[10px] text-gray-500 whitespace-nowrap flex-shrink-0 dark:text-gray-400">{ageLabel}</span>
             {row.portfolio_name && (
               <>
                 <span className="text-gray-300 text-[10px] flex-shrink-0">·</span>
-                <span className="text-[10px] text-gray-500 truncate min-w-0">{row.portfolio_name}</span>
+                <span className="text-[10px] text-gray-500 truncate min-w-0 dark:text-gray-400">{row.portfolio_name}</span>
               </>
             )}
           </div>
@@ -1650,7 +1650,7 @@ function DetailPanel({
           )}
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 flex-shrink-0"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 flex-shrink-0 dark:hover:text-gray-300 dark:hover:bg-gray-700"
             aria-label="Close detail"
           >
             <X className="w-4 h-4" />
@@ -1671,12 +1671,12 @@ function DetailPanel({
                 intel.urgency === 'critical' ? 'text-red-700'
                 : intel.urgency === 'high' ? 'text-amber-700'
                 : intel.verdict === 'resolved' ? 'text-emerald-700'
-                : 'text-gray-500'
+                : 'text-gray-500 dark:text-gray-400'
               }`}>
                 {summary.category}
               </div>
               <p className={`text-[11px] leading-snug ${
-                intel.urgency === 'critical' ? 'text-gray-900' : 'text-gray-600'
+                intel.urgency === 'critical' ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'
               }`}>
                 {summary.explanation}
               </p>
@@ -1736,17 +1736,17 @@ function DetailPanel({
             if (story?.ideaExtras?.conviction) parts.push(`${story.ideaExtras.conviction} conviction`)
             if (story?.ideaExtras?.time_horizon) parts.push(`${story.ideaExtras.time_horizon} horizon`)
             return (
-              <div className="text-[10px] text-gray-500 capitalize mb-3">
+              <div className="text-[10px] text-gray-500 capitalize mb-3 dark:text-gray-400">
                 {parts.join(' · ')}
               </div>
             )
           })()}
 
           {/* ── 1. THESIS ── the long-form view of the trade. */}
-          <div className="border-l-2 border-gray-300 pl-2.5">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-1">Thesis</div>
+          <div className="border-l-2 border-gray-300 pl-2.5 dark:border-gray-600">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">Thesis</div>
             {story?.ideaExtras?.thesis_text ? (
-              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">
                 {story.ideaExtras.thesis_text}
               </p>
             ) : (story?.theses && story.theses.length > 0) ? (
@@ -1765,17 +1765,17 @@ function DetailPanel({
                     className={`border-l-2 pl-2.5 ${
                       t.direction === 'bull' ? 'border-emerald-300'
                       : t.direction === 'bear' ? 'border-red-300'
-                      : 'border-gray-300'
+                      : 'border-gray-300 dark:border-gray-600'
                     }`}
                   >
                     <div className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${
                       t.direction === 'bull' ? 'text-emerald-700'
                       : t.direction === 'bear' ? 'text-red-700'
-                      : 'text-gray-500'
+                      : 'text-gray-500 dark:text-gray-400'
                     }`}>
                       {t.direction === 'bull' ? 'Bull case' : t.direction === 'bear' ? 'Bear case' : 'Neutral case'}
                     </div>
-                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{t.rationale}</p>
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{t.rationale}</p>
                   </div>
                 ))}
               </div>
@@ -1786,7 +1786,7 @@ function DetailPanel({
           <div className="mt-3 border-l-2 border-blue-300 pl-2.5">
             <div className="text-[9px] font-bold uppercase tracking-wider text-blue-700 mb-1">Why now</div>
             {row.rationale_text ? (
-              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{row.rationale_text}</p>
+              <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{row.rationale_text}</p>
             ) : (
               <p className="text-[11px] text-gray-400 italic">No catalyst recorded.</p>
             )}
@@ -1825,27 +1825,27 @@ function DetailPanel({
                 <div className="text-[9px] font-bold uppercase tracking-wider text-amber-700 mb-1">
                   Recommendation
                   {recommenderLabel && (
-                    <span className="font-medium normal-case tracking-normal text-[10px] text-gray-500 ml-1">
+                    <span className="font-medium normal-case tracking-normal text-[10px] text-gray-500 ml-1 dark:text-gray-400">
                       by {recommenderLabel}
                     </span>
                   )}
                 </div>
                 {hasContent && dr ? (
                   <>
-                    <div className="text-[10px] text-gray-500 mb-1">
+                    <div className="text-[10px] text-gray-500 mb-1 dark:text-gray-400">
                       {format(new Date(dr.created_at), 'MMM d, yyyy')}
                       {dr.urgency && <span className="capitalize"> · {dr.urgency} urgency</span>}
                     </div>
                     {sizingParts.length > 0 && (
-                      <div className="text-[11px] text-gray-800 font-medium tabular-nums mb-1">
+                      <div className="text-[11px] text-gray-800 font-medium tabular-nums mb-1 dark:text-gray-100">
                         {sizingParts.join(' · ')}
                       </div>
                     )}
                     {contextNote && (
-                      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{contextNote}</p>
+                      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{contextNote}</p>
                     )}
                     {snapNotes && snapNotes !== contextNote && (
-                      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mt-1">{snapNotes}</p>
+                      <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mt-1 dark:text-gray-300">{snapNotes}</p>
                     )}
                   </>
                 ) : (
@@ -1877,20 +1877,20 @@ function DetailPanel({
                     {stage.label}
                   </span>
                   {row.approver_name && (
-                    <span className="text-[11px] text-gray-700">
+                    <span className="text-[11px] text-gray-700 dark:text-gray-300">
                       by <span className="font-medium">{row.approver_name}</span>
                     </span>
                   )}
                   {row.approved_at && (
-                    <span className="text-[11px] text-gray-500">{format(new Date(row.approved_at), 'MMM d, yyyy')}</span>
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">{format(new Date(row.approved_at), 'MMM d, yyyy')}</span>
                   )}
                 </div>
 
                 {/* Optional fact — decision price. Renders inline so it
                     sits under the header without a label/value table. */}
                 {row.has_decision_price && row.decision_price !== null && (
-                  <div className="text-[11px] text-gray-500">
-                    Price at decision <span className="text-gray-800 font-medium tabular-nums ml-1">{formatPrice(row.decision_price)}</span>
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                    Price at decision <span className="text-gray-800 font-medium tabular-nums ml-1 dark:text-gray-100">{formatPrice(row.decision_price)}</span>
                   </div>
                 )}
 
@@ -1900,13 +1900,13 @@ function DetailPanel({
                 {story?.decisionRequest?.decision_note && (
                   <div className="border-l-2 border-blue-300 pl-2.5 py-0.5">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-blue-600 mb-0.5">PM note</div>
-                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{story.decisionRequest.decision_note}</p>
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{story.decisionRequest.decision_note}</p>
                   </div>
                 )}
                 {story?.acceptedTrade?.acceptance_note && (
                   <div className="border-l-2 border-emerald-300 pl-2.5 py-0.5">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 mb-0.5">Acceptance note</div>
-                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{story.acceptedTrade.acceptance_note}</p>
+                    <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap dark:text-gray-300">{story.acceptedTrade.acceptance_note}</p>
                   </div>
                 )}
               </div>
@@ -1928,7 +1928,7 @@ function DetailPanel({
             } />
           ) : row.matched_executions.length === 0 ? (
             <div className="space-y-2.5">
-              <p className="text-[11px] text-gray-500">
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
                 {row.execution_status === 'pending'
                   ? `Not executed${row.days_since_decision !== null ? ` · ${row.days_since_decision}d since decision` : ''}`
                   : 'No matching execution found.'}
@@ -1948,9 +1948,9 @@ function DetailPanel({
                   bottom so the time-from-decision-to-fill is visible
                   without scanning the per-execution facts. */}
               {row.execution_lag_days !== null && row.execution_lag_days >= 0 && (
-                <div className="pt-1.5 border-t border-gray-100 flex items-center justify-between text-[10px]">
+                <div className="pt-1.5 border-t border-gray-100 flex items-center justify-between text-[10px] dark:border-gray-800">
                   <span className="text-gray-400">Execution lag</span>
-                  <span className={`tabular-nums ${row.execution_lag_days > 7 ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>
+                  <span className={`tabular-nums ${row.execution_lag_days > 7 ? 'text-amber-700 font-semibold' : 'text-gray-600 dark:text-gray-400'}`}>
                     {row.execution_lag_days}d
                   </span>
                 </div>
@@ -2026,7 +2026,7 @@ function PriceJourney({ row }: { row: AccountabilityRow }) {
           {i > 0 && <ArrowRight className="w-3 h-3 text-gray-300 shrink-0" />}
           <div className="text-center">
             <div className="text-[8px] text-gray-400 uppercase tracking-wide">{p.label}</div>
-            <div className="text-[11px] font-semibold text-gray-800 tabular-nums">{formatPrice(p.price)}</div>
+            <div className="text-[11px] font-semibold text-gray-800 tabular-nums dark:text-gray-100">{formatPrice(p.price)}</div>
             {p.qualifier && <div className="text-[7px] text-gray-300">{p.qualifier}</div>}
           </div>
         </div>
@@ -2043,7 +2043,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-[10px] text-gray-400">{label}</span>
-      <span className="text-[11px] text-gray-700 text-right">{value}</span>
+      <span className="text-[11px] text-gray-700 text-right dark:text-gray-300">{value}</span>
     </div>
   )
 }
@@ -2063,7 +2063,7 @@ function ExecutionCard({ exec, decisionId }: { exec: MatchedExecution; decisionI
     )
   }
   if (exec.execution_price !== null) {
-    facts.push(<span key="price" className="text-gray-700 tabular-nums">{formatPrice(exec.execution_price)}</span>)
+    facts.push(<span key="price" className="text-gray-700 tabular-nums dark:text-gray-300">{formatPrice(exec.execution_price)}</span>)
   }
   if (exec.weight_delta !== null) {
     facts.push(
@@ -2074,7 +2074,7 @@ function ExecutionCard({ exec, decisionId }: { exec: MatchedExecution; decisionI
   }
   if (exec.lag_days !== null && exec.lag_days >= 0) {
     facts.push(
-      <span key="lag" className={exec.lag_days > 7 ? 'text-amber-700' : 'text-gray-500'}>
+      <span key="lag" className={exec.lag_days > 7 ? 'text-amber-700' : 'text-gray-500 dark:text-gray-400'}>
         {exec.lag_days}d lag
       </span>
     )
@@ -2087,7 +2087,7 @@ function ExecutionCard({ exec, decisionId }: { exec: MatchedExecution; decisionI
         <span className="text-[9px] font-bold uppercase tracking-wider text-teal-700">
           {exec.action_type}
         </span>
-        <span className="text-[10px] text-gray-500">{format(new Date(exec.event_date), 'MMM d, yyyy')}</span>
+        <span className="text-[10px] text-gray-500 dark:text-gray-400">{format(new Date(exec.event_date), 'MMM d, yyyy')}</span>
         <span className={`text-[9px] font-medium px-1 py-[1px] rounded ${
           exec.match_method === 'explicit_link' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
         }`}>
@@ -2120,8 +2120,8 @@ function ExecutionCard({ exec, decisionId }: { exec: MatchedExecution; decisionI
 
       {/* Position size on its own quiet line — auxiliary info. */}
       {exec.market_value_after !== null && (
-        <div className="text-[10px] text-gray-500 mt-0.5">
-          Position <span className="text-gray-700 tabular-nums ml-0.5">{formatPrice(exec.market_value_after)}</span>
+        <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-400">
+          Position <span className="text-gray-700 tabular-nums ml-0.5 dark:text-gray-300">{formatPrice(exec.market_value_after)}</span>
         </div>
       )}
 
@@ -2191,7 +2191,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
         ) : undefined
       }>
         <div className="space-y-2.5">
-          <p className="text-[11px] text-gray-500">
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
             {row.stage === 'rejected'
               ? 'This idea was rejected — no trade was made.'
               : 'This idea was cancelled before a decision was reached.'}
@@ -2201,7 +2201,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
             <div className="space-y-1">
               <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">What would have happened</div>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-gray-600">{row.asset_symbol} moved</span>
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">{row.asset_symbol} moved</span>
                 <span className={`text-[12px] font-bold tabular-nums ${pnlColor(rawMove)}`}>{fmtPct(rawMove)}</span>
               </div>
               <p className="text-[9px] text-gray-400">
@@ -2239,7 +2239,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
               <div className="space-y-1">
                 <div className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">Performance not captured</div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-gray-600">{row.asset_symbol} has moved since decision</span>
+                  <span className="text-[11px] text-gray-600 dark:text-gray-400">{row.asset_symbol} has moved since decision</span>
                   <span className={`text-[12px] font-bold tabular-nums ${pnlColor(rawMove)}`}>{fmtPct(rawMove)}</span>
                 </div>
                 {row.decision_price != null && row.currentPrice != null && (
@@ -2260,7 +2260,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
               </p>
             </>
           ) : (
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">
               Approved {row.days_since_decision}d ago — awaiting execution. No price data available to measure missed return.
             </p>
           )}
@@ -2327,7 +2327,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 )}
                 {row.trade_notional != null && (
                   <DetailRow label="Trade size" value={
-                    <span className="text-[11px] text-gray-700 tabular-nums">
+                    <span className="text-[11px] text-gray-700 tabular-nums dark:text-gray-300">
                       {fmtDollar(row.trade_notional).replace(/^[+-]/, '')}
                     </span>
                   } />
@@ -2340,7 +2340,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 <span className={`text-[9px] font-bold uppercase px-1.5 py-[2px] rounded ${
                   row.result_direction === 'positive' ? 'text-emerald-700 bg-emerald-50' :
                   row.result_direction === 'negative' ? 'text-red-700 bg-red-50' :
-                  'text-gray-500 bg-gray-100'
+                  'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
                 }`}>{RESULT_CONFIG[row.result_direction].label}</span>
                 {row.delay_cost_pct !== null && Math.abs(row.delay_cost_pct) > 0.1 && (
                   <span className={`text-[9px] tabular-nums ${row.delay_cost_pct > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
@@ -2353,13 +2353,13 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
 
           {/* Position-level P&L */}
           {lifecycle && (lifecycle.realizedPnl != null || lifecycle.unrealizedPnl != null) && (
-            <div className="space-y-1 border-t border-gray-100 pt-2">
+            <div className="space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
                   Position — {row.asset_symbol}
                 </span>
                 <span className={`text-[9px] font-bold uppercase px-1.5 py-[2px] rounded ${
-                  lifecycle.isOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
+                  lifecycle.isOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                 }`}>{lifecycle.isOpen ? 'Open' : 'Closed'}</span>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
@@ -2378,7 +2378,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                   } />
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 border-t border-gray-100 pt-1 mt-1">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 border-t border-gray-100 pt-1 mt-1 dark:border-gray-800">
                 {lifecycle.realizedPnl != null && (
                   <DetailRow label="Realized" value={
                     <span className={`text-[11px] font-semibold tabular-nums ${pnlColor(lifecycle.realizedPnl)}`}>
@@ -2413,7 +2413,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
 
           {/* All decisions on this position */}
           {lifecycle && lifecycle.decisionScores.length > 1 && (
-            <div className="space-y-1 border-t border-gray-100 pt-2">
+            <div className="space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">
               <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
                 All Decisions on {row.asset_symbol}
               </div>
@@ -2424,7 +2424,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                   <div key={ds.decisionId} className={`flex items-center justify-between text-[10px] py-0.5 px-1 rounded ${isThis ? 'bg-blue-50' : ''}`}>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-bold" style={{ color: cfg.color }}>{cfg.symbol}</span>
-                      <span className="text-gray-600 capitalize">{ds.action}</span>
+                      <span className="text-gray-600 capitalize dark:text-gray-400">{ds.action}</span>
                       <span className="text-gray-400">@ ${ds.decisionPrice?.toFixed(2) || '—'}</span>
                       <span className="text-gray-300">{format(parseISO(ds.decisionDate), 'MMM d')}</span>
                     </div>
@@ -2505,7 +2505,7 @@ function NextStepsSection({ row }: { row: AccountabilityRow }) {
   return (
     <StorySection icon={ArrowUpRight} title="Where to next" defaultOpen={true}>
       <div className="space-y-2">
-        <p className="text-[10px] text-gray-500 leading-snug">
+        <p className="text-[10px] text-gray-500 leading-snug dark:text-gray-400">
           The loop runs continuously — pick the next move on this thesis.
         </p>
         <div className="grid grid-cols-1 gap-1.5 mt-1">
@@ -2584,7 +2584,7 @@ function DeferredChartPanel(props: {
 
   if (!ready) {
     return (
-      <div className="shrink-0 border-t border-gray-200 bg-white" style={{ height: 260 }} />
+      <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" style={{ height: 260 }} />
     )
   }
   return <BottomChartPanel {...props} />
@@ -2651,12 +2651,12 @@ function BottomChartPanel({ row, onSelectDecision }: {
   } as any
 
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white">
-      <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100">
+    <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
-            <span className="text-[11px] font-semibold text-gray-700">
+            <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
               {row.asset_symbol || 'Price'}
             </span>
             {row.portfolio_name && (
@@ -2677,8 +2677,8 @@ function BottomChartPanel({ row, onSelectDecision }: {
                 onClick={() => setOverlay(opt.value)}
                 className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
                   overlay === opt.value
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 }`}
               >
                 {opt.label}
@@ -2690,10 +2690,10 @@ function BottomChartPanel({ row, onSelectDecision }: {
         {lifecycle && (
           <div className="flex items-center gap-3 text-[10px]">
             {lifecycle.avgEntryPrice != null && (
-              <span className="text-gray-500">Entry <span className="font-medium text-gray-700">${lifecycle.avgEntryPrice.toFixed(2)}</span></span>
+              <span className="text-gray-500 dark:text-gray-400">Entry <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.avgEntryPrice.toFixed(2)}</span></span>
             )}
             {lifecycle.currentPrice != null && (
-              <span className="text-gray-500">Now <span className="font-medium text-gray-700">${lifecycle.currentPrice.toFixed(2)}</span></span>
+              <span className="text-gray-500 dark:text-gray-400">Now <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.currentPrice.toFixed(2)}</span></span>
             )}
             {lifecycle.totalReturnPct != null && (
               <span className={`font-semibold ${lifecycle.totalReturnPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -2752,7 +2752,7 @@ function SkipDecisionButton({ decisionId }: { decisionId: string }) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+        className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
       >
         <XCircle className="w-3 h-3" />
         Mark as skipped
@@ -2761,8 +2761,8 @@ function SkipDecisionButton({ decisionId }: { decisionId: string }) {
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg p-3 bg-white">
-      <div className="text-[11px] font-semibold text-gray-700 mb-2">Why was this not executed?</div>
+    <div className="border border-gray-200 rounded-lg p-3 bg-white dark:border-gray-700 dark:bg-gray-800">
+      <div className="text-[11px] font-semibold text-gray-700 mb-2 dark:text-gray-300">Why was this not executed?</div>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {['Market moved away', 'Thesis changed', 'Risk limits', 'Sizing constraint', 'Superseded by another trade'].map(r => (
           <button
@@ -2770,8 +2770,8 @@ function SkipDecisionButton({ decisionId }: { decisionId: string }) {
             onClick={() => setReason(r)}
             className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
               reason === r
-                ? 'border-gray-400 bg-gray-100 text-gray-900'
-                : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                ? 'border-gray-400 bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800'
+                : 'border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400'
             }`}
           >
             {r}
@@ -2783,7 +2783,7 @@ function SkipDecisionButton({ decisionId }: { decisionId: string }) {
         placeholder="Or type a reason..."
         value={reason}
         onChange={e => setReason(e.target.value)}
-        className="w-full text-[11px] border border-gray-200 rounded-md px-2.5 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-primary-400"
+        className="w-full text-[11px] border border-gray-200 rounded-md px-2.5 py-1.5 mb-2 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700"
       />
       <div className="flex items-center gap-2">
         <button
@@ -2795,7 +2795,7 @@ function SkipDecisionButton({ decisionId }: { decisionId: string }) {
         </button>
         <button
           onClick={() => { setIsOpen(false); setReason('') }}
-          className="px-3 py-1 text-[11px] text-gray-500 hover:text-gray-700"
+          className="px-3 py-1 text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
         >
           Cancel
         </button>
@@ -2823,7 +2823,7 @@ function ManualMatchPanel({ row }: { row: AccountabilityRow }) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-teal-600 transition-colors mt-1"
+        className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-teal-600 transition-colors mt-1 dark:text-gray-400"
       >
         <Link2 className="w-3 h-3" />
         Match to trade
@@ -2832,13 +2832,13 @@ function ManualMatchPanel({ row }: { row: AccountabilityRow }) {
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg p-3 bg-white mt-1">
+    <div className="border border-gray-200 rounded-lg p-3 bg-white mt-1 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
           <Link2 className="w-3.5 h-3.5 text-teal-600" />
-          <span className="text-[11px] font-semibold text-gray-700">Match to a trade event</span>
+          <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">Match to a trade event</span>
         </div>
-        <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-600">
+        <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -2857,13 +2857,13 @@ function ManualMatchPanel({ row }: { row: AccountabilityRow }) {
           {available.map(evt => (
             <div
               key={evt.id}
-              className="flex items-center justify-between p-2 rounded border border-gray-100 hover:border-teal-300 hover:bg-teal-50/30 transition-colors"
+              className="flex items-center justify-between p-2 rounded border border-gray-100 hover:border-teal-300 hover:bg-teal-50/30 transition-colors dark:border-gray-800"
             >
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded bg-gray-100 text-gray-600 shrink-0">
+                <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-[2px] rounded bg-gray-100 text-gray-600 shrink-0 dark:text-gray-400 dark:bg-gray-800">
                   {evt.action_type}
                 </span>
-                <span className="text-[10px] text-gray-500">{format(new Date(evt.event_date), 'MMM d, yyyy')}</span>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">{format(new Date(evt.event_date), 'MMM d, yyyy')}</span>
                 {evt.quantity_delta != null && (
                   <span className={`text-[10px] font-medium ${evt.quantity_delta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {evt.quantity_delta > 0 ? '+' : ''}{evt.quantity_delta.toLocaleString()} shs
@@ -2905,13 +2905,13 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
     <div className="flex-1 overflow-auto p-4">
       <div className="max-w-7xl mx-auto">
         {/* Section Toggle */}
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-4">
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-4 dark:bg-gray-800">
           <button
             onClick={() => setSection('analysts')}
             className={`px-4 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
               section === 'analysts'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
             }`}
           >
             Analyst Performance
@@ -2920,8 +2920,8 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
             onClick={() => setSection('pms')}
             className={`px-4 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
               section === 'pms'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
             }`}
           >
             PM Performance
@@ -3315,14 +3315,14 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   const uniqueOwners = useMemo(() => [...new Set(rows.map(r => r.owner_name).filter(Boolean))].sort() as string[], [rows])
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white dark:bg-gray-800">
       {/* ── HEADER ─────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-5 shrink-0">
+      <div className="bg-white border-b border-gray-200 px-5 shrink-0 dark:border-gray-700 dark:bg-gray-800">
         {/* Row 1: Title + Tabs */}
         <div className="flex items-center gap-4 pt-2 pb-1.5">
           <div className="flex items-center gap-2 shrink-0">
             <Target className="w-4 h-4 text-teal-600" />
-            <h1 className="text-[15px] font-semibold text-gray-900">Outcomes</h1>
+            <h1 className="text-[15px] font-semibold text-gray-900 dark:text-white">Outcomes</h1>
           </div>
 
           {/* Segmented control — wrapped in a gray pill so users can
@@ -3330,20 +3330,20 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
               titles. The active button gets a white "lifted" surface
               with a subtle shadow; inactive buttons stay in the
               recessed gray track. */}
-          <div className="inline-flex items-center bg-gray-100 border border-gray-200 rounded-md p-0.5 shrink-0">
+          <div className="inline-flex items-center bg-gray-100 border border-gray-200 rounded-md p-0.5 shrink-0 dark:border-gray-700 dark:bg-gray-800">
             <button onClick={() => setActiveTab('decisions')}
               className={`px-3.5 py-1 text-[12px] font-semibold rounded transition-all ${
                 activeTab === 'decisions'
-                  ? 'bg-white text-teal-700 shadow-sm border border-gray-200'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-teal-700 shadow-sm border border-gray-200 dark:border-gray-700 dark:bg-gray-800'
+                  : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
               }`}>
               Decisions
             </button>
             <button onClick={() => setActiveTab('scorecards')}
               className={`px-3.5 py-1 text-[12px] font-semibold rounded transition-all ${
                 activeTab === 'scorecards'
-                  ? 'bg-white text-indigo-700 shadow-sm border border-gray-200'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-indigo-700 shadow-sm border border-gray-200 dark:border-gray-700 dark:bg-gray-800'
+                  : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
               }`}>
               Scorecards
             </button>
@@ -3354,7 +3354,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
             <select
               value={selectedPortfolioId || ''}
               onChange={e => setSelectedPortfolioId(e.target.value || null)}
-              className="text-[12px] font-semibold border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 cursor-pointer"
+              className="text-[12px] font-semibold border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 cursor-pointer dark:border-gray-600 dark:text-white dark:bg-gray-800"
             >
               <option value="">All Portfolios</option>
               {allPortfolios.map(p => (
@@ -3386,14 +3386,14 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className={`text-[11px] font-black uppercase tracking-wide ${hd.color} flex-shrink-0`}>{hd.label}</span>
                     {processHealth.primaryBreakdown && (
-                      <span className={`text-[10px] font-semibold ${isSevere ? 'text-gray-700' : 'text-gray-500'} flex-shrink-0`}>· {processHealth.primaryBreakdown}</span>
+                      <span className={`text-[10px] font-semibold ${isSevere ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'} flex-shrink-0`}>· {processHealth.primaryBreakdown}</span>
                     )}
-                    <span className={`text-[11px] leading-snug ${isSevere ? 'text-gray-800' : 'text-gray-500'} truncate`}>
+                    <span className={`text-[11px] leading-snug ${isSevere ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'} truncate`}>
                       {processHealth.headline}
                     </span>
                   </div>
                   {hasNarrative && (
-                    <p className={`text-[10px] leading-snug mt-0.5 ${isSevere ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <p className={`text-[10px] leading-snug mt-0.5 ${isSevere ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'}`}>
                       {processHealth.narrative}
                     </p>
                   )}
@@ -3429,9 +3429,9 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
       <div className="flex-1 min-h-0">
         {(
           /* ── Main Decision Table + Detail + Bottom Chart ── */
-          <div className="h-full flex border-t border-gray-200 overflow-hidden">
+          <div className="h-full flex border-t border-gray-200 overflow-hidden dark:border-gray-700">
             {/* Left: Table rows + chart below */}
-            <div className="flex-1 min-w-0 flex flex-col bg-white">
+            <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-gray-800">
               {/* Column headers */}
               <div className={`grid ${MAIN_GRID} bg-gray-50 border-b border-gray-200 shrink-0`}>
                 {columnHeaders.map(col => (
@@ -3467,7 +3467,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                 ) : sortedRows.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-48 text-center">
                     <Target className="w-7 h-7 text-gray-300 mb-2" />
-                    <p className="text-[12px] font-medium text-gray-600 mb-0.5">No decisions yet</p>
+                    <p className="text-[12px] font-medium text-gray-600 mb-0.5 dark:text-gray-400">No decisions yet</p>
                     <p className="text-[10px] text-gray-400 max-w-xs">
                       When trade ideas reach a terminal stage (approved, rejected, cancelled),
                       they will appear here with execution matching and result tracking.
@@ -3566,7 +3566,7 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
       {/* Sort button */}
       <button
         onClick={() => onSort(col.sortKey)}
-        className={`text-[10px] font-black uppercase tracking-wide select-none cursor-pointer ${isActive ? 'text-gray-800' : 'text-gray-500'} hover:text-gray-800`}
+        className={`text-[10px] font-black uppercase tracking-wide select-none cursor-pointer ${isActive ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'} hover:text-gray-800`}
       >
         {col.label}
         {isSortActive ? <span className="ml-0.5 text-[8px]">{sortDesc ? '▼' : '▲'}</span> : <span className="ml-0.5 text-gray-300 text-[8px]">↕</span>}
@@ -3575,7 +3575,7 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
       {/* Filter button */}
       <button
         onClick={() => setColFilterOpen(isOpen ? null : col.id)}
-        className={`ml-1 cursor-pointer ${isFilterActive ? 'text-gray-800' : 'text-gray-300'} hover:text-gray-600`}
+        className={`ml-1 cursor-pointer ${isFilterActive ? 'text-gray-800 dark:text-gray-100' : 'text-gray-300'} hover:text-gray-600`}
       >
         <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -3584,14 +3584,14 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setColFilterOpen(null)} />
-          <div className="absolute left-0 top-full mt-0.5 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[120px]">
+          <div className="absolute left-0 top-full mt-0.5 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[120px] dark:border-gray-700 dark:bg-gray-800">
             {/* State */}
             {col.id === 'state' && (
               <div className="py-1">
                 {smartChips.map(chip => (
                   <button key={chip.key} onClick={() => { setActiveChipKey(chip.key); setColFilterOpen(null) }}
                     className={`w-full text-left px-3 py-1.5 text-[10px] font-medium flex items-center justify-between ${
-                      activeChipKey === chip.key ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                      activeChipKey === chip.key ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'
                     } ${chip.count === 0 && chip.key !== 'all' ? 'opacity-40' : ''}`}>
                     <span className="capitalize">{chip.label}</span>
                     <span className="text-[9px] text-gray-400 tabular-nums">{chip.count}</span>
@@ -3605,7 +3605,7 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
               <div className="py-1">
                 {[{ k: 'all', l: 'All' }, { k: 'stalled', l: 'Stalled (>14d)' }, { k: 'hurting', l: 'Hurting' }].map(o => (
                   <button key={o.k} onClick={() => { setActiveChipKey(o.k); setColFilterOpen(null) }}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${activeChipKey === o.k ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{o.l}</button>
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${activeChipKey === o.k ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>{o.l}</button>
                 ))}
               </div>
             )}
@@ -3614,10 +3614,10 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
             {col.id === 'type' && (
               <div className="py-1">
                 <button onClick={() => { setTypeFilter(null); setColFilterOpen(null) }}
-                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!typeFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!typeFilter ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>All</button>
                 {['buy', 'sell', 'add', 'trim'].map(t => (
                   <button key={t} onClick={() => { setTypeFilter(t); setColFilterOpen(null) }}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium capitalize ${typeFilter === t ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{t}</button>
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium capitalize ${typeFilter === t ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>{t}</button>
                 ))}
               </div>
             )}
@@ -3631,8 +3631,8 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
                   <input autoFocus type="text" placeholder={`Filter ${col.label.toLowerCase()}...`} value={val}
                     onChange={e => setVal(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setColFilterOpen(null) }}
-                    className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400" />
-                  {val && <button onClick={() => { setVal(''); setColFilterOpen(null) }} className="text-[9px] text-gray-400 hover:text-gray-600 mt-1">Clear</button>}
+                    className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700" />
+                  {val && <button onClick={() => { setVal(''); setColFilterOpen(null) }} className="text-[9px] text-gray-400 hover:text-gray-600 mt-1 dark:hover:text-gray-300">Clear</button>}
                 </div>
               )
             })()}
@@ -3641,10 +3641,10 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
             {col.id === 'portfolio' && (
               <div className="py-1 max-h-48 overflow-auto">
                 <button onClick={() => { setPortfolioFilter(null); setColFilterOpen(null) }}
-                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!portfolioFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!portfolioFilter ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>All</button>
                 {uniquePortfolios.map(p => (
                   <button key={p} onClick={() => { setPortfolioFilter(p); setColFilterOpen(null) }}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium truncate ${portfolioFilter === p ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{p}</button>
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium truncate ${portfolioFilter === p ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>{p}</button>
                 ))}
               </div>
             )}
@@ -3655,7 +3655,7 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
               <div className="py-1">
                 {[{ k: 'all', l: 'All' }, { k: 'hurting', l: 'Negative' }, { k: 'working', l: 'Positive' }].map(o => (
                   <button key={o.k} onClick={() => { setActiveChipKey(o.k); setColFilterOpen(null) }}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${activeChipKey === o.k ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{o.l}</button>
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${activeChipKey === o.k ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>{o.l}</button>
                 ))}
               </div>
             )}
@@ -3664,11 +3664,11 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
             {col.id === 'action' && (
               <div className="py-1">
                 <button onClick={() => { setActionFilter(null); setColFilterOpen(null) }}
-                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!actionFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!actionFilter ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>All</button>
                 <button onClick={() => { setActionFilter('has_action'); setColFilterOpen(null) }}
-                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${actionFilter === 'has_action' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>Has action</button>
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${actionFilter === 'has_action' ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>Has action</button>
                 <button onClick={() => { setActionFilter('no_action'); setColFilterOpen(null) }}
-                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${actionFilter === 'no_action' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>No action</button>
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${actionFilter === 'no_action' ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>No action</button>
               </div>
             )}
 
@@ -3676,10 +3676,10 @@ function TableColHeader({ col, sortBy, sortDesc, onSort, colFilterOpen, setColFi
             {col.id === 'owner' && (
               <div className="py-1 max-h-48 overflow-auto">
                 <button onClick={() => { setOwnerFilter(null); setColFilterOpen(null) }}
-                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!ownerFilter ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All</button>
+                  className={`w-full text-left px-3 py-1.5 text-[10px] font-medium ${!ownerFilter ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>All</button>
                 {uniqueOwners.map(o => (
                   <button key={o} onClick={() => { setOwnerFilter(o); setColFilterOpen(null) }}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium truncate ${ownerFilter === o ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>{o}</button>
+                    className={`w-full text-left px-3 py-1.5 text-[10px] font-medium truncate ${ownerFilter === o ? 'bg-gray-100 text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-400'}`}>{o}</button>
                 ))}
               </div>
             )}
@@ -3718,7 +3718,7 @@ function SortableColHeader({
       }`}
     >
       <span className={`text-[9px] font-bold uppercase tracking-wider ${
-        active ? 'text-gray-700' : 'text-gray-400'
+        active ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400'
       }`}>
         {children}
         {active && (

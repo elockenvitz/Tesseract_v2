@@ -293,7 +293,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                   'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
                   activeTab === 'aggregated'
                     ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
               >
                 Our View
@@ -307,7 +307,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                     'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
                     activeTab === 'comparison'
                       ? 'border-primary-600 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                   )}
                 >
                   <Table2 className="w-3.5 h-3.5" />
@@ -325,7 +325,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                     'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
                     activeTab === contributor.userId
                       ? 'border-primary-600 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                   )}
                 >
                   {contributor.isCovering && (
@@ -347,7 +347,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
                     'px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap rounded-t-md flex items-center gap-1.5',
                     activeTab === user.id
                       ? 'border-primary-600 text-primary-600 bg-primary-100'
-                      : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-50'
+                      : 'border-transparent text-gray-600 hover:text-gray-700 hover:border-gray-300 bg-primary-50 dark:hover:text-gray-200 dark:text-gray-400'
                   )}
                 >
                   {currentUserContributor?.isCovering && (
@@ -454,7 +454,7 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
 
               {/* Historical Charts Section */}
               <div className="mt-6 space-y-4">
-                <h4 className="text-sm font-medium text-gray-700">Historical Analysis</h4>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Historical Analysis</h4>
 
                 {/* Rating History Chart */}
                 <RatingHistoryChart assetId={assetId} />

@@ -98,7 +98,7 @@ function FieldAccessBadge({ accessField }: { accessField: AccessibleField }) {
 
   if (accessField.accessType === 'team_member') {
     return (
-      <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+      <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">
         <Users className="w-3 h-3" />
         {accessField.teamName || 'Team'}
       </span>
@@ -240,14 +240,14 @@ function CustomFieldRenderer({
   const config = field.config as Record<string, unknown>
 
   // Consistent field wrapper styling to match ContributionSection
-  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-3 space-y-2"
+  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-3 space-y-2 dark:border-gray-700 dark:bg-gray-800"
 
   // Field header with badges and inline description - updated styling to match ContributionSection
   const FieldHeader = () => (
     <div className="flex items-baseline gap-3 flex-wrap">
-      <h4 className="text-base font-semibold text-gray-900">{field.name}</h4>
+      <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.name}</h4>
       {field.description && (
-        <p className="text-sm text-gray-500">{field.description}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{field.description}</p>
       )}
       {accessField.accessType !== 'universal' && (
         <FieldAccessBadge accessField={accessField} />
@@ -568,7 +568,7 @@ function CustomFieldRenderer({
     <div className={fieldWrapperClass}>
       <FieldHeader />
       {field.description && (
-        <p className="text-sm text-gray-500">{field.description}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{field.description}</p>
       )}
       <p className="text-xs text-gray-400 italic">
         Field type "{field.field_type}" renderer coming soon
@@ -625,11 +625,11 @@ function SectionRenderer({
       <Card padding="none">
         <button
           onClick={onToggle}
-          className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+          className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
-          <span className="font-medium text-gray-900">{section.name}</span>
+          <span className="font-medium text-gray-900 dark:text-white">{section.name}</span>
           {contextualFieldCount > 0 && (
-            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">
               +{contextualFieldCount} team fields
             </span>
           )}
@@ -640,7 +640,7 @@ function SectionRenderer({
           )}
         </button>
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
+          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4 dark:border-gray-800">
             {/* Core thesis component - always render */}
             <ThesisContainer
               assetId={assetId}
@@ -652,8 +652,8 @@ function SectionRenderer({
 
             {/* Custom fields in thesis section */}
             {customFields.length > 0 && (
-              <div className="pt-3 border-t border-gray-100 space-y-3">
-                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="pt-3 border-t border-gray-100 space-y-3 dark:border-gray-800">
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                   Additional Analysis
                 </h4>
                 {customFields.map(af => (
@@ -685,11 +685,11 @@ function SectionRenderer({
       <Card padding="none">
         <button
           onClick={onToggle}
-          className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+          className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
-          <span className="font-medium text-gray-900">{section.name}</span>
+          <span className="font-medium text-gray-900 dark:text-white">{section.name}</span>
           {contextualFieldCount > 0 && (
-            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+            <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">
               +{contextualFieldCount} team fields
             </span>
           )}
@@ -700,9 +700,9 @@ function SectionRenderer({
           )}
         </button>
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
+          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4 dark:border-gray-800">
             {fields.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
+              <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">
                 No fields configured for this section
               </p>
             ) : (
@@ -738,11 +738,11 @@ function SectionRenderer({
     <Card padding="none">
       <button
         onClick={onToggle}
-        className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+        className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
       >
-        <span className="font-medium text-gray-900">{section.name}</span>
+        <span className="font-medium text-gray-900 dark:text-white">{section.name}</span>
         {contextualFieldCount > 0 && (
-          <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+          <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">
             +{contextualFieldCount} team fields
           </span>
         )}
@@ -753,9 +753,9 @@ function SectionRenderer({
         )}
       </button>
       {!isCollapsed && (
-        <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
+        <div className="border-t border-gray-100 px-5 py-1.5 space-y-4 dark:border-gray-800">
           {fields.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">
+            <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">
               No fields configured for this section
             </p>
           ) : (
@@ -856,7 +856,7 @@ export function DynamicResearchContainer({
       {/* Investment Case Builder Modal */}
       {showCaseBuilder && symbol && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto dark:bg-gray-800">
             <div className="p-6">
               <InvestmentCaseBuilder
                 assetId={assetId}
@@ -874,7 +874,7 @@ export function DynamicResearchContainer({
       <div className="flex items-center justify-between">
         {/* Contextual fields indicator */}
         {contextualFields.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-lg dark:text-gray-400 dark:bg-gray-800">
             <Lock className="w-4 h-4" />
             <span>
               You have access to {contextualFields.length} team-specific field{contextualFields.length !== 1 ? 's' : ''} in this view

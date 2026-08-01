@@ -155,7 +155,7 @@ export function ProjectActivityFeed({
       case 'due_date_changed':
         return 'text-blue-600 bg-blue-100'
       default:
-        return 'text-gray-600 bg-gray-100'
+        return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
     }
   }
 
