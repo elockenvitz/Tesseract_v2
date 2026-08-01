@@ -610,7 +610,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         {isLoading ? (
           <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
             <div className="text-center">
-              <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3" />
+              <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3 dark:border-gray-700" />
               <p className="text-sm text-gray-400">Loading…</p>
             </div>
           </div>

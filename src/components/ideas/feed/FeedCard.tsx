@@ -129,10 +129,10 @@ function AuthorWhyNowRow({ item, whyNow, onAuthorClick }: { item: ScoredFeedItem
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <button onClick={e => { e.stopPropagation(); item.author?.id && onAuthorClick?.(item.author.id) }}
-        className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-500 hover:bg-gray-300 transition-colors flex-shrink-0">
+        className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-500 hover:bg-gray-300 transition-colors flex-shrink-0 dark:text-gray-400">
         {authorInitials(item.author)}
       </button>
-      <span className="text-[12px] font-medium text-gray-600">{authorName(item.author)}</span>
+      <span className="text-[12px] font-medium text-gray-600 dark:text-gray-400">{authorName(item.author)}</span>
       <span className="text-[10px] text-gray-300">{relativeTime(item.created_at)}</span>
       <span className="text-gray-200">·</span>
       <span className="text-[10px] font-medium text-amber-600 flex items-center gap-1">
@@ -180,29 +180,29 @@ function EngagementRow({ item }: { item: ScoredFeedItem }) {
       <div className="relative" ref={menuRef}>
         <button
           onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
-          className="p-1 text-gray-300 hover:text-gray-500 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100"
+          className="p-1 text-gray-300 hover:text-gray-500 hover:bg-gray-100 rounded transition-colors opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700"
         >
           <MoreHorizontal className="w-3.5 h-3.5" />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 bottom-full mb-1 z-50 w-[180px] bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-[12px]">
+          <div className="absolute right-0 bottom-full mb-1 z-50 w-[180px] bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-[12px] dark:border-gray-700 dark:bg-gray-800">
             <button
               onClick={e => { e.stopPropagation(); dispatchCapture('thought') }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800 dark:text-gray-300"
             >
               <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
               Add thought
             </button>
             <button
               onClick={e => { e.stopPropagation(); dispatchCapture('trade_idea') }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800 dark:text-gray-300"
             >
               <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
               Create trade idea
             </button>
             <button
               onClick={e => { e.stopPropagation(); dispatchCapture('prompt') }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800 dark:text-gray-300"
             >
               <Zap className="w-3.5 h-3.5 text-purple-500" />
               Send prompt
@@ -210,7 +210,7 @@ function EngagementRow({ item }: { item: ScoredFeedItem }) {
             {asset && (
               <button
                 onClick={e => { e.stopPropagation(); dispatchCapture('proposal') }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-700 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800 dark:text-gray-300"
               >
                 <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
                 Recommend
@@ -230,7 +230,7 @@ function MetricRow({ symbol, compact = false }: { symbol: string; compact?: bool
   const isUp = pct >= 0
   return (
     <div className={clsx('flex items-baseline gap-2 tabular-nums', compact ? 'text-[11px]' : 'text-[13px]')}>
-      <span className="font-bold text-gray-900">${quote.price.toFixed(2)}</span>
+      <span className="font-bold text-gray-900 dark:text-white">${quote.price.toFixed(2)}</span>
       <span className={clsx('font-bold', isUp ? 'text-emerald-600' : 'text-red-500')}>
         {isUp ? '+' : ''}{pct.toFixed(1)}%
       </span>
@@ -255,7 +255,7 @@ function ChartPostCard({ item, onAuthorClick, onAssetClick, onCardClick, onExpan
   return (
     <div onClick={() => onCardClick?.(item)} className={clsx(
       'rounded-xl overflow-hidden transition-all cursor-pointer group',
-      hero ? 'bg-white shadow-sm hover:shadow-lg' : 'bg-white border border-gray-150 hover:shadow-md',
+      hero ? 'bg-white shadow-sm hover:shadow-lg dark:bg-gray-800' : 'bg-white border border-gray-150 hover:shadow-md dark:bg-gray-800',
       isSelected && 'ring-2 ring-primary-300 shadow-lg',
     )}>
       {/* Ticker + metrics — single compact row */}
@@ -263,7 +263,7 @@ function ChartPostCard({ item, onAuthorClick, onAssetClick, onCardClick, onExpan
         <div className="px-4 pt-2.5 pb-0.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={e => { e.stopPropagation(); onAssetClick?.(asset.id, asset.symbol) }}
-              className={clsx('font-bold text-gray-900 hover:text-primary-700 tracking-tight', hero ? 'text-[15px]' : 'text-[14px]')}>
+              className={clsx('font-bold text-gray-900 hover:text-primary-700 tracking-tight dark:text-white', hero ? 'text-[15px]' : 'text-[14px]')}>
               {asset.symbol}
             </button>
             <span className="text-[10px] text-gray-400">{asset.company_name}</span>
@@ -281,7 +281,7 @@ function ChartPostCard({ item, onAuthorClick, onAssetClick, onCardClick, onExpan
         <AuthorWhyNowRow item={item} whyNow={whyNow} onAuthorClick={onAuthorClick} />
       </div>
       <div className="px-4 pb-2">
-        <p className="text-[13px] text-gray-700 leading-relaxed">{truncated}</p>
+        <p className="text-[13px] text-gray-700 leading-relaxed dark:text-gray-300">{truncated}</p>
         {content.length > 280 && (
           <button onClick={e => { e.stopPropagation(); onCardClick?.(item) }} className="text-[12px] font-medium text-primary-600 hover:text-primary-700 mt-0.5 inline-flex items-center gap-0.5">
             More <ChevronRight className="w-3 h-3" />
@@ -296,7 +296,7 @@ function ChartPostCard({ item, onAuthorClick, onAssetClick, onCardClick, onExpan
         </div>
       )}
 
-      <div className="px-4 py-1.5 border-t border-gray-100"><EngagementRow item={item} /></div>
+      <div className="px-4 py-1.5 border-t border-gray-100 dark:border-gray-800"><EngagementRow item={item} /></div>
     </div>
   )
 }
@@ -315,15 +315,15 @@ function CompactThoughtCard({ item, onAuthorClick, onAssetClick, onCardClick, is
   return (
     <div onClick={() => onCardClick?.(item)} className={clsx(
       'transition-all cursor-pointer group',
-      sentimentAccent ? `border-l-[3px] ${sentimentAccent} bg-white rounded-r-lg pl-3.5 pr-4 py-2.5` : 'bg-transparent hover:bg-white rounded-lg px-4 py-2.5 hover:shadow-sm',
-      isSelected && 'bg-white shadow-md ring-1 ring-primary-200',
+      sentimentAccent ? `border-l-[3px] ${sentimentAccent} bg-white rounded-r-lg pl-3.5 pr-4 py-2.5` : 'bg-transparent hover:bg-white rounded-lg px-4 py-2.5 hover:shadow-sm dark:hover:bg-gray-800',
+      isSelected && 'bg-white shadow-md ring-1 ring-primary-200 dark:bg-gray-800',
     )}>
       <div className="flex items-center gap-2 mb-1.5">
         <button onClick={e => { e.stopPropagation(); item.author?.id && onAuthorClick?.(item.author.id) }}
-          className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-500 hover:bg-gray-300 transition-colors flex-shrink-0">
+          className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-500 hover:bg-gray-300 transition-colors flex-shrink-0 dark:text-gray-400">
           {authorInitials(item.author)}
         </button>
-        <span className="text-[12px] font-medium text-gray-600">{authorName(item.author)}</span>
+        <span className="text-[12px] font-medium text-gray-600 dark:text-gray-400">{authorName(item.author)}</span>
         <span className="text-[10px] text-gray-300">{relativeTime(item.created_at)}</span>
         {asset && (
           <button onClick={e => { e.stopPropagation(); onAssetClick?.(asset.id, asset.symbol) }}
@@ -331,7 +331,7 @@ function CompactThoughtCard({ item, onAuthorClick, onAssetClick, onCardClick, is
         )}
         {sentimentBadge && <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded', sentimentBadge.color)}>{sentimentBadge.label}</span>}
       </div>
-      <p className="text-[13px] text-gray-800 leading-relaxed">{content}</p>
+      <p className="text-[13px] text-gray-800 leading-relaxed dark:text-gray-100">{content}</p>
       <div className="mt-1.5"><EngagementRow item={item} /></div>
     </div>
   )
@@ -354,7 +354,7 @@ function TradeIdeaFeedCard({ item, onAuthorClick, onAssetClick, onCardClick, onE
   return (
     <div onClick={() => onCardClick?.(item)} className={clsx(
       'rounded-xl overflow-hidden transition-all cursor-pointer group',
-      hero ? 'shadow-md hover:shadow-xl' : 'border border-gray-200 hover:shadow-md',
+      hero ? 'shadow-md hover:shadow-xl' : 'border border-gray-200 hover:shadow-md dark:border-gray-700',
       isSelected && 'ring-2 ring-primary-300 shadow-lg',
     )}>
       {/* Stance row */}
@@ -368,17 +368,17 @@ function TradeIdeaFeedCard({ item, onAuthorClick, onAssetClick, onCardClick, onE
         <div className="flex items-center gap-2">
           {tradeUrgency && tradeUrgency !== 'low' && (
             <span className={clsx('text-[9px] font-bold uppercase px-2 py-0.5 rounded-full',
-              tradeUrgency === 'urgent' ? 'bg-white text-red-700' : 'bg-white/20 text-white')}>{tradeUrgency}</span>
+              tradeUrgency === 'urgent' ? 'bg-white text-red-700 dark:bg-gray-800' : 'bg-white/20 text-white')}>{tradeUrgency}</span>
           )}
         </div>
       </div>
 
-      <div className="bg-white">
+      <div className="bg-white dark:bg-gray-800">
         {/* Metrics + portfolio — single row */}
         {asset?.symbol && (
           <div className="px-4 pt-2 pb-0.5 flex items-center justify-between">
             <MetricRow symbol={asset.symbol} />
-            {portfolio && <span className="text-[10px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded">{portfolio.name}</span>}
+            {portfolio && <span className="text-[10px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded dark:bg-gray-900">{portfolio.name}</span>}
           </div>
         )}
 
@@ -391,11 +391,11 @@ function TradeIdeaFeedCard({ item, onAuthorClick, onAssetClick, onCardClick, onE
         </div>
         {content && (
           <div className="px-4 pb-2">
-            <p className="text-[13px] text-gray-700 leading-relaxed">{content.length > 300 ? content.slice(0, 300) + '...' : content}</p>
+            <p className="text-[13px] text-gray-700 leading-relaxed dark:text-gray-300">{content.length > 300 ? content.slice(0, 300) + '...' : content}</p>
           </div>
         )}
 
-        <div className="px-4 py-1.5 border-t border-gray-100"><EngagementRow item={item} /></div>
+        <div className="px-4 py-1.5 border-t border-gray-100 dark:border-gray-800"><EngagementRow item={item} /></div>
       </div>
     </div>
   )
@@ -419,7 +419,7 @@ function RichContentCard({ item, onAuthorClick, onAssetClick, onCardClick, onExp
   return (
     <div onClick={() => onCardClick?.(item)} className={clsx(
       'rounded-xl overflow-hidden transition-all cursor-pointer group border',
-      isSelected ? 'border-primary-300 shadow-lg ring-1 ring-primary-200' : 'border-gray-200 hover:shadow-md',
+      isSelected ? 'border-primary-300 shadow-lg ring-1 ring-primary-200' : 'border-gray-200 hover:shadow-md dark:border-gray-700',
     )}>
       {/* Header — type + asset + title on minimal lines */}
       <div className={clsx('px-4 pt-2.5 pb-2 border-b', isThesis ? 'bg-teal-50/40 border-teal-100' : 'bg-slate-50/50 border-slate-100')}>
@@ -427,14 +427,14 @@ function RichContentCard({ item, onAuthorClick, onAssetClick, onCardClick, onExp
           <TypeIcon className={clsx('w-3 h-3', typeCfg.color)} />
           <span className={clsx('text-[10px] font-bold uppercase tracking-wide', typeCfg.color)}>{typeCfg.label}</span>
           {asset && <button onClick={e => { e.stopPropagation(); onAssetClick?.(asset.id, asset.symbol) }}
-            className="text-[13px] font-bold text-gray-900 hover:text-primary-700">{asset.symbol}</button>}
+            className="text-[13px] font-bold text-gray-900 hover:text-primary-700 dark:text-white">{asset.symbol}</button>}
           {thesisSection && <span className="text-[9px] text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full font-medium capitalize">{thesisSection.replace(/_/g, ' ')}</span>}
           <span className="text-[10px] text-gray-400 ml-auto">{relativeTime(item.created_at)}</span>
         </div>
-        {noteTitle && <h3 className="text-[14px] font-semibold text-gray-900 leading-snug">{noteTitle}</h3>}
+        {noteTitle && <h3 className="text-[14px] font-semibold text-gray-900 leading-snug dark:text-white">{noteTitle}</h3>}
       </div>
 
-      <div className="bg-white">
+      <div className="bg-white dark:bg-gray-800">
         {asset?.symbol && <FeedChart symbol={asset.symbol} height={140} defaultTimeframe="3M" onExpand={onExpandChart} className="pt-1" />}
 
         {/* Author + why-now + content — compact */}
@@ -445,7 +445,7 @@ function RichContentCard({ item, onAuthorClick, onAssetClick, onCardClick, onExp
           <RichTextContent content={rawContent} />
         </div>
 
-        <div className="px-4 py-1.5 border-t border-gray-100"><EngagementRow item={item} /></div>
+        <div className="px-4 py-1.5 border-t border-gray-100 dark:border-gray-800"><EngagementRow item={item} /></div>
       </div>
     </div>
   )
@@ -495,7 +495,7 @@ function RichTextContent({ content, maxLines = 6 }: { content: string; maxLines?
   }
 
   return (
-    <div className="text-[13px] text-gray-700 leading-relaxed space-y-0.5">
+    <div className="text-[13px] text-gray-700 leading-relaxed space-y-0.5 dark:text-gray-300">
       {elements}
       {isTruncated && (
         <button
@@ -522,7 +522,7 @@ function renderBoldInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*)/g)
   return parts.map((part, i) => {
     const m = part.match(/^\*\*(.+)\*\*$/)
-    return m ? <strong key={i} className="font-semibold text-gray-900">{m[1]}</strong> : part || null
+    return m ? <strong key={i} className="font-semibold text-gray-900 dark:text-white">{m[1]}</strong> : part || null
   })
 }
 
@@ -573,7 +573,7 @@ export const GroupedThesisCard = React.memo(function GroupedThesisCard({
   return (
     <div onClick={() => onCardClick?.(active)} className={clsx(
       'rounded-xl overflow-hidden transition-all cursor-pointer group border',
-      isSelected ? 'border-primary-300 shadow-lg ring-1 ring-primary-200' : 'border-gray-200 hover:shadow-md',
+      isSelected ? 'border-primary-300 shadow-lg ring-1 ring-primary-200' : 'border-gray-200 hover:shadow-md dark:border-gray-700',
     )}>
       {/* Header */}
       <div className="px-4 pt-2.5 pb-2 border-b bg-teal-50/40 border-teal-100">
@@ -582,7 +582,7 @@ export const GroupedThesisCard = React.memo(function GroupedThesisCard({
           <span className="text-[10px] font-bold uppercase tracking-wide text-teal-600">Thesis Update</span>
           {asset && (
             <button onClick={e => { e.stopPropagation(); onAssetClick?.(asset.id, asset.symbol) }}
-              className="text-[13px] font-bold text-gray-900 hover:text-primary-700">{asset.symbol}</button>
+              className="text-[13px] font-bold text-gray-900 hover:text-primary-700 dark:text-white">{asset.symbol}</button>
           )}
           <span className="text-[10px] text-gray-400 ml-auto">{relativeTime(active.created_at)}</span>
         </div>
@@ -606,7 +606,7 @@ export const GroupedThesisCard = React.memo(function GroupedThesisCard({
         </div>
       </div>
 
-      <div className="bg-white">
+      <div className="bg-white dark:bg-gray-800">
         {asset?.symbol && <FeedChart symbol={asset.symbol} height={140} defaultTimeframe="3M" onExpand={onExpandChart} className="pt-1" />}
 
         <div className="px-4 pt-1.5 pb-0.5">
@@ -619,10 +619,10 @@ export const GroupedThesisCard = React.memo(function GroupedThesisCard({
 
           {/* Carousel nav */}
           {items.length > 1 && (
-            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-gray-100">
+            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-gray-100 dark:border-gray-800">
               <button
                 onClick={(e) => { e.stopPropagation(); setActiveIdx(i => (i - 1 + items.length) % items.length) }}
-                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
@@ -640,7 +640,7 @@ export const GroupedThesisCard = React.memo(function GroupedThesisCard({
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); setActiveIdx(i => (i + 1) % items.length) }}
-                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -648,7 +648,7 @@ export const GroupedThesisCard = React.memo(function GroupedThesisCard({
           )}
         </div>
 
-        <div className="px-4 py-1.5 border-t border-gray-100"><EngagementRow item={active} /></div>
+        <div className="px-4 py-1.5 border-t border-gray-100 dark:border-gray-800"><EngagementRow item={active} /></div>
       </div>
     </div>
   )

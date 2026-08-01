@@ -167,12 +167,12 @@ export function TemplateList({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <X className="w-4 h-4" />
             </button>
@@ -185,7 +185,7 @@ export function TemplateList({
             'flex items-center gap-2 px-3 py-2 border rounded-lg transition-colors',
             showFilters || hasActiveFilters
               ? 'border-primary-300 bg-primary-50 text-primary-700'
-              : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300'
           )}
         >
           <Filter className="w-4 h-4" />
@@ -205,9 +205,9 @@ export function TemplateList({
 
       {/* Filter Panel */}
       {showFilters && (
-        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-4">
+        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-4 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-gray-700">Filter Templates</h4>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Filter Templates</h4>
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
@@ -221,11 +221,11 @@ export function TemplateList({
           <div className="grid grid-cols-4 gap-4">
             {/* Category */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Category</label>
               <select
                 value={filters.category}
                 onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded dark:border-gray-600"
               >
                 {CATEGORIES.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.label}</option>
@@ -241,7 +241,7 @@ export function TemplateList({
                   'px-3 py-1.5 text-sm rounded-lg border transition-colors flex items-center gap-1.5',
                   filters.showOnlyMine
                     ? 'border-primary-300 bg-primary-50 text-primary-700'
-                    : 'border-gray-300 hover:bg-gray-50'
+                    : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
                 )}
               >
                 <User className="w-3.5 h-3.5" />
@@ -253,7 +253,7 @@ export function TemplateList({
                   'px-3 py-1.5 text-sm rounded-lg border transition-colors flex items-center gap-1.5',
                   filters.showOnlyShared
                     ? 'border-primary-300 bg-primary-50 text-primary-700'
-                    : 'border-gray-300 hover:bg-gray-50'
+                    : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
                 )}
               >
                 <Users className="w-3.5 h-3.5" />
@@ -265,7 +265,7 @@ export function TemplateList({
                   'px-3 py-1.5 text-sm rounded-lg border transition-colors flex items-center gap-1.5',
                   filters.showOnlyFavorites
                     ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
-                    : 'border-gray-300 hover:bg-gray-50'
+                    : 'border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600'
                 )}
               >
                 <Star className="w-3.5 h-3.5" />
@@ -277,7 +277,7 @@ export function TemplateList({
           {/* Tags */}
           {tags.length > 0 && (
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-2">Tags</label>
+              <label className="block text-xs font-medium text-gray-600 mb-2 dark:text-gray-400">Tags</label>
               <div className="flex flex-wrap gap-1.5">
                 {tags.map(tag => (
                   <button
@@ -287,7 +287,7 @@ export function TemplateList({
                       'px-2 py-1 text-xs rounded-full transition-colors',
                       filters.tagIds.includes(tag.id)
                         ? 'text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                     )}
                     style={filters.tagIds.includes(tag.id) ? { backgroundColor: tag.color } : undefined}
                   >
@@ -303,7 +303,7 @@ export function TemplateList({
       {/* Recently Used */}
       {!searchQuery && !hasActiveFilters && recentlyUsed.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-300">
             <Clock className="w-4 h-4" />
             Recently Used
           </h4>
@@ -312,13 +312,13 @@ export function TemplateList({
               <button
                 key={template.id}
                 onClick={() => onUse(template)}
-                className="flex-shrink-0 px-3 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-left transition-colors"
+                className="flex-shrink-0 px-3 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-left transition-colors dark:hover:bg-gray-700 dark:border-gray-700 dark:bg-gray-900"
               >
-                <p className="text-sm font-medium text-gray-900 truncate max-w-[150px]">
+                <p className="text-sm font-medium text-gray-900 truncate max-w-[150px] dark:text-white">
                   {template.name}
                 </p>
                 {template.shortcut && (
-                  <p className="text-xs text-gray-500 font-mono">.t.{template.shortcut}</p>
+                  <p className="text-xs text-gray-500 font-mono dark:text-gray-400">.t.{template.shortcut}</p>
                 )}
               </button>
             ))}
@@ -329,7 +329,7 @@ export function TemplateList({
       {/* Favorites */}
       {!searchQuery && !hasActiveFilters && favorites.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-300">
             <Star className="w-4 h-4 text-yellow-500" />
             Favorites
           </h4>
@@ -361,12 +361,12 @@ export function TemplateList({
 
       {/* All Templates */}
       <div className="space-y-2">
-        <h4 className="text-sm font-medium text-gray-700">
+        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {searchQuery || hasActiveFilters ? 'Results' : 'All Templates'} ({filteredTemplates.length})
         </h4>
 
         {filteredTemplates.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             {searchQuery || hasActiveFilters ? (
               <p>No templates match your search or filters</p>
             ) : (
@@ -441,18 +441,18 @@ function TemplateCard({
       <div
         className={clsx(
           'p-3 border rounded-lg cursor-pointer transition-colors',
-          isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
         )}
         onClick={onUse}
       >
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-900 truncate text-sm">{template.name}</span>
+              <span className="font-medium text-gray-900 truncate text-sm dark:text-white">{template.name}</span>
               {template.is_favorite && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
             </div>
             {template.shortcut && (
-              <span className="text-xs text-gray-500 font-mono">.t.{template.shortcut}</span>
+              <span className="text-xs text-gray-500 font-mono dark:text-gray-400">.t.{template.shortcut}</span>
             )}
           </div>
         </div>
@@ -463,14 +463,14 @@ function TemplateCard({
   return (
     <div className={clsx(
       'p-3 border rounded-lg',
-      isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+      isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
     )}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="font-medium text-gray-900">{template.name}</span>
-            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+            <span className="font-medium text-gray-900 dark:text-white">{template.name}</span>
+            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">
               {categoryLabel}
             </span>
             {template.shortcut && (
@@ -514,7 +514,7 @@ function TemplateCard({
               </button>
               <button
                 onClick={onCancelDelete}
-                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                 title="Cancel"
               >
                 <X className="w-4 h-4" />
@@ -524,7 +524,7 @@ function TemplateCard({
             <>
               <button
                 onClick={onPreview}
-                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                 title="Preview template"
               >
                 <Eye className="w-4 h-4" />
@@ -535,7 +535,7 @@ function TemplateCard({
                   'p-1.5 rounded transition-colors',
                   template.is_favorite
                     ? 'text-yellow-500 hover:bg-yellow-50'
-                    : 'text-gray-400 hover:text-yellow-500 hover:bg-gray-100'
+                    : 'text-gray-400 hover:text-yellow-500 hover:bg-gray-100 dark:hover:bg-gray-700'
                 )}
                 title={template.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
               >
@@ -543,7 +543,7 @@ function TemplateCard({
               </button>
               <button
                 onClick={onCopy}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 title="Copy content"
               >
                 <Copy className="w-4 h-4" />
@@ -551,7 +551,7 @@ function TemplateCard({
               <div className="relative">
                 <button
                   onClick={() => setShowMenu(!showMenu)}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -559,13 +559,13 @@ function TemplateCard({
                 {showMenu && (
                   <>
                     <div className="fixed inset-0" onClick={() => setShowMenu(false)} />
-                    <div className="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                    <div className="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 dark:border-gray-700 dark:bg-gray-800">
                       <button
                         onClick={() => {
                           onUse()
                           setShowMenu(false)
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                       >
                         <FileText className="w-4 h-4" />
                         Use Template
@@ -577,7 +577,7 @@ function TemplateCard({
                               onEdit()
                               setShowMenu(false)
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                           >
                             <Edit2 className="w-4 h-4" />
                             Edit
@@ -587,7 +587,7 @@ function TemplateCard({
                               onShare()
                               setShowMenu(false)
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                           >
                             <Share2 className="w-4 h-4" />
                             Share

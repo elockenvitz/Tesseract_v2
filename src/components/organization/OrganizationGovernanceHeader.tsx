@@ -49,7 +49,7 @@ export function OrganizationGovernanceHeader({
           {/* Health: large and prominent */}
           <div className="flex items-center gap-2.5">
             <div className="select-none">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Governance</span>
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest dark:text-gray-400">Governance</span>
               <span className="text-[9px] text-gray-400 ml-1">Org Health</span>
             </div>
             <HealthPill score={orgGraph.overallHealth} size="lg" showTooltip />
@@ -128,9 +128,9 @@ function Stat({
   warn?: boolean
 }) {
   return (
-    <div className="flex items-center gap-1 text-gray-500 select-none">
+    <div className="flex items-center gap-1 text-gray-500 select-none dark:text-gray-400">
       <span className="text-gray-400">{icon}</span>
-      <span className={`font-semibold tabular-nums ${warn ? 'text-amber-700' : 'text-gray-800'}`}>{value}</span>
+      <span className={`font-semibold tabular-nums ${warn ? 'text-amber-700' : 'text-gray-800 dark:text-gray-100'}`}>{value}</span>
       <span>{label}</span>
     </div>
   )

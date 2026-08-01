@@ -30,11 +30,11 @@ interface AnalystMetrics {
 
 // Calculate tier from score
 function getTier(score: number | null): { label: string; color: string; bgColor: string } {
-  if (score === null) return { label: 'N/A', color: 'text-gray-500', bgColor: 'bg-gray-100' }
+  if (score === null) return { label: 'N/A', color: 'text-gray-500 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   if (score >= 80) return { label: 'Excellent', color: 'text-green-700', bgColor: 'bg-green-100' }
   if (score >= 70) return { label: 'Good', color: 'text-blue-700', bgColor: 'bg-blue-100' }
   if (score >= 60) return { label: 'Average', color: 'text-yellow-700', bgColor: 'bg-yellow-100' }
-  return { label: 'Developing', color: 'text-gray-600', bgColor: 'bg-gray-100' }
+  return { label: 'Developing', color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
 }
 
 export function TeamPerformanceSummary({
@@ -158,10 +158,10 @@ export function TeamPerformanceSummary({
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="animate-pulse space-y-3">
           <div className="h-4 bg-gray-200 rounded w-1/3" />
-          <div className="h-16 bg-gray-100 rounded" />
+          <div className="h-16 bg-gray-100 rounded dark:bg-gray-800" />
         </div>
       </div>
     )
@@ -169,8 +169,8 @@ export function TeamPerformanceSummary({
 
   if (!data || data.totalTargets === 0) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
-        <div className="text-center py-6 text-gray-500">
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
+        <div className="text-center py-6 text-gray-500 dark:text-gray-400">
           <Trophy className="w-8 h-8 mx-auto mb-2 text-gray-400" />
           <p className="text-sm">No performance data yet</p>
           <p className="text-xs mt-1">Track record builds as price targets reach their evaluation date</p>
@@ -182,9 +182,9 @@ export function TeamPerformanceSummary({
   const teamTier = getTier(data.teamHitRate)
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
           <Trophy className="w-4 h-4 text-yellow-500" />
           Team Track Record
         </h4>
@@ -220,17 +220,17 @@ export function TeamPerformanceSummary({
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-bold text-gray-900">
+                <span className="text-sm font-bold text-gray-900 dark:text-white">
                   {data.teamHitRate?.toFixed(0) || '—'}%
                 </span>
               </div>
             </div>
 
             <div>
-              <div className="text-sm font-medium text-gray-900">Team Hit Rate</div>
+              <div className="text-sm font-medium text-gray-900 dark:text-white">Team Hit Rate</div>
               <div className="flex items-center gap-2 mt-1">
                 <Users className="w-3 h-3 text-gray-400" />
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {data.totalAnalysts} analyst{data.totalAnalysts !== 1 ? 's' : ''} • {data.totalTargets} targets
                 </span>
               </div>
@@ -244,28 +244,28 @@ export function TeamPerformanceSummary({
 
         {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="text-center p-2 bg-gray-50 rounded-lg">
+          <div className="text-center p-2 bg-gray-50 rounded-lg dark:bg-gray-900">
             <div className="text-lg font-bold text-green-600">{data.totalHits}</div>
-            <div className="text-xs text-gray-500">Hit</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Hit</div>
           </div>
-          <div className="text-center p-2 bg-gray-50 rounded-lg">
+          <div className="text-center p-2 bg-gray-50 rounded-lg dark:bg-gray-900">
             <div className="text-lg font-bold text-red-500">
               {data.totalTargets - data.totalHits - (data.analysts.reduce((s, a) => s + (a.totalTargets - a.hitTargets - a.missedTargets), 0))}
             </div>
-            <div className="text-xs text-gray-500">Missed</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Missed</div>
           </div>
-          <div className="text-center p-2 bg-gray-50 rounded-lg">
+          <div className="text-center p-2 bg-gray-50 rounded-lg dark:bg-gray-900">
             <div className="text-lg font-bold text-blue-600">
               {data.teamAccuracy?.toFixed(0) || '—'}%
             </div>
-            <div className="text-xs text-gray-500">Avg Accuracy</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Avg Accuracy</div>
           </div>
         </div>
 
         {/* Analyst Leaderboard */}
         {data.analysts.length > 1 && (
           <div>
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 dark:text-gray-400">
               Analyst Rankings
             </div>
             <div className="space-y-1">
@@ -284,14 +284,14 @@ export function TeamPerformanceSummary({
                     <div className={clsx(
                       'w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium',
                       index === 0 ? 'bg-yellow-400 text-yellow-900' :
-                      index === 1 ? 'bg-gray-300 text-gray-700' :
+                      index === 1 ? 'bg-gray-300 text-gray-700 dark:text-gray-300' :
                       index === 2 ? 'bg-amber-600 text-white' :
-                      'bg-gray-100 text-gray-600'
+                      'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                     )}>
                       {index + 1}
                     </div>
 
-                    <span className="text-sm text-gray-900">{analyst.userName}</span>
+                    <span className="text-sm text-gray-900 dark:text-white">{analyst.userName}</span>
                   </div>
 
                   <div className="flex items-center gap-3 text-xs">
@@ -299,7 +299,7 @@ export function TeamPerformanceSummary({
                       'font-medium',
                       analyst.hitRate && analyst.hitRate >= 70 ? 'text-green-600' :
                       analyst.hitRate && analyst.hitRate >= 50 ? 'text-blue-600' :
-                      'text-gray-600'
+                      'text-gray-600 dark:text-gray-400'
                     )}>
                       {analyst.hitRate?.toFixed(0) || '—'}% hit
                     </span>

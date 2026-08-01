@@ -203,7 +203,7 @@ export function ProjectFilterPanel({
                   type="checkbox"
                   checked={localFilters.hasDeliverables === true}
                   onChange={(e) => updateFilter('hasDeliverables', e.target.checked ? true : undefined)}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">
                   Has deliverables/tasks

@@ -62,7 +62,7 @@ function ProgressCell({ run }: { run: ActiveRun }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs text-gray-500 w-12 text-right">
+      <span className="text-xs text-gray-500 w-12 text-right dark:text-gray-400">
         {completed}/{total}
       </span>
     </div>
@@ -101,7 +101,7 @@ function VersionChip({ run }: { run: ActiveRun }) {
   const tooltip = getRunVersionTooltip(run)
   return (
     <span
-      className="ml-1.5 inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4"
+      className="ml-1.5 inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4 dark:text-gray-400 dark:bg-gray-800"
       title={tooltip}
     >
       {label}
@@ -113,12 +113,12 @@ function VersionChip({ run }: { run: ActiveRun }) {
 function TableHead() {
   return (
     <thead>
-      <tr className="border-b border-gray-200">
-        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Process</th>
-        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Run</th>
-        <th className="text-right py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Remaining</th>
-        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">Progress</th>
-        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+      <tr className="border-b border-gray-200 dark:border-gray-700">
+        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Process</th>
+        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Run</th>
+        <th className="text-right py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Remaining</th>
+        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px] dark:text-gray-400">Progress</th>
+        <th className="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Started</th>
         <th className="w-8"></th>
       </tr>
     </thead>
@@ -158,7 +158,7 @@ function RunRow({
             />
           )}
           {!indent && (
-            <span className="text-gray-700">{run.parent_name}</span>
+            <span className="text-gray-700 dark:text-gray-300">{run.parent_name}</span>
           )}
           {indent && (
             <span className="text-gray-400 text-xs">{run.parent_name}</span>
@@ -182,7 +182,7 @@ function RunRow({
 
       {/* Run name/suffix */}
       <td className="py-2.5 px-3">
-        <span className={`font-medium ${indent ? 'text-gray-500 text-xs' : 'text-gray-900'}`}>
+        <span className={`font-medium ${indent ? 'text-gray-500 text-xs dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
           {run.branch_suffix || run.name}
         </span>
       </td>
@@ -198,7 +198,7 @@ function RunRow({
       </td>
 
       {/* Started */}
-      <td className="py-2.5 px-3 text-gray-500 text-sm">
+      <td className="py-2.5 px-3 text-gray-500 text-sm dark:text-gray-400">
         {safeRelativeTime(run.started_at_display)}
       </td>
 
@@ -255,7 +255,7 @@ function GroupedProcessRow({
       {/* Canonical row */}
       <tr
         onClick={() => onSelectRun(canonical)}
-        className="border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer transition-colors group"
+        className="border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer transition-colors group dark:border-gray-800"
       >
         {/* Process (parent) */}
         <td className="py-2.5 px-3">
@@ -266,7 +266,7 @@ function GroupedProcessRow({
                   e.stopPropagation()
                   setExpanded(!expanded)
                 }}
-                className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 -ml-1 flex-shrink-0"
+                className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 -ml-1 flex-shrink-0 dark:hover:text-gray-300"
               >
                 {expanded ? (
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -281,7 +281,7 @@ function GroupedProcessRow({
               className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: group.parentColor || '#6b7280' }}
             />
-            <span className="text-gray-700">{group.parentName}</span>
+            <span className="text-gray-700 dark:text-gray-300">{group.parentName}</span>
             <VersionChip run={canonical} />
             {getScopeBadgeLabel((canonical as any).scope_type) && (
               <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
@@ -302,7 +302,7 @@ function GroupedProcessRow({
 
         {/* Run name/suffix */}
         <td className="py-2.5 px-3">
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-gray-900 dark:text-white">
             {canonical.branch_suffix || canonical.name}
           </span>
         </td>
@@ -318,7 +318,7 @@ function GroupedProcessRow({
         </td>
 
         {/* Started */}
-        <td className="py-2.5 px-3 text-gray-500 text-sm">
+        <td className="py-2.5 px-3 text-gray-500 text-sm dark:text-gray-400">
           {safeRelativeTime(canonical.started_at_display)}
         </td>
 
@@ -375,9 +375,9 @@ export function ActiveRunsTable({
 
   if (runs.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
         <Activity className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-        <p className="text-sm font-medium text-gray-600">No active runs</p>
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No active runs</p>
         <p className="text-xs text-gray-400 mt-1">Start a run from a process to begin a new cycle.</p>
       </div>
     )

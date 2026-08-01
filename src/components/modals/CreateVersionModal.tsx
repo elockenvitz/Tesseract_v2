@@ -162,18 +162,18 @@ export function CreateVersionModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8 pt-24 pb-12">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl dark:bg-gray-800">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
           <div>
             <div className="flex items-center space-x-2">
               <GitBranch className="w-5 h-5 text-indigo-600" />
-              <h2 className="text-lg font-bold text-gray-900">Create Template Version</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Create Template Version</h2>
             </div>
           </div>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -215,11 +215,11 @@ export function CreateVersionModal({
             {/* Version Type - Auto-detected, Read-only */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   <Tag className="w-4 h-4 inline mr-1" />
                   Version Type
                 </label>
-                <span className="text-xs text-gray-500 italic">
+                <span className="text-xs text-gray-500 italic dark:text-gray-400">
                   Auto-detected based on changes
                 </span>
               </div>
@@ -258,10 +258,10 @@ export function CreateVersionModal({
             {/* Description/Notes */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Version Notes *
                 </label>
-                <span className="text-xs text-gray-500 italic">
+                <span className="text-xs text-gray-500 italic dark:text-gray-400">
                   Auto-generated from changes • Edit as needed
                 </span>
               </div>
@@ -277,7 +277,7 @@ export function CreateVersionModal({
                 placeholder="Describe what changed in this version..."
                 rows={5}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none text-sm ${
-                  errors.description ? 'border-red-500' : 'border-gray-300'
+                  errors.description ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               />
               {errors.description && (
@@ -289,9 +289,9 @@ export function CreateVersionModal({
             </div>
 
             {/* Preview - More Compact */}
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">Snapshot includes:</span>
+                <span className="text-gray-600 dark:text-gray-400">Snapshot includes:</span>
                 <div className="flex items-center space-x-4">
                   <span className="font-semibold text-indigo-600">{displayPreviewData.stageCount} stages</span>
                   <span className="font-semibold text-indigo-600">{displayPreviewData.checklistCount} checklists</span>
@@ -302,7 +302,7 @@ export function CreateVersionModal({
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end space-x-3 flex-shrink-0">
+          <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end space-x-3 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
             <Button type="button" onClick={handleClose} variant="outline">
               Cancel
             </Button>

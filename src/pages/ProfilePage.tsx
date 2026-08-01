@@ -204,8 +204,8 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
-        <p className="text-gray-600 mt-1">Manage your personal information and preferences</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Profile</h1>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Manage your personal information and preferences</p>
       </div>
 
       {/* Profile Card */}
@@ -216,12 +216,12 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
               {getUserInitials()}
             </span>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900">{getDisplayName()}</h2>
-          <p className="text-gray-600">{userDetails?.email}</p>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{getDisplayName()}</h2>
+          <p className="text-gray-600 dark:text-gray-400">{userDetails?.email}</p>
           <div className="flex items-center justify-center gap-2 mt-2">
             <button
               onClick={() => startEditing('role')}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer dark:text-gray-300 dark:bg-gray-800"
             >
               <UserTypeIcon className="h-4 w-4" />
               {getUserTypeLabel(profileExtended?.user_type || userDetails?.user_type)}
@@ -234,35 +234,35 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             )}
           </div>
           {profileExtended?.title && (
-            <p className="text-sm text-gray-500 mt-2">{profileExtended.title}</p>
+            <p className="text-sm text-gray-500 mt-2 dark:text-gray-400">{profileExtended.title}</p>
           )}
         </div>
 
         {/* Personal Information - Read Only */}
         <div className="space-y-6">
           <div>
-            <h3 className="text-lg font-medium text-gray-900">Personal Information</h3>
-            <p className="text-sm text-gray-500 mt-1">Contact your administrator to update your profile information</p>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Personal Information</h3>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Contact your administrator to update your profile information</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">First Name</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
                 {userDetails?.first_name || '-'}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Last Name</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
                 {userDetails?.last_name || '-'}
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Email Address</label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
               {userDetails?.email || '-'}
             </div>
           </div>
@@ -273,7 +273,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
       {profileExtended?.user_type && (
         <Card>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2 dark:text-white">
               <UserTypeIcon className="h-5 w-5 text-primary-600" />
               {getUserTypeLabel(profileExtended.user_type)} Profile
             </h3>
@@ -281,7 +281,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
               variant="ghost"
               size="sm"
               onClick={() => startEditing(profileExtended.user_type as any)}
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
             >
               <Edit3 className="h-4 w-4 mr-1.5" />
               Edit
@@ -292,7 +292,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             <div className="space-y-4">
               {profileExtended.investment_style?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Investment Style</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Investment Style</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.investment_style.map((style: string) => (
                       <span key={style} className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-sm capitalize">
@@ -305,7 +305,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.time_horizon?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Time Horizon</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Time Horizon</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.time_horizon.map((horizon: string) => (
                       <span key={horizon} className="px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-sm capitalize">
@@ -318,7 +318,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.market_cap_focus?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Market Cap Focus</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Market Cap Focus</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.market_cap_focus.map((cap: string) => (
                       <span key={cap} className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-sm capitalize">
@@ -331,7 +331,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.geography_focus?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Geography Focus</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Geography Focus</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.geography_focus.map((geo: string) => (
                       <span key={geo} className="px-2.5 py-1 bg-cyan-100 text-cyan-700 rounded-full text-sm capitalize">
@@ -344,7 +344,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.sector_focus?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sector Focus</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Sector Focus</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.sector_focus.map((sector: string) => (
                       <span key={sector} className="px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
@@ -357,8 +357,8 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.strategy_description && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Strategy Description</label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 text-sm">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Strategy Description</label>
+                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 text-sm dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900">
                     {profileExtended.strategy_description}
                   </div>
                 </div>
@@ -367,7 +367,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
               {/* Empty state for investor */}
               {!profileExtended.investment_style?.length && !profileExtended.sector_focus?.length && !profileExtended.strategy_description && (
                 <div className="text-center py-4">
-                  <p className="text-gray-500 text-sm">No investment profile configured yet.</p>
+                  <p className="text-gray-500 text-sm dark:text-gray-400">No investment profile configured yet.</p>
                   <Button variant="ghost" size="sm" onClick={() => startEditing('investor')} className="mt-2">
                     <Edit3 className="h-4 w-4 mr-1.5" />
                     Add Details
@@ -381,7 +381,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             <div className="space-y-4">
               {profileExtended.ops_workflow_types?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Workflow Types</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Workflow Types</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.ops_workflow_types.map((type: string) => (
                       <span key={type} className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-sm capitalize">
@@ -394,8 +394,8 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.ops_role_description && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role Description</label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 text-sm">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Role Description</label>
+                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 text-sm dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900">
                     {profileExtended.ops_role_description}
                   </div>
                 </div>
@@ -404,7 +404,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
               {/* Empty state */}
               {!profileExtended.ops_workflow_types?.length && !profileExtended.ops_role_description && (
                 <div className="text-center py-4">
-                  <p className="text-gray-500 text-sm">No operations profile configured yet.</p>
+                  <p className="text-gray-500 text-sm dark:text-gray-400">No operations profile configured yet.</p>
                   <Button variant="ghost" size="sm" onClick={() => startEditing('operations')} className="mt-2">
                     <Edit3 className="h-4 w-4 mr-1.5" />
                     Add Details
@@ -418,7 +418,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             <div className="space-y-4">
               {profileExtended.compliance_areas?.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Compliance Areas</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Compliance Areas</label>
                   <div className="flex flex-wrap gap-2">
                     {profileExtended.compliance_areas.map((area: string) => (
                       <span key={area} className="px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-sm capitalize">
@@ -431,8 +431,8 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
               {profileExtended.compliance_role_description && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role Description</label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 text-sm">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Role Description</label>
+                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 text-sm dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900">
                     {profileExtended.compliance_role_description}
                   </div>
                 </div>
@@ -441,7 +441,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
               {/* Empty state */}
               {!profileExtended.compliance_areas?.length && !profileExtended.compliance_role_description && (
                 <div className="text-center py-4">
-                  <p className="text-gray-500 text-sm">No compliance profile configured yet.</p>
+                  <p className="text-gray-500 text-sm dark:text-gray-400">No compliance profile configured yet.</p>
                   <Button variant="ghost" size="sm" onClick={() => startEditing('compliance')} className="mt-2">
                     <Edit3 className="h-4 w-4 mr-1.5" />
                     Add Details
@@ -462,8 +462,8 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                 <User className="h-6 w-6 text-amber-600" />
               </div>
               <div>
-                <h3 className="text-lg font-medium text-gray-900">Set Your Role Type</h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Set Your Role Type</h3>
+                <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">
                   Tell us what type of work you do to personalize your experience.
                 </p>
               </div>
@@ -478,7 +478,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
       {/* Data Integrations */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+          <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2 dark:text-white">
             <Database className="h-5 w-5 text-cyan-600" />
             Data Integrations
           </h3>
@@ -486,7 +486,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             variant="ghost"
             size="sm"
             onClick={() => startEditing('integrations')}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
           >
             <Edit3 className="h-4 w-4 mr-1.5" />
             Edit
@@ -495,32 +495,32 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Market Data Provider</label>
-            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Market Data Provider</label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 dark:border-gray-700 dark:text-white dark:bg-gray-900">
               {getMarketDataLabel(profileExtended?.market_data_provider || null, profileExtended?.market_data_provider_other)}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Data Needs</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Data Needs</label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_realtime_prices ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_realtime_prices ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500 dark:text-gray-400 dark:bg-gray-900'}`}>
                 {profileExtended?.needs_realtime_prices ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                 Realtime Prices
               </div>
-              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_index_data ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_index_data ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500 dark:text-gray-400 dark:bg-gray-900'}`}>
                 {profileExtended?.needs_index_data ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                 Index Data
               </div>
-              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_fundamentals ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_fundamentals ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500 dark:text-gray-400 dark:bg-gray-900'}`}>
                 {profileExtended?.needs_fundamentals ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                 Fundamentals
               </div>
-              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_estimates ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_estimates ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500 dark:text-gray-400 dark:bg-gray-900'}`}>
                 {profileExtended?.needs_estimates ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                 Estimates
               </div>
-              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_news_feeds ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+              <div className={`px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${profileExtended?.needs_news_feeds ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500 dark:text-gray-400 dark:bg-gray-900'}`}>
                 {profileExtended?.needs_news_feeds ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                 News Feeds
               </div>
@@ -531,15 +531,15 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
       {/* Account Information */}
       <Card>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Account Information</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-4 dark:text-white">Account Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="flex items-center">
             <div className="p-2 bg-primary-100 rounded-lg">
               <Calendar className="h-5 w-5 text-primary-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Member Since</p>
-              <p className="text-sm text-gray-900">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Member Since</p>
+              <p className="text-sm text-gray-900 dark:text-white">
                 {userDetails?.created_at
                   ? formatDistanceToNow(new Date(userDetails.created_at), { addSuffix: true })
                   : 'Unknown'
@@ -553,12 +553,12 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
               <CheckCircle className="h-5 w-5 text-success-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Setup Status</p>
-              <p className="text-sm text-gray-900">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Setup Status</p>
+              <p className="text-sm text-gray-900 dark:text-white">
                 {onboardingStatus?.wizard_completed ? 'Completed' : 'Incomplete'}
               </p>
               {onboardingStatus?.completed_at && (
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                   {formatDistanceToNow(new Date(onboardingStatus.completed_at), { addSuffix: true })}
                 </p>
               )}
@@ -567,13 +567,13 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
         </div>
 
         {/* Subtle link to setup wizard */}
-        <div className="mt-6 pt-4 border-t border-gray-100">
+        <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-800">
           <button
             onClick={() => {
               if (onClose) onClose()
               navigate('/setup')
             }}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1"
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1 dark:hover:text-gray-300"
           >
             <Settings className="h-3 w-3" />
             Run full setup wizard
@@ -591,17 +591,17 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
         >
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title (Optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Title (Optional)</label>
               <input
                 type="text"
                 value={editFormData.title || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
                 placeholder="e.g., Senior Analyst, Portfolio Manager"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">What best describes your role?</label>
+              <label className="block text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">What best describes your role?</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { id: 'investor', label: 'Investor', icon: TrendingUp, color: 'green' },
@@ -618,11 +618,11 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                         'p-4 rounded-lg border-2 text-left transition-all',
                         isSelected
                           ? 'border-primary-500 bg-primary-50'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                       )}
                     >
                       <Icon className={clsx('h-6 w-6 mb-2', isSelected ? 'text-primary-600' : 'text-gray-400')} />
-                      <div className={clsx('font-medium', isSelected ? 'text-primary-900' : 'text-gray-900')}>
+                      <div className={clsx('font-medium', isSelected ? 'text-primary-900' : 'text-gray-900 dark:text-white')}>
                         {role.label}
                       </div>
                     </button>
@@ -645,7 +645,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
           <div className="space-y-6 max-h-[60vh] overflow-y-auto">
             {/* Investment Style */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Investment Style</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Investment Style</label>
               <div className="flex flex-wrap gap-2">
                 {INVESTMENT_STYLES.map((style) => (
                   <button
@@ -655,7 +655,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.investment_style || []).includes(style.id)
                         ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {style.label}
@@ -666,7 +666,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
             {/* Time Horizon */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Time Horizon</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Time Horizon</label>
               <div className="flex flex-wrap gap-2">
                 {TIME_HORIZONS.map((horizon) => (
                   <button
@@ -676,7 +676,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.time_horizon || []).includes(horizon.id)
                         ? 'bg-green-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {horizon.label}
@@ -687,7 +687,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
             {/* Market Cap */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Market Cap Focus</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Market Cap Focus</label>
               <div className="flex flex-wrap gap-2">
                 {MARKET_CAP_OPTIONS.map((cap) => (
                   <button
@@ -697,7 +697,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.market_cap_focus || []).includes(cap.id)
                         ? 'bg-amber-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {cap.label}
@@ -708,7 +708,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
             {/* Geography */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Geography Focus</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Geography Focus</label>
               <div className="flex flex-wrap gap-2">
                 {GEOGRAPHY_OPTIONS.map((geo) => (
                   <button
@@ -718,7 +718,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.geography_focus || []).includes(geo.id)
                         ? 'bg-cyan-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {geo.label}
@@ -729,7 +729,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
             {/* Asset Classes */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Asset Classes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Asset Classes</label>
               <div className="flex flex-wrap gap-2">
                 {ASSET_CLASS_OPTIONS.map((asset) => (
                   <button
@@ -739,7 +739,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.asset_class_focus || []).includes(asset.id)
                         ? 'bg-indigo-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {asset.label}
@@ -750,7 +750,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
             {/* Sectors */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sector Focus</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Sector Focus</label>
               <div className="flex flex-wrap gap-2">
                 {SECTOR_OPTIONS.map((sector) => (
                   <button
@@ -760,7 +760,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.sector_focus || []).includes(sector)
                         ? 'bg-purple-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {sector}
@@ -771,25 +771,25 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
 
             {/* Strategy Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Strategy Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Strategy Description</label>
               <textarea
                 value={editFormData.strategy_description || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, strategy_description: e.target.value })}
                 placeholder="Describe your investment strategy..."
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
 
             {/* Focus Summary */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Current Focus Areas</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Current Focus Areas</label>
               <textarea
                 value={editFormData.investment_focus_summary || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, investment_focus_summary: e.target.value })}
                 placeholder="What are you currently researching or focused on?"
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
           </div>
@@ -806,7 +806,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
         >
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Workflow Areas</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Workflow Areas</label>
               <div className="flex flex-wrap gap-2">
                 {OPS_WORKFLOW_TYPES.map((workflow) => (
                   <button
@@ -816,7 +816,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.ops_workflow_types || []).includes(workflow.id)
                         ? 'bg-amber-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {workflow.label}
@@ -826,13 +826,13 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Role Description</label>
               <textarea
                 value={editFormData.ops_role_description || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, ops_role_description: e.target.value })}
                 placeholder="Describe your day-to-day responsibilities..."
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
           </div>
@@ -849,7 +849,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
         >
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Compliance Areas</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Compliance Areas</label>
               <div className="flex flex-wrap gap-2">
                 {COMPLIANCE_AREAS.map((area) => (
                   <button
@@ -859,7 +859,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'px-3 py-1.5 rounded-full text-sm font-medium transition-all',
                       (editFormData.compliance_areas || []).includes(area.id)
                         ? 'bg-red-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                     )}
                   >
                     {area.label}
@@ -869,13 +869,13 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Role Description</label>
               <textarea
                 value={editFormData.compliance_role_description || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, compliance_role_description: e.target.value })}
                 placeholder="Describe your compliance responsibilities..."
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
           </div>
@@ -892,7 +892,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
         >
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Market Data Provider</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Market Data Provider</label>
               <div className="grid grid-cols-3 gap-2">
                 {MARKET_DATA_PROVIDERS.map((provider) => (
                   <button
@@ -902,7 +902,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       'p-3 rounded-lg border-2 text-center transition-all',
                       editFormData.market_data_provider === provider.id
                         ? 'border-primary-500 bg-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
+                        : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                     )}
                   >
                     <div className="font-medium text-sm">{provider.label}</div>
@@ -915,13 +915,13 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                   value={editFormData.market_data_provider_other || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, market_data_provider_other: e.target.value })}
                   placeholder="Enter provider name"
-                  className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                 />
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Data Needs</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Data Needs</label>
               <div className="space-y-2">
                 {[
                   { key: 'needs_realtime_prices', label: 'Real-time Prices' },
@@ -935,22 +935,22 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                       type="checkbox"
                       checked={editFormData[item.key as keyof UserProfileExtended] as boolean || false}
                       onChange={(e) => setEditFormData({ ...editFormData, [item.key]: e.target.checked })}
-                      className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                      className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600"
                     />
-                    <span className="text-sm text-gray-700">{item.label}</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{item.label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Integration Notes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Integration Notes</label>
               <textarea
                 value={editFormData.integration_notes || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, integration_notes: e.target.value })}
                 placeholder="Any specific integration requirements?"
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               />
             </div>
           </div>
@@ -986,11 +986,11 @@ function EditModal({
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1001,7 +1001,7 @@ function EditModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
           <Button variant="outline" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>

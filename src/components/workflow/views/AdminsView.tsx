@@ -105,11 +105,11 @@ function UserRow({
   onRemove?: () => void
 }) {
   return (
-    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 group transition-colors">
+    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 group transition-colors dark:hover:bg-gray-800">
       <div className="flex items-center gap-2 min-w-0">
         <UserAvatar name={name} />
         <div className="min-w-0">
-          <span className="text-sm font-medium text-gray-900 truncate block">{name}</span>
+          <span className="text-sm font-medium text-gray-900 truncate block dark:text-white">{name}</span>
           {email && <p className="text-[11px] text-gray-400 truncate">{email}</p>}
         </div>
       </div>
@@ -179,7 +179,7 @@ export function AdminsView({
       {/* ─── Header ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Team & Access</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Team & Access</h3>
           <p className="text-[11px] text-gray-400 mt-0.5">
             Permissions apply to both definition and active runs.
           </p>
@@ -198,7 +198,7 @@ export function AdminsView({
           <div className="flex items-center gap-2.5">
             <UserAvatar name={resolvedCreatorName} />
             <div className="min-w-0">
-              <span className="text-sm font-medium text-gray-900 truncate block">{resolvedCreatorName}</span>
+              <span className="text-sm font-medium text-gray-900 truncate block dark:text-white">{resolvedCreatorName}</span>
               {resolvedCreatorEmail && resolvedCreatorEmail !== resolvedCreatorName && (
                 <p className="text-[11px] text-gray-400 truncate">{resolvedCreatorEmail}</p>
               )}

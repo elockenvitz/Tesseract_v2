@@ -95,13 +95,13 @@ function AddFieldRow({ onAdd, onCancel, isSaving }: AddFieldRowProps) {
   }
 
   return (
-    <div className="flex items-center gap-2 py-2 bg-gray-50 px-3 rounded-lg mt-2">
+    <div className="flex items-center gap-2 py-2 bg-gray-50 px-3 rounded-lg mt-2 dark:bg-gray-900">
       <input
         type="text"
         placeholder="Field name (e.g., EPS FY25)"
         value={label}
         onChange={(e) => setLabel(e.target.value)}
-        className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
         autoFocus
       />
       <input
@@ -110,12 +110,12 @@ function AddFieldRow({ onAdd, onCancel, isSaving }: AddFieldRowProps) {
         placeholder="Value"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        className="w-28 px-2 py-1.5 text-sm text-right border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        className="w-28 px-2 py-1.5 text-sm text-right border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
       />
       <select
         value={type}
         onChange={(e) => setType(e.target.value as any)}
-        className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
       >
         <option value="number">#</option>
         <option value="currency">$</option>
@@ -134,7 +134,7 @@ function AddFieldRow({ onAdd, onCancel, isSaving }: AddFieldRowProps) {
       </button>
       <button
         onClick={onCancel}
-        className="p-1.5 text-gray-400 hover:bg-gray-100 rounded"
+        className="p-1.5 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
       >
         <X className="w-4 h-4" />
       </button>
@@ -170,10 +170,10 @@ function FieldRow({ field, isEditable, onEdit, onDelete, isSaving }: FieldRowPro
   const canEdit = isEditable && field.source === 'manual'
 
   return (
-    <div className="flex items-center py-2.5 border-b border-gray-100 last:border-0">
+    <div className="flex items-center py-2.5 border-b border-gray-100 last:border-0 dark:border-gray-800">
       {/* Label & Source */}
       <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium text-gray-900">{field.label}</span>
+        <span className="text-sm font-medium text-gray-900 dark:text-white">{field.label}</span>
         {field.sourceLabel && (
           <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-0.5">
             {field.source === 'model' ? (
@@ -205,7 +205,7 @@ function FieldRow({ field, isEditable, onEdit, onDelete, isSaving }: FieldRowPro
               step="0.01"
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              className="w-24 px-2 py-1 text-sm text-right border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-24 px-2 py-1 text-sm text-right border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSave()
@@ -225,21 +225,21 @@ function FieldRow({ field, isEditable, onEdit, onDelete, isSaving }: FieldRowPro
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+              className="p-1 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         ) : (
           <>
-            <span className="text-sm font-semibold text-gray-900">
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">
               {field.formattedValue}
             </span>
             {canEdit && (
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={handleStartEdit}
-                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
@@ -398,8 +398,8 @@ export function AnalystEstimatesSection({
   if (isLoading) {
     return (
       <div className={clsx(
-        'bg-white rounded-lg',
-        !embedded && 'border border-gray-200 p-4',
+        'bg-white rounded-lg dark:bg-gray-800',
+        !embedded && 'border border-gray-200 p-4 dark:border-gray-700',
         className
       )}>
         <div className="flex items-center justify-center py-4">
@@ -411,8 +411,8 @@ export function AnalystEstimatesSection({
 
   return (
     <div className={clsx(
-      'bg-white rounded-lg',
-      !embedded && 'border border-gray-200',
+      'bg-white rounded-lg dark:bg-gray-800',
+      !embedded && 'border border-gray-200 dark:border-gray-700',
       className
     )}>
       {/* Hidden file input */}
@@ -431,10 +431,10 @@ export function AnalystEstimatesSection({
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center gap-2 flex-1"
           >
-            <TrendingUp className="w-4 h-4 text-gray-500" />
-            <h4 className="text-sm font-medium text-gray-900">Estimates</h4>
+            <TrendingUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white">Estimates</h4>
             {hasData && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 ({allFields.length})
               </span>
             )}
@@ -451,7 +451,7 @@ export function AnalystEstimatesSection({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 dark:text-gray-400 dark:bg-gray-800"
               >
                 {isUploading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -478,7 +478,7 @@ export function AnalystEstimatesSection({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 dark:text-gray-400 dark:bg-gray-800"
           >
             {isUploading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -499,7 +499,7 @@ export function AnalystEstimatesSection({
 
       {/* Content */}
       {(embedded || isExpanded) && (
-        <div className={clsx(!embedded && 'border-t border-gray-100 px-4 py-2')}>
+        <div className={clsx(!embedded && 'border-t border-gray-100 px-4 py-2 dark:border-gray-800')}>
           {/* Fields list */}
           {hasData ? (
             <div>
@@ -517,7 +517,7 @@ export function AnalystEstimatesSection({
           ) : (
             <div className="py-6 text-center">
               <FileSpreadsheet className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500 mb-3">No estimates captured yet</p>
+              <p className="text-sm text-gray-500 mb-3 dark:text-gray-400">No estimates captured yet</p>
               {isEditable && (
                 <div className="flex items-center justify-center gap-2">
                   <button
@@ -555,8 +555,8 @@ export function AnalystEstimatesSection({
           )}
 
           {/* Uploaded Models List */}
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 dark:text-gray-400">
               Uploaded Models
             </h5>
             {(modelFiles?.length ?? 0) > 0 ? (

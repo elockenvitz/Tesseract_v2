@@ -175,7 +175,7 @@ export const InteractiveExample: Story = {
             {workflows.map((workflow) => (
               <div
                 key={workflow.id}
-                className="p-3 bg-white border border-gray-200 rounded-lg"
+                className="p-3 bg-white border border-gray-200 rounded-lg dark:border-gray-700 dark:bg-gray-800"
               >
                 {workflow.name}
               </div>
@@ -186,7 +186,7 @@ export const InteractiveExample: Story = {
     }
 
     return (
-      <div className="w-[600px] p-8 bg-gray-50 rounded-lg">
+      <div className="w-[600px] p-8 bg-gray-50 rounded-lg dark:bg-gray-900">
         <WorkflowListExample />
       </div>
     )

@@ -331,7 +331,7 @@ export function PerformanceLeaderboard({
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                        <User className="w-4 h-4 text-gray-500" />
+                        <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                       </div>
                       <div>
                         <div className={clsx(

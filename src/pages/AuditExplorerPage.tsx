@@ -923,15 +923,15 @@ function ClusterDrawer({ cluster, focusedEvent, onClose, onNavigate }: {
           {cluster.isModelingSession ? (
             <p className="text-sm text-gray-900 dark:text-gray-100">
               <span className="font-medium">{cluster.actorName}</span>{' '}
-              <span className="text-gray-500">ran modeling session:</span>{' '}
+              <span className="text-gray-500 dark:text-gray-400">ran modeling session:</span>{' '}
               <span className="text-gray-700 dark:text-gray-300">{summarizeModelingSession(cluster)}</span>
             </p>
           ) : (
             <p className="text-sm text-gray-900 dark:text-gray-100">
               <span className="font-medium">{cluster.actorName}</span>{' '}
-              <span className="text-gray-500">{verb}</span>{' '}
+              <span className="text-gray-500 dark:text-gray-400">{verb}</span>{' '}
               <span className="font-semibold">{cluster.count}</span>{' '}
-              <span className="text-gray-500">{plural}</span>
+              <span className="text-gray-500 dark:text-gray-400">{plural}</span>
             </p>
           )}
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1454,7 +1454,7 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
               'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border transition-colors',
               showSecondaryFilters || hasSecondaryFilters
                 ? 'bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-900/30 dark:border-primary-700 dark:text-primary-400'
-                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300',
+                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800',
             )}>
             <Layers className="h-3 w-3" />
             Filters

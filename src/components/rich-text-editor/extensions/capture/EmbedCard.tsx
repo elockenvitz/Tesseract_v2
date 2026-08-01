@@ -51,8 +51,8 @@ export function EmbedCard({
   return (
     <div
       className={clsx(
-        'group relative border border-gray-200 rounded-lg overflow-hidden',
-        'bg-white hover:border-gray-300 transition-colors',
+        'group relative border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700',
+        'bg-white hover:border-gray-300 transition-colors dark:bg-gray-800',
         isExpanded ? 'max-w-full' : 'max-w-md'
       )}
     >
@@ -64,7 +64,7 @@ export function EmbedCard({
         {/* Image preview (if available and expanded or large card) */}
         {imageUrl && !imageError && (
           <div className={clsx(
-            'relative bg-gray-100',
+            'relative bg-gray-100 dark:bg-gray-800',
             isExpanded ? 'h-48' : 'h-32'
           )}>
             <img
@@ -92,20 +92,20 @@ export function EmbedCard({
             ) : (
               <Globe className="w-4 h-4 text-gray-400" />
             )}
-            <span className="text-xs text-gray-500 truncate">
+            <span className="text-xs text-gray-500 truncate dark:text-gray-400">
               {displaySiteName}
             </span>
           </div>
 
           {/* Title */}
-          <h4 className="font-medium text-gray-900 text-sm leading-tight mb-1 line-clamp-2">
+          <h4 className="font-medium text-gray-900 text-sm leading-tight mb-1 line-clamp-2 dark:text-white">
             {displayTitle}
           </h4>
 
           {/* Description */}
           {description && (
             <p className={clsx(
-              'text-xs text-gray-600 leading-relaxed',
+              'text-xs text-gray-600 leading-relaxed dark:text-gray-400',
               isExpanded ? 'line-clamp-4' : 'line-clamp-2'
             )}>
               {description}
@@ -132,7 +132,7 @@ export function EmbedCard({
                 e.stopPropagation()
                 onToggleExpand()
               }}
-              className="p-1.5 bg-white/90 hover:bg-white rounded-md shadow-sm border border-gray-200 text-gray-600 hover:text-gray-800"
+              className="p-1.5 bg-white/90 hover:bg-white rounded-md shadow-sm border border-gray-200 text-gray-600 hover:text-gray-800 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
               title={isExpanded ? 'Collapse' : 'Expand'}
             >
               {isExpanded ? (
@@ -151,8 +151,8 @@ export function EmbedCard({
               }}
               disabled={isRefreshing}
               className={clsx(
-                'p-1.5 bg-white/90 hover:bg-white rounded-md shadow-sm border border-gray-200',
-                isRefreshing ? 'text-gray-400' : 'text-gray-600 hover:text-gray-800'
+                'p-1.5 bg-white/90 hover:bg-white rounded-md shadow-sm border border-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
+                isRefreshing ? 'text-gray-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-400'
               )}
               title="Refresh metadata"
             >
@@ -166,7 +166,7 @@ export function EmbedCard({
                 e.stopPropagation()
                 onDelete()
               }}
-              className="p-1.5 bg-white/90 hover:bg-white rounded-md shadow-sm border border-gray-200 text-gray-600 hover:text-red-500"
+              className="p-1.5 bg-white/90 hover:bg-white rounded-md shadow-sm border border-gray-200 text-gray-600 hover:text-red-500 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
               title="Remove embed"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -178,7 +178,7 @@ export function EmbedCard({
       {/* Loading overlay */}
       {isRefreshing && (
         <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <RefreshCw className="w-4 h-4 animate-spin" />
             Refreshing...
           </div>
@@ -207,7 +207,7 @@ export function EmbedCardInline({
   }
 
   return (
-    <div className="group inline-flex items-center gap-2 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors max-w-full">
+    <div className="group inline-flex items-center gap-2 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors max-w-full dark:hover:bg-gray-700 dark:border-gray-700 dark:bg-gray-900">
       {/* Favicon */}
       {faviconUrl && !faviconError ? (
         <img

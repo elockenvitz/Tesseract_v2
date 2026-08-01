@@ -322,7 +322,7 @@ export function ThoughtsSection({
     return (
       <div className="flex flex-col h-full">
         {/* Back button header */}
-        <div className="px-3 py-2 border-b border-gray-100">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
           <button
             onClick={() => {
               if (selectedItem.type === 'prompt') {
@@ -334,7 +334,7 @@ export function ThoughtsSection({
                 onBackToCapture?.()
               }
             }}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>{selectedItem.type === 'prompt' ? 'Back to Open Prompts' : 'Back to Quick Ideas'}</span>
@@ -359,7 +359,7 @@ export function ThoughtsSection({
             />
           )}
           {selectedItem.type !== 'quick_thought' && selectedItem.type !== 'prompt' && (
-            <div className="p-4 text-center text-gray-500">
+            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
               <p>Detail view for {selectedItem.type} coming soon</p>
             </div>
           )}
@@ -375,7 +375,7 @@ export function ThoughtsSection({
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
           <button
             onClick={() => setShowPromptList(false)}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to Quick Ideas</span>
@@ -405,7 +405,7 @@ export function ThoughtsSection({
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
           <button
             onClick={() => setShowPendingReview(false)}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors dark:text-gray-400"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to Quick Ideas</span>
@@ -438,10 +438,10 @@ export function ThoughtsSection({
     <div className="flex flex-col h-full">
       {/* Back button header - show when in capture mode (not collapsed) */}
       {captureMode !== 'collapsed' && (
-        <div className="px-3 py-2 border-b border-gray-100">
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
           <button
             onClick={handleCaptureCancel}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back</span>
@@ -1156,7 +1156,7 @@ function PendingReviewList() {
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setActioningId(null) }}
-                    className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700"
+                    className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                   >
                     Cancel
                   </button>
@@ -1186,7 +1186,7 @@ function PendingReviewList() {
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setActioningId(null) }}
-                    className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700"
+                    className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                   >
                     Cancel
                   </button>

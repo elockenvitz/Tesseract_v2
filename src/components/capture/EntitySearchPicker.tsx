@@ -149,7 +149,7 @@ export function EntitySearchPicker({
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+      className="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800"
       style={{
         left: Math.min(position.x, window.innerWidth - 360),
         top: Math.min(position.y, window.innerHeight - 400),
@@ -162,11 +162,11 @@ export function EntitySearchPicker({
           <div className="flex items-center gap-2 mb-3">
             <button
               onClick={() => setPendingEntity(null)}
-              className="p-1 hover:bg-gray-100 rounded-md text-gray-400"
+              className="p-1 hover:bg-gray-100 rounded-md text-gray-400 dark:hover:bg-gray-700"
             >
               <X className="h-4 w-4" />
             </button>
-            <span className="text-sm font-medium text-gray-900">
+            <span className="text-sm font-medium text-gray-900 dark:text-white">
               Capture "{pendingEntity.title}"
             </span>
           </div>
@@ -174,28 +174,28 @@ export function EntitySearchPicker({
           <div className="space-y-2">
             <button
               onClick={() => handleModeSelect('live')}
-              className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all group"
+              className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all group dark:border-gray-700"
             >
               <div className="p-2 rounded-lg bg-green-100 text-green-600 group-hover:bg-green-200">
                 <RefreshCw className="h-4 w-4" />
               </div>
               <div className="text-left flex-1">
-                <div className="font-medium text-gray-900">Live</div>
-                <div className="text-xs text-gray-500">Always shows current state</div>
+                <div className="font-medium text-gray-900 dark:text-white">Live</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Always shows current state</div>
               </div>
               <ChevronRight className="h-4 w-4 text-gray-400" />
             </button>
 
             <button
               onClick={() => handleModeSelect('static')}
-              className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all group"
+              className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all group dark:border-gray-700"
             >
               <div className="p-2 rounded-lg bg-amber-100 text-amber-600 group-hover:bg-amber-200">
                 <Clock className="h-4 w-4" />
               </div>
               <div className="text-left flex-1">
-                <div className="font-medium text-gray-900">Snapshot</div>
-                <div className="text-xs text-gray-500">Captures current state as citation</div>
+                <div className="font-medium text-gray-900 dark:text-white">Snapshot</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Captures current state as citation</div>
               </div>
               <ChevronRight className="h-4 w-4 text-gray-400" />
             </button>
@@ -204,7 +204,7 @@ export function EntitySearchPicker({
       ) : (
         <>
           {/* Search Header */}
-          <div className="p-3 border-b border-gray-100">
+          <div className="p-3 border-b border-gray-100 dark:border-gray-800">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
@@ -216,7 +216,7 @@ export function EntitySearchPicker({
                   setSelectedIndex(0)
                 }}
                 placeholder="Search entities to capture..."
-                className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:border-gray-700 dark:bg-gray-900"
               />
             </div>
 
@@ -228,7 +228,7 @@ export function EntitySearchPicker({
                   'px-2 py-1 text-xs font-medium rounded-md transition-colors',
                   !selectedType
                     ? 'bg-primary-100 text-primary-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                 )}
               >
                 All
@@ -241,7 +241,7 @@ export function EntitySearchPicker({
                     'px-2 py-1 text-xs font-medium rounded-md transition-colors',
                     selectedType === t.type
                       ? 'bg-primary-100 text-primary-700'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                   )}
                 >
                   {t.label}
@@ -253,15 +253,15 @@ export function EntitySearchPicker({
           {/* Results */}
           <div className="max-h-64 overflow-y-auto">
             {isLoading ? (
-              <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="p-4 text-center text-gray-500 text-sm dark:text-gray-400">
                 Searching...
               </div>
             ) : query.length === 0 ? (
-              <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="p-4 text-center text-gray-500 text-sm dark:text-gray-400">
                 Type to search for entities
               </div>
             ) : entities.length === 0 ? (
-              <div className="p-4 text-center text-gray-500 text-sm">
+              <div className="p-4 text-center text-gray-500 text-sm dark:text-gray-400">
                 No results found
               </div>
             ) : (
@@ -279,15 +279,15 @@ export function EntitySearchPicker({
                         index === selectedIndex ? 'bg-primary-50' : 'hover:bg-gray-50'
                       )}
                     >
-                      <div className={clsx('p-1.5 rounded-md', config?.color || 'bg-gray-100')}>
+                      <div className={clsx('p-1.5 rounded-md', config?.color || 'bg-gray-100 dark:bg-gray-800')}>
                         <Icon className="h-4 w-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900 truncate">
+                        <div className="font-medium text-gray-900 truncate dark:text-white">
                           {entity.title}
                         </div>
                         {entity.subtitle && (
-                          <div className="text-xs text-gray-500 truncate">
+                          <div className="text-xs text-gray-500 truncate dark:text-gray-400">
                             {entity.subtitle}
                           </div>
                         )}
@@ -303,12 +303,12 @@ export function EntitySearchPicker({
           </div>
 
           {/* Footer hint */}
-          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500">
-            <kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">↑↓</kbd> navigate
+          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 dark:bg-gray-900">
+            <kbd className="px-1 py-0.5 bg-white border rounded text-[10px] dark:bg-gray-800">↑↓</kbd> navigate
             <span className="mx-2">·</span>
-            <kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">Enter</kbd> select
+            <kbd className="px-1 py-0.5 bg-white border rounded text-[10px] dark:bg-gray-800">Enter</kbd> select
             <span className="mx-2">·</span>
-            <kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">Esc</kbd> close
+            <kbd className="px-1 py-0.5 bg-white border rounded text-[10px] dark:bg-gray-800">Esc</kbd> close
           </div>
         </>
       )}

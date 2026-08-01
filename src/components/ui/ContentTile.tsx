@@ -67,14 +67,14 @@ export function ContentTile({ tile, assetId, assetSymbol, className = '', isPrev
 
       case 'outdated_stage_view':
         return (
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
             <p className="font-medium mb-2">Outdated Stage Analysis</p>
             <p>Use specific tile types (Portfolio Holdings, Trading Activity, etc.) for targeted data views.</p>
           </div>
         )
 
       default:
-        return <div className="p-4 text-gray-500">Unknown tile type: {tile.tile_type}</div>
+        return <div className="p-4 text-gray-500 dark:text-gray-400">Unknown tile type: {tile.tile_type}</div>
     }
   }
 
@@ -83,10 +83,10 @@ export function ContentTile({ tile, assetId, assetSymbol, className = '', isPrev
     <Card className={`p-4 ${className}`}>
       <div className="flex items-center space-x-2 mb-3">
         {getTileIcon(tile.tile_type)}
-        <h4 className="font-semibold text-gray-900">{tile.title}</h4>
+        <h4 className="font-semibold text-gray-900 dark:text-white">{tile.title}</h4>
       </div>
       {tile.description && (
-        <p className="text-sm text-gray-600 mb-3">{tile.description}</p>
+        <p className="text-sm text-gray-600 mb-3 dark:text-gray-400">{tile.description}</p>
       )}
       {renderTileContent()}
     </Card>
@@ -96,19 +96,19 @@ export function ContentTile({ tile, assetId, assetSymbol, className = '', isPrev
 function getTileIcon(tileType: string) {
   switch (tileType) {
     case 'last_review':
-      return <Calendar className="w-5 h-5 text-gray-600" />
+      return <Calendar className="w-5 h-5 text-gray-600 dark:text-gray-400" />
     case 'portfolio_holdings':
-      return <BarChart3 className="w-5 h-5 text-gray-600" />
+      return <BarChart3 className="w-5 h-5 text-gray-600 dark:text-gray-400" />
     case 'trading_activity':
-      return <Activity className="w-5 h-5 text-gray-600" />
+      return <Activity className="w-5 h-5 text-gray-600 dark:text-gray-400" />
     case 'action_items':
       return <TrendingUp className="w-5 h-5 text-blue-600" />
     case 'custom_text':
-      return <FileText className="w-5 h-5 text-gray-600" />
+      return <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
     case 'financial_metrics':
       return <DollarSign className="w-5 h-5 text-green-600" />
     default:
-      return <FileText className="w-5 h-5 text-gray-600" />
+      return <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
   }
 }
 
@@ -139,9 +139,9 @@ function LastReviewTile({ assetId, configuration, isPreview }: { assetId?: strin
 
   if (isPreview) {
     return (
-      <div className="text-sm text-gray-600">
+      <div className="text-sm text-gray-600 dark:text-gray-400">
         <p>Last updated: <span className="font-medium text-green-600">2 days ago</span></p>
-        <p className="text-xs text-gray-500 mt-1">Research review completed by John Smith</p>
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Research review completed by John Smith</p>
         <div className="mt-2">
           <Badge variant="outline" size="sm">✓ Up to date</Badge>
         </div>
@@ -151,18 +151,18 @@ function LastReviewTile({ assetId, configuration, isPreview }: { assetId?: strin
 
   if (lastReview) {
     return (
-      <div className="text-sm text-gray-600">
+      <div className="text-sm text-gray-600 dark:text-gray-400">
         <p>Last updated: <span className="font-medium">{formatDate(lastReview.changed_at)}</span></p>
         <p>Field: <span className="font-medium">{lastReview.field_name}</span></p>
         {lastReview.old_value && lastReview.new_value && (
-          <p className="text-xs text-gray-500 mt-1">Changed from "{lastReview.old_value}" to "{lastReview.new_value}"</p>
+          <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Changed from "{lastReview.old_value}" to "{lastReview.new_value}"</p>
         )}
       </div>
     )
   }
 
   return (
-    <div className="text-sm text-gray-500">No research history found</div>
+    <div className="text-sm text-gray-500 dark:text-gray-400">No research history found</div>
   )
 }
 
@@ -221,19 +221,19 @@ function PortfolioHoldingsTile({ assetId, configuration, isPreview }: { assetId?
     return (
       <div className="text-sm">
         <div className="space-y-2">
-          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+          <div className="flex justify-between items-center p-2 bg-gray-50 rounded dark:bg-gray-900">
             <span className="font-medium">Growth Portfolio</span>
             <span className="text-green-600">+2.4%</span>
           </div>
-          <div className="flex justify-between text-xs text-gray-600">
+          <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
             <span>250 shares @ $45.20</span>
             <span>$11,300 (8.5%)</span>
           </div>
-          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+          <div className="flex justify-between items-center p-2 bg-gray-50 rounded dark:bg-gray-900">
             <span className="font-medium">Tech Fund</span>
             <span className="text-red-600">-1.2%</span>
           </div>
-          <div className="flex justify-between text-xs text-gray-600">
+          <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
             <span>150 shares @ $32.80</span>
             <span>$4,920 (3.7%)</span>
           </div>
@@ -254,24 +254,24 @@ function PortfolioHoldingsTile({ assetId, configuration, isPreview }: { assetId?
     return (
       <div className="space-y-3">
         {holdings.map((holding, index) => (
-          <div key={`${holding.portfolio_id}-${index}`} className="border border-gray-200 rounded-lg p-3">
+          <div key={`${holding.portfolio_id}-${index}`} className="border border-gray-200 rounded-lg p-3 dark:border-gray-700">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-gray-900">{holding.portfolio_name}</span>
+              <span className="font-medium text-gray-900 dark:text-white">{holding.portfolio_name}</span>
               <Badge variant="secondary" size="sm">
                 {holding.shares.toLocaleString()} shares
               </Badge>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-gray-500">Market Value</span>
+                <span className="text-gray-500 dark:text-gray-400">Market Value</span>
                 <p className="font-medium">{formatCurrency(holding.shares * holding.price)}</p>
               </div>
               <div>
-                <span className="text-gray-500">Avg Cost</span>
+                <span className="text-gray-500 dark:text-gray-400">Avg Cost</span>
                 <p className="font-medium">{formatCurrency(holding.cost / holding.shares || 0)}</p>
               </div>
             </div>
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
               Last updated: {formatDate(holding.last_updated)}
             </div>
           </div>
@@ -281,7 +281,7 @@ function PortfolioHoldingsTile({ assetId, configuration, isPreview }: { assetId?
   }
 
   return (
-    <div className="text-sm text-gray-500">No portfolio holdings found</div>
+    <div className="text-sm text-gray-500 dark:text-gray-400">No portfolio holdings found</div>
   )
 }
 
@@ -366,14 +366,14 @@ function TradingActivityTile({ assetId, configuration, isPreview }: { assetId?: 
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-green-600 font-medium">+50 shares</span>
-            <span className="text-xs text-gray-500">2 days ago</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">2 days ago</span>
           </div>
-          <div className="text-xs text-gray-600">Growth Portfolio • $42.15</div>
+          <div className="text-xs text-gray-600 dark:text-gray-400">Growth Portfolio • $42.15</div>
           <div className="flex justify-between items-center">
             <span className="text-red-600 font-medium">-25 shares</span>
-            <span className="text-xs text-gray-500">1 week ago</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">1 week ago</span>
           </div>
-          <div className="text-xs text-gray-600">Tech Fund • $34.80</div>
+          <div className="text-xs text-gray-600 dark:text-gray-400">Tech Fund • $34.80</div>
           <div className="pt-2 border-t">
             <div className="flex justify-between text-xs">
               <span>Total trades this month:</span>
@@ -397,9 +397,9 @@ function TradingActivityTile({ assetId, configuration, isPreview }: { assetId?: 
     return (
       <div className="space-y-3">
         {portfolioTrades.map((trade) => (
-          <div key={trade.portfolio_id} className="border border-gray-200 rounded-lg p-3">
+          <div key={trade.portfolio_id} className="border border-gray-200 rounded-lg p-3 dark:border-gray-700">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-gray-900">{trade.portfolio_name}</span>
+              <span className="font-medium text-gray-900 dark:text-white">{trade.portfolio_name}</span>
               <div className="flex items-center space-x-2">
                 <Badge
                   variant={trade.last_trade_type === 'buy' ? 'success' : 'warning'}
@@ -407,29 +407,29 @@ function TradingActivityTile({ assetId, configuration, isPreview }: { assetId?: 
                 >
                   Last: {trade.last_trade_type.toUpperCase()}
                 </Badge>
-                <span className="text-xs text-gray-500">{formatDate(trade.last_trade_date)}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(trade.last_trade_date)}</span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-gray-500">Total Trades</span>
+                <span className="text-gray-500 dark:text-gray-400">Total Trades</span>
                 <p className="font-medium">{trade.total_trades}</p>
               </div>
               <div>
-                <span className="text-gray-500">Shares Traded</span>
+                <span className="text-gray-500 dark:text-gray-400">Shares Traded</span>
                 <p className="font-medium">{trade.shares_traded.toLocaleString()}</p>
               </div>
               <div>
-                <span className="text-gray-500">Weight Change</span>
+                <span className="text-gray-500 dark:text-gray-400">Weight Change</span>
                 <p className={`font-medium ${
                   trade.weight_change > 0 ? 'text-green-600' :
-                  trade.weight_change < 0 ? 'text-red-600' : 'text-gray-600'
+                  trade.weight_change < 0 ? 'text-red-600' : 'text-gray-600 dark:text-gray-400'
                 }`}>
                   {trade.weight_change > 0 ? '+' : ''}{formatPercentage(trade.weight_change)}
                 </p>
               </div>
               <div>
-                <span className="text-gray-500">Last Price</span>
+                <span className="text-gray-500 dark:text-gray-400">Last Price</span>
                 <p className="font-medium">{formatCurrency(trade.last_trade_price)}</p>
               </div>
             </div>
@@ -440,7 +440,7 @@ function TradingActivityTile({ assetId, configuration, isPreview }: { assetId?: 
   }
 
   return (
-    <div className="text-sm text-gray-500">No trading activity recorded</div>
+    <div className="text-sm text-gray-500 dark:text-gray-400">No trading activity recorded</div>
   )
 }
 
@@ -484,7 +484,7 @@ function CustomTextTile({ configuration, isPreview }: { configuration: any; isPr
   const content = isPreview ? previewContent : (configuration.content || 'Add your custom content here')
 
   return (
-    <div className="text-sm text-gray-700 whitespace-pre-wrap">
+    <div className="text-sm text-gray-700 whitespace-pre-wrap dark:text-gray-300">
       {content}
     </div>
   )
@@ -495,27 +495,27 @@ function FinancialMetricsTile({ assetSymbol, configuration, isPreview }: { asset
     return (
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
-          <span className="text-gray-500">P/E Ratio</span>
+          <span className="text-gray-500 dark:text-gray-400">P/E Ratio</span>
           <p className="font-medium text-blue-600">18.4</p>
         </div>
         <div>
-          <span className="text-gray-500">Revenue Growth</span>
+          <span className="text-gray-500 dark:text-gray-400">Revenue Growth</span>
           <p className="font-medium text-green-600">+12.3%</p>
         </div>
         <div>
-          <span className="text-gray-500">Profit Margin</span>
+          <span className="text-gray-500 dark:text-gray-400">Profit Margin</span>
           <p className="font-medium text-green-600">22.1%</p>
         </div>
         <div>
-          <span className="text-gray-500">ROE</span>
+          <span className="text-gray-500 dark:text-gray-400">ROE</span>
           <p className="font-medium text-blue-600">15.7%</p>
         </div>
         <div>
-          <span className="text-gray-500">Debt/Equity</span>
+          <span className="text-gray-500 dark:text-gray-400">Debt/Equity</span>
           <p className="font-medium">0.42</p>
         </div>
         <div>
-          <span className="text-gray-500">Price/Book</span>
+          <span className="text-gray-500 dark:text-gray-400">Price/Book</span>
           <p className="font-medium">2.8</p>
         </div>
       </div>
@@ -525,22 +525,22 @@ function FinancialMetricsTile({ assetSymbol, configuration, isPreview }: { asset
   return (
     <div className="grid grid-cols-2 gap-4 text-sm">
       <div>
-        <span className="text-gray-500">P/E Ratio</span>
+        <span className="text-gray-500 dark:text-gray-400">P/E Ratio</span>
         <p className="font-medium">--</p>
       </div>
       <div>
-        <span className="text-gray-500">Revenue Growth</span>
+        <span className="text-gray-500 dark:text-gray-400">Revenue Growth</span>
         <p className="font-medium">--</p>
       </div>
       <div>
-        <span className="text-gray-500">Profit Margin</span>
+        <span className="text-gray-500 dark:text-gray-400">Profit Margin</span>
         <p className="font-medium">--</p>
       </div>
       <div>
-        <span className="text-gray-500">ROE</span>
+        <span className="text-gray-500 dark:text-gray-400">ROE</span>
         <p className="font-medium">--</p>
       </div>
-      <p className="col-span-2 text-xs text-gray-500 mt-2">
+      <p className="col-span-2 text-xs text-gray-500 mt-2 dark:text-gray-400">
         Financial metrics will be populated from connected data sources
       </p>
     </div>

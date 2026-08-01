@@ -65,8 +65,8 @@ function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload || payload.length === 0) return null
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-sm">
-      <p className="font-medium text-gray-900 mb-2">{label}</p>
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-sm dark:border-gray-700 dark:bg-gray-800">
+      <p className="font-medium text-gray-900 mb-2 dark:text-white">{label}</p>
       <div className="space-y-1">
         {payload.map((entry: any, index: number) => {
           const rating = entry.payload[`${entry.dataKey}_raw`] || getRatingLabel(entry.value)
@@ -245,10 +245,10 @@ export function RatingHistoryChart({
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="animate-pulse">
           <div className="h-4 bg-gray-200 rounded w-1/4 mb-4" />
-          <div className="h-48 bg-gray-100 rounded" />
+          <div className="h-48 bg-gray-100 rounded dark:bg-gray-800" />
         </div>
       </div>
     )
@@ -256,8 +256,8 @@ export function RatingHistoryChart({
 
   if (chartData.length === 0) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
-        <div className="text-center py-8 text-gray-500">
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <ThumbsUp className="w-8 h-8 mx-auto mb-2 text-gray-400" />
           <p className="text-sm">No rating history available</p>
           <p className="text-xs mt-1">Ratings will appear here as analysts add and revise them</p>
@@ -267,15 +267,15 @@ export function RatingHistoryChart({
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-            <ThumbsUp className="w-4 h-4 text-gray-500" />
+          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
+            <ThumbsUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             Rating History
           </h4>
 
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
             {TIME_RANGES.map(range => (
               <button
                 key={range.value}
@@ -283,8 +283,8 @@ export function RatingHistoryChart({
                 className={clsx(
                   'px-2 py-0.5 text-xs font-medium rounded transition-colors',
                   timeRange === range.value
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 )}
               >
                 {range.label}
@@ -294,7 +294,7 @@ export function RatingHistoryChart({
         </div>
 
         {analysts.length > 0 && (
-          <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
+          <div className="flex items-center gap-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
             <Users className="w-3 h-3" />
             <span>{analysts.length} analyst{analysts.length !== 1 ? 's' : ''}</span>
           </div>

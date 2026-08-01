@@ -136,22 +136,22 @@ export function ListFilterChipBar({ listId, filters, onChange }: ListFilterChipB
   const quickRows = [
     myUserId && {
       id: 'qf-mywork', label: 'My work',
-      leading: <UserCheck className="h-3.5 w-3.5 text-gray-500" />,
+      leading: <UserCheck className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />,
       selected: myWorkActive, onToggle: toggleMyWork
     },
     {
       id: 'qf-flagged', label: 'Flagged',
-      leading: <Flag className={clsx('h-3.5 w-3.5', filters.flaggedOnly ? 'text-amber-500 fill-amber-400' : 'text-gray-500')} />,
+      leading: <Flag className={clsx('h-3.5 w-3.5', filters.flaggedOnly ? 'text-amber-500 fill-amber-400' : 'text-gray-500 dark:text-gray-400')} />,
       selected: filters.flaggedOnly, onToggle: toggleFlagged
     },
     {
       id: 'qf-unassigned', label: 'Unassigned',
-      leading: <UserX className="h-3.5 w-3.5 text-gray-500" />,
+      leading: <UserX className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />,
       selected: filters.unassignedOnly, onToggle: toggleUnassigned
     },
     {
       id: 'qf-duesoon', label: 'Due soon',
-      leading: <CalendarClock className="h-3.5 w-3.5 text-gray-500" />,
+      leading: <CalendarClock className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />,
       selected: filters.dueSoon, onToggle: toggleDueSoon
     }
   ].filter(Boolean) as Array<{
@@ -250,7 +250,7 @@ export function ListFilterChipBar({ listId, filters, onChange }: ListFilterChipB
                 className="flex-1 text-xs bg-transparent outline-none text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
               />
               {query && (
-                <button onClick={() => setQuery('')} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => setQuery('')} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                   <X className="h-3 w-3" />
                 </button>
               )}

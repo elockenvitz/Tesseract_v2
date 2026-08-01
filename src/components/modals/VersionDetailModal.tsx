@@ -64,14 +64,14 @@ export function VersionDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[75vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[75vh] flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex-shrink-0">
+        <div className="p-4 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <div className="flex items-center space-x-3 mb-1">
                 <GitBranch className="w-5 h-5 text-indigo-600" />
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                   {formatVersion(version.version_number, version.major_version, version.minor_version)}
                 </h2>
                 {version.version_type && (
@@ -90,11 +90,11 @@ export function VersionDetailModal({
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-gray-600 mb-1">{workflowName}</p>
+              <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">{workflowName}</p>
               {version.description && (
-                <p className="text-sm text-gray-700 mb-2">{version.description}</p>
+                <p className="text-sm text-gray-700 mb-2 dark:text-gray-300">{version.description}</p>
               )}
-              <div className="flex items-center space-x-1 text-xs text-gray-500">
+              <div className="flex items-center space-x-1 text-xs text-gray-500 dark:text-gray-400">
                 <Clock className="w-3 h-3" />
                 <span>
                   Created {new Date(version.created_at).toLocaleDateString()} at{' '}
@@ -104,7 +104,7 @@ export function VersionDetailModal({
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-5 h-5" />
             </button>
@@ -119,8 +119,8 @@ export function VersionDetailModal({
               <Card className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Stages</p>
-                    <p className="text-xl font-bold text-gray-900">{stageCount}</p>
+                    <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">Stages</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{stageCount}</p>
                   </div>
                   <Target className="w-6 h-6 text-indigo-600 opacity-20" />
                 </div>
@@ -128,8 +128,8 @@ export function VersionDetailModal({
               <Card className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Checklists</p>
-                    <p className="text-xl font-bold text-gray-900">{checklistCount}</p>
+                    <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">Checklists</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{checklistCount}</p>
                   </div>
                   <List className="w-6 h-6 text-blue-600 opacity-20" />
                 </div>
@@ -137,8 +137,8 @@ export function VersionDetailModal({
               <Card className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Creation</p>
-                    <p className="text-xl font-bold text-gray-900">{branchCreationRuleCount}</p>
+                    <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">Creation</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{branchCreationRuleCount}</p>
                   </div>
                   <Zap className="w-6 h-6 text-amber-600 opacity-20" />
                 </div>
@@ -146,8 +146,8 @@ export function VersionDetailModal({
               <Card className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Population</p>
-                    <p className="text-xl font-bold text-gray-900">{assetPopulationRuleCount}</p>
+                    <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">Population</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{assetPopulationRuleCount}</p>
                   </div>
                   <GitBranch className="w-6 h-6 text-purple-600 opacity-20" />
                 </div>
@@ -155,8 +155,8 @@ export function VersionDetailModal({
               <Card className="p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Ending</p>
-                    <p className="text-xl font-bold text-gray-900">{branchEndingRuleCount}</p>
+                    <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">Ending</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{branchEndingRuleCount}</p>
                   </div>
                   <X className="w-6 h-6 text-red-600 opacity-20" />
                 </div>
@@ -166,7 +166,7 @@ export function VersionDetailModal({
             {/* Stages Section with Collapsible Checklists */}
             {stageCount > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 dark:text-white">
                   Stages ({stageCount})
                 </h3>
 
@@ -202,7 +202,7 @@ export function VersionDetailModal({
                         <Card key={stageKey} className="overflow-hidden">
                           <button
                             onClick={() => toggleSection(`stage-${stageKey}`)}
-                            className="w-full p-4 flex items-start space-x-3 hover:bg-gray-50 transition-colors text-left"
+                            className="w-full p-4 flex items-start space-x-3 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
                           >
                             <div className="flex items-center space-x-2 mt-0.5">
                               {isExpanded ? (
@@ -217,29 +217,29 @@ export function VersionDetailModal({
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2">
-                                <h4 className="font-semibold text-gray-900">
+                                <h4 className="font-semibold text-gray-900 dark:text-white">
                                   {stage.stage_label || stage.name}
                                 </h4>
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
                                   {stageItems.length} item{stageItems.length !== 1 ? 's' : ''}
                                 </span>
                               </div>
                               {(stage.stage_description || stage.description) && (
-                                <p className="text-sm text-gray-500 mt-0.5">{stage.stage_description || stage.description}</p>
+                                <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{stage.stage_description || stage.description}</p>
                               )}
                             </div>
                           </button>
 
                           {isExpanded && stageItems.length > 0 && (
-                            <div className="px-4 pb-4 pt-0 ml-9 border-t border-gray-100">
+                            <div className="px-4 pb-4 pt-0 ml-9 border-t border-gray-100 dark:border-gray-800">
                               <div className="pt-3 space-y-2">
                                 {stageItems.map((item: any, idx: number) => (
                                   <div
                                     key={idx}
                                     className="flex items-start space-x-2 py-1"
                                   >
-                                    <div className="flex-shrink-0 w-4 h-4 border border-gray-300 rounded mt-0.5" />
-                                    <p className="flex-1 text-sm text-gray-700">{item.item_text || item.name}</p>
+                                    <div className="flex-shrink-0 w-4 h-4 border border-gray-300 rounded mt-0.5 dark:border-gray-600" />
+                                    <p className="flex-1 text-sm text-gray-700 dark:text-gray-300">{item.item_text || item.name}</p>
                                     {item.is_required && (
                                       <Badge className="bg-red-100 text-red-700 text-xs">Required</Badge>
                                     )}
@@ -259,7 +259,7 @@ export function VersionDetailModal({
             {/* Branch Creation Rules Section */}
             {branchCreationRuleCount > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 dark:text-white">
                   Branch Creation Rules ({branchCreationRuleCount})
                 </h3>
                 <div className="space-y-2">
@@ -270,7 +270,7 @@ export function VersionDetailModal({
                       <Card key={idx} className="overflow-hidden">
                         <button
                           onClick={() => toggleSection(ruleKey)}
-                          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+                          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
                         >
                           <div className="flex items-center space-x-2">
                             {isExpanded ? (
@@ -279,26 +279,26 @@ export function VersionDetailModal({
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             )}
                             <Zap className="w-4 h-4 text-amber-500" />
-                            <span className="font-medium text-gray-900">
+                            <span className="font-medium text-gray-900 dark:text-white">
                               {rule.rule_name || rule.name || `Rule ${idx + 1}`}
                             </span>
                           </div>
-                          <Badge className={rule.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                          <Badge className={rule.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'}>
                             {rule.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </button>
                         {isExpanded && (
-                          <div className="px-4 pb-4 pt-0 ml-6 border-t border-gray-100">
+                          <div className="px-4 pb-4 pt-0 ml-6 border-t border-gray-100 dark:border-gray-800">
                             <div className="pt-3 grid grid-cols-2 gap-4 text-sm">
                               <div>
-                                <p className="text-xs text-gray-500 mb-1">Trigger</p>
-                                <p className="text-gray-700">
+                                <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Trigger</p>
+                                <p className="text-gray-700 dark:text-gray-300">
                                   {rule.condition_type || rule.trigger_type}: {rule.condition_value || rule.trigger_value}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-xs text-gray-500 mb-1">Action</p>
-                                <p className="text-gray-700">
+                                <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Action</p>
+                                <p className="text-gray-700 dark:text-gray-300">
                                   {rule.action_type}: {rule.action_value}
                                 </p>
                               </div>
@@ -315,7 +315,7 @@ export function VersionDetailModal({
             {/* Asset Population Rules Section */}
             {assetPopulationRuleCount > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 dark:text-white">
                   Asset Population Rules ({assetPopulationRuleCount})
                 </h3>
                 <div className="space-y-2">
@@ -326,7 +326,7 @@ export function VersionDetailModal({
                       <Card key={idx} className="overflow-hidden">
                         <button
                           onClick={() => toggleSection(ruleKey)}
-                          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+                          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
                         >
                           <div className="flex items-center space-x-2">
                             {isExpanded ? (
@@ -335,25 +335,25 @@ export function VersionDetailModal({
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             )}
                             <GitBranch className="w-4 h-4 text-purple-500" />
-                            <span className="font-medium text-gray-900">
+                            <span className="font-medium text-gray-900 dark:text-white">
                               {rule.rule_name || rule.name || `Rule ${idx + 1}`}
                             </span>
                           </div>
-                          <Badge className={rule.is_active !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                          <Badge className={rule.is_active !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'}>
                             {rule.is_active !== false ? 'Active' : 'Inactive'}
                           </Badge>
                         </button>
                         {isExpanded && (
-                          <div className="px-4 pb-4 pt-0 ml-6 border-t border-gray-100">
+                          <div className="px-4 pb-4 pt-0 ml-6 border-t border-gray-100 dark:border-gray-800">
                             <div className="pt-3 text-sm">
-                              <p className="text-xs text-gray-500 mb-1">Description</p>
-                              <p className="text-gray-700">
+                              <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Description</p>
+                              <p className="text-gray-700 dark:text-gray-300">
                                 {rule.rule_description || rule.description || 'No description'}
                               </p>
                               {rule.rule_type && (
                                 <div className="mt-2">
-                                  <p className="text-xs text-gray-500 mb-1">Type</p>
-                                  <p className="text-gray-700">{rule.rule_type}</p>
+                                  <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Type</p>
+                                  <p className="text-gray-700 dark:text-gray-300">{rule.rule_type}</p>
                                 </div>
                               )}
                             </div>
@@ -369,7 +369,7 @@ export function VersionDetailModal({
             {/* Branch Ending Rules Section */}
             {branchEndingRuleCount > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 dark:text-white">
                   Branch Ending Rules ({branchEndingRuleCount})
                 </h3>
                 <div className="space-y-2">
@@ -380,7 +380,7 @@ export function VersionDetailModal({
                       <Card key={idx} className="overflow-hidden">
                         <button
                           onClick={() => toggleSection(ruleKey)}
-                          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+                          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
                         >
                           <div className="flex items-center space-x-2">
                             {isExpanded ? (
@@ -389,26 +389,26 @@ export function VersionDetailModal({
                               <ChevronRight className="w-4 h-4 text-gray-400" />
                             )}
                             <X className="w-4 h-4 text-red-500" />
-                            <span className="font-medium text-gray-900">
+                            <span className="font-medium text-gray-900 dark:text-white">
                               {rule.rule_name || rule.name || `Rule ${idx + 1}`}
                             </span>
                           </div>
-                          <Badge className={rule.is_active !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                          <Badge className={rule.is_active !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'}>
                             {rule.is_active !== false ? 'Active' : 'Inactive'}
                           </Badge>
                         </button>
                         {isExpanded && (
-                          <div className="px-4 pb-4 pt-0 ml-6 border-t border-gray-100">
+                          <div className="px-4 pb-4 pt-0 ml-6 border-t border-gray-100 dark:border-gray-800">
                             <div className="pt-3 grid grid-cols-2 gap-4 text-sm">
                               <div>
-                                <p className="text-xs text-gray-500 mb-1">Trigger</p>
-                                <p className="text-gray-700">
+                                <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Trigger</p>
+                                <p className="text-gray-700 dark:text-gray-300">
                                   {rule.condition_type || rule.trigger_type || 'Not specified'}: {rule.condition_value || rule.trigger_value || ''}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-xs text-gray-500 mb-1">Action</p>
-                                <p className="text-gray-700">
+                                <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Action</p>
+                                <p className="text-gray-700 dark:text-gray-300">
                                   {rule.action_type || 'End branch'}: {rule.action_value || ''}
                                 </p>
                               </div>
@@ -425,25 +425,25 @@ export function VersionDetailModal({
             {/* Cadence Information */}
             {(version.cadence_days || version.cadence_timeframe || version.kickoff_cadence) && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Cadence Settings</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 dark:text-white">Cadence Settings</h3>
                 <Card className="p-4">
                   <div className="grid grid-cols-3 gap-4">
                     {version.cadence_days && (
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Cadence Days</p>
-                        <p className="text-lg font-semibold text-gray-900">{version.cadence_days}</p>
+                        <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Cadence Days</p>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-white">{version.cadence_days}</p>
                       </div>
                     )}
                     {version.cadence_timeframe && (
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Timeframe</p>
-                        <p className="text-lg font-semibold text-gray-900">{version.cadence_timeframe}</p>
+                        <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Timeframe</p>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-white">{version.cadence_timeframe}</p>
                       </div>
                     )}
                     {version.kickoff_cadence && (
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Kickoff Cadence</p>
-                        <p className="text-lg font-semibold text-gray-900">{version.kickoff_cadence}</p>
+                        <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">Kickoff Cadence</p>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-white">{version.kickoff_cadence}</p>
                       </div>
                     )}
                   </div>
@@ -454,7 +454,7 @@ export function VersionDetailModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end flex-shrink-0">
+        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
           <Button onClick={onClose} variant="outline">
             Close
           </Button>

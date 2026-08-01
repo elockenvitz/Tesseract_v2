@@ -279,7 +279,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
       <div className="space-y-4">
         <Card className="p-8 text-center">
           <Grid3X3 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-          <p className="text-gray-500">Select analysts to display.</p>
+          <p className="text-gray-500 dark:text-gray-400">Select analysts to display.</p>
         </Card>
       </div>
     )
@@ -291,8 +291,8 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
       <div className="flex items-center justify-between flex-wrap gap-3">
         {/* Grouping Selector */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">Group by:</span>
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+          <span className="text-sm text-gray-600 dark:text-gray-400">Group by:</span>
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
             {[
               { value: 'sector' as const, label: 'Sector' },
               { value: 'analyst' as const, label: 'Analyst' },
@@ -305,7 +305,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                 onClick={() => { setMatrixGroupBy(option.value); setCollapsedGroups(new Set()) }}
                 className={clsx(
                   'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                  matrixGroupBy === option.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900',
+                  matrixGroupBy === option.value ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400',
                 )}
               >
                 {option.label}
@@ -321,7 +321,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
             onClick={() => setShowMyTeamOnly(!showMyTeamOnly)}
             className={clsx(
               'px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors',
-              showMyTeamOnly ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50',
+              showMyTeamOnly ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
             )}
           >
             My Team
@@ -333,7 +333,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
               onClick={() => setShowConflictsOnly(!showConflictsOnly)}
               className={clsx(
                 'px-2 py-1.5 text-xs font-medium rounded-md border transition-colors',
-                showConflictsOnly ? 'bg-red-50 text-red-700 border-red-200' : 'bg-white text-red-600 border-gray-200 hover:border-red-200',
+                showConflictsOnly ? 'bg-red-50 text-red-700 border-red-200' : 'bg-white text-red-600 border-gray-200 hover:border-red-200 dark:border-gray-700 dark:bg-gray-800',
               )}
             >
               Conflicts: {matrixConflicts.length}
@@ -344,17 +344,17 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
           <div className="relative" ref={analystPickerRef}>
             <button
               onClick={() => setShowAnalystPicker(!showAnalystPicker)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600"
             >
-              <Users className="h-4 w-4 text-gray-500" />
-              <span className="text-gray-700">
+              <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+              <span className="text-gray-700 dark:text-gray-300">
                 {matrixSelectedAnalysts.size === 0 ? 'All Analysts' : `${matrixSelectedAnalysts.size} Selected`}
               </span>
               <ChevronDown className="h-4 w-4 text-gray-400" />
             </button>
             {showAnalystPicker && (
-              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-80 overflow-auto">
-                <div className="p-2 border-b border-gray-100">
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-80 overflow-auto dark:border-gray-700 dark:bg-gray-800">
+                <div className="p-2 border-b border-gray-100 dark:border-gray-800">
                   <button onClick={() => setMatrixSelectedAnalysts(new Set())} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
                     Show All Analysts
                   </button>
@@ -363,7 +363,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                   {allAnalysts.map(analyst => {
                     const isSelected = matrixSelectedAnalysts.size === 0 || matrixSelectedAnalysts.has(analyst)
                     return (
-                      <label key={analyst} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer">
+                      <label key={analyst} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer dark:hover:bg-gray-800">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -379,9 +379,9 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                             }
                             setMatrixSelectedAnalysts(newSelected)
                           }}
-                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                         />
-                        <span className="text-sm text-gray-700">{analyst}</span>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{analyst}</span>
                       </label>
                     )
                   })}
@@ -474,12 +474,12 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
             <button
               onClick={() => toggleGroup(groupKey)}
               onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
-              className="w-full px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between hover:bg-gray-100 transition-colors"
+              className="w-full px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:border-gray-700 dark:bg-gray-900"
             >
               <div className="flex items-center gap-3">
-                <ChevronDown className={clsx('h-4 w-4 text-gray-500 transition-transform', isCollapsed && '-rotate-90')} />
-                <h3 className="text-sm font-semibold text-gray-900">{groupKey}</h3>
-                <span className="text-xs text-gray-500">
+                <ChevronDown className={clsx('h-4 w-4 text-gray-500 transition-transform dark:text-gray-400', isCollapsed && '-rotate-90')} />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{groupKey}</h3>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {displayedAssets.length} {displayedAssets.length === 1 ? 'asset' : 'assets'}
                   {showConflictsOnly && <span className="text-red-600 ml-1">(conflicts)</span>}
                 </span>
@@ -488,7 +488,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-700">
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                   {group.coveredCount} of {group.totalCount} covered
                 </span>
                 {groupSharedCount > 0 && (
@@ -519,19 +519,19 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
               <div className="overflow-auto max-h-[600px]">
                 <table className="min-w-full border-collapse">
                   <thead className="sticky top-0 z-10">
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 min-w-[180px]">
+                    <tr className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 min-w-[180px] dark:text-gray-400 dark:bg-gray-900">
                         Asset
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 min-w-[100px]">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 min-w-[100px] dark:text-gray-400 dark:bg-gray-900">
                         Role
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 dark:text-gray-400 dark:bg-gray-900">
                         Also Covered By
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                     {displayedAssets
                       .sort((a, b) => a.symbol.localeCompare(b.symbol))
                       .map((asset, idx) => {
@@ -556,14 +556,14 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                                   >
                                     {asset.symbol}
                                   </button>
-                                  <span className="text-xs text-gray-500 truncate max-w-[140px]" title={asset.name}>{asset.name}</span>
+                                  <span className="text-xs text-gray-500 truncate max-w-[140px] dark:text-gray-400" title={asset.name}>{asset.name}</span>
                                 </div>
                               </div>
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-2">
                                 {renderCoverageIndicator(groupAnalystCoverage, otherAnalysts.length > 0, groupKey)}
-                                <span className="text-xs text-gray-700">
+                                <span className="text-xs text-gray-700 dark:text-gray-300">
                                   {groupAnalystCoverage?.is_lead ? 'Lead' : groupAnalystCoverage?.role
                                   ? groupAnalystCoverage.role.charAt(0).toUpperCase() + groupAnalystCoverage.role.slice(1)
                                   : 'Covered'}
@@ -574,7 +574,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                               {otherAnalysts.length > 0 ? (
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {otherAnalysts.map(c => (
-                                    <span key={c.analyst_name} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-gray-100 text-gray-700">
+                                    <span key={c.analyst_name} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800">
                                       {formatAnalystShortName(c.analyst_name)}
                                       {c.is_lead && <span className="text-primary-600">(Lead)</span>}
                                     </span>
@@ -595,12 +595,12 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
               <div className="overflow-auto max-h-[600px]">
                 <table className="min-w-full border-collapse">
                   <thead className="sticky top-0 z-10">
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider sticky left-0 z-30 bg-gray-50 min-w-[180px]">
+                    <tr className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider sticky left-0 z-30 bg-gray-50 min-w-[180px] dark:text-gray-400 dark:bg-gray-900">
                         Asset
                       </th>
                       {analysts.map(analyst => (
-                        <th key={analyst} className="px-2 py-2 text-center text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 min-w-[56px]">
+                        <th key={analyst} className="px-2 py-2 text-center text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50 min-w-[56px] dark:text-gray-400 dark:bg-gray-900">
                           <div className="truncate max-w-[50px] mx-auto" title={analyst}>
                             {formatAnalystShortName(analyst)}
                           </div>
@@ -608,7 +608,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                     {displayedAssets
                       .sort((a, b) => a.symbol.localeCompare(b.symbol))
                       .map((asset, idx) => {
@@ -629,7 +629,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                           : hasConflict ? 'bg-red-50/40'
                           : hasOverlap ? 'bg-violet-50/40'
                           : isEven ? 'bg-gray-50/50'
-                          : 'bg-white'
+                          : 'bg-white dark:bg-gray-800'
 
                         return (
                           <tr key={asset.id} className={clsx('hover:bg-gray-100/70 transition-colors', rowBg)}>
@@ -643,7 +643,7 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                                   >
                                     {asset.symbol}
                                   </button>
-                                  <span className="text-xs text-gray-500 truncate max-w-[140px]" title={asset.name}>{asset.name}</span>
+                                  <span className="text-xs text-gray-500 truncate max-w-[140px] dark:text-gray-400" title={asset.name}>{asset.name}</span>
                                 </div>
                               </div>
                             </td>
@@ -667,28 +667,28 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
       })}
 
       {/* Legend */}
-      <div className="flex items-center justify-center gap-5 py-2 border-t border-gray-100 mt-2">
+      <div className="flex items-center justify-center gap-5 py-2 border-t border-gray-100 mt-2 dark:border-gray-800">
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 rounded-full bg-primary-600 text-white flex items-center justify-center">
             <span className="text-[8px] font-bold leading-none">L</span>
           </div>
-          <span className="text-xs text-gray-600">Lead</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Lead</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 rounded-full bg-primary-400" />
-          <span className="text-xs text-gray-600">Primary</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Primary</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 rounded-full border-2 border-primary-300 bg-primary-50" />
-          <span className="text-xs text-gray-600">Shared</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Shared</span>
         </div>
         <div className="flex items-center gap-1.5">
           <AlertCircle className="h-4 w-4 text-red-500" />
-          <span className="text-xs text-gray-600">Uncovered Asset</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Uncovered Asset</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-3 rounded-sm bg-violet-100 border border-violet-200" />
-          <span className="text-xs text-gray-600">Shared coverage row</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Shared coverage row</span>
         </div>
       </div>
 
@@ -696,13 +696,13 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
       {contextMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
-          <div className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px]" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <div className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px] dark:border-gray-700 dark:bg-gray-800" style={{ left: contextMenu.x, top: contextMenu.y }}>
             <button
               onClick={() => { setCollapsedGroups(new Set()); setContextMenu(null) }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
             >
               <Maximize2 className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-700">Expand All</span>
+              <span className="text-gray-700 dark:text-gray-300">Expand All</span>
             </button>
             <button
               onClick={() => {
@@ -710,10 +710,10 @@ export function CoverageMatrixView(props: CoverageMatrixViewProps) {
                 setCollapsedGroups(allKeys)
                 setContextMenu(null)
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
             >
               <Minimize2 className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-700">Collapse All</span>
+              <span className="text-gray-700 dark:text-gray-300">Collapse All</span>
             </button>
           </div>
         </>

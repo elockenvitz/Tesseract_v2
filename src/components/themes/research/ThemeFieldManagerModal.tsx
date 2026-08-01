@@ -112,16 +112,16 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Manage Theme Research Fields</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Manage Theme Research Fields</h2>
+              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                 Sections and fields apply to all themes in your organization.
               </p>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -129,19 +129,19 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
           {/* Body */}
           <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
             {isLoading ? (
-              <div className="h-40 bg-gray-100 rounded animate-pulse" />
+              <div className="h-40 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
             ) : (
               <>
                 {layout.map(section => (
-                  <div key={section.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900">{section.name}</h3>
-                      <span className="text-xs text-gray-500">
+                  <div key={section.id} className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
+                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between dark:border-gray-700 dark:bg-gray-900">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{section.name}</h3>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
                         {section.fields.length} field{section.fields.length === 1 ? '' : 's'}
                       </span>
                     </div>
 
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
                       {section.fields.map((f, i) => (
                         <div key={f.id} className="px-4 py-2.5 flex items-center gap-2">
                           {/* Reorder */}
@@ -149,14 +149,14 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                             <button
                               onClick={() => moveField(section.fields, i, -1)}
                               disabled={i === 0}
-                              className="text-gray-400 hover:text-gray-700 disabled:opacity-30"
+                              className="text-gray-400 hover:text-gray-700 disabled:opacity-30 dark:hover:text-gray-200"
                             >
                               <ChevronUp className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => moveField(section.fields, i, 1)}
                               disabled={i === section.fields.length - 1}
-                              className="text-gray-400 hover:text-gray-700 disabled:opacity-30"
+                              className="text-gray-400 hover:text-gray-700 disabled:opacity-30 dark:hover:text-gray-200"
                             >
                               <ChevronDown className="w-3.5 h-3.5" />
                             </button>
@@ -169,14 +169,14 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                                 value={editName}
                                 onChange={(e) => setEditName(e.target.value)}
                                 placeholder="Field name"
-                                className="text-sm px-2 py-1 border border-gray-200 rounded w-48"
+                                className="text-sm px-2 py-1 border border-gray-200 rounded w-48 dark:border-gray-700"
                                 autoFocus
                               />
                               <input
                                 value={editPlaceholder}
                                 onChange={(e) => setEditPlaceholder(e.target.value)}
                                 placeholder="Placeholder (shown in empty state)"
-                                className="text-sm px-2 py-1 border border-gray-200 rounded flex-1"
+                                className="text-sm px-2 py-1 border border-gray-200 rounded flex-1 dark:border-gray-700"
                               />
                               <Button size="sm" onClick={() => commitEditField(f)}>
                                 <Check className="w-3.5 h-3.5" />
@@ -187,10 +187,10 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                             </div>
                           ) : (
                             <div className="flex-1 flex items-center gap-2 min-w-0">
-                              <span className="text-sm font-medium text-gray-900 truncate">{f.name}</span>
-                              <span className="text-xs text-gray-500 shrink-0">{FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type}</span>
+                              <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{f.name}</span>
+                              <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">{FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type}</span>
                               {f.is_system && (
-                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 shrink-0">
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 shrink-0 dark:text-gray-400 dark:bg-gray-800">
                                   System
                                 </span>
                               )}
@@ -203,7 +203,7 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 onClick={() => startEditField(f)}
-                                className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+                                className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded dark:hover:text-gray-200 dark:hover:bg-gray-700"
                                 title="Edit"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
@@ -212,7 +212,7 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                                 onClick={() => updateField({ id: f.id, is_archived: !f.is_archived })}
                                 disabled={f.is_system}
                                 title={f.is_system ? 'System fields cannot be archived' : (f.is_archived ? 'Restore' : 'Archive')}
-                                className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                                className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed dark:hover:text-gray-200 dark:hover:bg-gray-700"
                               >
                                 {f.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
                               </button>
@@ -229,13 +229,13 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                               value={newFieldName}
                               onChange={(e) => setNewFieldName(e.target.value)}
                               placeholder="Field name"
-                              className="text-sm px-2 py-1 border border-gray-200 rounded w-48"
+                              className="text-sm px-2 py-1 border border-gray-200 rounded w-48 dark:border-gray-700"
                               autoFocus
                             />
                             <select
                               value={newFieldType}
                               onChange={(e) => setNewFieldType(e.target.value as ThemeFieldType)}
-                              className="text-sm px-2 py-1 border border-gray-200 rounded"
+                              className="text-sm px-2 py-1 border border-gray-200 rounded dark:border-gray-700"
                             >
                               {FIELD_TYPES.map(t => (
                                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -246,7 +246,7 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                             value={newFieldPlaceholder}
                             onChange={(e) => setNewFieldPlaceholder(e.target.value)}
                             placeholder="Placeholder prompt (optional, shown in empty state)"
-                            className="text-sm px-2 py-1 border border-gray-200 rounded w-full"
+                            className="text-sm px-2 py-1 border border-gray-200 rounded w-full dark:border-gray-700"
                           />
                           <div className="flex items-center gap-2">
                             <Button size="sm" onClick={() => handleAddField(section)} disabled={!newFieldName.trim()}>
@@ -277,7 +277,7 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
                       value={newSectionName}
                       onChange={(e) => setNewSectionName(e.target.value)}
                       placeholder="Section name"
-                      className="text-sm px-2 py-1 border border-gray-200 rounded flex-1"
+                      className="text-sm px-2 py-1 border border-gray-200 rounded flex-1 dark:border-gray-700"
                       autoFocus
                     />
                     <Button size="sm" onClick={handleCreateSection} disabled={!newSectionName.trim()}>
@@ -298,7 +298,7 @@ export function ThemeFieldManagerModal({ onClose }: ThemeFieldManagerModalProps)
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end px-6 py-3 border-t border-gray-200">
+          <div className="flex justify-end px-6 py-3 border-t border-gray-200 dark:border-gray-700">
             <Button variant="outline" onClick={onClose}>Done</Button>
           </div>
         </div>

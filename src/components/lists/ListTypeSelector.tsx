@@ -39,7 +39,7 @@ export function ListTypeSelector({
 }: ListTypeSelectorProps) {
   return (
     <div className={clsx('space-y-2', className)}>
-      <label className="block text-sm font-medium text-gray-700">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
         List Type
       </label>
       <div className="grid grid-cols-2 gap-3">
@@ -56,7 +56,7 @@ export function ListTypeSelector({
                 'relative flex flex-col items-start p-4 rounded-lg border-2 transition-all text-left',
                 isSelected
                   ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300',
+                  : 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800',
                 disabled && 'opacity-50 cursor-not-allowed'
               )}
             >
@@ -65,7 +65,7 @@ export function ListTypeSelector({
                 <div
                   className={clsx(
                     'w-4 h-4 rounded-full border-2 flex items-center justify-center',
-                    isSelected ? 'border-blue-500' : 'border-gray-300'
+                    isSelected ? 'border-blue-500' : 'border-gray-300 dark:border-gray-600'
                   )}
                 >
                   {isSelected && (
@@ -78,7 +78,7 @@ export function ListTypeSelector({
               <div
                 className={clsx(
                   'p-2 rounded-lg mb-2',
-                  isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                  isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                 )}
               >
                 {type.icon}
@@ -88,7 +88,7 @@ export function ListTypeSelector({
               <span
                 className={clsx(
                   'font-medium text-sm',
-                  isSelected ? 'text-blue-900' : 'text-gray-900'
+                  isSelected ? 'text-blue-900' : 'text-gray-900 dark:text-white'
                 )}
               >
                 {type.label}
@@ -98,7 +98,7 @@ export function ListTypeSelector({
               <span
                 className={clsx(
                   'text-xs mt-1',
-                  isSelected ? 'text-blue-700' : 'text-gray-500'
+                  isSelected ? 'text-blue-700' : 'text-gray-500 dark:text-gray-400'
                 )}
               >
                 {type.description}

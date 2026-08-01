@@ -588,7 +588,7 @@ function PriceChangeForm({
                 {change.scenarioName}
               </span>
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-gray-500 line-through">${change.oldPrice.toFixed(2)}</span>
+                <span className="text-gray-500 line-through dark:text-gray-400">${change.oldPrice.toFixed(2)}</span>
                 <span className="text-gray-400">→</span>
                 <span className="text-amber-600 dark:text-amber-400 font-semibold">
                   ${change.newPrice.toFixed(2)}

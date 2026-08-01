@@ -394,8 +394,8 @@ function SandboxTradeCard({ trade, onEdit, onRemove }: {
             {trade.action}
           </span>
           <span className="font-semibold text-gray-900 dark:text-white">{symbol}</span>
-          {trade.weight != null && <span className="text-sm text-gray-500">{trade.weight}%</span>}
-          {trade.shares != null && <span className="text-sm text-gray-500">{trade.shares.toLocaleString()} sh</span>}
+          {trade.weight != null && <span className="text-sm text-gray-500 dark:text-gray-400">{trade.weight}%</span>}
+          {trade.shares != null && <span className="text-sm text-gray-500 dark:text-gray-400">{trade.shares.toLocaleString()} sh</span>}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={onEdit} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Edit">

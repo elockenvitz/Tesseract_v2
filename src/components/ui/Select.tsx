@@ -25,7 +25,7 @@ export function Select({
   return (
     <div className="space-y-1">
       {label && (
-        <label htmlFor={selectId} className="block text-sm font-medium text-gray-700">
+        <label htmlFor={selectId} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           {label}
         </label>
       )}
@@ -54,7 +54,7 @@ export function Select({
         <p className="text-sm text-error-600">{error}</p>
       )}
       {helperText && !error && (
-        <p className="text-sm text-gray-500">{helperText}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{helperText}</p>
       )}
     </div>
   )

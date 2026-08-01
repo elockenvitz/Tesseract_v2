@@ -271,16 +271,16 @@ export function CollaborationManager({
 
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Manage Collaborators</h3>
-              <p className="text-sm text-gray-600 mt-1">Share "{noteTitle}" with other users</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Manage Collaborators</h3>
+              <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Share "{noteTitle}" with other users</p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="h-5 w-5" />
             </button>
@@ -289,9 +289,9 @@ export function CollaborationManager({
           <div className="p-6 space-y-6">
             {/* Note Owner */}
             <Card>
-              <h4 className="text-sm font-semibold text-gray-900 mb-4">Note Owner</h4>
+              <h4 className="text-sm font-semibold text-gray-900 mb-4 dark:text-white">Note Owner</h4>
               {ownerLoading ? (
-                <div className="animate-pulse flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                <div className="animate-pulse flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                   <div className="w-8 h-8 bg-gray-200 rounded-full" />
                   <div className="flex-1 space-y-2">
                     <div className="h-4 bg-gray-200 rounded w-28" />
@@ -300,15 +300,15 @@ export function CollaborationManager({
                   <div className="h-5 bg-gray-200 rounded w-14" />
                 </div>
               ) : (
-                <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                   <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                     <Users className="h-4 w-4 text-primary-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {getUserDisplayName(resolvedOwner)}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
                       {resolvedOwner?.email}
                     </p>
                   </div>
@@ -319,7 +319,7 @@ export function CollaborationManager({
 
             {/* Invite New User */}
             <Card>
-              <h4 className="text-sm font-semibold text-gray-900 mb-4">Invite New Collaborator</h4>
+              <h4 className="text-sm font-semibold text-gray-900 mb-4 dark:text-white">Invite New Collaborator</h4>
 
               <div className="space-y-4">
                 {/* Search for users */}
@@ -330,25 +330,25 @@ export function CollaborationManager({
                     placeholder="Search by email or name..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   />
                 </div>
                 {searchQuery.length >= 2 && (
-                  <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                  <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto dark:border-gray-700">
                     {searchResults && searchResults.length > 0 ? (
                       searchResults.map((searchUser) => (
                         <div
                           key={searchUser.id}
-                          className="flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          className="flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 dark:hover:bg-gray-800 dark:border-gray-800"
                         >
                           <div>
-                            <p className="text-sm font-medium text-gray-900">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
                               {searchUser.first_name && searchUser.last_name
                                 ? `${searchUser.first_name} ${searchUser.last_name}`
                                 : getUserDisplayName(searchUser)
                               }
                             </p>
-                            <p className="text-xs text-gray-500">{searchUser.email}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{searchUser.email}</p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <Select
@@ -372,7 +372,7 @@ export function CollaborationManager({
                         </div>
                       ))
                     ) : (
-                      <div className="flex items-center justify-center py-8 text-center text-gray-500 text-sm">
+                      <div className="flex items-center justify-center py-8 text-center text-gray-500 text-sm dark:text-gray-400">
                         No users found matching "{searchQuery}"
                       </div>
                     )}
@@ -384,7 +384,7 @@ export function CollaborationManager({
             {/* Current Collaborators */}
             <Card>
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-semibold text-gray-900">Current Collaborators</h4>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Current Collaborators</h4>
                 {!isLoading && filteredCollaborations && (
                   <Badge variant="default" size="sm">
                     {filteredCollaborations.length} collaborator{filteredCollaborations.length !== 1 ? 's' : ''}
@@ -395,7 +395,7 @@ export function CollaborationManager({
               {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(2)].map((_, i) => (
-                    <div key={i} className="animate-pulse flex items-center space-x-3 p-3 border border-gray-100 rounded-lg">
+                    <div key={i} className="animate-pulse flex items-center space-x-3 p-3 border border-gray-100 rounded-lg dark:border-gray-800">
                       <div className="w-8 h-8 bg-gray-200 rounded-full"></div>
                       <div className="flex-1 space-y-2">
                         <div className="h-4 bg-gray-200 rounded w-1/3"></div>
@@ -409,17 +409,17 @@ export function CollaborationManager({
                   {filteredCollaborations.map((collaboration) => (
                     <div
                       key={collaboration.id}
-                      className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                      className="flex items-center justify-between p-3 border border-gray-200 rounded-lg dark:border-gray-700"
                     >
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                           <Users className="h-4 w-4 text-primary-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">
                             {getUserDisplayName(collaboration.user)}
                           </p>
-                          <p className="text-xs text-gray-500">{collaboration.user?.email}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{collaboration.user?.email}</p>
                         </div>
                       </div>
 
@@ -452,7 +452,7 @@ export function CollaborationManager({
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-sm">No collaborators yet</p>
                   <p className="text-xs">Search for users above to start collaborating</p>
@@ -462,7 +462,7 @@ export function CollaborationManager({
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
             <Button variant="outline" onClick={onClose}>
               Done
             </Button>
@@ -475,9 +475,9 @@ export function CollaborationManager({
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Collaborator</h3>
-              <p className="text-gray-600 mb-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Remove Collaborator</h3>
+              <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to remove {deleteConfirm.userEmail} from this note? They will no longer be able to access it.
               </p>
               <div className="flex space-x-3">

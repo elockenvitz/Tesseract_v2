@@ -68,7 +68,7 @@ export function DataFunctionPicker({
   if (!selectedType && !directMatch) {
     return (
       <div className="p-2">
-        <div className="text-xs font-medium text-gray-500 mb-2 px-2">
+        <div className="text-xs font-medium text-gray-500 mb-2 px-2 dark:text-gray-400">
           Insert data for {assetContext.symbol}
         </div>
         <div className="space-y-1">
@@ -79,10 +79,10 @@ export function DataFunctionPicker({
                 key={func.type}
                 type="button"
                 onClick={() => handleSelectType(func.type)}
-                className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors dark:hover:bg-gray-800"
               >
-                <Icon className="w-4 h-4 mr-3 text-gray-500" />
-                <span className="font-medium text-gray-900">{func.label}</span>
+                <Icon className="w-4 h-4 mr-3 text-gray-500 dark:text-gray-400" />
+                <span className="font-medium text-gray-900 dark:text-white">{func.label}</span>
               </button>
             )
           })}
@@ -101,12 +101,12 @@ export function DataFunctionPicker({
   return (
     <div className="p-3">
       <div className="flex items-center mb-3">
-        <Icon className="w-5 h-5 mr-2 text-gray-600" />
-        <span className="font-medium text-gray-900">{funcInfo.label}</span>
-        <span className="ml-2 text-sm text-gray-500">for {assetContext.symbol}</span>
+        <Icon className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" />
+        <span className="font-medium text-gray-900 dark:text-white">{funcInfo.label}</span>
+        <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">for {assetContext.symbol}</span>
       </div>
 
-      <div className="text-xs font-medium text-gray-500 mb-2">Choose insert mode:</div>
+      <div className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Choose insert mode:</div>
 
       <div className="space-y-2 mb-4">
         <button
@@ -116,7 +116,7 @@ export function DataFunctionPicker({
             'w-full flex items-center p-3 rounded-lg border-2 transition-colors text-left',
             mode === 'snapshot'
               ? 'border-primary-500 bg-primary-50'
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
           )}
         >
           <Camera className={clsx(
@@ -124,8 +124,8 @@ export function DataFunctionPicker({
             mode === 'snapshot' ? 'text-primary-600' : 'text-gray-400'
           )} />
           <div>
-            <div className="font-medium text-gray-900">Snapshot</div>
-            <div className="text-xs text-gray-500">
+            <div className="font-medium text-gray-900 dark:text-white">Snapshot</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               Capture current value (won't change)
             </div>
           </div>
@@ -138,7 +138,7 @@ export function DataFunctionPicker({
             'w-full flex items-center p-3 rounded-lg border-2 transition-colors text-left',
             mode === 'live'
               ? 'border-primary-500 bg-primary-50'
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
           )}
         >
           <Radio className={clsx(
@@ -146,8 +146,8 @@ export function DataFunctionPicker({
             mode === 'live' ? 'text-primary-600' : 'text-gray-400'
           )} />
           <div>
-            <div className="font-medium text-gray-900">Live</div>
-            <div className="text-xs text-gray-500">
+            <div className="font-medium text-gray-900 dark:text-white">Live</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               Dynamic value that updates in real-time
             </div>
           </div>
@@ -158,7 +158,7 @@ export function DataFunctionPicker({
         <button
           type="button"
           onClick={onClose}
-          className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"
+          className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
         >
           Cancel
         </button>

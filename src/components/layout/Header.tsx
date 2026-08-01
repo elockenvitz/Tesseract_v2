@@ -343,7 +343,7 @@ export function Header({
                       </div>
                       <div className="flex-1 text-left">
                         <div className="text-sm font-semibold text-gray-900 dark:text-white">Dashboard</div>
-                        <div className="text-[11px] text-gray-500">What needs your attention</div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400">What needs your attention</div>
                       </div>
                     </button>
                   </div>
@@ -409,7 +409,7 @@ export function Header({
                           <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center mb-1 relative', item.bg)}>
                             <item.icon className={clsx('h-5 w-5', item.color)} />
                             {level === 'preview' && (
-                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-white flex items-center justify-center shadow-sm">
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-white flex items-center justify-center shadow-sm dark:bg-gray-800">
                                 <Lock className="w-2 h-2 text-gray-400" />
                               </div>
                             )}
@@ -511,9 +511,9 @@ export function Header({
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-1">
                     {[
-                      { id: 'charting', title: 'Charting', type: 'charting', icon: LineChart, color: 'text-gray-400', bg: 'bg-gray-100' },
-                      { id: 'files', title: 'Files', type: 'files', icon: FolderOpen, color: 'text-gray-400', bg: 'bg-gray-100' },
-                      { id: 'calendar', title: 'Calendar', type: 'calendar', icon: Calendar, color: 'text-gray-400', bg: 'bg-gray-100' },
+                      { id: 'charting', title: 'Charting', type: 'charting', icon: LineChart, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
+                      { id: 'files', title: 'Files', type: 'files', icon: FolderOpen, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
+                      { id: 'calendar', title: 'Calendar', type: 'calendar', icon: Calendar, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
                     ].map(item => (
                       <button
                         key={item.id}
@@ -596,7 +596,7 @@ export function Header({
                           />
                         ) : (
                           <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
-                            <Building2 className="w-3.5 h-3.5 text-gray-500" />
+                            <Building2 className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
                           </div>
                         )}
                         <span className="font-medium truncate">{org.name}</span>
@@ -645,7 +645,7 @@ export function Header({
                 "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'thoughts'
                   ? "text-amber-600 bg-amber-100"
-                  : "text-gray-400 hover:text-gray-600"
+                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="Capture a thought"
             >
@@ -661,7 +661,7 @@ export function Header({
                 "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'ai'
                   ? "text-primary-600 bg-primary-100"
-                  : "text-gray-400 hover:text-gray-600"
+                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="AI Assistant"
             >
@@ -679,7 +679,7 @@ export function Header({
                 "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
                 isCommPaneOpen && commPaneView === 'direct-messages'
                   ? "text-primary-600 bg-primary-100"
-                  : "text-gray-400 hover:text-gray-600"
+                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="Direct messages"
             >
@@ -695,10 +695,10 @@ export function Header({
                 onShowNotifications?.()
               }}
               className={clsx(
-                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative",
+                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative dark:hover:bg-gray-700",
                 isCommPaneOpen && commPaneView === 'notifications'
                   ? "text-primary-600 bg-primary-100"
-                  : "text-gray-400 hover:text-gray-600"
+                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="View notifications"
             >
@@ -714,7 +714,7 @@ export function Header({
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-0 md:space-x-3 p-1 md:p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                className="flex items-center space-x-0 md:space-x-3 p-1 md:p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-white dark:text-gray-300"
                 title="Account menu"
               >
                 <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center">
@@ -723,10 +723,10 @@ export function Header({
                   </span>
                 </div>
                 <div className="hidden md:block text-left">
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
                     {getDisplayName()}
                   </p>
-                  <p className="text-xs text-gray-500 capitalize">{userDetails?.user_role || 'Investor'}</p>
+                  <p className="text-xs text-gray-500 capitalize dark:text-gray-400">{userDetails?.user_role || 'Investor'}</p>
                 </div>
                 <ChevronDown className="hidden md:block h-4 w-4 text-gray-400" />
               </button>

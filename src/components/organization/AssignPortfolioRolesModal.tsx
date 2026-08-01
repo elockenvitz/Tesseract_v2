@@ -127,17 +127,17 @@ export function AssignPortfolioRolesModal({
       {/* Modal */}
       <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col dark:bg-gray-800"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
-            <h3 className="text-base font-semibold text-gray-900">
+          <div className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0 dark:border-gray-800">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               Assign Portfolio Roles
             </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Adding <span className="font-medium text-gray-700">{userName}</span> to{' '}
-              <span className="font-medium text-gray-700">{teamName}</span>.
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
+              Adding <span className="font-medium text-gray-700 dark:text-gray-300">{userName}</span> to{' '}
+              <span className="font-medium text-gray-700 dark:text-gray-300">{teamName}</span>.
               Assign a role for each portfolio, or exclude portfolios that don't apply.
             </p>
           </div>
@@ -146,14 +146,14 @@ export function AssignPortfolioRolesModal({
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             {/* Apply to all */}
             {linkedPortfolios.length > 1 && (
-              <div className="flex items-center gap-2 pb-3 border-b border-gray-100">
-                <span className="text-xs font-medium text-gray-500 whitespace-nowrap">
+              <div className="flex items-center gap-2 pb-3 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-xs font-medium text-gray-500 whitespace-nowrap dark:text-gray-400">
                   Apply to all:
                 </span>
                 <select
                   value={bulkRole}
                   onChange={(e) => setBulkRole(e.target.value)}
-                  className="flex-1 px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="flex-1 px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                 >
                   <option value="">Select role...</option>
                   {ROLE_OPTIONS.map((r) => (
@@ -185,16 +185,16 @@ export function AssignPortfolioRolesModal({
                     key={p.nodeId}
                     className={`rounded-lg border transition-colors ${
                       isExcluded
-                        ? 'border-gray-100 bg-gray-50 opacity-60'
+                        ? 'border-gray-100 bg-gray-50 opacity-60 dark:border-gray-800 dark:bg-gray-900'
                         : selected
                           ? 'border-indigo-200 bg-indigo-50/40'
-                          : 'border-gray-200 bg-white'
+                          : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
                     }`}
                   >
                     {/* Main row */}
                     <div className="flex items-center gap-3 p-3">
                       <Briefcase className="w-4 h-4 text-gray-400 shrink-0" />
-                      <span className={`text-sm font-medium min-w-0 truncate flex-1 ${isExcluded ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                      <span className={`text-sm font-medium min-w-0 truncate flex-1 ${isExcluded ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
                         {p.name}
                       </span>
 
@@ -205,8 +205,8 @@ export function AssignPortfolioRolesModal({
                             onChange={(e) => handleSetRole(p.nodeId, e.target.value)}
                             className={`appearance-none pl-3 pr-7 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer ${
                               selected
-                                ? 'border-indigo-300 bg-white text-gray-900'
-                                : 'border-gray-300 bg-white text-gray-500'
+                                ? 'border-indigo-300 bg-white text-gray-900 dark:text-white dark:bg-gray-800'
+                                : 'border-gray-300 bg-white text-gray-500 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800'
                             }`}
                           >
                             <option value="">Select role...</option>
@@ -247,7 +247,7 @@ export function AssignPortfolioRolesModal({
                     {!isExcluded && selected && focusOpts.length > 0 && (
                       <div className="px-3 pb-3 pt-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500 shrink-0">Focus:</span>
+                          <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">Focus:</span>
                           <div className="flex flex-wrap gap-1">
                             {focusOpts.map((f) => (
                               <button
@@ -257,7 +257,7 @@ export function AssignPortfolioRolesModal({
                                 className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
                                   selectedFocus === f
                                     ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                                 }`}
                               >
                                 {f}
@@ -274,8 +274,8 @@ export function AssignPortfolioRolesModal({
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex items-center justify-between shrink-0">
-            <span className="text-xs text-gray-500">
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex items-center justify-between shrink-0 dark:border-gray-800 dark:bg-gray-900">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {assignedCount} of {includedPortfolios.length} included portfolios assigned
               {excluded.size > 0 && (
                 <span className="text-gray-400"> ({excluded.size} excluded)</span>
@@ -285,7 +285,7 @@ export function AssignPortfolioRolesModal({
               <button
                 onClick={onCancel}
                 disabled={isLoading}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 rounded-lg transition-colors dark:text-gray-400"
               >
                 Cancel
               </button>

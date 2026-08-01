@@ -271,10 +271,10 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, o
       className={clsx(
         'relative flex items-center gap-2 pl-3 pr-8 py-2.5 border-b-2 cursor-pointer transition-colors duration-200 group flex-shrink-0',
         'min-w-[80px] max-w-[180px]',
-        'border-r border-gray-200',
+        'border-r border-gray-200 dark:border-gray-700',
         isGroupActive
           ? 'border-b-primary-500 bg-primary-50 text-primary-700'
-          : 'border-b-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900'
+          : 'border-b-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
       )}
       onClick={() => onTabChange(displayTab.id)}
     >
@@ -283,7 +283,7 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, o
         onClick={(e) => { if (tabs.length > 1) { e.stopPropagation(); handleToggleDropdown(e) } }}
         onPointerDown={(e) => e.stopPropagation()}
         className={clsx(
-          'relative text-gray-500 flex-shrink-0',
+          'relative text-gray-500 flex-shrink-0 dark:text-gray-400',
           tabs.length > 1 && 'cursor-pointer hover:text-gray-700'
         )}
         title={tabs.length > 1 ? `${tabs.length} ${getTypeDisplayName(displayTab.type)} open` : undefined}
@@ -314,19 +314,19 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, o
           ref={dropdownRef}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-[100] animate-in fade-in slide-in-from-top-2 duration-150"
+          className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-[100] animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
           style={{
             top: dropdownPosition.top,
             left: dropdownPosition.left
           }}
         >
-          <p className="text-sm text-gray-700 mb-3">
+          <p className="text-sm text-gray-700 mb-3 dark:text-gray-300">
             Close all {tabs.length} {getTypeDisplayName(displayTab.type).toLowerCase()}?
           </p>
           <div className="flex gap-2">
             <button
               onClick={() => setShowCloseConfirm(false)}
-              className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors dark:text-gray-400 dark:bg-gray-800"
             >
               Cancel
             </button>
@@ -347,7 +347,7 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, o
           ref={dropdownRef}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[100] animate-in fade-in slide-in-from-top-2 duration-150"
+          className="fixed w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[100] animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
           style={{
             top: dropdownPosition.top,
             left: dropdownPosition.left
@@ -362,11 +362,11 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, o
               return (
                 <React.Fragment key={tab.id}>
                   {showDivider && (
-                    <div className="mx-3 my-1 border-t border-gray-200" />
+                    <div className="mx-3 my-1 border-t border-gray-200 dark:border-gray-700" />
                   )}
                   <div
                     className={clsx(
-                      'flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer group/item',
+                      'flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer group/item dark:hover:bg-gray-800',
                       tab.id === displayTab.id && 'bg-blue-50',
                       isParent && 'bg-gray-50/50'
                     )}
@@ -376,12 +376,12 @@ function GroupedTab({ tabs, activeTab, isGroupActive, onTabChange, onTabClose, o
                       setIsDropdownOpen(false)
                     }}
                   >
-                    <span className={clsx('text-gray-400', isParent && 'text-gray-500')}>
+                    <span className={clsx('text-gray-400', isParent && 'text-gray-500 dark:text-gray-400')}>
                       {getTabIcon(tab.type)}
                     </span>
                     <span className={clsx(
                       'text-sm flex-1 truncate',
-                      tab.id === displayTab.id ? 'font-medium text-blue-700' : 'text-gray-700',
+                      tab.id === displayTab.id ? 'font-medium text-blue-700' : 'text-gray-700 dark:text-gray-300',
                       isParent && 'font-medium'
                     )}>
                       {isParent ? `All ${getTypeDisplayName(tab.type)}` : tab.title}
@@ -448,14 +448,14 @@ function SortableTab({ tab, isActive, onTabChange, onTabClose, getTabIcon }: Sor
       className={clsx(
         'relative flex items-center gap-2 pl-3 pr-8 py-2.5 border-b-2 cursor-pointer transition-colors duration-200 group flex-shrink-0',
         'min-w-[80px] max-w-[180px]',
-        'border-r border-gray-200',
+        'border-r border-gray-200 dark:border-gray-700',
         isActive
           ? 'border-b-primary-500 bg-primary-50 text-primary-700'
-          : 'border-b-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900'
+          : 'border-b-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-400'
       )}
       onClick={() => onTabChange(tab.id)}
     >
-      <span className="text-gray-500 flex-shrink-0">{getTabIcon(tab.type)}</span>
+      <span className="text-gray-500 flex-shrink-0 dark:text-gray-400">{getTabIcon(tab.type)}</span>
       <TruncatedLabel text={tab.isBlank ? 'New Tab' : tab.title} className="text-sm font-medium truncate min-w-0 flex-1" />
       {(tab.type !== 'dashboard' || tab.isBlank) && (
         <button
@@ -829,7 +829,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
   const dragOverlayTab = getDragOverlayTab()
 
   return (
-    <div className="bg-white border-b border-gray-200 px-2 sticky top-16 z-30 relative">
+    <div className="bg-white border-b border-gray-200 px-2 sticky top-16 z-30 relative dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center">
         {/* Left arrow - smoothly expands/collapses */}
         <div
@@ -840,7 +840,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
         >
           <button
             onClick={scrollLeftClick}
-            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+            className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
             title="Scroll left"
             tabIndex={showLeftArrow ? 0 : -1}
           >
@@ -906,7 +906,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
               {!hasOverflow && !hideNewTab && (
                 <button
                   onClick={handleNewTabClick}
-                  className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 ml-1"
+                  className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 ml-1 dark:hover:text-gray-300 dark:hover:bg-gray-700"
                   title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
                 >
                   <Plus className="h-4 w-4" />
@@ -917,7 +917,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
           <DragOverlay>
             {activeId && dragOverlayTab ? (
               <div className="flex items-center gap-2 px-3 py-2.5 border-b-2 border-b-primary-500 bg-primary-50 text-primary-700 rounded shadow-lg flex-shrink-0 min-w-[100px] max-w-[200px]">
-                <span className="text-gray-500 flex-shrink-0">{getTabIcon(dragOverlayTab.type)}</span>
+                <span className="text-gray-500 flex-shrink-0 dark:text-gray-400">{getTabIcon(dragOverlayTab.type)}</span>
                 <span className="text-sm font-medium truncate">{dragOverlayTab.title}</span>
               </div>
             ) : null}
@@ -926,12 +926,12 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
 
         {/* Right side controls - only shown when tabs overflow */}
         {hasOverflow && (
-          <div className="absolute right-2 top-0 bottom-0 flex items-center bg-white pl-2">
+          <div className="absolute right-2 top-0 bottom-0 flex items-center bg-white pl-2 dark:bg-gray-800">
             {/* Right arrow - only shown when there's more content to scroll */}
             {showRightArrow && (
               <button
                 onClick={scrollRightClick}
-                className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors bg-white mr-1"
+                className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors bg-white mr-1 dark:hover:text-gray-300 dark:hover:bg-gray-700 dark:bg-gray-800"
                 title="Scroll right"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -941,7 +941,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
             {!hideNewTab && (
               <button
                 onClick={handleNewTabClick}
-                className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white"
+                className="flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0 bg-white dark:hover:text-gray-300 dark:hover:bg-gray-700 dark:bg-gray-800"
                 title={tabs.find(tab => tab.isBlank) ? "Go to new tab" : "New tab"}
               >
                 <Plus className="h-4 w-4" />

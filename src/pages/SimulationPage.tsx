@@ -4840,7 +4840,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                   <span className="text-gray-900 dark:text-white"> {longLegs.length}</span>
                                 </>
                               )}
-                              {longLegs.length > 0 && shortLegs.length > 0 && <span className="text-gray-500"> / </span>}
+                              {longLegs.length > 0 && shortLegs.length > 0 && <span className="text-gray-500 dark:text-gray-400"> / </span>}
                               {shortLegs.length > 0 && (
                                 <>
                                   <span className="text-red-600 dark:text-red-400">Sell</span>
@@ -4856,7 +4856,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                                   <span className="text-gray-900 dark:text-white"> {buySymbols}</span>
                                 </>
                               )}
-                              {buySymbols && sellSymbols && <span className="text-gray-500"> / </span>}
+                              {buySymbols && sellSymbols && <span className="text-gray-500 dark:text-gray-400"> / </span>}
                               {sellSymbols && (
                                 <>
                                   <span className="text-red-600 dark:text-red-400">Sell</span>
@@ -5121,7 +5121,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 onClick={() => setShowCreatePanel(false)}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
               >
-                <X className="h-5 w-5 text-gray-500" />
+                <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
 
@@ -5158,12 +5158,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   type="checkbox"
                   checked={newSimIsCollab}
                   onChange={(e) => setNewSimIsCollab(e.target.checked)}
-                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
                 <Users className="h-4 w-4" />
                 <div>
                   <div className="font-medium">Collaborative</div>
-                  <div className="text-xs text-gray-500">Allow team members to view and edit</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Allow team members to view and edit</div>
                 </div>
               </label>
 
@@ -5631,8 +5631,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       </>
                     ) : (
                       <div className="flex flex-col items-center gap-1">
-                        <Layers className="h-4 w-4 text-gray-500" />
-                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                        <Layers className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                        <ChevronRight className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                       </div>
                     )}
                   </button>
@@ -5643,13 +5643,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                         className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
                         title="Add trade idea"
                       >
-                        <Plus className="h-3.5 w-3.5 text-gray-500" />
+                        <Plus className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
                       </button>
                       <button
                         onClick={() => setShowIdeasPanel(false)}
                         className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
                       >
-                        <ChevronRight className="h-4 w-4 text-gray-500 rotate-180" />
+                        <ChevronRight className="h-4 w-4 text-gray-500 rotate-180 dark:text-gray-400" />
                       </button>
                     </div>
                   )}
@@ -5682,7 +5682,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             {leftPaneSearch && (
                               <button
                                 onClick={() => setLeftPaneSearch('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -7459,7 +7459,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Share with</span>
-                        <button onClick={() => { setShowShareSection(false); setShareWith([]) }} className="text-xs text-gray-400 hover:text-gray-600">Remove</button>
+                        <button onClick={() => { setShowShareSection(false); setShareWith([]) }} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Remove</button>
                       </div>
                       <input
                         type="text"

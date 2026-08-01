@@ -181,7 +181,7 @@ function PortfolioMultiSelect({
             {selectedIds.length > 0 && (
               <button
                 onClick={() => onChange([])}
-                className="text-[10px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600"
+                className="text-[10px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 Clear
               </button>

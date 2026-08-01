@@ -2381,12 +2381,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   const content = (
     <>
           {/* Header */}
-          <div className="border-b border-gray-200 flex-shrink-0">
+          <div className="border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
             <div className="flex items-center justify-between p-6">
               <div className="flex items-center gap-6">
                 <div>
                   <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                       {viewHistoryAssetId && assetCoverageHistory && assetCoverageHistory.length > 0
                         ? 'Coverage Timeline'
                         : 'Coverage Management'}
@@ -2398,10 +2398,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         disabled={!isAdminBadgeReady}
                         className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
                           !isAdminBadgeReady
-                            ? 'blur-sm opacity-50 bg-gray-100 text-gray-600'
+                            ? 'blur-sm opacity-50 bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                             : isOrgAdmin || isCoverageAdmin
                             ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                         }`}
                       >
                         <Shield className="w-3 h-3 mr-1" />
@@ -2420,15 +2420,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                       {/* Dropdown */}
                       {showAdminBadgeDropdown && (
-                        <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                          <div className="p-3 border-b border-gray-100">
-                            <h3 className="text-sm font-medium text-gray-900">Your Permissions</h3>
+                        <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:border-gray-700 dark:bg-gray-800">
+                          <div className="p-3 border-b border-gray-100 dark:border-gray-800">
+                            <h3 className="text-sm font-medium text-gray-900 dark:text-white">Your Permissions</h3>
                           </div>
                           <div className="p-3 space-y-3">
                             {/* Org Admin Status */}
                             <div className="flex items-start space-x-3">
                               <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
-                                isOrgAdmin ? 'bg-green-100' : 'bg-gray-100'
+                                isOrgAdmin ? 'bg-green-100' : 'bg-gray-100 dark:bg-gray-800'
                               }`}>
                                 {isOrgAdmin ? (
                                   <Check className="w-3 h-3 text-green-600" />
@@ -2437,8 +2437,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 )}
                               </div>
                               <div className="flex-1">
-                                <p className="text-sm font-medium text-gray-900">Organization Admin</p>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">Organization Admin</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
                                   {isOrgAdmin
                                     ? 'Can manage teams, members, and settings'
                                     : 'Cannot modify organization structure'}
@@ -2449,7 +2449,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             {/* Coverage Admin Status */}
                             <div className="flex items-start space-x-3">
                               <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
-                                isCoverageAdmin ? 'bg-green-100' : 'bg-gray-100'
+                                isCoverageAdmin ? 'bg-green-100' : 'bg-gray-100 dark:bg-gray-800'
                               }`}>
                                 {isCoverageAdmin ? (
                                   <Check className="w-3 h-3 text-green-600" />
@@ -2458,12 +2458,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 )}
                               </div>
                               <div className="flex-1">
-                                <p className="text-sm font-medium text-gray-900">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
                                   Coverage Admin
                                   {hasGlobalCoverageAdmin && hasNodeLevelCoverageAdmin ? '' :
                                    hasNodeLevelCoverageAdmin ? ' (Limited)' : ''}
                                 </p>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
                                   {hasGlobalCoverageAdmin
                                     ? 'Can manage coverage assignments globally'
                                     : hasNodeLevelCoverageAdmin
@@ -2475,8 +2475,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                             {/* Node-level coverage admin details */}
                             {hasNodeLevelCoverageAdmin && !hasGlobalCoverageAdmin && allOrgChartNodes && (
-                              <div className="pt-2 border-t border-gray-100">
-                                <p className="text-xs font-medium text-gray-500 mb-2">Coverage admin for:</p>
+                              <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                                <p className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Coverage admin for:</p>
                                 <div className="space-y-1 max-h-24 overflow-y-auto">
                                   {userCoverageAdminNodes.slice(0, 5).map(nodeId => {
                                     const node = allOrgChartNodes.allNodes?.find((n: any) => n.id === nodeId)
@@ -2486,7 +2486,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           className="w-2 h-2 rounded-full"
                                           style={{ backgroundColor: node.color }}
                                         />
-                                        <span className="text-gray-700">{node.name}</span>
+                                        <span className="text-gray-700 dark:text-gray-300">{node.name}</span>
                                       </div>
                                     ) : null
                                   })}
@@ -2501,13 +2501,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                             {/* Read Access (shown when no admin permissions) */}
                             {!isOrgAdmin && !isCoverageAdmin && (
-                              <div className="flex items-start space-x-3 pt-2 border-t border-gray-100">
+                              <div className="flex items-start space-x-3 pt-2 border-t border-gray-100 dark:border-gray-800">
                                 <div className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center bg-blue-100">
                                   <Check className="w-3 h-3 text-blue-600" />
                                 </div>
                                 <div className="flex-1">
-                                  <p className="text-sm font-medium text-gray-900">Read Access</p>
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white">Read Access</p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
                                     Can view coverage information and request changes
                                   </p>
                                 </div>
@@ -2518,19 +2518,19 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">
                     Manage analyst coverage assignments
                   </p>
                 </div>
 
                 {/* View Mode Buttons - only show for active view */}
                 {!viewHistoryAssetId && activeView === 'active' && (
-                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
                     <button
                       onClick={() => { setViewMode('list'); setMatrixShowOverlapsOnly(false) }}
                       className={clsx(
                         "p-2 rounded-md transition-colors",
-                        viewMode === 'list' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
+                        viewMode === 'list' ? "bg-white shadow-sm text-primary-600 dark:bg-gray-800" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                       )}
                       title="List"
                     >
@@ -2540,7 +2540,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       onClick={() => { setViewMode('gaps'); setMatrixShowOverlapsOnly(false) }}
                       className={clsx(
                         "p-2 rounded-md transition-colors",
-                        viewMode === 'gaps' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
+                        viewMode === 'gaps' ? "bg-white shadow-sm text-primary-600 dark:bg-gray-800" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                       )}
                       title="Gaps"
                     >
@@ -2550,7 +2550,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       onClick={() => { setViewMode('workload'); setMatrixShowOverlapsOnly(false) }}
                       className={clsx(
                         "p-2 rounded-md transition-colors",
-                        viewMode === 'workload' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
+                        viewMode === 'workload' ? "bg-white shadow-sm text-primary-600 dark:bg-gray-800" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                       )}
                       title="Workload"
                     >
@@ -2560,7 +2560,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       onClick={() => setViewMode('matrix')}
                       className={clsx(
                         "p-2 rounded-md transition-colors",
-                        viewMode === 'matrix' ? "bg-white shadow-sm text-primary-600" : "text-gray-500 hover:text-gray-700"
+                        viewMode === 'matrix' ? "bg-white shadow-sm text-primary-600 dark:bg-gray-800" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                       )}
                       title="Matrix"
                     >
@@ -2635,7 +2635,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 {mode === 'modal' && onClose && (
                   <button
                     onClick={onClose}
-                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                    className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -2647,27 +2647,27 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
           <div className="overflow-hidden flex-1 relative flex">
             {/* Show Timeline View - takes over full space */}
             {viewHistoryAssetId && assetCoverageHistory && assetCoverageHistory.length > 0 ? (
-              <div className="absolute inset-0 bg-white flex flex-col z-10">
+              <div className="absolute inset-0 bg-white flex flex-col z-10 dark:bg-gray-800">
                   {/* Timeline Header */}
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 dark:border-gray-700 dark:bg-gray-900">
                     <div className="flex items-center gap-4">
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-semibold text-gray-900">{assetCoverageHistory[0]?.assets?.symbol}</h4>
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{assetCoverageHistory[0]?.assets?.symbol}</h4>
                           {!hasAnyCoverageAdminRights && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800">
                               <Eye className="w-3 h-3 mr-1" />
                               View Only
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">{assetCoverageHistory[0]?.assets?.company_name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{assetCoverageHistory[0]?.assets?.company_name}</p>
                       </div>
                       {/* Timeline Action Buttons */}
                       {hasAnyCoverageAdminRights && (() => {
                         const currentCoverage = assetCoverageHistory.find(c => !c.ended_at || c.ended_at >= getLocalDateString())
                         return currentCoverage ? (
-                          <div className="flex items-center gap-1 ml-2 pl-4 border-l border-gray-300">
+                          <div className="flex items-center gap-1 ml-2 pl-4 border-l border-gray-300 dark:border-gray-600">
                             <button
                               onClick={() => {
                                 setAddingTransition({
@@ -2680,7 +2680,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   newAnalystId: ''
                                 })
                               }}
-                              className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors dark:text-gray-400"
                               title="Add Transition"
                             >
                               <ArrowRightLeft className="h-4 w-4" />
@@ -2693,7 +2693,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   effectiveDate: getLocalDateString()
                                 })
                               }}
-                              className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition-colors dark:text-gray-400"
                               title="Change Current Coverage"
                             >
                               <RefreshCw className="h-4 w-4" />
@@ -2729,7 +2729,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   endDate: suggestedEndDate
                                 })
                               }}
-                              className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors dark:text-gray-400"
                               title="Add Historical Period"
                             >
                               <Clock className="h-4 w-4" />
@@ -2741,7 +2741,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   endDate: getLocalDateString()
                                 })
                               }}
-                              className="p-1.5 text-gray-500 hover:text-error-600 hover:bg-error-50 rounded transition-colors"
+                              className="p-1.5 text-gray-500 hover:text-error-600 hover:bg-error-50 rounded transition-colors dark:text-gray-400"
                               title="End Coverage"
                             >
                               <X className="h-4 w-4" />
@@ -2761,7 +2761,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         setAddingHistoricalPeriod(null)
                         setShowAllChanges(false)
                       }}
-                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded dark:hover:text-gray-300"
                       title="Hide Timeline"
                     >
                       <ChevronRight className="h-5 w-5" />
@@ -2789,14 +2789,14 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             <div className="p-4 rounded-md border border-purple-200 bg-purple-50">
                               <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
-                                  <h5 className="text-sm font-semibold text-gray-900">
+                                  <h5 className="text-sm font-semibold text-gray-900 dark:text-white">
                                     {isFuture ? 'Schedule Future Transition' : 'Add Coverage Transition'}
                                   </h5>
                                   <Badge variant="purple" size="sm">Future</Badge>
                                 </div>
                                 <button
                                   onClick={() => setAddingTransition(null)}
-                                  className="text-gray-400 hover:text-gray-600"
+                                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                 >
                                   <X className="h-4 w-4" />
                                 </button>
@@ -2804,13 +2804,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                               <div className="grid grid-cols-2 gap-3 mb-3">
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                                     New Analyst
                                   </label>
                                   <select
                                     value={addingTransition.newAnalystId}
                                     onChange={(e) => setAddingTransition({ ...addingTransition, newAnalystId: e.target.value })}
-                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-600"
                                   >
                                     <option value="">Select analyst...</option>
                                     {users?.filter(u => u.id !== currentCoverage?.user_id).map((u) => (
@@ -2821,12 +2821,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                       </option>
                                     ))}
                                   </select>
-                                  <p className="text-xs text-gray-500 mt-1">
+                                  <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                                     Who will take over coverage
                                   </p>
                                 </div>
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                                     Start Date
                                   </label>
                                   <input
@@ -2838,9 +2838,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                       tomorrow.setDate(tomorrow.getDate() + 1)
                                       return getLocalDateString(tomorrow)
                                     })()}
-                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-600"
                                   />
-                                  <p className="text-xs text-gray-500 mt-1">
+                                  <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                                     When {newAnalystName || 'new analyst'} starts covering
                                   </p>
                                 </div>
@@ -3003,7 +3003,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 {multipleScopes && (
                                   <div className="flex items-center gap-2 mb-2 ml-1">
                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full ${
-                                      scope.scopeKey === 'firm' ? 'bg-gray-100 text-gray-600' :
+                                      scope.scopeKey === 'firm' ? 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800' :
                                       scope.scopeKey === 'unknown' ? 'bg-amber-50 text-amber-700' :
                                       'bg-emerald-50 text-emerald-700'
                                     }`}>
@@ -3025,11 +3025,11 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     <div key={analyst.userId} className={analystIdx > 0 ? 'mt-3' : ''}>
                                       {/* Analyst header */}
                                       <div className="flex items-center gap-2 pl-4 mb-1">
-                                        <span className="text-sm font-semibold text-gray-900">{analyst.analystName}</span>
+                                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{analyst.analystName}</span>
                                         {/* Scope badge when single scope */}
                                         {!multipleScopes && (
                                           <span className={`inline-flex items-center px-1.5 py-px text-[10px] font-medium rounded-full leading-tight ${
-                                            scope.scopeKey === 'firm' ? 'bg-gray-100 text-gray-600' :
+                                            scope.scopeKey === 'firm' ? 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800' :
                                             scope.scopeKey === 'unknown' ? 'bg-amber-50 text-amber-700' :
                                             'bg-emerald-50 text-emerald-700'
                                           }`}>
@@ -3041,8 +3041,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           <span className={`inline-flex items-center px-1.5 py-px text-[10px] font-medium rounded-full border leading-tight ${
                                             displayRole === 'primary' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
                                             displayRole === 'secondary' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                                            displayRole === 'tertiary' ? 'bg-gray-50 text-gray-500 border-gray-200' :
-                                            'bg-gray-50 text-gray-500 border-gray-200'
+                                            displayRole === 'tertiary' ? 'bg-gray-50 text-gray-500 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900' :
+                                            'bg-gray-50 text-gray-500 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900'
                                           }`}>
                                             {displayRole.charAt(0).toUpperCase() + displayRole.slice(1)}
                                           </span>
@@ -3081,10 +3081,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                             <div className={`group/period flex items-center gap-2 py-1.5 px-3 rounded-md border transition-colors ${
                                               isEnding ? 'bg-red-50/60 border-red-200' :
                                               isCurrent ? 'bg-green-50/60 border-green-100' :
-                                              'bg-white border-gray-100 hover:border-gray-200'
+                                              'bg-white border-gray-100 hover:border-gray-200 dark:border-gray-800 dark:bg-gray-800'
                                             }`}>
                                               {/* Date range */}
-                                              <div className="flex items-center gap-1.5 text-sm text-gray-600 flex-1 min-w-0">
+                                              <div className="flex items-center gap-1.5 text-sm text-gray-600 flex-1 min-w-0 dark:text-gray-400">
                                                 {/* Start date */}
                                                 {editingDateValue?.coverageId === record.id && editingDateValue?.field === 'start' && hasAnyCoverageAdminRights ? (
                                                   <input
@@ -3105,18 +3105,18 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                       setEditingDateValue(null)
                                                     }}
                                                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { setEditingDateValue(null); e.currentTarget.blur() } }}
-                                                    className="inline-block w-[110px] h-[20px] px-1 py-0 text-sm leading-5 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                                                    className="inline-block w-[110px] h-[20px] px-1 py-0 text-sm leading-5 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-800"
                                                     onClick={(e) => e.stopPropagation()}
                                                   />
                                                 ) : hasAnyCoverageAdminRights ? (
                                                   <button
                                                     onClick={() => setEditingDateValue({ coverageId: record.id, field: 'start', value: record.start_date.split('T')[0] })}
-                                                    className="text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                                                    className="text-gray-900 hover:text-blue-600 hover:underline cursor-pointer dark:text-white"
                                                   >
                                                     {fmtDate(record.start_date)}
                                                   </button>
                                                 ) : (
-                                                  <span className="text-gray-900">{fmtDate(record.start_date)}</span>
+                                                  <span className="text-gray-900 dark:text-white">{fmtDate(record.start_date)}</span>
                                                 )}
 
                                                 <span className="text-gray-400">—</span>
@@ -3144,18 +3144,18 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                       setEditingDateValue(null)
                                                     }}
                                                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { setEditingDateValue(null); e.currentTarget.blur() } }}
-                                                    className="inline-block w-[110px] h-[20px] px-1 py-0 text-sm leading-5 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                                                    className="inline-block w-[110px] h-[20px] px-1 py-0 text-sm leading-5 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-800"
                                                     onClick={(e) => e.stopPropagation()}
                                                   />
                                                 ) : hasAnyCoverageAdminRights ? (
                                                   <button
                                                     onClick={() => setEditingDateValue({ coverageId: record.id, field: 'end', value: record.end_date ? record.end_date.split('T')[0] : null })}
-                                                    className="text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                                                    className="text-gray-900 hover:text-blue-600 hover:underline cursor-pointer dark:text-white"
                                                   >
                                                     {record.end_date ? fmtDate(record.end_date) : <span className="text-green-600 font-medium">Present</span>}
                                                   </button>
                                                 ) : (
-                                                  <span className="text-gray-900">
+                                                  <span className="text-gray-900 dark:text-white">
                                                     {record.end_date ? fmtDate(record.end_date) : <span className="text-green-600 font-medium">Present</span>}
                                                   </span>
                                                 )}
@@ -3172,9 +3172,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                           setEditingDateValue(null)
                                                         }
                                                       }}
-                                                      className="w-3 h-3 text-green-600 border-gray-300 rounded"
+                                                      className="w-3 h-3 text-green-600 border-gray-300 rounded dark:border-gray-600"
                                                     />
-                                                    <span className="text-xs text-gray-500">No end</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">No end</span>
                                                   </label>
                                                 )}
                                               </div>
@@ -3246,15 +3246,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* All Changes Section */}
-                    <div className="border-t border-gray-200 mt-4">
+                    <div className="border-t border-gray-200 mt-4 dark:border-gray-700">
                       <button
                         onClick={() => setShowAllChanges(!showAllChanges)}
-                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                       >
                         <div className="flex items-center gap-2">
-                          <History className="h-5 w-5 text-gray-600" />
-                          <span className="font-medium text-gray-900">All Changes</span>
-                          <span className="text-sm text-gray-500">
+                          <History className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                          <span className="font-medium text-gray-900 dark:text-white">All Changes</span>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
                             ({coverageChangeHistory?.length || 0} {coverageChangeHistory?.length === 1 ? 'change' : 'changes'})
                           </span>
                         </div>
@@ -3305,7 +3305,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   <div key={date} className="mb-4 last:mb-0">
                                     {/* Date Header */}
                                     <div className="flex items-center gap-2 mb-2 pl-6">
-                                      <div className="text-sm font-semibold text-gray-700">{date}</div>
+                                      <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">{date}</div>
                                       <div className="flex-1 h-px bg-gray-200" />
                                     </div>
 
@@ -3354,41 +3354,41 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                   }
                                                   setExpandedChanges(newExpanded)
                                                 }}
-                                                className="w-full text-left bg-gray-50 border border-gray-200 rounded-lg p-2.5 hover:bg-gray-100 transition-colors"
+                                                className="w-full text-left bg-gray-50 border border-gray-200 rounded-lg p-2.5 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:border-gray-700 dark:bg-gray-900"
                                               >
                                                 {change.change_type === 'created' && (
-                                                  <p className="text-sm text-gray-900">
-                                                    <span className="font-semibold text-green-700">{change.new_analyst_name}</span> started covering this stock <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                    <span className="font-semibold text-green-700">{change.new_analyst_name}</span> started covering this stock <span className="text-xs text-gray-500 font-normal ml-1 dark:text-gray-400">at {changeTime}</span>
                                                   </p>
                                                 )}
 
                                                 {change.change_type === 'analyst_changed' && (
-                                                  <p className="text-sm text-gray-900">
-                                                    Coverage transitioned from <span className="font-semibold text-gray-700">{change.old_analyst_name}</span> to <span className="font-semibold text-blue-700">{change.new_analyst_name}</span> <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                    Coverage transitioned from <span className="font-semibold text-gray-700 dark:text-gray-300">{change.old_analyst_name}</span> to <span className="font-semibold text-blue-700">{change.new_analyst_name}</span> <span className="text-xs text-gray-500 font-normal ml-1 dark:text-gray-400">at {changeTime}</span>
                                                   </p>
                                                 )}
 
                                                 {change.change_type === 'dates_changed' && (
-                                                  <p className="text-sm text-gray-900">
-                                                    <span className="font-semibold text-yellow-700">{change.new_analyst_name}</span>'s coverage period adjusted <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                    <span className="font-semibold text-yellow-700">{change.new_analyst_name}</span>'s coverage period adjusted <span className="text-xs text-gray-500 font-normal ml-1 dark:text-gray-400">at {changeTime}</span>
                                                   </p>
                                                 )}
 
                                                 {change.change_type === 'deleted' && (
-                                                  <p className="text-sm text-gray-900">
-                                                    <span className="font-semibold text-red-700">{change.old_analyst_name}</span>'s coverage ended <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                    <span className="font-semibold text-red-700">{change.old_analyst_name}</span>'s coverage ended <span className="text-xs text-gray-500 font-normal ml-1 dark:text-gray-400">at {changeTime}</span>
                                                   </p>
                                                 )}
 
                                                 {change.change_type === 'coverage_added' && (
-                                                  <p className="text-sm text-gray-900">
-                                                    <span className="font-semibold text-purple-700">{change.new_analyst_name}</span> added as additional coverage <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                    <span className="font-semibold text-purple-700">{change.new_analyst_name}</span> added as additional coverage <span className="text-xs text-gray-500 font-normal ml-1 dark:text-gray-400">at {changeTime}</span>
                                                   </p>
                                                 )}
 
                                                 {change.change_type === 'historical_added' && (
-                                                  <p className="text-sm text-gray-900">
-                                                    Historical period added for <span className="font-semibold text-gray-700">{change.new_analyst_name}</span> <span className="text-xs text-gray-500 font-normal ml-1">at {changeTime}</span>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                    Historical period added for <span className="font-semibold text-gray-700 dark:text-gray-300">{change.new_analyst_name}</span> <span className="text-xs text-gray-500 font-normal ml-1 dark:text-gray-400">at {changeTime}</span>
                                                   </p>
                                                 )}
 
@@ -3400,21 +3400,21 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                                               {/* Expanded details */}
                                               {isExpanded && (
-                                                <div className="mt-1 bg-white border border-gray-200 rounded-lg p-3 text-xs">
+                                                <div className="mt-1 bg-white border border-gray-200 rounded-lg p-3 text-xs dark:border-gray-700 dark:bg-gray-800">
                                                   {change.change_type === 'created' && (
-                                                    <div className="text-gray-600">
+                                                    <div className="text-gray-600 dark:text-gray-400">
                                                       Period: {formatDate(change.new_start_date)} {change.new_end_date ? `— ${formatDate(change.new_end_date)}` : '— Present'}
                                                     </div>
                                                   )}
 
                                                   {change.change_type === 'analyst_changed' && (
-                                                    <div className="text-gray-600">
+                                                    <div className="text-gray-600 dark:text-gray-400">
                                                       Effective date: {formatDate(change.new_start_date)}
                                                     </div>
                                                   )}
 
                                                   {change.change_type === 'dates_changed' && (
-                                                    <div className="text-gray-600 space-y-0.5">
+                                                    <div className="text-gray-600 space-y-0.5 dark:text-gray-400">
                                                       {change.old_start_date !== change.new_start_date && (
                                                         <p>Start date: {formatDate(change.old_start_date)} → {formatDate(change.new_start_date)}</p>
                                                       )}
@@ -3425,27 +3425,27 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                                   )}
 
                                                   {change.change_type === 'deleted' && (
-                                                    <div className="text-gray-600">
+                                                    <div className="text-gray-600 dark:text-gray-400">
                                                       Previously: {formatDate(change.old_start_date)} {change.old_end_date ? `— ${formatDate(change.old_end_date)}` : '— Present'}
                                                     </div>
                                                   )}
 
                                                   {change.change_type === 'coverage_added' && (
-                                                    <div className="text-gray-600">
+                                                    <div className="text-gray-600 dark:text-gray-400">
                                                       Period: {formatDate(change.new_start_date)} {change.new_end_date ? `— ${formatDate(change.new_end_date)}` : '— Present'}
                                                       <p className="mt-1 text-purple-600">Added alongside existing coverage</p>
                                                     </div>
                                                   )}
 
                                                   {change.change_type === 'historical_added' && (
-                                                    <div className="text-gray-600">
+                                                    <div className="text-gray-600 dark:text-gray-400">
                                                       Period: {formatDate(change.new_start_date)} — {formatDate(change.new_end_date)}
-                                                      <p className="mt-1 text-gray-500">Added as historical record</p>
+                                                      <p className="mt-1 text-gray-500 dark:text-gray-400">Added as historical record</p>
                                                     </div>
                                                   )}
 
                                                   {/* Who made the change */}
-                                                  <div className="mt-2 pt-2 border-t border-gray-200 text-gray-500">
+                                                  <div className="mt-2 pt-2 border-t border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400">
                                                     Change made by {changedByName}
                                                   </div>
                                                 </div>
@@ -3465,7 +3465,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                       {showAllChanges && (!coverageChangeHistory || coverageChangeHistory.length === 0) && (
                         <div className="px-6 pb-4">
-                          <p className="text-sm text-gray-500 text-center py-4">No changes recorded yet</p>
+                          <p className="text-sm text-gray-500 text-center py-4 dark:text-gray-400">No changes recorded yet</p>
                         </div>
                       )}
                     </div>
@@ -3473,8 +3473,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                   {/* Timeline Footer */}
                   {hasAnyCoverageAdminRights ? (
-                    <div className="flex justify-between items-center p-6 border-t border-gray-200 flex-shrink-0">
-                      <div className="text-sm text-gray-600">
+                    <div className="flex justify-between items-center p-6 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
                         {(Object.keys(pendingTimelineChanges).length > 0 || pendingTimelineDeletes.size > 0 || pendingNewCoverages.length > 0) && (
                           <span className="text-warning-600 font-medium">
                             You have unsaved changes
@@ -3504,7 +3504,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       </div>
                     </div>
                   ) : (
-                    <div className="flex justify-end items-center p-6 border-t border-gray-200 flex-shrink-0">
+                    <div className="flex justify-end items-center p-6 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
                       <Button
                         onClick={() => {
                           const asset = assets?.find(a => a.id === viewHistoryAssetId)
@@ -3550,7 +3550,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     placeholder="Search by asset symbol, company name, or analyst..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                   />
                 </div>
 
@@ -3560,12 +3560,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     <button
                       onClick={() => setScopeDropdownOpen(prev => !prev)}
                       className={clsx(
-                        'flex items-center gap-2 text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 transition-colors min-w-[200px]',
+                        'flex items-center gap-2 text-sm border rounded-lg px-3 py-2 bg-white text-gray-700 transition-colors min-w-[200px] dark:text-gray-300 dark:bg-gray-800',
                         scopeDropdownOpen
                           ? 'border-primary-500 ring-2 ring-primary-500'
                           : selectedOrgGroup
                             ? 'border-primary-500 bg-primary-50 text-primary-700'
-                            : 'border-gray-300 hover:border-gray-400'
+                            : 'border-gray-300 hover:border-gray-400 dark:border-gray-600'
                       )}
                     >
                       {selectedOrgGroup && scopeSelectedGroupLabel ? (
@@ -3582,18 +3582,18 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           <span className="truncate font-medium">{scopeSelectedGroupLabel}</span>
                         </span>
                       ) : (
-                        <span className="flex-1 text-left text-gray-500">Scope: All Analysts</span>
+                        <span className="flex-1 text-left text-gray-500 dark:text-gray-400">Scope: All Analysts</span>
                       )}
                       <ChevronDown className={clsx('h-4 w-4 text-gray-400 flex-shrink-0 transition-transform', scopeDropdownOpen && 'rotate-180')} />
                     </button>
 
                     {scopeDropdownOpen && (
-                      <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                      <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                         <button
                           onClick={() => { setSelectedOrgGroup(null); setScopeDropdownOpen(false) }}
                           className={clsx(
-                            'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors border-b border-gray-100',
-                            !selectedOrgGroup ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+                            'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors border-b border-gray-100 dark:border-gray-800',
+                            !selectedOrgGroup ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
                           )}
                         >
                           <Users className="h-3.5 w-3.5 flex-shrink-0" />
@@ -3611,17 +3611,17 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           if (items.length === 0) return null
                           const isExpanded = scopeExpandedSections.has(type)
                           return (
-                            <div key={type} className="border-b border-gray-100 last:border-b-0">
+                            <div key={type} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
                               <button
                                 onClick={() => toggleScopeSection(type)}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                               >
                                 {isExpanded
                                   ? <ChevronDown className="h-3 w-3 text-gray-400 flex-shrink-0" />
                                   : <ChevronRight className="h-3 w-3 text-gray-400 flex-shrink-0" />
                                 }
                                 <Icon className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{label}</span>
+                                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide dark:text-gray-400">{label}</span>
                                 <span className="ml-auto text-[10px] text-gray-400">{items.length}</span>
                               </button>
                               {isExpanded && (
@@ -3636,7 +3636,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           'w-full flex items-center gap-2 pl-9 pr-3 py-1.5 text-sm text-left transition-colors',
                                           isItemSelected
                                             ? 'bg-primary-50 text-primary-700 font-medium'
-                                            : 'text-gray-700 hover:bg-gray-50'
+                                            : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
                                         )}
                                       >
                                         <span className="truncate flex-1">{item.name}</span>
@@ -3658,7 +3658,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 {viewMode === 'workload' && selectedOrgGroup && (
                   <button
                     onClick={() => setSelectedOrgGroup(null)}
-                    className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                    className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                   >
                     <X className="h-3.5 w-3.5" />
                     <span>Clear</span>
@@ -3672,7 +3672,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     onClick={() => setShowGroupByDropdown(!showGroupByDropdown)}
                     className={clsx(
                       "pl-3 pr-8 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm cursor-pointer min-w-[180px] text-left truncate",
-                      ((viewMode === 'list' && listGroupBy === 'asset') || listGroupByLevels.length > 0) ? "border-primary-500 bg-primary-50 text-primary-700" : "border-gray-300 bg-white text-gray-700"
+                      ((viewMode === 'list' && listGroupBy === 'asset') || listGroupByLevels.length > 0) ? "border-primary-500 bg-primary-50 text-primary-700" : "border-gray-300 bg-white text-gray-700 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800"
                     )}
                   >
                     {(() => {
@@ -3709,16 +3709,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     return (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowGroupByDropdown(false)} />
-                        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+                        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
                           {/* View mode options — only shown for list view */}
                           {viewMode === 'list' && (
-                            <div className="border-b border-gray-200">
+                            <div className="border-b border-gray-200 dark:border-gray-700">
                               <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">View Mode</div>
                               <button
                                 onClick={() => { setListGroupBy('asset'); setShowGroupByDropdown(false) }}
                                 className={clsx(
                                   "w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors",
-                                  isAssetMode ? "bg-primary-50 text-primary-700" : "hover:bg-gray-50 text-gray-700"
+                                  isAssetMode ? "bg-primary-50 text-primary-700" : "hover:bg-gray-50 text-gray-700 dark:hover:bg-gray-800 dark:text-gray-300"
                                 )}
                               >
                                 <LayoutGrid className="h-4 w-4 text-gray-400" />
@@ -3730,7 +3730,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 onClick={() => { setListGroupBy('none'); setShowGroupByDropdown(false) }}
                                 className={clsx(
                                   "w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors",
-                                  !isAssetMode ? "bg-primary-50 text-primary-700" : "hover:bg-gray-50 text-gray-700"
+                                  !isAssetMode ? "bg-primary-50 text-primary-700" : "hover:bg-gray-50 text-gray-700 dark:hover:bg-gray-800 dark:text-gray-300"
                                 )}
                               >
                                 <List className="h-4 w-4 text-gray-400" />
@@ -3743,9 +3743,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                           {/* Current Order Section */}
                           {listGroupByLevels.length > 0 && (
-                            <div className="bg-gray-50 border-b border-gray-200">
+                            <div className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                               <div className="px-3 py-2 flex items-center justify-between">
-                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Grouping Order</span>
+                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide dark:text-gray-400">Grouping Order</span>
                                 <button
                                   onClick={() => setListGroupByLevels([])}
                                   className="text-xs text-gray-400 hover:text-red-500 transition-colors"
@@ -3759,20 +3759,20 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   return (
                                     <div
                                       key={level}
-                                      className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-md border border-gray-200 shadow-sm"
+                                      className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-md border border-gray-200 shadow-sm dark:border-gray-700 dark:bg-gray-800"
                                     >
                                       <span className="w-5 h-5 flex items-center justify-center rounded bg-primary-100 text-primary-700 text-xs font-bold">
                                         {idx + 1}
                                       </span>
                                       <opt.icon className="h-4 w-4 text-gray-400" />
-                                      <span className="text-sm font-medium text-gray-700 flex-1">{opt.label}</span>
+                                      <span className="text-sm font-medium text-gray-700 flex-1 dark:text-gray-300">{opt.label}</span>
                                       <div className="flex items-center gap-0.5">
                                         <button
                                           onClick={() => idx > 0 && moveLevel(idx, idx - 1)}
                                           disabled={idx === 0}
                                           className={clsx(
                                             "p-1 rounded transition-colors",
-                                            idx === 0 ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                                            idx === 0 ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700"
                                           )}
                                           title="Move up"
                                         >
@@ -3783,7 +3783,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           disabled={idx === listGroupByLevels.length - 1}
                                           className={clsx(
                                             "p-1 rounded transition-colors",
-                                            idx === listGroupByLevels.length - 1 ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                                            idx === listGroupByLevels.length - 1 ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700"
                                           )}
                                           title="Move down"
                                         >
@@ -3808,7 +3808,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           <div className="max-h-64 overflow-y-auto">
                             {availableOptions.length > 0 && (
                               <>
-                                <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide sticky top-0 bg-white border-b border-gray-100">
+                                <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide sticky top-0 bg-white border-b border-gray-100 dark:border-gray-800 dark:text-gray-400 dark:bg-gray-800">
                                   {listGroupByLevels.length === 0 ? 'Select grouping' : 'Add level'}
                                 </div>
                                 {/* Organization options */}
@@ -3819,10 +3819,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                       <button
                                         key={opt.value}
                                         onClick={() => setListGroupByLevels(prev => [...prev, opt.value])}
-                                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                                       >
                                         <opt.icon className="h-4 w-4 text-gray-400" />
-                                        <span className="text-gray-700">{opt.label}</span>
+                                        <span className="text-gray-700 dark:text-gray-300">{opt.label}</span>
                                         <Plus className="h-3.5 w-3.5 text-gray-300 ml-auto" />
                                       </button>
                                     ))}
@@ -3830,16 +3830,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 )}
                                 {/* Other options */}
                                 {availableOptions.filter(o => o.category === 'other').length > 0 && (
-                                  <div className="py-1 border-t border-gray-100">
+                                  <div className="py-1 border-t border-gray-100 dark:border-gray-800">
                                     <div className="px-3 py-1 text-[10px] font-medium text-gray-400 uppercase">Other</div>
                                     {availableOptions.filter(o => o.category === 'other').map(opt => (
                                       <button
                                         key={opt.value}
                                         onClick={() => setListGroupByLevels(prev => [...prev, opt.value])}
-                                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                                       >
                                         <opt.icon className="h-4 w-4 text-gray-400" />
-                                        <span className="text-gray-700">{opt.label}</span>
+                                        <span className="text-gray-700 dark:text-gray-300">{opt.label}</span>
                                         <Plus className="h-3.5 w-3.5 text-gray-300 ml-auto" />
                                       </button>
                                     ))}
@@ -3848,12 +3848,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               </>
                             )}
                             {availableOptions.length === 0 && listGroupByLevels.length > 0 && (
-                              <div className="px-3 py-4 text-center text-sm text-gray-500">
+                              <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                                 All grouping options selected
                               </div>
                             )}
                             {listGroupByLevels.length === 0 && !isAssetMode && (
-                              <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                              <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100 dark:border-gray-800">
                                 Select fields to group by. Add multiple levels for nested grouping.
                               </div>
                             )}
@@ -3865,13 +3865,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 </div>
                 )}
 
-                <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100 ml-auto">
+                <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100 ml-auto dark:border-gray-700 dark:bg-gray-800">
                 <button
                   onClick={() => setActiveView('active')}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                     activeView === 'active'
                       ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200 dark:hover:text-white dark:text-gray-400'
                   }`}
                 >
                   Active
@@ -3881,7 +3881,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                     activeView === 'history'
                       ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200 dark:hover:text-white dark:text-gray-400'
                   }`}
                 >
                   History
@@ -3891,7 +3891,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-all relative ${
                     activeView === 'requests'
                       ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200 dark:hover:text-white dark:text-gray-400'
                   }`}
                 >
                   Requests
@@ -4042,23 +4042,23 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 )}
                 {!filteredCoverageEvents || filteredCoverageEvents.length === 0 ? (
                   <div className="p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
                       <History className="h-8 w-8 text-gray-400" />
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No coverage history yet</h3>
-                    <p className="text-gray-500">Coverage events will appear here</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No coverage history yet</h3>
+                    <p className="text-gray-500 dark:text-gray-400">Coverage events will appear here</p>
                   </div>
                 ) : (
                   <>
                     {/* Period Comparison Summary */}
-                    <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 bg-gray-50/80">
+                    <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 bg-gray-50/80 dark:border-gray-700">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm font-semibold text-gray-900">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           Coverage Activity
                         </h3>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500">Period:</span>
-                          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Period:</span>
+                          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
                             {[
                               { value: '7d', label: '7d' },
                               { value: '30d', label: '30d' },
@@ -4076,8 +4076,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 className={clsx(
                                   "px-2 py-1 text-xs font-medium rounded-md transition-all",
                                   comparisonPeriod === period.value
-                                    ? "bg-white text-primary-700 shadow-sm"
-                                    : "text-gray-600 hover:text-gray-900"
+                                    ? "bg-white text-primary-700 shadow-sm dark:bg-gray-800"
+                                    : "text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400"
                                 )}
                               >
                                 {period.label}
@@ -4093,7 +4093,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   setCustomDateRange(prev => ({ ...prev, start: e.target.value }))
                                   setVisibleHistoryCount(50)
                                 }}
-                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                               />
                               <span className="text-xs text-gray-400">to</span>
                               <input
@@ -4103,7 +4103,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   setCustomDateRange(prev => ({ ...prev, end: e.target.value }))
                                   setVisibleHistoryCount(50)
                                 }}
-                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                                className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                               />
                             </div>
                           )}
@@ -4156,21 +4156,21 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                         return (
                           <div className="grid grid-cols-4 gap-3">
-                            <div className="p-2.5 bg-white rounded-lg border border-gray-200">
-                              <p className="text-lg font-bold text-gray-900">{assignedCount}</p>
-                              <p className="text-[10px] text-gray-500">Assignments Added</p>
+                            <div className="p-2.5 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                              <p className="text-lg font-bold text-gray-900 dark:text-white">{assignedCount}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400">Assignments Added</p>
                             </div>
-                            <div className="p-2.5 bg-white rounded-lg border border-gray-200">
-                              <p className="text-lg font-bold text-gray-900">{endedCount}</p>
-                              <p className="text-[10px] text-gray-500">Assignments Ended</p>
+                            <div className="p-2.5 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                              <p className="text-lg font-bold text-gray-900 dark:text-white">{endedCount}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400">Assignments Ended</p>
                             </div>
-                            <div className="p-2.5 bg-white rounded-lg border border-gray-200">
-                              <p className="text-lg font-bold text-gray-900">{scopeChangeCount}</p>
-                              <p className="text-[10px] text-gray-500">Scope Changes</p>
+                            <div className="p-2.5 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                              <p className="text-lg font-bold text-gray-900 dark:text-white">{scopeChangeCount}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400">Scope Changes</p>
                             </div>
-                            <div className="p-2.5 bg-white rounded-lg border border-gray-200">
-                              <p className="text-lg font-bold text-gray-900">{assetsAffected.size}</p>
-                              <p className="text-[10px] text-gray-500">Assets Affected</p>
+                            <div className="p-2.5 bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                              <p className="text-lg font-bold text-gray-900 dark:text-white">{assetsAffected.size}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400">Assets Affected</p>
                             </div>
                           </div>
                         )
@@ -4178,8 +4178,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Table Header */}
-                    <div className="flex-shrink-0 px-6 py-2 bg-white border-b border-gray-200">
-                      <div className="grid gap-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider"
+                    <div className="flex-shrink-0 px-6 py-2 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                      <div className="grid gap-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400"
                         style={{ gridTemplateColumns: '120px 1fr 1.2fr 1fr 2fr 1fr 90px' }}
                       >
                         <div>Event</div>
@@ -4193,7 +4193,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Coverage Events - Scrollable */}
-                    <div className="flex-1 overflow-y-auto divide-y divide-gray-200">
+                    <div className="flex-1 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
                       {(() => {
                         // First, deduplicate events by creating a unique key for each logical event
                         const uniqueEvents = new Map()
@@ -4375,7 +4375,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             {visibleEvents.map((event) => {
                               let eventLabel = ''
                               let changeText = ''
-                              let badgeColor = 'bg-gray-100 text-gray-600'
+                              let badgeColor = 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                               let dateToDisplay: string | null = null
                               const analystName = event.new_analyst_name || event.old_analyst_name || '—'
                               const assetSymbol = event.assets?.symbol || 'Unknown'
@@ -4427,7 +4427,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               return (
                                 <div
                                   key={event.id}
-                                  className="px-6 py-2.5 hover:bg-gray-50/80 transition-colors cursor-pointer border-b border-gray-100"
+                                  className="px-6 py-2.5 hover:bg-gray-50/80 transition-colors cursor-pointer border-b border-gray-100 dark:border-gray-800"
                                   onClick={() => setSelectedHistoryEvent(event)}
                                 >
                                   <div className="grid gap-3 items-center"
@@ -4442,7 +4442,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     {/* Asset — clickable to filter */}
                                     <div className="min-w-0">
                                       <button
-                                        className="text-[12px] font-semibold text-gray-900 truncate hover:text-primary-600 hover:underline transition-colors text-left"
+                                        className="text-[12px] font-semibold text-gray-900 truncate hover:text-primary-600 hover:underline transition-colors text-left dark:text-white"
                                         title={`View coverage for ${assetSymbol}`}
                                         onClick={(e) => {
                                           e.stopPropagation()
@@ -4455,7 +4455,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     </div>
                                     {/* Analyst */}
                                     <div className="min-w-0">
-                                      <p className="text-[12px] text-gray-700 truncate">{analystName}</p>
+                                      <p className="text-[12px] text-gray-700 truncate dark:text-gray-300">{analystName}</p>
                                     </div>
                                     {/* Covers For */}
                                     <div className="min-w-0">
@@ -4468,20 +4468,20 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                           <span className="truncate">Missing group</span>
                                         </span>
                                       ) : (
-                                        <p className="text-[12px] text-gray-600 truncate">{groupName}</p>
+                                        <p className="text-[12px] text-gray-600 truncate dark:text-gray-400">{groupName}</p>
                                       )}
                                     </div>
                                     {/* Change */}
                                     <div className="min-w-0">
-                                      <p className="text-[12px] text-gray-700 truncate" title={changeText}>{changeText}</p>
+                                      <p className="text-[12px] text-gray-700 truncate dark:text-gray-300" title={changeText}>{changeText}</p>
                                     </div>
                                     {/* Changed By */}
                                     <div className="min-w-0">
-                                      <p className={clsx('text-[12px] truncate', changedByName === 'System' ? 'text-gray-400 italic' : 'text-gray-500')}>{changedByName}</p>
+                                      <p className={clsx('text-[12px] truncate', changedByName === 'System' ? 'text-gray-400 italic' : 'text-gray-500 dark:text-gray-400')}>{changedByName}</p>
                                     </div>
                                     {/* Date */}
                                     <div className="text-right">
-                                      <p className="text-[12px] text-gray-600">{eventDate}</p>
+                                      <p className="text-[12px] text-gray-600 dark:text-gray-400">{eventDate}</p>
                                     </div>
                                   </div>
                                 </div>
@@ -4490,7 +4490,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                             {/* Load More Button */}
                             {visibleHistoryCount < totalEventsCount && (
-                              <div className="px-6 py-4 text-center border-t border-gray-100">
+                              <div className="px-6 py-4 text-center border-t border-gray-100 dark:border-gray-800">
                                 <button
                                   onClick={() => setVisibleHistoryCount(prev => prev + 50)}
                                   className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
@@ -4503,7 +4503,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             {/* No results message */}
                             {totalEventsCount === 0 && (
                               <div className="px-6 py-12 text-center">
-                                <p className="text-gray-500">
+                                <p className="text-gray-500 dark:text-gray-400">
                                   {searchQuery ? `No history found for "${searchQuery}"` : 'No coverage changes in this period'}
                                 </p>
                               </div>
@@ -4580,13 +4580,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 )}
                 {filteredCoverageRequests.length === 0 && !requestsFetching ? (
                   <div className="p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
                       <Shield className="h-8 w-8 text-gray-400" />
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                       {hasAnyCoverageAdminRights ? 'No coverage requests' : 'No requests from you'}
                     </h3>
-                    <p className="text-gray-500 max-w-md mx-auto">
+                    <p className="text-gray-500 max-w-md mx-auto dark:text-gray-400">
                       {hasAnyCoverageAdminRights
                         ? 'There are no pending or historical coverage change requests to review.'
                         : 'You haven\'t submitted any coverage change requests. Use the "Request Change" button in the Active tab to request coverage modifications.'}
@@ -4595,7 +4595,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 ) : (
                   <div className="w-full">
                     {/* Status Filter Bar */}
-                    <div className="flex-shrink-0 px-6 py-3 bg-gray-50/80 border-b border-gray-200">
+                    <div className="flex-shrink-0 px-6 py-3 bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
                       <div className="flex items-center gap-1">
                         {statusFilters.map(sf => {
                           const count = sf.value === 'all'
@@ -4608,8 +4608,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               className={clsx(
                                 'px-2.5 py-1 text-xs font-medium rounded-md transition-all',
                                 requestStatusFilter === sf.value
-                                  ? 'bg-white text-primary-700 shadow-sm'
-                                  : 'text-gray-600 hover:text-gray-900'
+                                  ? 'bg-white text-primary-700 shadow-sm dark:bg-gray-800'
+                                  : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                               )}
                             >
                               {sf.label}
@@ -4628,8 +4628,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Table Header */}
-                    <div className="flex-shrink-0 px-6 py-2 bg-white border-b border-gray-200">
-                      <div className="grid gap-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider"
+                    <div className="flex-shrink-0 px-6 py-2 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                      <div className="grid gap-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400"
                         style={{ gridTemplateColumns: '100px 1fr 1.2fr 1fr 1fr 1fr 100px' }}
                       >
                         <div>Type</div>
@@ -4643,10 +4643,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     </div>
 
                     {/* Request Rows */}
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
                       {statusFilteredRequests.length === 0 && (
                         <div className="px-6 py-12 text-center">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
                             {requestStatusFilter === 'pending'
                               ? 'No pending requests. All coverage requests have been reviewed.'
                               : `No ${requestStatusFilter === 'all' ? '' : requestStatusFilter + ' '}requests found.`}
@@ -4662,7 +4662,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           request.status === 'pending' ? 'bg-amber-50 text-amber-700' :
                           request.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
                           request.status === 'denied' ? 'bg-red-50 text-red-700' :
-                          'bg-gray-100 text-gray-600'
+                          'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
 
                         return (
                           <div key={request.id} className="px-6 py-3 hover:bg-gray-50/80 transition-colors overflow-hidden">
@@ -4675,7 +4675,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap',
                                   request.request_type === 'add' ? 'bg-emerald-50 text-emerald-700' :
                                   request.request_type === 'change' ? 'bg-blue-50 text-blue-700' :
-                                  'bg-gray-100 text-gray-600'
+                                  'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                                 )}>
                                   {request.request_type === 'add' ? 'Add coverage' : request.request_type === 'change' ? 'Change coverage' : request.request_type.charAt(0).toUpperCase() + request.request_type.slice(1)}
                                 </span>
@@ -4684,7 +4684,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               {/* Asset — clickable to filter */}
                               <div className="min-w-0">
                                 <button
-                                  className="text-[12px] font-semibold text-gray-900 truncate hover:text-primary-600 hover:underline transition-colors text-left"
+                                  className="text-[12px] font-semibold text-gray-900 truncate hover:text-primary-600 hover:underline transition-colors text-left dark:text-white"
                                   title={`View coverage for ${request.assets?.symbol || 'Unknown'}`}
                                   onClick={() => {
                                     setSearchQuery(request.assets?.symbol || '')
@@ -4693,7 +4693,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                 >
                                   {request.assets?.symbol || 'Unknown'}
                                 </button>
-                                <p className="text-[10px] text-gray-500 truncate">
+                                <p className="text-[10px] text-gray-500 truncate dark:text-gray-400">
                                   {request.assets?.company_name || ''}
                                 </p>
                               </div>
@@ -4701,17 +4701,17 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               {/* Request — compact inline description */}
                               <div className="min-w-0 overflow-hidden">
                                 {request.request_type === 'add' ? (
-                                  <p className="text-[12px] text-gray-700 truncate">
-                                    Assign <span className="font-medium text-gray-900">{request.requested_analyst_name}</span>
+                                  <p className="text-[12px] text-gray-700 truncate dark:text-gray-300">
+                                    Assign <span className="font-medium text-gray-900 dark:text-white">{request.requested_analyst_name}</span>
                                   </p>
                                 ) : request.request_type === 'change' ? (
-                                  <p className="text-[12px] text-gray-700 truncate">
-                                    <span className="text-gray-500">{request.current_analyst_name || 'No current coverage'}</span>
+                                  <p className="text-[12px] text-gray-700 truncate dark:text-gray-300">
+                                    <span className="text-gray-500 dark:text-gray-400">{request.current_analyst_name || 'No current coverage'}</span>
                                     <span className="mx-1 text-gray-400">&rarr;</span>
-                                    <span className="font-medium text-gray-900">{request.requested_analyst_name}</span>
+                                    <span className="font-medium text-gray-900 dark:text-white">{request.requested_analyst_name}</span>
                                   </p>
                                 ) : (
-                                  <p className="text-[12px] text-gray-700 truncate">
+                                  <p className="text-[12px] text-gray-700 truncate dark:text-gray-300">
                                     {request.requested_analyst_name}
                                   </p>
                                 )}
@@ -4723,15 +4723,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                       else next.add(request.id)
                                       return next
                                     })}
-                                    className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                                    className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                                   >
                                     <ChevronRight className={clsx('h-2.5 w-2.5 transition-transform', isReasonExpanded && 'rotate-90')} />
                                     Reason
                                   </button>
                                 )}
                                 {request.reason && isReasonExpanded && (
-                                  <div className="mt-1 pl-2 border-l-2 border-gray-100" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
-                                    <p className="text-[11px] text-gray-600 line-clamp-3" title={request.reason}>{request.reason}</p>
+                                  <div className="mt-1 pl-2 border-l-2 border-gray-100 dark:border-gray-800" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                                    <p className="text-[11px] text-gray-600 line-clamp-3 dark:text-gray-400" title={request.reason}>{request.reason}</p>
                                   </div>
                                 )}
                               </div>
@@ -4747,13 +4747,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     <span className="truncate">Missing scope</span>
                                   </span>
                                 ) : (
-                                  <p className="text-[12px] text-gray-600 truncate">{groupName}</p>
+                                  <p className="text-[12px] text-gray-600 truncate dark:text-gray-400">{groupName}</p>
                                 )}
                               </div>
 
                               {/* Requested By */}
                               <div className="min-w-0">
-                                <p className="text-[12px] text-gray-900 truncate">
+                                <p className="text-[12px] text-gray-900 truncate dark:text-white">
                                   {request.requested_by_user?.first_name && request.requested_by_user?.last_name
                                     ? `${request.requested_by_user.first_name} ${request.requested_by_user.last_name}`
                                     : request.requested_by_user?.email?.split('@')[0] || 'Unknown'}
@@ -4795,7 +4795,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                             assetSymbol: request.assets?.symbol || 'Unknown'
                                           })}
                                           disabled={rescindCoverageRequestMutation.isPending}
-                                          className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
+                                          className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors disabled:opacity-50 dark:text-gray-400 dark:bg-gray-800"
                                         >
                                           Cancel
                                         </button>
@@ -4830,7 +4830,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                               {/* Date */}
                               <div className="text-right">
-                                <p className="text-[12px] text-gray-600">
+                                <p className="text-[12px] text-gray-600 dark:text-gray-400">
                                   {new Date(request.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                 </p>
                               </div>
@@ -4851,7 +4851,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
           {/* Footer - only shown for main view in modal mode */}
           {mode !== 'page' && !viewHistoryAssetId && (
-            <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0">
+            <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
               <Button variant="outline" onClick={onClose}>
                 Close
               </Button>
@@ -4862,24 +4862,24 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {addingHistoricalPeriod && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setAddingHistoricalPeriod(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Add Historical Coverage</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Historical Coverage</h3>
               <button
                 onClick={() => setAddingHistoricalPeriod(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
               Add a historical coverage period that occurred in the past.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Analyst
                 </label>
                 <select
@@ -4888,7 +4888,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     ...addingHistoricalPeriod,
                     analystId: e.target.value
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 >
                   <option value="">Select analyst...</option>
                   {users?.map((u) => {
@@ -4905,7 +4905,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Start Date
                 </label>
                 <input
@@ -4916,12 +4916,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     ...addingHistoricalPeriod,
                     startDate: e.target.value
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   End Date
                 </label>
                 <input
@@ -4933,9 +4933,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     ...addingHistoricalPeriod,
                     endDate: e.target.value
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                   Historical periods must end in the past or today
                 </p>
               </div>
@@ -5013,23 +5013,23 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {changingCurrentCoverage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setChangingCurrentCoverage(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Change Current Coverage</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Change Current Coverage</h3>
               <button
                 onClick={() => setChangingCurrentCoverage(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
               This will immediately replace <span className="font-medium">{changingCurrentCoverage.currentAnalystName}</span> with a new analyst for active coverage.
             </p>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                 New Analyst
               </label>
               <select
@@ -5038,7 +5038,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   ...changingCurrentCoverage,
                   newAnalystId: e.target.value
                 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
               >
                 <option value="">Select analyst...</option>
                 {users?.map((u) => {
@@ -5128,17 +5128,17 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {addingCoverage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setAddingCoverage(null)} />
-          <div className="relative bg-white rounded-lg max-w-lg w-full max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between p-5 pb-3 border-b border-gray-200 flex-shrink-0">
+          <div className="relative bg-white rounded-lg max-w-lg w-full max-h-[85vh] flex flex-col dark:bg-gray-800">
+            <div className="flex items-center justify-between p-5 pb-3 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">{addingCoverage.editingCoverageId ? 'Edit Assignment' : 'Add Coverage Assignment'}</h3>
-                <p className="text-sm text-gray-500 mt-0.5">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{addingCoverage.editingCoverageId ? 'Edit Assignment' : 'Add Coverage Assignment'}</h3>
+                <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
                   {addingCoverage.editingCoverageId ? 'Update role, dates, or notes for this assignment.' : 'Assign an analyst to cover an asset for a specific org group.'}
                 </p>
               </div>
               <button
                 onClick={() => setAddingCoverage(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -5154,19 +5154,19 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     ? allOrgChartNodes?.nodes.find((n: any) => n.id === addingCoverage.teamId)?.displayName || 'Unknown group'
                     : '—'
                 return (
-                  <div className="bg-gray-50 border border-gray-200 border-l-2 border-l-primary-400 rounded-lg px-4 py-3">
+                  <div className="bg-gray-50 border border-gray-200 border-l-2 border-l-primary-400 rounded-lg px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
                     <div className="grid grid-cols-[3.5rem_1fr] gap-x-3 gap-y-1.5">
                       <span className="text-xs font-medium text-gray-400">Asset</span>
-                      <span className="text-sm text-gray-800">
+                      <span className="text-sm text-gray-800 dark:text-gray-100">
                         <span className="font-semibold">{editAsset?.symbol || '—'}</span>
                         {editAsset?.company_name && (
-                          <span className="text-gray-500 ml-1.5">{editAsset.company_name}</span>
+                          <span className="text-gray-500 ml-1.5 dark:text-gray-400">{editAsset.company_name}</span>
                         )}
                       </span>
                       <span className="text-xs font-medium text-gray-400">Scope</span>
-                      <span className="text-sm text-gray-800">{editScopeLabel}</span>
+                      <span className="text-sm text-gray-800 dark:text-gray-100">{editScopeLabel}</span>
                       <span className="text-xs font-medium text-gray-400">Analyst</span>
-                      <span className="text-sm text-gray-800">{analystSearchQuery}</span>
+                      <span className="text-sm text-gray-800 dark:text-gray-100">{analystSearchQuery}</span>
                     </div>
                   </div>
                 )
@@ -5175,7 +5175,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* ── Asset (add mode only) ──────────────────── */}
               {!addingCoverage.editingCoverageId && (
               <div className="relative asset-search-container">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Asset *
                 </label>
                 <div className="relative">
@@ -5192,13 +5192,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     readOnly={!!addingCoverage.editingCoverageId}
                     placeholder="Search for an asset..."
                     className={clsx(
-                      'w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500',
-                      addingCoverage.editingCoverageId && 'bg-gray-50 text-gray-500 cursor-not-allowed',
+                      'w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600',
+                      addingCoverage.editingCoverageId && 'bg-gray-50 text-gray-500 cursor-not-allowed dark:text-gray-400 dark:bg-gray-900',
                     )}
                   />
                 </div>
                 {showAssetDropdown && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto asset-dropdown">
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto asset-dropdown dark:border-gray-600 dark:bg-gray-800">
                     {assets
                       ?.filter((asset) => {
                         const query = assetSearchQuery.toLowerCase()
@@ -5219,10 +5219,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             setAssetSearchQuery(`${asset.symbol} - ${asset.company_name}`)
                             setShowAssetDropdown(false)
                           }}
-                          className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:hover:bg-gray-700"
                         >
-                          <div className="font-medium text-gray-900">{asset.symbol}</div>
-                          <div className="text-sm text-gray-600">{asset.company_name}</div>
+                          <div className="font-medium text-gray-900 dark:text-white">{asset.symbol}</div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">{asset.company_name}</div>
                         </button>
                       ))}
                     {assets?.filter((asset) => {
@@ -5232,7 +5232,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         asset.company_name.toLowerCase().includes(query)
                       )
                     }).length === 0 && (
-                      <div className="px-4 py-2 text-sm text-gray-500">No assets found</div>
+                      <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">No assets found</div>
                     )}
                   </div>
                 )}
@@ -5288,16 +5288,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 // ────────────────────────────────────────────
                 if (!isEditMode) {
                   return (
-                    <div className="border border-dashed border-gray-200 rounded-lg overflow-hidden bg-gray-50/30">
-                      <div className="px-3 py-1.5 border-b border-gray-100">
-                        <span className="text-xs font-medium text-gray-500">
+                    <div className="border border-dashed border-gray-200 rounded-lg overflow-hidden bg-gray-50/30 dark:border-gray-700">
+                      <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                           Current coverage · {selectedAsset?.symbol || ''}
                         </span>
                       </div>
                       <div className="divide-y divide-gray-100/50">
                         {allOtherRecords.map(c => (
                           <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
-                            <span className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                            <span className="text-xs text-gray-600 truncate min-w-0 flex-1 dark:text-gray-400">
                               {c.analyst_name}
                             </span>
                             {roleBadge(c) && (
@@ -5330,17 +5330,17 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   <div className="space-y-2">
                     {/* ── Same-scope section (editable) ── */}
                     {scopeSelected && (
-                      <div className="border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200">
-                          <span className="text-xs font-medium text-gray-600">
+                      <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
+                        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
                             {currentScopeLabel} coverage
                           </span>
                         </div>
                         {sameScope.length > 0 ? (
-                          <div className="divide-y divide-gray-100">
+                          <div className="divide-y divide-gray-100 dark:divide-gray-800">
                             {sameScope.map(c => (
                               <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50/60 transition-colors">
-                                <span className="text-xs text-gray-800 truncate min-w-0 flex-1">
+                                <span className="text-xs text-gray-800 truncate min-w-0 flex-1 dark:text-gray-100">
                                   {c.analyst_name}
                                 </span>
                                 {currentScopeHasRoles ? (
@@ -5356,7 +5356,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                         },
                                       })
                                     }}
-                                    className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                    className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-400 dark:border-gray-700 dark:bg-gray-800"
                                   >
                                     <option value="">(None)</option>
                                     <option value="lead">Lead</option>
@@ -5365,11 +5365,11 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                     <option value="tertiary">Tertiary</option>
                                   </select>
                                 ) : roleBadge(c) ? (
-                                  <span className="text-[11px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                  <span className="text-[11px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">
                                     {roleBadge(c)}
                                   </span>
                                 ) : null}
-                                <span className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                                <span className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 px-1.5 py-0.5 rounded shrink-0 dark:border-gray-800 dark:bg-gray-900">
                                   {currentScopeLabel}
                                 </span>
                               </div>
@@ -5387,8 +5387,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                     {/* ── Other-scope section (read-only context) ── */}
                     {otherScope.length > 0 && (
-                      <div className="border border-dashed border-gray-200 rounded-lg overflow-hidden bg-gray-50/30">
-                        <div className="px-3 py-1.5 border-b border-gray-100 flex items-center justify-between">
+                      <div className="border border-dashed border-gray-200 rounded-lg overflow-hidden bg-gray-50/30 dark:border-gray-700">
+                        <div className="px-3 py-1.5 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
                           <span className="text-xs font-medium text-gray-400">
                             {scopeSelected ? 'Also covered in other scopes' : `All current coverage · ${selectedAsset?.symbol || ''}`}
                           </span>
@@ -5399,7 +5399,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         <div className="divide-y divide-gray-100/50">
                           {otherScope.map(c => (
                             <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
-                              <span className="text-xs text-gray-500 truncate min-w-0 flex-1">
+                              <span className="text-xs text-gray-500 truncate min-w-0 flex-1 dark:text-gray-400">
                                 {c.analyst_name}
                                 {duplicateUserIds.has(c.user_id) && (
                                   <span className="text-[10px] text-gray-300 ml-1">
@@ -5455,7 +5455,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                 return (
                   <div className="relative">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                       Covers For *
                     </label>
                     <button
@@ -5464,30 +5464,30 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       className={clsx(
                         'w-full flex items-center justify-between px-3 py-2 border rounded-lg text-sm text-left',
                         'focus:outline-none focus:ring-2 focus:ring-primary-500',
-                        coversForDropdownOpen ? 'border-primary-400 ring-2 ring-primary-500/20' : 'border-gray-300',
+                        coversForDropdownOpen ? 'border-primary-400 ring-2 ring-primary-500/20' : 'border-gray-300 dark:border-gray-600',
                       )}
                     >
-                      <span className={selectedValue ? 'text-gray-900' : 'text-gray-400'}>{selectedLabel}</span>
+                      <span className={selectedValue ? 'text-gray-900 dark:text-white' : 'text-gray-400'}>{selectedLabel}</span>
                       <ChevronDown size={14} className={clsx('text-gray-400 transition-transform', coversForDropdownOpen && 'rotate-180')} />
                     </button>
 
                     {coversForDropdownOpen && (
                       <>
                       <div className="fixed inset-0 z-40" onClick={() => setCoversForDropdownOpen(false)} />
-                      <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                         {/* Firm-wide */}
                         <button
                           type="button"
                           onClick={() => handleSelect('__firm__')}
                           className={clsx(
-                            'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors',
+                            'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                             selectedValue === '__firm__' && 'bg-primary-50 text-primary-700 font-medium',
                           )}
                         >
                           Firm-wide
                           {selectedValue === '__firm__' && <Check size={13} className="ml-auto text-primary-500" />}
                         </button>
-                        <div className="border-t border-gray-100" />
+                        <div className="border-t border-gray-100 dark:border-gray-800" />
 
                         {/* Grouped by type */}
                         {NODE_TYPE_SECTIONS.map(section => {
@@ -5506,7 +5506,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   else next.add(section.type)
                                   return next
                                 })}
-                                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:text-gray-400"
                               >
                                 {isExpanded
                                   ? <ChevronDown size={12} className="text-gray-400" />
@@ -5520,7 +5520,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                                   type="button"
                                   onClick={() => handleSelect(n.id)}
                                   className={clsx(
-                                    'w-full flex items-center gap-2 pl-8 pr-3 py-1.5 text-sm text-left hover:bg-gray-50 transition-colors',
+                                    'w-full flex items-center gap-2 pl-8 pr-3 py-1.5 text-sm text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                                     selectedValue === n.id && 'bg-primary-50 text-primary-700 font-medium',
                                   )}
                                 >
@@ -5534,7 +5534,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       </div>
                       </>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                       Determines coverage scope. The same analyst can cover an asset in multiple scopes with different roles.
                     </p>
                   </div>
@@ -5544,7 +5544,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* ── Analyst (add mode only) ─────────────────── */}
               {!addingCoverage.editingCoverageId && (
               <div className="relative analyst-search-container">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Analyst *
                 </label>
                 <div className="relative">
@@ -5561,13 +5561,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     readOnly={!!addingCoverage.editingCoverageId}
                     placeholder="Search for an analyst..."
                     className={clsx(
-                      'w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500',
-                      addingCoverage.editingCoverageId && 'bg-gray-50 text-gray-500 cursor-not-allowed',
+                      'w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600',
+                      addingCoverage.editingCoverageId && 'bg-gray-50 text-gray-500 cursor-not-allowed dark:text-gray-400 dark:bg-gray-900',
                     )}
                   />
                 </div>
                 {showAnalystDropdown && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto analyst-dropdown">
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto analyst-dropdown dark:border-gray-600 dark:bg-gray-800">
                     {users
                       ?.filter((user) => {
                         const query = analystSearchQuery.toLowerCase()
@@ -5596,11 +5596,11 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                               setAnalystSearchQuery(displayName)
                               setShowAnalystDropdown(false)
                             }}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                            className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:hover:bg-gray-700"
                           >
-                            <div className="font-medium text-gray-900">{displayName}</div>
+                            <div className="font-medium text-gray-900 dark:text-white">{displayName}</div>
                             {user.email && (
-                              <div className="text-sm text-gray-600">{user.email}</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">{user.email}</div>
                             )}
                           </button>
                         )
@@ -5616,7 +5616,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         email.toLowerCase().includes(query)
                       )
                     }).length === 0 && (
-                      <div className="px-4 py-2 text-sm text-gray-500">No analysts found</div>
+                      <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">No analysts found</div>
                     )}
                   </div>
                 )}
@@ -5625,13 +5625,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
               {/* Edit mode: visual divider between context and editable fields */}
               {addingCoverage.editingCoverageId && (
-                <div className="border-t border-gray-100" />
+                <div className="border-t border-gray-100 dark:border-gray-800" />
               )}
 
               {/* ── Start Date ─────────────────────────────── */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Start Date *
                   </label>
                   <input
@@ -5641,13 +5641,13 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       ...addingCoverage,
                       startDate: e.target.value
                     })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
 
                 {/* ── End Date ──────────────────────────────── */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     End Date
                   </label>
                   <input
@@ -5658,9 +5658,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       ...addingCoverage,
                       endDate: e.target.value
                     })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                     Leave blank if coverage is active.
                   </p>
                 </div>
@@ -5677,7 +5677,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   // In edit mode, explain why no role control is shown
                   // In add mode, skip entirely — user may still change scope
                   return addingCoverage.editingCoverageId ? (
-                    <div className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 dark:border-gray-800 dark:bg-gray-900">
                       <p className="text-xs text-gray-400 italic">
                         Roles are not used for firm-wide coverage.
                       </p>
@@ -5687,7 +5687,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
                 return (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                       Role
                     </label>
                     <select
@@ -5703,7 +5703,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           isLead: v === 'lead',
                         })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                     >
                       <option value="">(None)</option>
                       <option value="lead">Lead</option>
@@ -5711,7 +5711,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       <option value="secondary">Secondary</option>
                       <option value="tertiary">Tertiary</option>
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                       This role applies only within {scopeName} coverage.
                     </p>
                   </div>
@@ -5720,7 +5720,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
               {/* ── Notes ──────────────────────────────────── */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Notes
                 </label>
                 <textarea
@@ -5731,7 +5731,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   })}
                   placeholder="Optional notes about this assignment..."
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none dark:border-gray-600"
                 />
               </div>
 
@@ -5768,9 +5768,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 return (
                   <div className="space-y-1.5">
                     <div className="px-3 py-2 bg-primary-50/30 border border-primary-100 rounded-lg">
-                      <p className="text-sm text-gray-700">
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
                         <span className="font-medium">{previewAnalyst || '___'}</span> will cover{' '}
-                        <span className="font-semibold text-gray-900">{previewAsset || '___'}</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{previewAsset || '___'}</span>
                         {previewGroup ? <> for <span className="font-medium">{previewGroup}</span></> : null}
                         {previewDate ? <>, starting {previewDate}</> : null}
                         {previewRole ? <> as <span className="font-medium">{previewRole}</span></> : null}
@@ -5791,7 +5791,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               })()}
             </div>
 
-            <div className="flex justify-end gap-3 p-5 pt-3 border-t border-gray-200 flex-shrink-0">
+            <div className="flex justify-end gap-3 p-5 pt-3 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
               <Button
                 variant="outline"
                 onClick={() => setAddingCoverage(null)}
@@ -5968,24 +5968,24 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {endingCoverage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setEndingCoverage(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">End Coverage</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">End Coverage</h3>
               <button
                 onClick={() => setEndingCoverage(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
               End coverage for <span className="font-medium">{endingCoverage.assetSymbol}</span> by <span className="font-medium">{endingCoverage.analystName}</span> on the selected date.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   End Date
                 </label>
                 <input
@@ -5996,9 +5996,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     ...endingCoverage,
                     endDate: e.target.value
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 dark:border-gray-600"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                   Coverage will end on this date
                 </p>
               </div>
@@ -6079,9 +6079,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {errorModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setErrorModal({ isOpen: false, title: '', message: '' })} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">{errorModal.title}</h3>
-            <p className="text-gray-600 mb-4">{errorModal.message}</p>
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full dark:bg-gray-800">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">{errorModal.title}</h3>
+            <p className="text-gray-600 mb-4 dark:text-gray-400">{errorModal.message}</p>
             <Button onClick={() => setErrorModal({ isOpen: false, title: '', message: '' })}>OK</Button>
           </div>
         </div>
@@ -6130,12 +6130,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             setUploadSuccess(null)
             if (fileInputRef.current) fileInputRef.current.value = ''
           }} />
-          <div className="relative bg-white rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col">
+          <div className="relative bg-white rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col dark:bg-gray-800">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Bulk Upload Coverage</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Import coverage assignments from a CSV file.</p>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Bulk Upload Coverage</h3>
+                <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Import coverage assignments from a CSV file.</p>
               </div>
               <button onClick={() => {
                 setShowBulkUpload(false)
@@ -6144,7 +6144,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 setUploadErrors([])
                 setUploadSuccess(null)
                 if (fileInputRef.current) fileInputRef.current.value = ''
-              }} className="text-gray-400 hover:text-gray-600">
+              }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -6152,27 +6152,27 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               {/* Template Download + Column Reference */}
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2.5">
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2.5 dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <FileText className="h-4 w-4 text-gray-500" />
+                    <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Template</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">Template</p>
                       <p className="text-[10px] text-gray-400">Includes available groups reference tab</p>
                     </div>
                   </div>
-                  <button onClick={downloadTemplate} className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center gap-1.5 flex-shrink-0">
+                  <button onClick={downloadTemplate} className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center gap-1.5 flex-shrink-0 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800">
                     <Download className="h-3 w-3" />
                     Download
                   </button>
                 </div>
                 <div className="space-y-1.5 text-[11px]">
                   <div>
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Required</p>
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5 dark:text-gray-400">Required</p>
                     <div className="space-y-0.5">
-                      <div><span className="font-mono font-medium text-gray-700">asset_symbol</span><span className="text-gray-400 ml-1.5">— ticker symbol (e.g. NVDA)</span></div>
-                      <div><span className="font-mono font-medium text-gray-700">analyst_email</span><span className="text-gray-400 ml-1.5">— must match an existing user</span></div>
-                      <div><span className="font-mono font-medium text-gray-700">group</span><span className="text-gray-400 ml-1.5">— org group name or &quot;Firm&quot;</span></div>
+                      <div><span className="font-mono font-medium text-gray-700 dark:text-gray-300">asset_symbol</span><span className="text-gray-400 ml-1.5">— ticker symbol (e.g. NVDA)</span></div>
+                      <div><span className="font-mono font-medium text-gray-700 dark:text-gray-300">analyst_email</span><span className="text-gray-400 ml-1.5">— must match an existing user</span></div>
+                      <div><span className="font-mono font-medium text-gray-700 dark:text-gray-300">group</span><span className="text-gray-400 ml-1.5">— org group name or &quot;Firm&quot;</span></div>
                     </div>
                   </div>
                   <div>
@@ -6204,42 +6204,42 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 const matchCount = filteredNodes.length + (showFirm ? 1 : 0)
 
                 return (
-                  <details className="group border border-gray-200 rounded-lg overflow-hidden" onToggle={() => setGroupRefSearch('')}>
-                    <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none hover:bg-gray-50 transition-colors text-xs font-medium text-gray-700 list-none [&::-webkit-details-marker]:hidden">
+                  <details className="group border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700" onToggle={() => setGroupRefSearch('')}>
+                    <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none hover:bg-gray-50 transition-colors text-xs font-medium text-gray-700 list-none [&::-webkit-details-marker]:hidden dark:hover:bg-gray-800 dark:text-gray-300">
                       <ChevronRight className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-90" />
                       Available groups
                       <span className="text-[10px] text-gray-400 font-normal ml-auto">{allOrgChartNodes.nodes.length + 1} options</span>
                     </summary>
-                    <div className="border-t border-gray-200">
-                      <div className="px-3 py-2 border-b border-gray-100">
+                    <div className="border-t border-gray-200 dark:border-gray-700">
+                      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
                         <input
                           type="text"
                           value={groupRefSearch}
                           onChange={(e) => setGroupRefSearch(e.target.value)}
                           placeholder="Search groups..."
-                          className="w-full text-[11px] px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-300 focus:border-primary-300 placeholder:text-gray-300"
+                          className="w-full text-[11px] px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-300 focus:border-primary-300 placeholder:text-gray-300 dark:border-gray-700"
                         />
                       </div>
                       <div className="max-h-[180px] overflow-y-auto">
                         <table className="w-full text-[11px]">
-                          <thead className="bg-gray-50 sticky top-0">
+                          <thead className="bg-gray-50 sticky top-0 dark:bg-gray-900">
                             <tr className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                               <th className="px-3 py-1.5 text-left">Group name</th>
                               <th className="px-3 py-1.5 text-left">Type</th>
                               <th className="px-3 py-1.5 text-left">Parent</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {showFirm && (
                               <tr>
-                                <td className="px-3 py-1.5 font-medium text-gray-700">Firm</td>
+                                <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">Firm</td>
                                 <td className="px-3 py-1.5 text-gray-400">firm-wide</td>
                                 <td className="px-3 py-1.5 text-gray-300">—</td>
                               </tr>
                             )}
                             {filteredNodes.map((n: any) => (
                               <tr key={n.id}>
-                                <td className="px-3 py-1.5 font-medium text-gray-700">{n.name}</td>
+                                <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">{n.name}</td>
                                 <td className="px-3 py-1.5 text-gray-400">{n.node_type}</td>
                                 <td className="px-3 py-1.5 text-gray-400">{resolveParent(n)}</td>
                               </tr>
@@ -6259,7 +6259,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
               {/* File Selection — drag-and-drop zone */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Upload file</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5 dark:text-gray-300">Upload file</label>
                 <div
                   onDragOver={(e) => { e.preventDefault(); setIsDraggingFile(true) }}
                   onDragEnter={(e) => { e.preventDefault(); setIsDraggingFile(true) }}
@@ -6268,11 +6268,11 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   className={`relative rounded-lg border-2 border-dashed transition-colors ${
                     isDraggingFile
                       ? 'border-primary-400 bg-primary-50/50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                   } px-4 py-5 text-center`}
                 >
                   <Upload className={`mx-auto h-6 w-6 mb-2 ${isDraggingFile ? 'text-primary-500' : 'text-gray-300'}`} />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     {isDraggingFile ? (
                       <span className="font-medium text-primary-600">Drop file here</span>
                     ) : (
@@ -6300,14 +6300,14 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                   />
                 </div>
                 {uploadFile && !uploadPreview && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <div className="animate-spin rounded-full h-3 w-3 border-b border-gray-400" />
                     Parsing {uploadFile.name}...
                   </div>
                 )}
                 {uploadPreview && (
                   <div className="mt-2.5 space-y-2">
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
                       <span className="font-medium">{uploadPreview.fileName}</span>
                     </p>
                     {/* Validation summary counters */}
@@ -6318,9 +6318,9 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       const errorCount = uploadPreview.rows.filter(r => r.errors.some(e => !e.includes('Duplicate') && !e.includes('already exists'))).length
                       return (
                         <div className="flex items-center gap-2 flex-wrap">
-                          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded text-[11px]">
-                            <span className="font-medium text-gray-700">{totalRows}</span>
-                            <span className="text-gray-500">detected</span>
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded text-[11px] dark:bg-gray-800">
+                            <span className="font-medium text-gray-700 dark:text-gray-300">{totalRows}</span>
+                            <span className="text-gray-500 dark:text-gray-400">detected</span>
                           </div>
                           <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 rounded text-[11px]">
                             <Check className="h-3 w-3 text-emerald-600" />
@@ -6350,21 +6350,21 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
               {/* Preview Table */}
               {uploadPreview && uploadPreview.rows.length > 0 && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Import Preview</p>
+                <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
+                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Import Preview</p>
                   </div>
                   <div className="max-h-[300px] overflow-y-auto">
                     <table className="w-full text-xs">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                      <thead className="bg-gray-50 sticky top-0 dark:bg-gray-900">
+                        <tr className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
                           <th className="px-3 py-2 text-left">Asset</th>
                           <th className="px-3 py-2 text-left">Analyst</th>
                           <th className="px-3 py-2 text-left">Group</th>
                           <th className="px-3 py-2 text-left">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                         {uploadPreview.rows.map((row, idx) => {
                           const hasErrors = row.errors.length > 0
                           const isWarningOnly = hasErrors && row.errors.every(e => e.includes('Duplicate') || e.includes('already exists'))
@@ -6373,23 +6373,23 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                             <tr key={idx} className={isHardError ? 'bg-red-50/40' : isWarningOnly ? 'bg-amber-50/40' : ''}>
                               <td className="px-3 py-2">
                                 {row.asset ? (
-                                  <span className="font-medium text-gray-900">{row.asset.symbol}</span>
+                                  <span className="font-medium text-gray-900 dark:text-white">{row.asset.symbol}</span>
                                 ) : (
                                   <span className="text-red-600">{row.asset_symbol || '—'}</span>
                                 )}
                               </td>
                               <td className="px-3 py-2">
                                 {row.user ? (
-                                  <span className="text-gray-700">{row.user.name}</span>
+                                  <span className="text-gray-700 dark:text-gray-300">{row.user.name}</span>
                                 ) : (
                                   <span className="text-red-600">{row.analyst_email || '—'}</span>
                                 )}
                               </td>
                               <td className="px-3 py-2">
                                 {row.isFirm ? (
-                                  <span className="text-gray-600">Firm</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Firm</span>
                                 ) : row.orgNode ? (
-                                  <span className="text-gray-600">{row.orgNode.name}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">{row.orgNode.name}</span>
                                 ) : (
                                   <span className="text-red-600">{row.group || '—'}</span>
                                 )}
@@ -6456,7 +6456,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 flex-shrink-0 bg-gray-50/50">
+            <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 flex-shrink-0 bg-gray-50/50 dark:border-gray-700">
               <div className="text-[11px] text-gray-400">
                 {isUploading
                   ? 'Importing assignments...'
@@ -6504,16 +6504,16 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {requestingChange && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setRequestingChange(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {requestingChange.requestType === 'add' ? 'Request New Coverage' :
                  requestingChange.requestType === 'role_change' ? 'Request Role Change' :
                  'Request Coverage Change'}
               </h3>
               <button
                 onClick={() => setRequestingChange(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -6522,7 +6522,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             {/* Request Type Selector */}
             {requestingChange.currentAnalystName && (
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Request Type
                 </label>
                 <div className="flex gap-2">
@@ -6535,7 +6535,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
                       requestingChange.requestType === 'change'
                         ? 'bg-primary-50 border-primary-300 text-primary-700'
-                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800'
                     }`}
                   >
                     Change Analyst
@@ -6550,7 +6550,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
                       requestingChange.requestType === 'role_change'
                         ? 'bg-primary-50 border-primary-300 text-primary-700'
-                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800'
                     }`}
                   >
                     Change Role
@@ -6563,7 +6563,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* Asset Selection - Only show if no asset is pre-selected */}
               {!requestingChange.assetSymbol && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     Select Asset
                   </label>
                   <select
@@ -6576,7 +6576,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                         assetSymbol: selectedAsset?.symbol || ''
                       })
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   >
                     <option value="">Select asset...</option>
                     {assets?.map((asset) => (
@@ -6590,22 +6590,22 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
               {/* Show selected asset if pre-selected */}
               {requestingChange.assetSymbol && (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <span className="text-sm text-gray-500">Asset:</span>
-                  <span className="ml-2 text-sm font-medium text-gray-900">{requestingChange.assetSymbol}</span>
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Asset:</span>
+                  <span className="ml-2 text-sm font-medium text-gray-900 dark:text-white">{requestingChange.assetSymbol}</span>
                 </div>
               )}
 
               {/* Current Coverage Info - Only show if there's current coverage */}
               {requestingChange.currentAnalystName && (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                   <div className="flex justify-between items-center">
                     <div>
-                      <span className="text-sm text-gray-500">Current Analyst:</span>
-                      <span className="ml-2 text-sm font-medium text-gray-900">{requestingChange.currentAnalystName}</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Current Analyst:</span>
+                      <span className="ml-2 text-sm font-medium text-gray-900 dark:text-white">{requestingChange.currentAnalystName}</span>
                     </div>
                     {requestingChange.currentRole && (
-                      <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded capitalize">
+                      <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded capitalize dark:text-gray-300">
                         {requestingChange.currentRole}
                       </span>
                     )}
@@ -6616,7 +6616,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* Analyst Selection - Show for 'add' and 'change' types */}
               {(requestingChange.requestType === 'add' || requestingChange.requestType === 'change') && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     {requestingChange.requestType === 'add' ? 'Assign Analyst' : 'New Analyst'}
                   </label>
                   <select
@@ -6625,7 +6625,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       ...requestingChange,
                       requestedUserId: e.target.value
                     })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   >
                     <option value="">Select analyst...</option>
                     {users?.map((u) => {
@@ -6651,7 +6651,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* Role Selection - Only show when hierarchy is enabled in coverage settings */}
               {coverageSettings?.enable_hierarchy && (requestingChange.requestType === 'add' || requestingChange.requestType === 'role_change') && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                     {requestingChange.requestType === 'role_change' ? 'New Role' : 'Role'}
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -6669,7 +6669,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                           className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                             requestingChange.requestedRole === roleName.toLowerCase()
                               ? 'bg-primary-50 border-primary-300 text-primary-700'
-                              : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                              : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800'
                           }`}
                         >
                           {roleName}
@@ -6682,7 +6682,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
 
               {/* Reason */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Reason for Request
                 </label>
                 <textarea
@@ -6699,7 +6699,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                       : "Explain why this change is needed..."
                   }
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 />
               </div>
             </div>
@@ -6798,12 +6798,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {selectedHistoryEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setSelectedHistoryEvent(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="relative bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Coverage Change Details</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Coverage Change Details</h3>
               <button
                 onClick={() => setSelectedHistoryEvent(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -6812,22 +6812,22 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             <div className="space-y-4">
               {/* Event Type */}
               <div>
-                <label className="text-sm font-medium text-gray-500">Event Type</label>
-                <p className="text-base text-gray-900 mt-1 capitalize">{selectedHistoryEvent.change_type.replace('_', ' ')}</p>
+                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Event Type</label>
+                <p className="text-base text-gray-900 mt-1 capitalize dark:text-white">{selectedHistoryEvent.change_type.replace('_', ' ')}</p>
               </div>
 
               {/* Asset */}
               <div>
-                <label className="text-sm font-medium text-gray-500">Asset</label>
-                <p className="text-base text-gray-900 mt-1">
+                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Asset</label>
+                <p className="text-base text-gray-900 mt-1 dark:text-white">
                   {selectedHistoryEvent.assets?.symbol} - {selectedHistoryEvent.assets?.company_name}
                 </p>
               </div>
 
               {/* Changed At */}
               <div>
-                <label className="text-sm font-medium text-gray-500">Changed At</label>
-                <p className="text-base text-gray-900 mt-1">
+                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Changed At</label>
+                <p className="text-base text-gray-900 mt-1 dark:text-white">
                   {new Date(selectedHistoryEvent.changed_at).toLocaleString('en-US', {
                     month: 'short',
                     day: 'numeric',
@@ -6842,8 +6842,8 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* Changed By */}
               {selectedHistoryEvent.changed_by && (
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Changed By</label>
-                  <p className="text-base text-gray-900 mt-1">
+                  <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Changed By</label>
+                  <p className="text-base text-gray-900 mt-1 dark:text-white">
                     {users?.find(u => u.id === selectedHistoryEvent.changed_by)?.first_name} {users?.find(u => u.id === selectedHistoryEvent.changed_by)?.last_name || 'Unknown User'}
                   </p>
                 </div>
@@ -6852,30 +6852,30 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* Old Values */}
               {(selectedHistoryEvent.old_analyst_name || selectedHistoryEvent.old_start_date || selectedHistoryEvent.old_end_date !== undefined) && (
                 <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Previous State</h4>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-300">Previous State</h4>
                   <div className="space-y-2 bg-red-50 p-3 rounded">
                     {selectedHistoryEvent.old_analyst_name && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">Analyst</label>
-                        <p className="text-sm text-gray-900">{selectedHistoryEvent.old_analyst_name}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Analyst</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedHistoryEvent.old_analyst_name}</p>
                       </div>
                     )}
                     {selectedHistoryEvent.old_start_date && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">Start Date</label>
-                        <p className="text-sm text-gray-900">{new Date(selectedHistoryEvent.old_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Start Date</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{new Date(selectedHistoryEvent.old_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                       </div>
                     )}
                     {selectedHistoryEvent.old_end_date !== undefined && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">End Date</label>
-                        <p className="text-sm text-gray-900">{selectedHistoryEvent.old_end_date ? new Date(selectedHistoryEvent.old_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'None (Open-ended)'}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">End Date</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedHistoryEvent.old_end_date ? new Date(selectedHistoryEvent.old_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'None (Open-ended)'}</p>
                       </div>
                     )}
                     {selectedHistoryEvent.old_is_active !== undefined && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">Status</label>
-                        <p className="text-sm text-gray-900">{selectedHistoryEvent.old_is_active ? 'Active' : 'Inactive'}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedHistoryEvent.old_is_active ? 'Active' : 'Inactive'}</p>
                       </div>
                     )}
                   </div>
@@ -6885,30 +6885,30 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* New Values */}
               {(selectedHistoryEvent.new_analyst_name || selectedHistoryEvent.new_start_date || selectedHistoryEvent.new_end_date !== undefined) && (
                 <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">New State</h4>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-300">New State</h4>
                   <div className="space-y-2 bg-green-50 p-3 rounded">
                     {selectedHistoryEvent.new_analyst_name && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">Analyst</label>
-                        <p className="text-sm text-gray-900">{selectedHistoryEvent.new_analyst_name}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Analyst</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedHistoryEvent.new_analyst_name}</p>
                       </div>
                     )}
                     {selectedHistoryEvent.new_start_date && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">Start Date</label>
-                        <p className="text-sm text-gray-900">{new Date(selectedHistoryEvent.new_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Start Date</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{new Date(selectedHistoryEvent.new_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                       </div>
                     )}
                     {selectedHistoryEvent.new_end_date !== undefined && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">End Date</label>
-                        <p className="text-sm text-gray-900">{selectedHistoryEvent.new_end_date ? new Date(selectedHistoryEvent.new_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'None (Open-ended)'}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">End Date</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedHistoryEvent.new_end_date ? new Date(selectedHistoryEvent.new_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'None (Open-ended)'}</p>
                       </div>
                     )}
                     {selectedHistoryEvent.new_is_active !== undefined && (
                       <div>
-                        <label className="text-xs font-medium text-gray-500">Status</label>
-                        <p className="text-sm text-gray-900">{selectedHistoryEvent.new_is_active ? 'Active' : 'Inactive'}</p>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedHistoryEvent.new_is_active ? 'Active' : 'Inactive'}</p>
                       </div>
                     )}
                   </div>
@@ -6932,12 +6932,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {primaryExistsConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setPrimaryExistsConfirm(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Primary Analyst Already Exists</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Primary Analyst Already Exists</h3>
               <button
                 onClick={() => setPrimaryExistsConfirm(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -6951,10 +6951,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 </div>
               </div>
 
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Would you like to transition coverage from <span className="font-medium">{primaryExistsConfirm.existingPrimaryName}</span> to <span className="font-medium">{primaryExistsConfirm.newAnalystName}</span>?
               </p>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                 This will end the current primary's coverage on {primaryExistsConfirm.startDate} and start {primaryExistsConfirm.newAnalystName}'s coverage as primary on the same date.
               </p>
             </div>
@@ -7038,12 +7038,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       {existingCoverageConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setExistingCoverageConfirm(null)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="relative bg-white rounded-lg p-6 max-w-md w-full dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Existing Coverage Found</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Existing Coverage Found</h3>
               <button
                 onClick={() => setExistingCoverageConfirm(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -7084,7 +7084,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 </div>
               </div>
 
-              <p className="text-sm text-gray-600 mb-2">
+              <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">
                 How would you like to add <span className="font-medium">{existingCoverageConfirm.newAnalystName}</span> to cover <span className="font-medium">{existingCoverageConfirm.assetSymbol}</span>?
               </p>
             </div>
@@ -7152,15 +7152,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     })
                   }
                 }}
-                className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors group"
+                className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors group dark:border-gray-700"
               >
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-primary-100 rounded-lg group-hover:bg-primary-200 transition-colors">
                     <ArrowRightLeft className="h-5 w-5 text-primary-600" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">Transition Coverage</p>
-                    <p className="text-sm text-gray-500">End existing coverage and start new</p>
+                    <p className="font-medium text-gray-900 dark:text-white">Transition Coverage</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">End existing coverage and start new</p>
                   </div>
                 </div>
               </button>
@@ -7207,15 +7207,15 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                     })
                   }
                 }}
-                className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group"
+                className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors group dark:border-gray-700"
               >
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-green-100 rounded-lg group-hover:bg-green-200 transition-colors">
                     <UserPlus className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">Add Additional Coverage</p>
-                    <p className="text-sm text-gray-500">Keep existing coverage alongside new</p>
+                    <p className="font-medium text-gray-900 dark:text-white">Add Additional Coverage</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Keep existing coverage alongside new</p>
                   </div>
                 </div>
               </button>
@@ -7223,7 +7223,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
               {/* Cancel */}
               <button
                 onClick={() => setExistingCoverageConfirm(null)}
-                className="w-full p-3 text-center text-gray-600 hover:text-gray-800 transition-colors"
+                className="w-full p-3 text-center text-gray-600 hover:text-gray-800 transition-colors dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -7240,7 +7240,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
             onClick={() => setGroupContextMenu(null)}
           />
           <div
-            className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px]"
+            className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px] dark:border-gray-700 dark:bg-gray-800"
             style={{
               left: groupContextMenu.x,
               top: groupContextMenu.y,
@@ -7251,10 +7251,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 setCollapsedGroups(new Set())
                 setGroupContextMenu(null)
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
             >
               <Maximize2 className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-700">Expand All</span>
+              <span className="text-gray-700 dark:text-gray-300">Expand All</span>
             </button>
             <button
               onClick={() => {
@@ -7292,12 +7292,12 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 setCollapsedGroups(allGroupKeys)
                 setGroupContextMenu(null)
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
             >
               <Minimize2 className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-700">Collapse All</span>
+              <span className="text-gray-700 dark:text-gray-300">Collapse All</span>
             </button>
-            <div className="border-t border-gray-100 my-1" />
+            <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
             <button
               onClick={() => {
                 setHiddenGroups(prev => {
@@ -7307,10 +7307,10 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
                 })
                 setGroupContextMenu(null)
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
             >
               <EyeOff className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-700">Hide "{groupContextMenu.groupName}"</span>
+              <span className="text-gray-700 dark:text-gray-300">Hide "{groupContextMenu.groupName}"</span>
             </button>
           </div>
         </>
@@ -7321,7 +7321,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
   // Page mode - simple full-height container
   if (mode === 'page') {
     return (
-      <div className="h-full flex flex-col bg-white">
+      <div className="h-full flex flex-col bg-white dark:bg-gray-800">
         <div className="h-full flex flex-col">
           {content}
         </div>
@@ -7339,7 +7339,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       />
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-7xl w-full mx-auto transform transition-all h-[90vh] overflow-hidden flex flex-col">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-7xl w-full mx-auto transform transition-all h-[90vh] overflow-hidden flex flex-col dark:bg-gray-800">
           {content}
         </div>
       </div>

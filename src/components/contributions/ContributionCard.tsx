@@ -164,7 +164,7 @@ export function ContributionCard({
   return (
     <div
       className={clsx(
-        'bg-white border rounded-lg shadow-sm transition-all',
+        'bg-white border rounded-lg shadow-sm transition-all dark:bg-gray-800',
         contribution.is_pinned && 'border-amber-300 bg-amber-50/30',
         contribution.is_archived && 'opacity-60'
       )}
@@ -184,7 +184,7 @@ export function ContributionCard({
           {/* User info - compact single line */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-              <span className="font-medium text-gray-900 text-sm">
+              <span className="font-medium text-gray-900 text-sm dark:text-white">
                 {contribution.user?.full_name || 'Unknown User'}
               </span>
               <span className="text-xs text-gray-400">
@@ -211,7 +211,7 @@ export function ContributionCard({
                       setSelectedTargetIds([])
                     }}
                     className={clsx(
-                      'flex items-center text-xs px-1.5 py-0.5 rounded hover:bg-gray-100 transition-colors',
+                      'flex items-center text-xs px-1.5 py-0.5 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700',
                       visibilityConfig.color
                     )}
                     title="Change visibility"
@@ -221,11 +221,11 @@ export function ContributionCard({
                     <ChevronDown className="w-3 h-3 ml-0.5 opacity-50" />
                   </button>
                   {showVisibilityMenu && (
-                    <div className="absolute left-0 top-6 z-20 w-64 bg-white border rounded-lg shadow-lg py-1">
+                    <div className="absolute left-0 top-6 z-20 w-64 bg-white border rounded-lg shadow-lg py-1 dark:bg-gray-800">
                       {!pendingVisibility ? (
                         // Step 1: Select visibility level
                         <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b dark:text-gray-400">
                             Select visibility
                           </div>
                           {(Object.entries(VISIBILITY_CONFIG) as [ContributionVisibility, typeof VISIBILITY_CONFIG[ContributionVisibility]][]).map(([key, config]) => {
@@ -244,8 +244,8 @@ export function ContributionCard({
                                   }
                                 }}
                                 className={clsx(
-                                  'w-full flex items-center px-3 py-1.5 text-xs hover:bg-gray-50',
-                                  contribution.visibility === key && !pendingVisibility ? 'bg-gray-100 font-medium' : ''
+                                  'w-full flex items-center px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                                  contribution.visibility === key && !pendingVisibility ? 'bg-gray-100 font-medium dark:bg-gray-800' : ''
                                 )}
                               >
                                 <Icon className={clsx('w-3 h-3 mr-2', config.color)} />
@@ -258,7 +258,7 @@ export function ContributionCard({
                       ) : (
                         // Step 2: Select targets
                         <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b flex items-center justify-between">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b flex items-center justify-between dark:text-gray-400">
                             <button
                               onClick={() => setPendingVisibility(null)}
                               className="text-primary-600 hover:text-primary-700"
@@ -286,13 +286,13 @@ export function ContributionCard({
                                       )
                                     }}
                                     className={clsx(
-                                      'w-full flex items-center px-3 py-1.5 text-xs hover:bg-gray-50',
+                                      'w-full flex items-center px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
                                       isSelected && 'bg-primary-50'
                                     )}
                                   >
                                     <div className={clsx(
                                       'w-3.5 h-3.5 rounded border mr-2 flex items-center justify-center flex-shrink-0',
-                                      isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                                      isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
                                     )}>
                                       {isSelected && (
                                         <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -352,13 +352,13 @@ export function ContributionCard({
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu(!showMenu)}
-              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <MoreVertical className="w-4 h-4" />
             </button>
 
             {showMenu && (
-              <div className="absolute right-0 top-8 z-10 w-40 bg-white border rounded-lg shadow-lg py-1">
+              <div className="absolute right-0 top-8 z-10 w-40 bg-white border rounded-lg shadow-lg py-1 dark:bg-gray-800">
                 {isOwner && isEditable && (
                   <>
                     <button
@@ -366,7 +366,7 @@ export function ContributionCard({
                         setIsEditing(true)
                         setShowMenu(false)
                       }}
-                      className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       <Edit3 className="w-4 h-4 mr-2" />
                       Edit
@@ -389,7 +389,7 @@ export function ContributionCard({
                       onTogglePin?.(contribution.id, !contribution.is_pinned)
                       setShowMenu(false)
                     }}
-                    className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <Pin className="w-4 h-4 mr-2" />
                     {contribution.is_pinned ? 'Unpin' : 'Pin to top'}
@@ -401,7 +401,7 @@ export function ContributionCard({
                       onToggleArchive?.(contribution.id, !contribution.is_archived)
                       setShowMenu(false)
                     }}
-                    className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <Archive className="w-4 h-4 mr-2" />
                     {contribution.is_archived ? 'Restore' : 'Archive'}
@@ -412,7 +412,7 @@ export function ContributionCard({
                     setShowHistory(!showHistory)
                     setShowMenu(false)
                   }}
-                  className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  className="w-full flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                 >
                   <History className="w-4 h-4 mr-2" />
                   View history
@@ -443,7 +443,7 @@ export function ContributionCard({
               <div className="flex items-center space-x-2">
                 <button
                   onClick={handleCancelEdit}
-                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -457,7 +457,7 @@ export function ContributionCard({
             </div>
           </div>
         ) : (
-          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+          <div className="text-sm text-gray-700 whitespace-pre-wrap dark:text-gray-300">
             {contribution.content}
           </div>
         )}
@@ -478,7 +478,7 @@ export function ContributionCard({
                   'flex items-center px-2 py-1 rounded text-xs transition-colors',
                   hasReacted
                     ? config.activeColor
-                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                 )}
                 title={config.label}
               >
@@ -492,7 +492,7 @@ export function ContributionCard({
         {/* Reply toggle */}
         <button
           onClick={() => setShowReplies(!showReplies)}
-          className="flex items-center text-xs text-gray-500 hover:text-gray-700"
+          className="flex items-center text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
         >
           <MessageSquare className="w-3.5 h-3.5 mr-1" />
           {contribution.replies_count || 0} {contribution.replies_count === 1 ? 'reply' : 'replies'}
@@ -506,25 +506,25 @@ export function ContributionCard({
 
       {/* Replies section */}
       {showReplies && (
-        <div className="border-t bg-gray-50 p-4 space-y-3">
+        <div className="border-t bg-gray-50 p-4 space-y-3 dark:bg-gray-900">
           {repliesLoading ? (
-            <div className="text-sm text-gray-500 text-center py-2">Loading replies...</div>
+            <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">Loading replies...</div>
           ) : replies.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-2">No replies yet</div>
+            <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">No replies yet</div>
           ) : (
             <div className="space-y-3">
               {replies.map((reply) => (
                 <div key={reply.id} className="flex space-x-2">
                   <div className="flex-shrink-0">
                     <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
-                      <span className="text-xs font-medium text-gray-600">
+                      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
                         {(reply.user?.full_name || 'U').charAt(0).toUpperCase()}
                       </span>
                     </div>
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs font-medium text-gray-900">
+                      <span className="text-xs font-medium text-gray-900 dark:text-white">
                         {reply.user?.full_name || 'Unknown'}
                       </span>
                       <span className="text-xs text-gray-400">
@@ -534,7 +534,7 @@ export function ContributionCard({
                         <span className="text-xs text-gray-400">(edited)</span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-700 mt-0.5">{reply.content}</p>
+                    <p className="text-sm text-gray-700 mt-0.5 dark:text-gray-300">{reply.content}</p>
                   </div>
                 </div>
               ))}
@@ -569,20 +569,20 @@ export function ContributionCard({
 
       {/* History section */}
       {showHistory && (
-        <div className="border-t bg-gray-50 p-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+        <div className="border-t bg-gray-50 p-4 dark:bg-gray-900">
+          <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center dark:text-gray-300">
             <History className="w-4 h-4 mr-1" />
             Edit History
           </h4>
           {historyLoading ? (
-            <div className="text-sm text-gray-500 text-center py-2">Loading history...</div>
+            <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">Loading history...</div>
           ) : history.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-2">No edits recorded</div>
+            <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">No edits recorded</div>
           ) : (
             <div className="space-y-3">
               {history.map((h) => (
-                <div key={h.id} className="text-sm border-l-2 border-gray-300 pl-3">
-                  <div className="flex items-center text-xs text-gray-500 mb-1">
+                <div key={h.id} className="text-sm border-l-2 border-gray-300 pl-3 dark:border-gray-600">
+                  <div className="flex items-center text-xs text-gray-500 mb-1 dark:text-gray-400">
                     <span className="font-medium">{h.user?.full_name || 'Unknown'}</span>
                     <span className="mx-1">•</span>
                     <span>{formatDistanceToNow(new Date(h.changed_at), { addSuffix: true })}</span>

@@ -600,14 +600,14 @@ export function SimplifiedUniverseBuilder({
                   fetchAnalystSuggestions(e.target.value)
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
             />
-            <div className="h-48 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+            <div className="h-48 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2 dark:border-gray-700">
               {filteredOptions.length > 0 ? (
                 filteredOptions.map((option) => (
                   <label
                     key={option.value}
-                    className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                    className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer dark:hover:bg-gray-800"
                   >
                     <input
                       type={definition.valueType === 'multi_select' ? 'checkbox' : 'radio'}
@@ -646,11 +646,11 @@ export function SimplifiedUniverseBuilder({
                       }}
                       className="rounded text-blue-600 focus:ring-blue-500 flex-shrink-0"
                     />
-                    <span className="text-sm text-gray-700">{option.label}</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{option.label}</span>
                   </label>
                 ))
               ) : (
-                <div className="p-2 text-xs text-gray-500 text-center">
+                <div className="p-2 text-xs text-gray-500 text-center dark:text-gray-400">
                   {showSelectedOnly ? 'No items selected' : 'No results found'}
                 </div>
               )}
@@ -669,7 +669,7 @@ export function SimplifiedUniverseBuilder({
             min={definition.min}
             max={definition.max}
             step={definition.step}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
           />
         )
 
@@ -689,11 +689,11 @@ export function SimplifiedUniverseBuilder({
             <div className="space-y-4">
               {/* Metric Selector */}
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Select Metric</label>
+                <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Select Metric</label>
                 <select
                   value={currentValues?.metric || ''}
                   onChange={(e) => setCurrentValues({ ...currentValues, metric: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                 >
                   <option value="">Choose a metric...</option>
                   {metricOptions.map(opt => (
@@ -707,7 +707,7 @@ export function SimplifiedUniverseBuilder({
                 <>
                   {currentOperator === 'greater_than' && (
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">
+                      <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">
                         Minimum Value {selectedMetric?.formatHint}
                       </label>
                       <input
@@ -719,13 +719,13 @@ export function SimplifiedUniverseBuilder({
                         }
                         min={0}
                         step={currentValues?.metric === 'price' ? 0.01 : 1}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                       />
                     </div>
                   )}
                   {currentOperator === 'less_than' && (
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">
+                      <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">
                         Maximum Value {selectedMetric?.formatHint}
                       </label>
                       <input
@@ -737,14 +737,14 @@ export function SimplifiedUniverseBuilder({
                         }
                         min={0}
                         step={currentValues?.metric === 'price' ? 0.01 : 1}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                       />
                     </div>
                   )}
                   {currentOperator === 'between' && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Min {selectedMetric?.formatHint}</label>
+                        <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Min {selectedMetric?.formatHint}</label>
                         <input
                           type="number"
                           placeholder="Min"
@@ -754,11 +754,11 @@ export function SimplifiedUniverseBuilder({
                           }
                           min={0}
                           step={currentValues?.metric === 'price' ? 0.01 : 1}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Max {selectedMetric?.formatHint}</label>
+                        <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Max {selectedMetric?.formatHint}</label>
                         <input
                           type="number"
                           placeholder="Max"
@@ -768,7 +768,7 @@ export function SimplifiedUniverseBuilder({
                           }
                           min={0}
                           step={currentValues?.metric === 'price' ? 0.01 : 1}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                         />
                       </div>
                     </div>
@@ -792,13 +792,13 @@ export function SimplifiedUniverseBuilder({
               }
               min={definition.min}
               step={definition.step}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
             />
           )
         } else if (currentOperator === 'greater_than') {
           return (
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Minimum Value</label>
+              <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Minimum Value</label>
               <input
                 type="number"
                 placeholder="Enter minimum"
@@ -808,14 +808,14 @@ export function SimplifiedUniverseBuilder({
                 }
                 min={definition.min}
                 step={definition.step}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
               />
             </div>
           )
         } else if (currentOperator === 'less_than') {
           return (
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Maximum Value</label>
+              <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Maximum Value</label>
               <input
                 type="number"
                 placeholder="Enter maximum"
@@ -825,7 +825,7 @@ export function SimplifiedUniverseBuilder({
                 }
                 min={definition.min}
                 step={definition.step}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
               />
             </div>
           )
@@ -834,7 +834,7 @@ export function SimplifiedUniverseBuilder({
           return (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Min</label>
+                <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Min</label>
                 <input
                   type="number"
                   placeholder="Min"
@@ -844,11 +844,11 @@ export function SimplifiedUniverseBuilder({
                   }
                   min={definition.min}
                   step={definition.step}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Max</label>
+                <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Max</label>
                 <input
                   type="number"
                   placeholder="Max"
@@ -858,7 +858,7 @@ export function SimplifiedUniverseBuilder({
                   }
                   min={definition.min}
                   step={definition.step}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                 />
               </div>
             </div>
@@ -872,7 +872,7 @@ export function SimplifiedUniverseBuilder({
             placeholder={definition.placeholder || 'Enter text'}
             value={currentValues || ''}
             onChange={(e) => setCurrentValues(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
           />
         )
 
@@ -882,7 +882,7 @@ export function SimplifiedUniverseBuilder({
             type="date"
             value={currentValues || ''}
             onChange={(e) => setCurrentValues(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
           />
         )
 
@@ -890,25 +890,25 @@ export function SimplifiedUniverseBuilder({
         return (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Start</label>
+              <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">Start</label>
               <input
                 type="date"
                 value={currentValues?.start || ''}
                 onChange={(e) =>
                   setCurrentValues({ ...currentValues, start: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">End</label>
+              <label className="block text-xs text-gray-600 mb-1 dark:text-gray-400">End</label>
               <input
                 type="date"
                 value={currentValues?.end || ''}
                 onChange={(e) =>
                   setCurrentValues({ ...currentValues, end: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
               />
             </div>
           </div>
@@ -924,7 +924,7 @@ export function SimplifiedUniverseBuilder({
                 onChange={() => setCurrentValues(true)}
                 className="text-blue-600 focus:ring-blue-500"
               />
-              <span className="text-sm text-gray-700">Yes</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Yes</span>
             </label>
             <label className="flex items-center space-x-2 cursor-pointer">
               <input
@@ -933,7 +933,7 @@ export function SimplifiedUniverseBuilder({
                 onChange={() => setCurrentValues(false)}
                 className="text-blue-600 focus:ring-blue-500"
               />
-              <span className="text-sm text-gray-700">No</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">No</span>
             </label>
           </div>
         )
@@ -955,7 +955,7 @@ export function SimplifiedUniverseBuilder({
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Selection Rules</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Selection Rules</h3>
           <p className="text-[11px] text-gray-400 mt-0.5">These rules determine which assets this process applies to.</p>
         </div>
         <div className="flex items-center space-x-2 flex-shrink-0">
@@ -993,9 +993,9 @@ export function SimplifiedUniverseBuilder({
         <div className="space-y-3">
           {/* Logic Builder Section - Show when there are 2+ rules */}
           {rules.length >= 2 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">Rule Logic</h4>
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Rule Logic</h4>
                 <div className="flex items-center gap-2">
                   {isEditable && selectedTokens.size >= 2 && (
                     <>
@@ -1009,20 +1009,20 @@ export function SimplifiedUniverseBuilder({
                       <button
                         type="button"
                         onClick={clearSelection}
-                        className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-200 rounded"
+                        className="text-xs px-2 py-1 text-gray-600 hover:bg-gray-200 rounded dark:text-gray-400"
                       >
                         Clear
                       </button>
                     </>
                   )}
                   {isEditable && selectedTokens.size > 0 && selectedTokens.size < 2 && (
-                    <span className="text-xs text-gray-500">Select more to group</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Select more to group</span>
                   )}
                 </div>
               </div>
 
               {/* Logic Expression Display */}
-              <div className="flex flex-wrap items-center gap-1.5 p-3 bg-white border border-gray-200 rounded-lg min-h-[48px]">
+              <div className="flex flex-wrap items-center gap-1.5 p-3 bg-white border border-gray-200 rounded-lg min-h-[48px] dark:border-gray-700 dark:bg-gray-800">
                 {(() => {
                   // Filter out orphaned operators (operators next to missing filters)
                   const validExpression = logicExpression.filter((token, idx) => {
@@ -1132,7 +1132,7 @@ export function SimplifiedUniverseBuilder({
                 })()}
               </div>
 
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                 {isEditable ? 'Click AND/OR to toggle. Click rules to select, then group with parentheses.' : 'View-only mode'}
               </p>
             </div>
@@ -1147,19 +1147,19 @@ export function SimplifiedUniverseBuilder({
               const Icon = definition.icon
 
               return (
-                <div key={rule.id} className="flex items-start space-x-3 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group">
+                <div key={rule.id} className="flex items-start space-x-3 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all group dark:border-gray-700 dark:bg-gray-800">
                   <div className="mt-0.5 flex-shrink-0">
                     <Icon className={`w-4 h-4 text-${definition.color}-500`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-1.5">
-                      <span className="text-sm font-medium text-gray-900">{definition.name}</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{definition.name}</span>
                       <span className="text-gray-300">&middot;</span>
-                      <span className={`text-xs font-medium ${rule.operator === 'excludes' ? 'text-red-600' : 'text-gray-500'}`}>
+                      <span className={`text-xs font-medium ${rule.operator === 'excludes' ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'}`}>
                         {OPERATOR_LABELS[rule.operator]}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-600 mt-0.5 truncate">
+                    <p className="text-xs text-gray-600 mt-0.5 truncate dark:text-gray-400">
                       {(() => {
                         if (Array.isArray(rule.values)) {
                           const options = getOptionsForFilter(rule.type)
@@ -1191,7 +1191,7 @@ export function SimplifiedUniverseBuilder({
                   </div>
                   {isEditable && (
                     <div className="flex items-center space-x-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" onClick={() => openEditFilterModal(rule)} className="p-1 rounded hover:bg-gray-100 transition-colors" title="Edit rule">
+                      <button type="button" onClick={() => openEditFilterModal(rule)} className="p-1 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700" title="Edit rule">
                         <Edit2 className="w-3.5 h-3.5 text-gray-400" />
                       </button>
                       <button type="button" onClick={() => deleteRule(rule.id)} className="p-1 rounded hover:bg-red-50 transition-colors" title="Remove rule">
@@ -1211,8 +1211,8 @@ export function SimplifiedUniverseBuilder({
         <div className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Manual Overrides</h3>
-              <p className="text-sm text-gray-500">Assets manually added or removed from this workflow</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Manual Overrides</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Assets manually added or removed from this workflow</p>
             </div>
             <Badge variant="outline" size="md">
               {universeOverrides.length} {universeOverrides.length === 1 ? 'override' : 'overrides'}
@@ -1237,13 +1237,13 @@ export function SimplifiedUniverseBuilder({
                       <div className="flex items-center space-x-2">
                         <Link
                           to={`/assets/${override.assets.id}`}
-                          className="font-semibold text-gray-900 hover:text-blue-600 transition-colors truncate"
+                          className="font-semibold text-gray-900 hover:text-blue-600 transition-colors truncate dark:text-white"
                         >
                           {override.assets.symbol}
                         </Link>
                         <ExternalLink className="w-3 h-3 text-gray-400 flex-shrink-0" />
                       </div>
-                      <p className="text-sm text-gray-600 truncate">{override.assets.company_name}</p>
+                      <p className="text-sm text-gray-600 truncate dark:text-gray-400">{override.assets.company_name}</p>
                       <div className="flex items-center space-x-2 mt-2">
                         <Badge
                           variant={override.override_type === 'add' ? 'success' : 'destructive'}
@@ -1251,12 +1251,12 @@ export function SimplifiedUniverseBuilder({
                         >
                           {override.override_type === 'add' ? 'Manually Added' : 'Manually Removed'}
                         </Badge>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
                           {new Date(override.created_at).toLocaleDateString()}
                         </span>
                       </div>
                       {override.notes && (
-                        <p className="text-xs text-gray-500 mt-1 italic">{override.notes}</p>
+                        <p className="text-xs text-gray-500 mt-1 italic dark:text-gray-400">{override.notes}</p>
                       )}
                     </div>
                   </div>
@@ -1284,8 +1284,8 @@ export function SimplifiedUniverseBuilder({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editingRule ? 'Edit Rule' : 'Add Rule'}
               </h3>
               <button
@@ -1293,7 +1293,7 @@ export function SimplifiedUniverseBuilder({
                   setShowAddFilter(false)
                   resetModal()
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1305,7 +1305,7 @@ export function SimplifiedUniverseBuilder({
               {!selectedFilterType ? (
                 <div>
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                       Select Filter Type
                     </label>
                     <div className="relative">
@@ -1315,7 +1315,7 @@ export function SimplifiedUniverseBuilder({
                         placeholder="Search filters..."
                         value={filterSearch}
                         onChange={(e) => setFilterSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm dark:border-gray-600"
                         autoFocus
                       />
                     </div>
@@ -1340,13 +1340,13 @@ export function SimplifiedUniverseBuilder({
                               setCurrentValues(null)
                             }
                           }}
-                          className="text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                          className="text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors dark:border-gray-700"
                         >
                           <div className="flex items-start space-x-2">
                             <Icon className={`w-4 h-4 text-${filterDef.color}-500 mt-0.5 flex-shrink-0`} />
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium text-sm text-gray-900 truncate">{filterDef.name}</div>
-                              <div className="text-xs text-gray-500 mt-0.5">{filterDef.description}</div>
+                              <div className="font-medium text-sm text-gray-900 truncate dark:text-white">{filterDef.name}</div>
+                              <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{filterDef.description}</div>
                               {category && (
                                 <div className="mt-1">
                                   <Badge variant="outline" size="xs">{category.name}</Badge>
@@ -1372,8 +1372,8 @@ export function SimplifiedUniverseBuilder({
                           <>
                             <Icon className={`w-5 h-5 text-${def.color}-500`} />
                             <div>
-                              <div className="font-medium text-sm text-gray-900">{def.name}</div>
-                              <div className="text-xs text-gray-600">{def.description}</div>
+                              <div className="font-medium text-sm text-gray-900 dark:text-white">{def.name}</div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400">{def.description}</div>
                             </div>
                           </>
                         )
@@ -1394,7 +1394,7 @@ export function SimplifiedUniverseBuilder({
 
                   {/* Step 2: Operator Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                       Condition
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -1405,7 +1405,7 @@ export function SimplifiedUniverseBuilder({
                           className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                             currentOperator === operator
                               ? 'border-blue-500 bg-blue-50 text-blue-700'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                           }`}
                         >
                           {OPERATOR_LABELS[operator]}
@@ -1416,7 +1416,7 @@ export function SimplifiedUniverseBuilder({
 
                   {/* Step 3: Value Configuration */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                       Value
                     </label>
                     {getFilterDefinition(selectedFilterType)?.helpText && (
@@ -1431,7 +1431,7 @@ export function SimplifiedUniverseBuilder({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 flex justify-between items-center flex-shrink-0">
+            <div className="p-4 border-t border-gray-200 flex justify-between items-center flex-shrink-0 dark:border-gray-700">
               <div>
                 {selectedFilterType && Array.isArray(currentValues) && currentValues.length > 0 && (
                   <button

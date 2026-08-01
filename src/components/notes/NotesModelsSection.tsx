@@ -254,9 +254,9 @@ export function NotesModelsSection({
         {/* Section Header - matches Outcomes section styling */}
         <button
           onClick={onToggleExpanded}
-          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+          className="w-full px-6 py-4 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
         >
-          <span className="font-medium text-gray-900">Notes & Models</span>
+          <span className="font-medium text-gray-900 dark:text-white">Notes & Models</span>
           {isExpanded ? (
             <ChevronUp className="h-5 w-5 text-gray-400" />
           ) : (
@@ -266,15 +266,15 @@ export function NotesModelsSection({
 
         {/* Content */}
         {isExpanded && (
-          <div className="border-t border-gray-100 px-6 py-6">
+          <div className="border-t border-gray-100 px-6 py-6 dark:border-gray-800">
             {/* Two Column Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Notes Column */}
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700 uppercase tracking-wide">
+                    <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 uppercase tracking-wide dark:text-gray-300">
                       Notes
                     </span>
                     <span className="text-xs text-gray-400">
@@ -317,9 +317,9 @@ export function NotesModelsSection({
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                     <FileText className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">No notes yet</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No notes yet</p>
                     {canAddItems && (
                       <p className="text-xs text-gray-400 mt-1">Add your first note</p>
                     )}
@@ -331,8 +331,8 @@ export function NotesModelsSection({
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <FileSpreadsheet className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700 uppercase tracking-wide">
+                    <FileSpreadsheet className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 uppercase tracking-wide dark:text-gray-300">
                       Models
                     </span>
                     <span className="text-xs text-gray-400">
@@ -371,9 +371,9 @@ export function NotesModelsSection({
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                     <FileSpreadsheet className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">No models yet</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No models yet</p>
                     {canAddItems && (
                       <p className="text-xs text-gray-400 mt-1">Upload your first model</p>
                     )}
@@ -409,12 +409,12 @@ export function NotesModelsSection({
             className="absolute inset-0 bg-black/50"
             onClick={() => setShowExcelSyncModal(false)}
           />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Sync Excel Model</h3>
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4 dark:bg-gray-800">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between dark:border-gray-700 dark:bg-gray-800">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Sync Excel Model</h3>
               <button
                 onClick={() => setShowExcelSyncModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <X className="w-5 h-5" />
               </button>

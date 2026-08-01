@@ -62,14 +62,14 @@ export function StageCard({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-4">
             {/* Stage Number */}
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 font-medium text-sm dark:text-gray-400 dark:bg-gray-800">
               {index + 1}
             </div>
 
             {/* Stage Info */}
             <div>
-              <h4 className="font-medium text-gray-900">{stage.stage_label}</h4>
-              <p className="text-sm text-gray-500">{stage.stage_description}</p>
+              <h4 className="font-medium text-gray-900 dark:text-white">{stage.stage_label}</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{stage.stage_description}</p>
               <div className="flex items-center space-x-4 mt-1">
                 {stage.standard_deadline_days != null && (
                   <span className="text-xs text-gray-400">
@@ -142,7 +142,7 @@ export function StageCard({
         {/* Suggested Priorities (if any) */}
         {stage.suggested_priorities && stage.suggested_priorities.length > 0 && (
           <div className="mt-2 flex items-center space-x-2">
-            <span className="text-xs text-gray-500">Suggested priorities:</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Suggested priorities:</span>
             <div className="flex flex-wrap gap-1">
               {stage.suggested_priorities.map((priority, i) => (
                 <span

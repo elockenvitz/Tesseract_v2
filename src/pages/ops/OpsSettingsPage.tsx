@@ -126,21 +126,21 @@ export function OpsSettingsPage() {
   return (
     <div className="p-6 max-w-4xl space-y-8">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Platform Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage platform admins and client organizations</p>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Platform Settings</h1>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Manage platform admins and client organizations</p>
       </div>
 
       {/* ── Platform Admins ─────────────────────────────────── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
           <Shield className="w-5 h-5 text-indigo-600" />
-          <h2 className="text-base font-semibold text-gray-900">Platform Admins</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Platform Admins</h2>
         </div>
-        <p className="text-xs text-gray-500 mb-4">
+        <p className="text-xs text-gray-500 mb-4 dark:text-gray-400">
           Platform admins can access the Operations Portal, provision clients, and manage all users.
         </p>
 
-        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 mb-3">
+        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 mb-3 dark:border-gray-700 dark:divide-gray-800">
           {adminsLoading ? (
             <div className="p-4 flex justify-center">
               <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
@@ -150,12 +150,12 @@ export function OpsSettingsPage() {
           ) : platformAdmins.map(admin => (
             <div key={admin.userId} className="flex items-center justify-between px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-gray-900">{admin.email}</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{admin.email}</p>
                 {admin.name && <p className="text-xs text-gray-400">{admin.name}</p>}
               </div>
               <div className="flex items-center gap-2">
                 {admin.userId === user?.id && (
-                  <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">You</span>
+                  <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">You</span>
                 )}
                 <button
                   onClick={() => {
@@ -183,7 +183,7 @@ export function OpsSettingsPage() {
             placeholder="Email address of new admin..."
             value={addAdminEmail}
             onChange={e => setAddAdminEmail(e.target.value)}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
           />
           <button
             type="submit"
@@ -210,13 +210,13 @@ export function OpsSettingsPage() {
       <section>
         <div className="flex items-center gap-2 mb-4">
           <Building2 className="w-5 h-5 text-indigo-600" />
-          <h2 className="text-base font-semibold text-gray-900">Client Organizations</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Client Organizations</h2>
         </div>
-        <p className="text-xs text-gray-500 mb-4">
+        <p className="text-xs text-gray-500 mb-4 dark:text-gray-400">
           Toggle pilot mode or delete organizations. Manage users under Clients → [Client Name].
         </p>
 
-        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
           {orgsLoading ? (
             <div className="p-4 flex justify-center">
               <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
@@ -227,7 +227,7 @@ export function OpsSettingsPage() {
               <div key={org.id} className="flex items-center justify-between px-4 py-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-900">{org.name}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{org.name}</p>
                     {isPilot && (
                       <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 rounded">
                         Pilot
@@ -242,7 +242,7 @@ export function OpsSettingsPage() {
                     disabled={togglePilotModeM.isPending}
                     className={clsx(
                       'px-2 py-1 rounded text-[11px] font-medium transition-colors',
-                      isPilot ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      isPilot ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                     )}
                   >
                     {isPilot ? 'Pilot On' : 'Pilot Off'}

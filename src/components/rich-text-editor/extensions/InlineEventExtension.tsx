@@ -12,7 +12,7 @@ const EVENT_TYPES = [
   { value: 'call', label: 'Call', color: 'bg-green-100 text-green-700' },
   { value: 'deadline', label: 'Deadline', color: 'bg-red-100 text-red-700' },
   { value: 'reminder', label: 'Reminder', color: 'bg-yellow-100 text-yellow-700' },
-  { value: 'other', label: 'Other', color: 'bg-gray-100 text-gray-700' }
+  { value: 'other', label: 'Other', color: 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800' }
 ]
 
 function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeViewProps) {
@@ -174,7 +174,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
               }
             }}
             placeholder="Event name..."
-            className="flex-1 text-sm font-medium bg-transparent border-none outline-none min-w-0 text-gray-900"
+            className="flex-1 text-sm font-medium bg-transparent border-none outline-none min-w-0 text-gray-900 dark:text-white"
             contentEditable={false}
           />
 
@@ -182,12 +182,12 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
           {!isExpanded && (
             <>
               {node.attrs.startDate && (
-                <span className="text-xs text-gray-500 flex-shrink-0">
+                <span className="text-xs text-gray-500 flex-shrink-0 dark:text-gray-400">
                   {formatDateTime()}
                 </span>
               )}
               {node.attrs.location && (
-                <span className="text-xs text-gray-500 flex-shrink-0 flex items-center gap-0.5">
+                <span className="text-xs text-gray-500 flex-shrink-0 flex items-center gap-0.5 dark:text-gray-400">
                   <MapPin className="w-3 h-3" />
                 </span>
               )}
@@ -197,7 +197,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
           {/* Expand/Collapse */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+            className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 dark:hover:text-gray-300"
             contentEditable={false}
           >
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -218,7 +218,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
           <div className="px-3 pb-3 pt-1 border-t border-blue-100 space-y-3">
             {/* Description */}
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Description</label>
+              <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Description</label>
               <input
                 type="text"
                 value={localDescription}
@@ -230,7 +230,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                   }
                 }}
                 placeholder="Add description..."
-                className="w-full text-sm bg-white border border-gray-200 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary-500"
+                className="w-full text-sm bg-white border border-gray-200 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                 contentEditable={false}
               />
             </div>
@@ -239,7 +239,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
             <div className="flex items-end gap-3 flex-wrap">
               {/* Start Date */}
               <div className="min-w-[130px]">
-                <label className="text-xs text-gray-500 mb-1 block">Start</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Start</label>
                 <div className="flex items-center gap-1">
                   <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
@@ -249,7 +249,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                       updateAttributes({ startDate: e.target.value })
                       if (node.attrs.eventId) setTimeout(() => saveEventMutation.mutate(), 100)
                     }}
-                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                     contentEditable={false}
                   />
                 </div>
@@ -258,7 +258,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
               {/* Start Time */}
               {!node.attrs.allDay && (
                 <div className="min-w-[100px]">
-                  <label className="text-xs text-gray-500 mb-1 block">Time</label>
+                  <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Time</label>
                   <div className="flex items-center gap-1">
                     <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <input
@@ -268,7 +268,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                         updateAttributes({ startTime: e.target.value })
                         if (node.attrs.eventId) setTimeout(() => saveEventMutation.mutate(), 100)
                       }}
-                      className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                       contentEditable={false}
                     />
                   </div>
@@ -277,7 +277,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
 
               {/* End Date */}
               <div className="min-w-[130px]">
-                <label className="text-xs text-gray-500 mb-1 block">End</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">End</label>
                 <div className="flex items-center gap-1">
                   <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
@@ -287,7 +287,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                       updateAttributes({ endDate: e.target.value })
                       if (node.attrs.eventId) setTimeout(() => saveEventMutation.mutate(), 100)
                     }}
-                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                     contentEditable={false}
                   />
                 </div>
@@ -296,7 +296,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
               {/* End Time */}
               {!node.attrs.allDay && (
                 <div className="min-w-[100px]">
-                  <label className="text-xs text-gray-500 mb-1 block">Time</label>
+                  <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Time</label>
                   <div className="flex items-center gap-1">
                     <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <input
@@ -306,7 +306,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                         updateAttributes({ endTime: e.target.value })
                         if (node.attrs.eventId) setTimeout(() => saveEventMutation.mutate(), 100)
                       }}
-                      className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                       contentEditable={false}
                     />
                   </div>
@@ -314,7 +314,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
               )}
 
               {/* All Day */}
-              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer pb-1">
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer pb-1 dark:text-gray-400">
                 <input
                   type="checkbox"
                   checked={node.attrs.allDay}
@@ -322,7 +322,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                     updateAttributes({ allDay: e.target.checked })
                     if (node.attrs.eventId) setTimeout(() => saveEventMutation.mutate(), 100)
                   }}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                 />
                 All day
               </label>
@@ -332,7 +332,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
             <div className="flex items-end gap-3 flex-wrap">
               {/* Location */}
               <div className="flex-1 min-w-[150px]">
-                <label className="text-xs text-gray-500 mb-1 block">Location</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Location</label>
                 <div className="flex items-center gap-1">
                   <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
@@ -346,7 +346,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                       }
                     }}
                     placeholder="Add location..."
-                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                     contentEditable={false}
                   />
                 </div>
@@ -354,7 +354,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
 
               {/* Meeting URL */}
               <div className="flex-1 min-w-[150px]">
-                <label className="text-xs text-gray-500 mb-1 block">Meeting Link</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Meeting Link</label>
                 <div className="flex items-center gap-1">
                   <LinkIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
@@ -368,7 +368,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                       }
                     }}
                     placeholder="https://..."
-                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-sm bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800"
                     contentEditable={false}
                   />
                 </div>
@@ -376,7 +376,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
 
               {/* Event Type */}
               <div className="relative">
-                <label className="text-xs text-gray-500 mb-1 block">Type</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Type</label>
                 <button
                   onClick={() => setShowTypeMenu(!showTypeMenu)}
                   className={clsx(
@@ -388,7 +388,7 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                   {eventTypeInfo.label}
                 </button>
                 {showTypeMenu && (
-                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px] dark:border-gray-700 dark:bg-gray-800">
                     {EVENT_TYPES.map((type) => (
                       <button
                         key={type.value}
@@ -398,8 +398,8 @@ function InlineEventView({ node, updateAttributes, deleteNode, selected }: NodeV
                           if (node.attrs.eventId) setTimeout(() => saveEventMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.eventType === type.value && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.eventType === type.value && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         {type.label}

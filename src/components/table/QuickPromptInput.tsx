@@ -92,20 +92,20 @@ export function QuickPromptInput({
   return createPortal(
     <div
       ref={dropdownRef}
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-96 animate-in fade-in slide-in-from-top-2 duration-150"
+      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-96 animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
       style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
             <Sparkles className="h-3.5 w-3.5 text-white" />
           </div>
-          <h3 className="text-sm font-medium text-gray-900">Quick AI Prompt</h3>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white">Quick AI Prompt</h3>
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          className="p-1 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
         >
           <X className="h-4 w-4 text-gray-400" />
         </button>
@@ -123,7 +123,7 @@ export function QuickPromptInput({
               onKeyDown={handleKeyDown}
               placeholder="Ask anything about these assets..."
               rows={3}
-              className="w-full px-3 py-2.5 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none text-sm"
+              className="w-full px-3 py-2.5 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 resize-none text-sm dark:border-gray-700"
               disabled={isRunning}
             />
             <button
@@ -133,7 +133,7 @@ export function QuickPromptInput({
                 'absolute right-2 bottom-2 p-2 rounded-lg transition-colors',
                 prompt.trim() && !isRunning
                   ? 'bg-purple-600 text-white hover:bg-purple-700'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800'
               )}
             >
               {isRunning ? (
@@ -152,7 +152,7 @@ export function QuickPromptInput({
 
       {/* History */}
       {showHistory && !prompt && history.length > 0 && (
-        <div className="border-t border-gray-100">
+        <div className="border-t border-gray-100 dark:border-gray-800">
           <div className="px-4 py-2 flex items-center gap-1.5 text-xs text-gray-400">
             <Clock className="h-3 w-3" />
             Recent prompts
@@ -161,11 +161,11 @@ export function QuickPromptInput({
             {history.slice(0, 5).map(item => (
               <div
                 key={item.id}
-                className="group flex items-center gap-2 px-3 py-2 hover:bg-gray-50 transition-colors"
+                className="group flex items-center gap-2 px-3 py-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
               >
                 <button
                   onClick={() => handleUseHistoryPrompt(item.prompt)}
-                  className="flex-1 text-left text-sm text-gray-700 truncate"
+                  className="flex-1 text-left text-sm text-gray-700 truncate dark:text-gray-300"
                 >
                   {item.prompt}
                 </button>
@@ -190,7 +190,7 @@ export function QuickPromptInput({
 
       {/* Loading History */}
       {showHistory && !prompt && loadingHistory && (
-        <div className="border-t border-gray-100 py-4 text-center text-sm text-gray-500">
+        <div className="border-t border-gray-100 py-4 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
           Loading history...
         </div>
       )}
@@ -200,7 +200,7 @@ export function QuickPromptInput({
         <div className="px-3 pb-3">
           <button
             onClick={() => onSaveToLibrary(prompt)}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
           >
             <Save className="h-4 w-4" />
             Save to Library

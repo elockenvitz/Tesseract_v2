@@ -58,7 +58,7 @@ export function BookmarkButton({
           'p-1.5 rounded transition-colors',
           isBookmarked
             ? 'text-amber-500'  // Keep bookmarked state prominent
-            : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100',  // Muted default, reveal on hover
+            : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-gray-700',  // Muted default, reveal on hover
           isToggling && 'opacity-50',
           className
         )}
@@ -80,7 +80,7 @@ export function BookmarkButton({
         'flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors',
         isBookmarked
           ? 'bg-amber-50 text-amber-600'
-          : 'text-gray-500 hover:bg-gray-100 hover:text-amber-600',
+          : 'text-gray-500 hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-gray-700 dark:text-gray-400',
         isToggling && 'opacity-50',
         className
       )}

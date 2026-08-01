@@ -205,7 +205,7 @@ export function OperationalItemCard({
 
   return (
     <div className={`rounded-lg border transition-all ${
-      isExpanded ? 'border-gray-200 bg-white shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'
+      isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
     } ${!isEditable ? 'opacity-75' : ''}`}>
 
       {/* ── Header row ─────────────────────────────────────────── */}
@@ -219,7 +219,7 @@ export function OperationalItemCard({
           className={`flex-shrink-0 w-[18px] h-[18px] mt-[1px] rounded-full border-[1.5px] flex items-center justify-center transition-colors ${
             status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
             : status === 'na' ? 'bg-gray-400 border-gray-400 text-white'
-            : isEditable ? 'border-gray-300 hover:border-gray-400' : 'border-gray-200'
+            : isEditable ? 'border-gray-300 hover:border-gray-400 dark:border-gray-600' : 'border-gray-200 dark:border-gray-700'
           } ${!isEditable ? 'cursor-not-allowed' : 'cursor-pointer'}`}
         >
           {status === 'completed' && <Check className="w-2.5 h-2.5" strokeWidth={3} />}
@@ -228,13 +228,13 @@ export function OperationalItemCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`text-[13px] font-medium leading-snug ${status === 'completed' ? 'text-gray-400' : 'text-gray-900'}`}>
+            <span className={`text-[13px] font-medium leading-snug ${status === 'completed' ? 'text-gray-400' : 'text-gray-900 dark:text-white'}`}>
               {item.text}
             </span>
           </div>
           {/* Collapsed preview: assignee */}
           {!isExpanded && item.assignee && (
-            <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-1 leading-snug">{userName(item.assignee)}</p>
+            <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-1 leading-snug dark:text-gray-400">{userName(item.assignee)}</p>
           )}
         </div>
 
@@ -248,7 +248,7 @@ export function OperationalItemCard({
 
       {/* ── Expanded body ─────────────────────────────────────────── */}
       {isExpanded && (
-        <div className="border-t border-gray-100 text-[12px]">
+        <div className="border-t border-gray-100 text-[12px] dark:border-gray-800">
 
           {/* ── Source provenance ───────────────────────────────── */}
           {item.source_type === 'work_request' && (
@@ -264,25 +264,25 @@ export function OperationalItemCard({
           )}
 
           {/* ── Owner row ──────────────────────────────────────── */}
-          <div className="flex items-center gap-3 px-3 py-1.5 border-b border-gray-100">
+          <div className="flex items-center gap-3 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[44px] flex-shrink-0">Owner</span>
               {assigningOwner ? (
                 <div className="relative">
-                  <div className="flex items-center gap-1 border border-gray-200 rounded px-1.5 py-0.5">
+                  <div className="flex items-center gap-1 border border-gray-200 rounded px-1.5 py-0.5 dark:border-gray-700">
                     <Search className="w-3 h-3 text-gray-400" />
                     <input
                       value={ownerSearch} onChange={e => setOwnerSearch(e.target.value)}
                       placeholder="Search..." className="text-[11px] w-[120px] bg-transparent focus:outline-none"
                       autoFocus onKeyDown={e => { if (e.key === 'Escape') setAssigningOwner(false) }}
                     />
-                    <button onClick={() => setAssigningOwner(false)} className="text-gray-400 hover:text-gray-600"><X className="w-3 h-3" /></button>
+                    <button onClick={() => setAssigningOwner(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-3 h-3" /></button>
                   </div>
-                  <div className="absolute top-full left-0 mt-0.5 w-[200px] bg-white border border-gray-200 rounded shadow-lg z-10 max-h-[140px] overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-0.5 w-[200px] bg-white border border-gray-200 rounded shadow-lg z-10 max-h-[140px] overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                     {filteredUsers.map(u => (
                       <button
                         key={u.id}
-                        className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-gray-50 text-[11px]"
+                        className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-gray-50 text-[11px] dark:hover:bg-gray-800"
                         onClick={() => {
                           updateFieldM.mutate({ assignee_id: u.id })
                           setAssigningOwner(false); setOwnerSearch('')
@@ -299,7 +299,7 @@ export function OperationalItemCard({
               ) : assigneeName ? (
                 <button
                   onClick={() => isEditable && setAssigningOwner(true)}
-                  className="flex items-center gap-1.5 text-[11px] text-gray-700 hover:text-blue-600 transition-colors"
+                  className="flex items-center gap-1.5 text-[11px] text-gray-700 hover:text-blue-600 transition-colors dark:text-gray-300"
                 >
                   <div className={`w-4 h-4 rounded-full ${avatarColor(assigneeName)} flex items-center justify-center`}>
                     <span className="text-white text-[7px] font-semibold">{userInitials(item.assignee)}</span>
@@ -317,7 +317,7 @@ export function OperationalItemCard({
           </div>
 
           {/* ── Notes ───────────────────────────────────────────── */}
-          <div className="px-3 py-1.5 border-b border-gray-100">
+          <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Notes</span>
               {isEditable && !editingNotes && (
@@ -331,7 +331,7 @@ export function OperationalItemCard({
                 <textarea
                   value={notesDraft} onChange={e => setNotesDraft(e.target.value)}
                   placeholder="Add task notes, instructions, or context..."
-                  className="w-full text-[12px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none leading-snug"
+                  className="w-full text-[12px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none leading-snug dark:border-gray-700"
                   rows={2} autoFocus
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); updateFieldM.mutate({ notes: notesDraft.trim() || null }); setEditingNotes(false) }
@@ -340,16 +340,16 @@ export function OperationalItemCard({
                 />
                 <div className="flex gap-2 mt-1">
                   <button onClick={() => { updateFieldM.mutate({ notes: notesDraft.trim() || null }); setEditingNotes(false) }} className="text-[10px] font-medium bg-gray-900 text-white px-2 py-0.5 rounded">Save</button>
-                  <button onClick={() => setEditingNotes(false)} className="text-[10px] text-gray-500">Cancel</button>
+                  <button onClick={() => setEditingNotes(false)} className="text-[10px] text-gray-500 dark:text-gray-400">Cancel</button>
                 </div>
               </div>
             ) : item.notes ? (
-              <p className="text-[12px] text-gray-700 leading-snug whitespace-pre-wrap">{item.notes}</p>
+              <p className="text-[12px] text-gray-700 leading-snug whitespace-pre-wrap dark:text-gray-300">{item.notes}</p>
             ) : null}
           </div>
 
           {/* ── Attachments ─────────────────────────────────────── */}
-          <div className="px-3 py-1.5 border-b border-gray-100">
+          <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                 Attachments{attachments.length > 0 && ` (${attachments.length})`}
@@ -369,9 +369,9 @@ export function OperationalItemCard({
             {attachments.length > 0 && (
               <div className="space-y-0">
                 {attachments.map((att: any) => (
-                  <div key={att.id} className="group/att flex items-center gap-2 py-0.5 hover:bg-gray-50 rounded -mx-1 px-1">
+                  <div key={att.id} className="group/att flex items-center gap-2 py-0.5 hover:bg-gray-50 rounded -mx-1 px-1 dark:hover:bg-gray-800">
                     <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                    <span className="text-[11px] text-gray-700 truncate flex-1">{att.file_name}</span>
+                    <span className="text-[11px] text-gray-700 truncate flex-1 dark:text-gray-300">{att.file_name}</span>
                     <span className="text-[10px] text-gray-400">{relativeTime(att.created_at)}</span>
                     <div className="flex gap-0.5 opacity-0 group-hover/att:opacity-100 transition-opacity">
                       <button onClick={() => handleDownload(att)} className="p-0.5 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600"><Download className="w-3 h-3" /></button>
@@ -399,13 +399,13 @@ export function OperationalItemCard({
                   const cUser = c.user
                   const isOwn = currentUser?.id === c.user_id
                   return (
-                    <div key={c.id} className="group/c flex gap-2 py-1 -mx-1 px-1 rounded hover:bg-gray-50">
+                    <div key={c.id} className="group/c flex gap-2 py-1 -mx-1 px-1 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
                       <div className={`w-5 h-5 rounded-full ${avatarColor(userName(cUser))} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                         <span className="text-white text-[8px] font-semibold">{userInitials(cUser)}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-medium text-gray-700">{userName(cUser)}</span>
+                          <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">{userName(cUser)}</span>
                           <span className="text-[10px] text-gray-400">{relativeTime(c.created_at)}</span>
                           {isOwn && (
                             <button onClick={() => { if (confirm('Delete comment?')) deleteCommentM.mutate(c.id) }}
@@ -414,7 +414,7 @@ export function OperationalItemCard({
                             </button>
                           )}
                         </div>
-                        <p className="text-[11px] text-gray-700 leading-snug">{c.comment_text}</p>
+                        <p className="text-[11px] text-gray-700 leading-snug dark:text-gray-300">{c.comment_text}</p>
                       </div>
                     </div>
                   )
@@ -426,7 +426,7 @@ export function OperationalItemCard({
                 <textarea
                   value={commentText} onChange={e => setCommentText(e.target.value)}
                   placeholder="Add a comment..."
-                  className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none"
+                  className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none dark:border-gray-700"
                   rows={2} autoFocus
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (commentText.trim()) addCommentM.mutate(commentText.trim()) }
@@ -434,7 +434,7 @@ export function OperationalItemCard({
                   }}
                 />
                 <div className="flex items-center justify-end gap-2 mt-1">
-                  <button onClick={() => { setAddingComment(false); setCommentText('') }} className="text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+                  <button onClick={() => { setAddingComment(false); setCommentText('') }} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
                   <button
                     onClick={() => { if (commentText.trim()) addCommentM.mutate(commentText.trim()) }}
                     disabled={!commentText.trim()}
@@ -449,7 +449,7 @@ export function OperationalItemCard({
 
           {/* Completion footer */}
           {item.completedAt && (
-            <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50/50 text-[10px] text-gray-400">
+            <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50/50 text-[10px] text-gray-400 dark:border-gray-800">
               Completed by {userName(item.completedByUser)} · {new Date(item.completedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </div>
           )}

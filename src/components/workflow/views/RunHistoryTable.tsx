@@ -69,7 +69,7 @@ export function RunHistoryTable({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
       </div>
     )
   }
@@ -77,7 +77,7 @@ export function RunHistoryTable({
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <h3 className="text-lg font-semibold text-gray-900">Runs</h3>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Runs</h3>
 
       {/* Active Run Card */}
       {activeRun ? (
@@ -86,12 +86,12 @@ export function RunHistoryTable({
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-                <h4 className="font-semibold text-gray-900">
+                <h4 className="font-semibold text-gray-900 dark:text-white">
                   {activeRun.branch_suffix || activeRun.name}
                 </h4>
                 {activeRun.template_version_number && (
                   <span
-                    className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4"
+                    className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4 dark:text-gray-400 dark:bg-gray-800"
                     title={getRunVersionTooltip(activeRun)}
                   >
                     {getRunVersionLabel(activeRun)}
@@ -121,12 +121,12 @@ export function RunHistoryTable({
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
               <span>Started {safeRelativeTime(activeRun.branched_at || activeRun.created_at)}</span>
               {endCondition && (
                 <>
                   <span className="text-gray-300">·</span>
-                  <span className="text-gray-500">{endCondition}</span>
+                  <span className="text-gray-500 dark:text-gray-400">{endCondition}</span>
                 </>
               )}
             </div>
@@ -136,7 +136,7 @@ export function RunHistoryTable({
         <Card className="border-dashed">
           <div className="p-6 text-center">
             <Play className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500 mb-1">No active run for this process.</p>
+            <p className="text-sm text-gray-500 mb-1 dark:text-gray-400">No active run for this process.</p>
             <p className="text-xs text-gray-400">Use the Start Run button in the header to begin a new cycle.</p>
           </div>
         </Card>
@@ -156,7 +156,7 @@ export function RunHistoryTable({
           <div className="p-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="font-medium text-gray-900 text-sm">
+              <span className="font-medium text-gray-900 text-sm dark:text-white">
                 {branch.branch_suffix || branch.name}
               </span>
               <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Active</Badge>
@@ -180,19 +180,19 @@ export function RunHistoryTable({
       {(hasAnyPastBranches || currentFilter !== 'all') && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+            <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
               Past Runs {pastBranches.length > 0 && `(${pastBranches.length})`}
             </h4>
             {onFilterChange && (
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 text-xs">
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 text-xs dark:bg-gray-800">
                 {(['all', 'archived', 'deleted'] as const).map(f => (
                   <button
                     key={f}
                     onClick={() => onFilterChange(f)}
                     className={`px-2.5 py-1 rounded-md font-medium transition-colors capitalize ${
                       currentFilter === f
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
+                        ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                     }`}
                   >
                     {f === 'all' ? 'Ended' : f}
@@ -210,12 +210,12 @@ export function RunHistoryTable({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50/50">
-                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Run</th>
-                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
-                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
-                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Ended</th>
-                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <tr className="border-b border-gray-200 bg-gray-50/50 dark:border-gray-700">
+                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Run</th>
+                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Version</th>
+                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Started</th>
+                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Ended</th>
+                    <th className="text-left py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Status</th>
                     {canEdit && <th className="py-2.5 px-4 w-20" />}
                   </tr>
                 </thead>
@@ -223,16 +223,16 @@ export function RunHistoryTable({
                   {pastBranches.map(branch => (
                     <tr
                       key={branch.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer group"
+                      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer group dark:hover:bg-gray-800 dark:border-gray-800"
                       onClick={() => onViewRun(branch)}
                     >
-                      <td className="py-2.5 px-4 font-medium text-gray-900">
+                      <td className="py-2.5 px-4 font-medium text-gray-900 dark:text-white">
                         {branch.branch_suffix || branch.name}
                       </td>
                       <td className="py-2.5 px-4">
                         {branch.template_version_number ? (
                           <span
-                            className="text-gray-500 text-xs"
+                            className="text-gray-500 text-xs dark:text-gray-400"
                             title={getRunVersionTooltip(branch)}
                           >
                             {getRunVersionLabel(branch)}
@@ -241,17 +241,17 @@ export function RunHistoryTable({
                           <span className="text-gray-300 text-xs">—</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-4 text-gray-500">
+                      <td className="py-2.5 px-4 text-gray-500 dark:text-gray-400">
                         {safeFormatDate(branch.branched_at || branch.created_at)}
                       </td>
-                      <td className="py-2.5 px-4 text-gray-500">
+                      <td className="py-2.5 px-4 text-gray-500 dark:text-gray-400">
                         {safeFormatDate(branch.ended_at || branch.archived_at || branch.deleted_at || branch.updated_at)}
                       </td>
                       <td className="py-2.5 px-4">
                         {branch.is_deleted ? (
                           <Badge variant="outline" className="text-xs text-red-600 border-red-200">Deleted</Badge>
                         ) : branch.is_archived ? (
-                          <Badge variant="outline" className="text-xs text-gray-500">Archived</Badge>
+                          <Badge variant="outline" className="text-xs text-gray-500 dark:text-gray-400">Archived</Badge>
                         ) : (
                           <Badge variant="outline" className="text-xs text-blue-500 border-blue-200">Ended</Badge>
                         )}

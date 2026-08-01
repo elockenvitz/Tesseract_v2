@@ -318,7 +318,7 @@ export function EditorToolbar({
         'p-1.5 rounded transition-all duration-150',
         isActive
           ? 'bg-primary-100 text-primary-700'
-          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400',
         disabled && 'opacity-40 cursor-not-allowed',
         className
       )}
@@ -331,7 +331,7 @@ export function EditorToolbar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-0.5 p-2 bg-gray-50 border border-gray-200 rounded-t-lg border-b-0">
+      <div className="flex flex-wrap items-center gap-0.5 p-2 bg-gray-50 border border-gray-200 rounded-t-lg border-b-0 dark:border-gray-700 dark:bg-gray-900">
         {/* Undo/Redo */}
         <div className="flex items-center gap-0.5 mr-1">
           <ToolButton
@@ -359,7 +359,7 @@ export function EditorToolbar({
             className={clsx(
               'flex items-center gap-1 px-2 py-1 rounded text-xs transition-all min-w-[90px]',
               showFontMenu ? 'bg-gray-200' : 'hover:bg-gray-100',
-              'text-gray-700 border border-gray-200'
+              'text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300'
             )}
           >
             <span className="truncate flex-1 text-left">{currentFontFamily}</span>
@@ -367,13 +367,13 @@ export function EditorToolbar({
           </button>
 
           {showFontMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px] dark:border-gray-700 dark:bg-gray-800">
               {FONT_FAMILIES.map((font) => (
                 <button
                   key={font.label}
                   onClick={() => applyFontFamily(font.value)}
                   className={clsx(
-                    'w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center justify-between',
+                    'w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center justify-between dark:hover:bg-gray-800',
                     currentFontFamily === font.label && 'bg-primary-50 text-primary-700'
                   )}
                   style={{ fontFamily: font.value || 'inherit' }}
@@ -393,7 +393,7 @@ export function EditorToolbar({
             className={clsx(
               'flex items-center gap-1 px-2 py-1 rounded text-xs transition-all min-w-[50px]',
               showSizeMenu ? 'bg-gray-200' : 'hover:bg-gray-100',
-              'text-gray-700 border border-gray-200'
+              'text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300'
             )}
           >
             <span className="flex-1 text-left">{currentFontSize}</span>
@@ -401,15 +401,15 @@ export function EditorToolbar({
           </button>
 
           {showSizeMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 w-24">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 w-24 dark:border-gray-700 dark:bg-gray-800">
               {/* Custom size input */}
-              <div className="px-2 pb-1 mb-1 border-b border-gray-100">
+              <div className="px-2 pb-1 mb-1 border-b border-gray-100 dark:border-gray-800">
                 <input
                   type="number"
                   min="1"
                   max="200"
                   placeholder="Size"
-                  className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       const value = parseInt((e.target as HTMLInputElement).value)
@@ -440,10 +440,10 @@ export function EditorToolbar({
                 ))}
               </div>
               {/* Reset option */}
-              <div className="border-t border-gray-100 mt-1 pt-1">
+              <div className="border-t border-gray-100 mt-1 pt-1 dark:border-gray-800">
                 <button
                   onClick={() => { (editor.chain().focus() as any).unsetFontSize().run(); setShowSizeMenu(false) }}
-                  className="w-full px-3 py-1.5 text-xs text-left text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                  className="w-full px-3 py-1.5 text-xs text-left text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400"
                 >
                   Reset to default
                 </button>
@@ -459,8 +459,8 @@ export function EditorToolbar({
             className={clsx(
               'flex items-center gap-1 px-2 py-1 rounded text-xs transition-all min-w-[80px]',
               showHeadingMenu ? 'bg-gray-200' : 'hover:bg-gray-100',
-              editor.isActive('heading') ? 'text-primary-700' : 'text-gray-700',
-              'border border-gray-200'
+              editor.isActive('heading') ? 'text-primary-700' : 'text-gray-700 dark:text-gray-300',
+              'border border-gray-200 dark:border-gray-700'
             )}
           >
             <span className="truncate flex-1 text-left">{currentHeading}</span>
@@ -468,7 +468,7 @@ export function EditorToolbar({
           </button>
 
           {showHeadingMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px] dark:border-gray-700 dark:bg-gray-800">
               {HEADING_OPTIONS.map((opt) => (
                 <button
                   key={opt.label}
@@ -481,7 +481,7 @@ export function EditorToolbar({
                     setShowHeadingMenu(false)
                   }}
                   className={clsx(
-                    'w-full px-3 py-1.5 text-left hover:bg-gray-50 flex items-center justify-between',
+                    'w-full px-3 py-1.5 text-left hover:bg-gray-50 flex items-center justify-between dark:hover:bg-gray-800',
                     currentHeading === opt.label && 'bg-primary-50 text-primary-700'
                   )}
                   style={{
@@ -547,17 +547,17 @@ export function EditorToolbar({
               <span className="text-xs font-bold leading-none">A</span>
               <div className="w-3.5 h-1 rounded-sm bg-current mt-0.5" />
             </div>
-            <ChevronDown className="w-3 h-3 text-gray-500" />
+            <ChevronDown className="w-3 h-3 text-gray-500 dark:text-gray-400" />
           </button>
 
           {showColorMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 dark:border-gray-700 dark:bg-gray-800">
               <div className="grid grid-cols-6 gap-1">
                 {TEXT_COLORS.map((color) => (
                   <button
                     key={color.name}
                     onClick={() => { editor.chain().focus().setColor(color.color).run(); setShowColorMenu(false) }}
-                    className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform"
+                    className="w-6 h-6 rounded border border-gray-200 hover:scale-110 transition-transform dark:border-gray-700"
                     style={{ backgroundColor: color.color }}
                     title={color.name}
                   />
@@ -565,7 +565,7 @@ export function EditorToolbar({
               </div>
               <button
                 onClick={() => { editor.chain().focus().unsetColor().run(); setShowColorMenu(false) }}
-                className="w-full mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 hover:text-gray-700"
+                className="w-full mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:border-gray-800 dark:text-gray-400"
               >
                 Reset
               </button>
@@ -580,7 +580,7 @@ export function EditorToolbar({
             className={clsx(
               'flex items-center gap-0.5 p-1.5 rounded transition-all',
               showHighlightMenu ? 'bg-yellow-100' : 'hover:bg-gray-100',
-              editor.isActive('highlight') ? 'text-yellow-700' : 'text-gray-600'
+              editor.isActive('highlight') ? 'text-yellow-700' : 'text-gray-600 dark:text-gray-400'
             )}
             title="Highlight"
           >
@@ -589,7 +589,7 @@ export function EditorToolbar({
           </button>
 
           {showHighlightMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 dark:border-gray-700 dark:bg-gray-800">
               <div className="grid grid-cols-4 gap-1">
                 {HIGHLIGHT_COLORS.map((color) => (
                   <button
@@ -603,7 +603,7 @@ export function EditorToolbar({
               </div>
               <button
                 onClick={() => { editor.chain().focus().unsetHighlight().run(); setShowHighlightMenu(false) }}
-                className="w-full mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 hover:text-gray-700"
+                className="w-full mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:border-gray-800 dark:text-gray-400"
               >
                 Remove
               </button>
@@ -621,7 +621,7 @@ export function EditorToolbar({
               'flex items-center gap-0.5 p-1.5 rounded transition-all',
               showListMenu ? 'bg-gray-200' : 'hover:bg-gray-100',
               (editor.isActive('bulletList') || editor.isActive('orderedList') || editor.isActive('taskList'))
-                ? 'text-primary-700' : 'text-gray-600'
+                ? 'text-primary-700' : 'text-gray-600 dark:text-gray-400'
             )}
             title="Lists"
           >
@@ -630,22 +630,22 @@ export function EditorToolbar({
           </button>
 
           {showListMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[150px]">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[150px] dark:border-gray-700 dark:bg-gray-800">
               <button
                 onClick={() => { editor.chain().focus().toggleBulletList().run(); setShowListMenu(false) }}
-                className={clsx('w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2', editor.isActive('bulletList') && 'bg-primary-50 text-primary-700')}
+                className={clsx('w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800', editor.isActive('bulletList') && 'bg-primary-50 text-primary-700')}
               >
                 <List className="w-4 h-4" /> Bullet List
               </button>
               <button
                 onClick={() => { editor.chain().focus().toggleOrderedList().run(); setShowListMenu(false) }}
-                className={clsx('w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2', editor.isActive('orderedList') && 'bg-primary-50 text-primary-700')}
+                className={clsx('w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800', editor.isActive('orderedList') && 'bg-primary-50 text-primary-700')}
               >
                 <ListOrdered className="w-4 h-4" /> Numbered List
               </button>
               <button
                 onClick={() => { editor.chain().focus().toggleTaskList().run(); setShowListMenu(false) }}
-                className={clsx('w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2', editor.isActive('taskList') && 'bg-primary-50 text-primary-700')}
+                className={clsx('w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800', editor.isActive('taskList') && 'bg-primary-50 text-primary-700')}
               >
                 <CheckSquare className="w-4 h-4" /> Checklist
               </button>
@@ -731,7 +731,7 @@ export function EditorToolbar({
             onClick={() => setShowInsertMenu(!showInsertMenu)}
             className={clsx(
               'flex items-center gap-1 px-2 py-1.5 rounded text-xs font-medium transition-all',
-              showInsertMenu ? 'bg-primary-100 text-primary-700' : 'hover:bg-gray-100 text-gray-700'
+              showInsertMenu ? 'bg-primary-100 text-primary-700' : 'hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300'
             )}
           >
             <Plus className="w-4 h-4" />
@@ -740,7 +740,7 @@ export function EditorToolbar({
           </button>
 
           {showInsertMenu && (
-            <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[180px]">
+            <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[180px] dark:border-gray-700 dark:bg-gray-800">
               {/* Hyperlink */}
               {!showLinkInput ? (
                 <button
@@ -753,20 +753,20 @@ export function EditorToolbar({
                       setTimeout(() => linkInputRef.current?.focus(), 0)
                     }
                   }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
                 >
                   <LinkIcon className="w-4 h-4 text-blue-500" /> {editor.isActive('link') ? 'Remove Hyperlink' : 'Hyperlink'}
                 </button>
               ) : (
                 <div className="px-3 py-2">
-                  <p className="text-xs font-medium text-gray-500 mb-2">Insert Hyperlink</p>
+                  <p className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Insert Hyperlink</p>
                   <input
                     ref={linkInputRef}
                     type="url"
                     value={linkUrl}
                     onChange={(e) => setLinkUrl(e.target.value)}
                     placeholder="https://example.com"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { addLink(); setShowInsertMenu(false) }
                       else if (e.key === 'Escape') { setShowLinkInput(false); setShowInsertMenu(false) }
@@ -775,7 +775,7 @@ export function EditorToolbar({
                   <div className="flex justify-end gap-2 mt-2">
                     <button
                       onClick={() => setShowLinkInput(false)}
-                      className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                      className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                     >
                       Cancel
                     </button>
@@ -788,10 +788,10 @@ export function EditorToolbar({
                   </div>
                 </div>
               )}
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
               <button
                 onClick={() => { setShowImageModal(true); setShowInsertMenu(false) }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <Image className="w-4 h-4 text-blue-500" /> Image
               </button>
@@ -800,17 +800,17 @@ export function EditorToolbar({
                   setShowTableModal(true)
                   setShowInsertMenu(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <Table className="w-4 h-4 text-green-500" /> Table
               </button>
               <button
                 onClick={() => { editor.chain().focus().setHorizontalRule().run(); setShowInsertMenu(false) }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
-                <Minus className="w-4 h-4 text-gray-500" /> Divider
+                <Minus className="w-4 h-4 text-gray-500 dark:text-gray-400" /> Divider
               </button>
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
               <button
                 onClick={() => {
                   editor.chain().focus().insertContent({
@@ -822,7 +822,7 @@ export function EditorToolbar({
                   }).run()
                   setShowInsertMenu(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <ClipboardList className="w-4 h-4 text-indigo-500" /> Task
               </button>
@@ -837,7 +837,7 @@ export function EditorToolbar({
                   }).run()
                   setShowInsertMenu(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <CalendarPlus className="w-4 h-4 text-blue-500" /> Event
               </button>
@@ -852,11 +852,11 @@ export function EditorToolbar({
                   }).run()
                   setShowInsertMenu(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
-                <FileUp className="w-4 h-4 text-gray-500" /> File
+                <FileUp className="w-4 h-4 text-gray-500 dark:text-gray-400" /> File
               </button>
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
               <button
                 onClick={() => {
                   try {
@@ -868,29 +868,29 @@ export function EditorToolbar({
                   }
                   setShowInsertMenu(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <ListTree className="w-4 h-4 text-teal-500" /> Table of Contents
               </button>
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
               <button
                 onClick={() => { editor.chain().focus().insertContent(new Date().toLocaleDateString()).run(); setShowInsertMenu(false) }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <Calendar className="w-4 h-4 text-orange-500" /> Current Date
               </button>
               <button
                 onClick={() => { editor.chain().focus().insertContent(new Date().toLocaleTimeString()).run(); setShowInsertMenu(false) }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
               >
                 <Calendar className="w-4 h-4 text-purple-500" /> Current Time
               </button>
               {onInsertEvent && (
                 <>
-                  <div className="border-t border-gray-100 my-1" />
+                  <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
                   <button
                     onClick={() => { onInsertEvent(); setShowInsertMenu(false) }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
                   >
                     <CalendarPlus className="w-4 h-4 text-indigo-500" /> Calendar Event
                   </button>
@@ -899,9 +899,9 @@ export function EditorToolbar({
               {onInsertAttachment && (
                 <button
                   onClick={() => { onInsertAttachment(); setShowInsertMenu(false) }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
                 >
-                  <Paperclip className="w-4 h-4 text-gray-500" /> Attachment
+                  <Paperclip className="w-4 h-4 text-gray-500 dark:text-gray-400" /> Attachment
                 </button>
               )}
             </div>
@@ -936,40 +936,40 @@ export function EditorToolbar({
       {/* Image Insert Modal */}
       {showImageModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowImageModal(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Insert Image</h3>
-              <button onClick={() => setShowImageModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <button onClick={() => setShowImageModal(false)} className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Image URL</label>
                 <input
                   type="url"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
                   placeholder="https://example.com/image.jpg"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   autoFocus
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Alt Text (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Alt Text (optional)</label>
                 <input
                   type="text"
                   value={imageAlt}
                   onChange={(e) => setImageAlt(e.target.value)}
                   placeholder="Describe the image"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                 />
               </div>
 
               {imageUrl && (
-                <div className="border rounded-lg p-2 bg-gray-50">
-                  <p className="text-xs text-gray-500 mb-2">Preview:</p>
+                <div className="border rounded-lg p-2 bg-gray-50 dark:bg-gray-900">
+                  <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">Preview:</p>
                   <img
                     src={imageUrl}
                     alt={imageAlt || 'Preview'}
@@ -983,7 +983,7 @@ export function EditorToolbar({
             <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowImageModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -1002,10 +1002,10 @@ export function EditorToolbar({
       {/* Table Insert Modal */}
       {showTableModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTableModal(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 dark:bg-gray-800" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Insert Table</h3>
-              <button onClick={() => setShowTableModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <button onClick={() => setShowTableModal(false)} className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1013,10 +1013,10 @@ export function EditorToolbar({
             <div className="space-y-4">
               {/* Grid Selector */}
               <div>
-                <p className="text-sm text-gray-600 mb-2">
-                  Select size: <span className="font-medium text-gray-900">{tableHover.rows || tableSize.rows} x {tableHover.cols || tableSize.cols}</span>
+                <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">
+                  Select size: <span className="font-medium text-gray-900 dark:text-white">{tableHover.rows || tableSize.rows} x {tableHover.cols || tableSize.cols}</span>
                 </p>
-                <div className="inline-grid gap-1 p-2 bg-gray-50 rounded-lg" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
+                <div className="inline-grid gap-1 p-2 bg-gray-50 rounded-lg dark:bg-gray-900" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
                   {Array.from({ length: 8 }).map((_, row) =>
                     Array.from({ length: 8 }).map((_, col) => (
                       <button
@@ -1025,7 +1025,7 @@ export function EditorToolbar({
                           'w-5 h-5 rounded border transition-colors',
                           (tableHover.rows > row && tableHover.cols > col) || (!tableHover.rows && tableSize.rows > row && tableSize.cols > col)
                             ? 'bg-primary-500 border-primary-600'
-                            : 'bg-white border-gray-300 hover:border-primary-400'
+                            : 'bg-white border-gray-300 hover:border-primary-400 dark:border-gray-600 dark:bg-gray-800'
                         )}
                         onMouseEnter={() => setTableHover({ rows: row + 1, cols: col + 1 })}
                         onMouseLeave={() => setTableHover({ rows: 0, cols: 0 })}
@@ -1043,26 +1043,26 @@ export function EditorToolbar({
               {/* Manual Input */}
               <div className="flex items-center gap-3">
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Rows</label>
+                  <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Rows</label>
                   <input
                     type="number"
                     min="1"
                     max="20"
                     value={tableSize.rows}
                     onChange={(e) => setTableSize(s => ({ ...s, rows: Math.max(1, Math.min(20, parseInt(e.target.value) || 1)) }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
                 <span className="text-gray-400 mt-5">x</span>
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Columns</label>
+                  <label className="block text-xs text-gray-500 mb-1 dark:text-gray-400">Columns</label>
                   <input
                     type="number"
                     min="1"
                     max="20"
                     value={tableSize.cols}
                     onChange={(e) => setTableSize(s => ({ ...s, cols: Math.max(1, Math.min(20, parseInt(e.target.value) || 1)) }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                   />
                 </div>
               </div>
@@ -1071,7 +1071,7 @@ export function EditorToolbar({
             <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowTableModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400"
               >
                 Cancel
               </button>

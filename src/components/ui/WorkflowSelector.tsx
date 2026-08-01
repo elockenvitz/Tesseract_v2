@@ -226,7 +226,7 @@ export function WorkflowSelector({
       <div className="flex items-center space-x-2">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center space-x-2 px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors"
+          className="flex items-center space-x-2 px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors dark:hover:text-white dark:hover:bg-gray-800 dark:text-gray-300"
         >
           <Workflow className="w-5 h-5" />
           <span className="font-medium text-lg">
@@ -290,7 +290,7 @@ export function WorkflowSelector({
           />
 
           {/* Dropdown */}
-          <div className="absolute top-full left-0 mt-2 w-[480px] bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+          <div className="absolute top-full left-0 mt-2 w-[480px] bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
             <div className="p-2">
               {/* Search Input */}
               <div className="relative mb-3">
@@ -300,12 +300,12 @@ export function WorkflowSelector({
                   placeholder="Search workflows..."
                   value={searchTerm}
                   onChange={handleSearchChange}
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                   autoFocus={isOpen}
                 />
               </div>
 
-              <div className="text-xs font-medium text-gray-500 px-3 py-2 uppercase tracking-wider">
+              <div className="text-xs font-medium text-gray-500 px-3 py-2 uppercase tracking-wider dark:text-gray-400">
                 {isSearching ? `Search Results (${workflowsToShow.length})` : 'Recent Workflows'}
               </div>
 
@@ -340,7 +340,7 @@ export function WorkflowSelector({
                           )}
                         </div>
                         {workflow.description && (
-                          <p className="text-xs text-gray-500 mt-1 ml-5">
+                          <p className="text-xs text-gray-500 mt-1 ml-5 dark:text-gray-400">
                             {workflow.description}
                           </p>
                         )}
@@ -352,7 +352,7 @@ export function WorkflowSelector({
                 {/* Empty State */}
                 {workflowsToShow.length === 0 && !isLoading && (
                   <div className="text-center py-4">
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
                       {isSearching ? 'No workflows found' : 'No workflows available'}
                     </div>
                     {isSearching && (
@@ -364,7 +364,7 @@ export function WorkflowSelector({
                 )}
               </div>
 
-              <div className="border-t border-gray-200 my-2" />
+              <div className="border-t border-gray-200 my-2 dark:border-gray-700" />
 
               {onViewAllWorkflows && (
                 <button
@@ -373,7 +373,7 @@ export function WorkflowSelector({
                     setIsOpen(false)
                     setSearchTerm('')
                   }}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
+                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors dark:hover:bg-gray-800 dark:text-gray-400"
                 >
                   <Settings className="w-4 h-4" />
                   <span>Manage Workflows</span>

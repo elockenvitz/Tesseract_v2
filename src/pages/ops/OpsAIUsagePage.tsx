@@ -273,13 +273,13 @@ export function OpsAIUsagePage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-5 h-5 text-purple-500" />
-            <h1 className="text-2xl font-semibold text-gray-900">AI Usage</h1>
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">AI Usage</h1>
           </div>
-          <p className="text-sm text-gray-500">Token consumption and cost across all users. 30-day window.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Token consumption and cost across all users. 30-day window.</p>
         </div>
         <button
           onClick={() => refetch()}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
         >
           <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
           Refresh
@@ -321,10 +321,10 @@ export function OpsAIUsagePage() {
       {/* Daily spark + by-purpose/by-model side-by-side */}
       <div className="grid grid-cols-3 gap-4">
         {/* Daily cost chart (2 cols) */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg p-4">
+        <div className="col-span-2 bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900">Daily cost · last 14 days</h3>
-            <span className="text-xs text-gray-500">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Daily cost · last 14 days</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {fmtUsd(daily.reduce((s, d) => s + d.cost, 0))} total · {daily.reduce((s, d) => s + d.requests, 0).toLocaleString()} requests
             </span>
           </div>
@@ -336,7 +336,7 @@ export function OpsAIUsagePage() {
                   <div
                     className={clsx(
                       'w-full rounded-t transition-colors',
-                      d.cost > 0 ? 'bg-emerald-400 group-hover:bg-emerald-500' : 'bg-gray-100'
+                      d.cost > 0 ? 'bg-emerald-400 group-hover:bg-emerald-500' : 'bg-gray-100 dark:bg-gray-800'
                     )}
                     style={{ height: `${h}%` }}
                   />
@@ -351,8 +351,8 @@ export function OpsAIUsagePage() {
         </div>
 
         {/* By purpose */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Cost by purpose · MTD</h3>
+        <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Cost by purpose · MTD</h3>
           {byPurposeMtd.length === 0 ? (
             <p className="text-sm text-gray-400 italic">No AI activity this month yet.</p>
           ) : (
@@ -363,10 +363,10 @@ export function OpsAIUsagePage() {
                 return (
                   <li key={p.key}>
                     <div className="flex items-baseline justify-between text-xs mb-0.5">
-                      <span className="font-medium text-gray-800 capitalize">{p.key}</span>
-                      <span className="tabular-nums text-gray-700">{fmtUsd(p.cost)}</span>
+                      <span className="font-medium text-gray-800 capitalize dark:text-gray-100">{p.key}</span>
+                      <span className="tabular-nums text-gray-700 dark:text-gray-300">{fmtUsd(p.cost)}</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden dark:bg-gray-800">
                       <div className="h-full bg-purple-400 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="text-[10px] text-gray-400 mt-0.5">{p.requests.toLocaleString()} requests</div>
@@ -381,16 +381,16 @@ export function OpsAIUsagePage() {
       {/* Top users + by model */}
       <div className="grid grid-cols-3 gap-4">
         {/* Top users (2 cols) */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900">Top users · month-to-date</h3>
-            <span className="text-xs text-gray-500">{topUsersMtd.length} with activity</span>
+        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Top users · month-to-date</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{topUsersMtd.length} with activity</span>
           </div>
           {topUsersMtd.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-900">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">User</th>
                   <th className="text-right px-4 py-2 font-medium">Cost</th>
@@ -398,23 +398,23 @@ export function OpsAIUsagePage() {
                   <th className="text-right px-4 py-2 font-medium">Requests</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {topUsersMtd.map((u, i) => {
                   const user = userMap.get(u.user_id)
                   return (
                     <tr key={u.user_id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-900">
+                      <td className="px-4 py-2 text-gray-900 dark:text-white">
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-400 tabular-nums w-5">{i + 1}.</span>
                           <div>
                             <div className="font-medium">{displayName(user)}</div>
-                            {user?.email && <div className="text-[11px] text-gray-500">{user.email}</div>}
+                            {user?.email && <div className="text-[11px] text-gray-500 dark:text-gray-400">{user.email}</div>}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-900">{fmtUsd(u.cost)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{fmtTokens(u.tokens)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{u.requests.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtUsd(u.cost)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtTokens(u.tokens)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{u.requests.toLocaleString()}</td>
                     </tr>
                   )
                 })}
@@ -424,8 +424,8 @@ export function OpsAIUsagePage() {
         </div>
 
         {/* By model */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Cost by model · MTD</h3>
+        <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Cost by model · MTD</h3>
           {byModelMtd.length === 0 ? (
             <p className="text-sm text-gray-400 italic">No AI activity this month yet.</p>
           ) : (
@@ -436,10 +436,10 @@ export function OpsAIUsagePage() {
                 return (
                   <li key={p.key}>
                     <div className="flex items-baseline justify-between text-xs mb-0.5">
-                      <span className="font-medium text-gray-800 truncate mr-2" title={p.key}>{p.key}</span>
-                      <span className="tabular-nums text-gray-700 shrink-0">{fmtUsd(p.cost)}</span>
+                      <span className="font-medium text-gray-800 truncate mr-2 dark:text-gray-100" title={p.key}>{p.key}</span>
+                      <span className="tabular-nums text-gray-700 shrink-0 dark:text-gray-300">{fmtUsd(p.cost)}</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden dark:bg-gray-800">
                       <div className="h-full bg-sky-400 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="text-[10px] text-gray-400 mt-0.5">{p.requests.toLocaleString()} requests</div>
@@ -454,19 +454,19 @@ export function OpsAIUsagePage() {
       {/* By organization + by team */}
       <div className="grid grid-cols-3 gap-4">
         {/* By organization (2 cols) */}
-        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+        <div className="col-span-2 bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-1.5">
               <Building2 className="w-4 h-4 text-gray-400" />
-              <h3 className="text-sm font-semibold text-gray-900">Cost by organization · MTD</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Cost by organization · MTD</h3>
             </div>
-            <span className="text-xs text-gray-500">{byOrgMtd.length} {byOrgMtd.length === 1 ? 'org' : 'orgs'} with activity</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{byOrgMtd.length} {byOrgMtd.length === 1 ? 'org' : 'orgs'} with activity</span>
           </div>
           {byOrgMtd.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-900">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Organization</th>
                   <th className="text-right px-4 py-2 font-medium">Cost</th>
@@ -475,22 +475,22 @@ export function OpsAIUsagePage() {
                   <th className="text-right px-4 py-2 font-medium">Users</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {byOrgMtd.map((o, i) => {
                   const org = o.id ? orgMap.get(o.id) : null
                   const label = org?.name || (o.id ? 'Unknown org' : '(no org)')
                   return (
                     <tr key={o.id || '__none__'} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-900">
+                      <td className="px-4 py-2 text-gray-900 dark:text-white">
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-400 tabular-nums w-5">{i + 1}.</span>
-                          <span className={clsx('font-medium', !o.id && 'italic text-gray-500')}>{label}</span>
+                          <span className={clsx('font-medium', !o.id && 'italic text-gray-500 dark:text-gray-400')}>{label}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-900">{fmtUsd(o.cost)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{fmtTokens(o.tokens)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{o.requests.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-gray-500">{o.users.size}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-white">{fmtUsd(o.cost)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtTokens(o.tokens)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{o.requests.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-500 dark:text-gray-400">{o.users.size}</td>
                     </tr>
                   )
                 })}
@@ -500,25 +500,25 @@ export function OpsAIUsagePage() {
         </div>
 
         {/* By team / pod (1 col) */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-1.5">
               <UsersRound className="w-4 h-4 text-gray-400" />
-              <h3 className="text-sm font-semibold text-gray-900">By team · MTD</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">By team · MTD</h3>
             </div>
-            <span className="text-xs text-gray-500">{byTeamMtd.filter(t => t.id).length} {byTeamMtd.filter(t => t.id).length === 1 ? 'team' : 'teams'}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{byTeamMtd.filter(t => t.id).length} {byTeamMtd.filter(t => t.id).length === 1 ? 'team' : 'teams'}</span>
           </div>
           {byTeamMtd.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">No usage this month yet.</div>
           ) : (
-            <ul className="divide-y divide-gray-100">
+            <ul className="divide-y divide-gray-100 dark:divide-gray-800">
               {byTeamMtd.slice(0, 10).map(t => {
                 const team = t.id ? teamMap.get(t.id) : null
                 const label = team?.name || (t.id ? 'Unknown team' : '(no team)')
                 return (
-                  <li key={t.id || '__none__'} className="px-4 py-2 flex items-baseline justify-between text-sm hover:bg-gray-50">
-                    <span className={clsx('truncate mr-2', !t.id && 'italic text-gray-500')} title={label}>{label}</span>
-                    <span className="tabular-nums font-medium text-gray-900 shrink-0">{fmtUsd(t.cost)}</span>
+                  <li key={t.id || '__none__'} className="px-4 py-2 flex items-baseline justify-between text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
+                    <span className={clsx('truncate mr-2', !t.id && 'italic text-gray-500 dark:text-gray-400')} title={label}>{label}</span>
+                    <span className="tabular-nums font-medium text-gray-900 shrink-0 dark:text-white">{fmtUsd(t.cost)}</span>
                   </li>
                 )
               })}
@@ -528,16 +528,16 @@ export function OpsAIUsagePage() {
       </div>
 
       {/* Recent activity */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900">Recent activity</h3>
-          <span className="text-xs text-gray-500">Most recent 50 requests</span>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Recent activity</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">Most recent 50 requests</span>
         </div>
         {recent.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-400">No AI requests logged yet.</div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide">
+            <thead className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide dark:text-gray-400 dark:bg-gray-900">
               <tr>
                 <th className="text-left px-4 py-2 font-medium">When</th>
                 <th className="text-left px-4 py-2 font-medium">User</th>
@@ -550,26 +550,26 @@ export function OpsAIUsagePage() {
                 <th className="text-right px-4 py-2 font-medium">Latency</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {recent.map(r => {
                 const user = userMap.get(r.user_id)
                 const when = new Date(r.created_at)
                 const ago = Math.floor((Date.now() - when.getTime()) / 60000)
                 return (
                   <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-1.5 text-gray-600 whitespace-nowrap" title={when.toISOString()}>
+                    <td className="px-4 py-1.5 text-gray-600 whitespace-nowrap dark:text-gray-400" title={when.toISOString()}>
                       {ago < 1 ? 'just now' : ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.floor(ago / 60)}h ago` : `${Math.floor(ago / 1440)}d ago`}
                     </td>
-                    <td className="px-4 py-1.5 text-gray-800 truncate max-w-[14ch]">{displayName(user)}</td>
-                    <td className="px-4 py-1.5 text-gray-600 capitalize">{r.purpose || '—'}</td>
-                    <td className="px-4 py-1.5 text-gray-600 truncate max-w-[22ch]" title={r.model || undefined}>{r.model || '—'}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{fmtTokens(r.input_tokens || 0)}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700">{fmtTokens(r.output_tokens || 0)}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">
+                    <td className="px-4 py-1.5 text-gray-800 truncate max-w-[14ch] dark:text-gray-100">{displayName(user)}</td>
+                    <td className="px-4 py-1.5 text-gray-600 capitalize dark:text-gray-400">{r.purpose || '—'}</td>
+                    <td className="px-4 py-1.5 text-gray-600 truncate max-w-[22ch] dark:text-gray-400" title={r.model || undefined}>{r.model || '—'}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtTokens(r.input_tokens || 0)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtTokens(r.output_tokens || 0)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500 dark:text-gray-400">
                       {r.cache_read_tokens ? `${fmtTokens(r.cache_read_tokens)} read` : r.cache_write_tokens ? `${fmtTokens(r.cache_write_tokens)} write` : '—'}
                     </td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-900 font-medium">{fmtUsd(Number(r.estimated_cost) || 0)}</td>
-                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500">{r.response_time_ms ? `${r.response_time_ms}ms` : '—'}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-900 font-medium dark:text-white">{fmtUsd(Number(r.estimated_cost) || 0)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-gray-500 dark:text-gray-400">{r.response_time_ms ? `${r.response_time_ms}ms` : '—'}</td>
                   </tr>
                 )
               })}
@@ -591,15 +591,15 @@ function KpiTile({ icon: Icon, iconClass, label, value, sub }: {
   sub?: string
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4">
+    <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-start justify-between">
         <div className={clsx('p-2 rounded-lg', iconClass)}>
           <Icon className="w-4 h-4" />
         </div>
       </div>
       <div className="mt-3">
-        <div className="text-2xl font-semibold text-gray-900 tabular-nums">{value}</div>
-        <div className="text-xs text-gray-500 mt-0.5">{label}</div>
+        <div className="text-2xl font-semibold text-gray-900 tabular-nums dark:text-white">{value}</div>
+        <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{label}</div>
         {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
       </div>
     </div>

@@ -90,10 +90,10 @@ export function DiscardPortfolioModal({ isOpen, onClose, portfolio, onArchiveIns
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={handleClose} />
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto dark:bg-gray-800">
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <X className="h-5 w-5" />
           </button>
@@ -101,16 +101,16 @@ export function DiscardPortfolioModal({ isOpen, onClose, portfolio, onArchiveIns
           <div className="p-6">
             {/* Icon */}
             <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
-                <Ban className="h-6 w-6 text-gray-500" />
+              <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center dark:bg-gray-800">
+                <Ban className="h-6 w-6 text-gray-500 dark:text-gray-400" />
               </div>
             </div>
 
             <div className="text-center mb-5">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1 dark:text-white">
                 Discard Portfolio
               </h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Discard removes this portfolio from the product and AI analysis. It can be restored by an Org Admin.
               </p>
             </div>
@@ -154,7 +154,7 @@ export function DiscardPortfolioModal({ isOpen, onClose, portfolio, onArchiveIns
             {!hasBlockers && (
               <>
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     Reason <span className="text-gray-400">(optional)</span>
                   </label>
                   <input
@@ -162,7 +162,7 @@ export function DiscardPortfolioModal({ isOpen, onClose, portfolio, onArchiveIns
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="e.g. Created in error, duplicate"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400 dark:border-gray-600"
                     autoFocus
                   />
                 </div>

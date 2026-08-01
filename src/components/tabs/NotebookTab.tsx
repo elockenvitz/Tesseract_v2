@@ -113,7 +113,7 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center space-x-3 mb-2">
-            <h1 className="text-2xl font-bold text-gray-900">{notebook.title}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{notebook.title}</h1>
             {notebook.note_type && (
               <Badge variant={getNoteType(notebook.note_type).badgeVariant} size="sm">
                 {getNoteType(notebook.note_type).label}
@@ -128,7 +128,7 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
           </div>
 
           {/* Meta line: created + updated with names */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
             <div className="flex items-center whitespace-nowrap">
               <Calendar className="h-4 w-4 mr-1" />
               Created {formatDate(notebook.created_at)} by {getUserDisplayName(createdByUser)}
@@ -145,7 +145,7 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
       {/* Content */}
       <Card>
         <div className="prose prose-sm max-w-none">
-          <div className="whitespace-pre-wrap text-gray-700">
+          <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
             {notebook.content || 'This notebook is empty. Start writing your notes here.'}
           </div>
         </div>
@@ -159,8 +159,8 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
               <FileText className="h-4 w-4 text-primary-600" />
             </div>
             <div className="ml-3">
-              <p className="text-xs font-medium text-gray-600">Word Count</p>
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Word Count</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 {notebook.content ? notebook.content.split(' ').length : 0}
               </p>
             </div>
@@ -173,11 +173,11 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
               <Calendar className="h-4 w-4 text-success-600" />
             </div>
             <div className="ml-3">
-              <p className="text-xs font-medium text-gray-600">Last Updated</p>
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Last Updated</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 {formatDate(notebook.updated_at)}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 by {getUserDisplayName(updatedByUser)}
               </p>
             </div>
@@ -190,8 +190,8 @@ export function NotebookTab({ notebook }: NotebookTabProps) {
               <Share2 className="h-4 w-4 text-warning-600" />
             </div>
             <div className="ml-3">
-              <p className="text-xs font-medium text-gray-600">Sharing</p>
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Sharing</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 {notebook.is_shared ? 'Public' : 'Private'}
               </p>
             </div>

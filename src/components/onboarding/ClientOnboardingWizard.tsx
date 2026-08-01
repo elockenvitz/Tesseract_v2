@@ -580,14 +580,14 @@ export function ClientOnboardingWizard() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 flex flex-col">
       {launchPhase !== 'idle' && <LaunchOverlay phase={launchPhase} orgName={orgName} />}
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur border-b border-gray-200">
+      <header className="flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2.5">
           <Hexagon className="w-6 h-6 text-indigo-600" />
-          <span className="text-lg font-bold text-gray-900 tracking-tight">Tesseract</span>
+          <span className="text-lg font-bold text-gray-900 tracking-tight dark:text-white">Tesseract</span>
         </div>
         <button
           onClick={handleLaunch}
-          className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+          className="text-sm text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
         >
           Finish later
         </button>
@@ -608,7 +608,7 @@ export function ClientOnboardingWizard() {
                     'w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all',
                     isDone ? 'bg-indigo-600 text-white' :
                     isActive ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-600' :
-                    'bg-gray-200 text-gray-500'
+                    'bg-gray-200 text-gray-500 dark:text-gray-400'
                   )}>
                     {isDone ? <CheckCircle2 className="w-4 h-4" /> : step.number}
                   </div>
@@ -677,7 +677,7 @@ export function ClientOnboardingWizard() {
                     {existingPortfolios.map(p => (
                       <span
                         key={p.id}
-                        className="inline-flex items-center gap-1 bg-white border border-green-200 text-green-800 text-[11px] font-medium rounded-full pl-2 pr-1 py-0.5"
+                        className="inline-flex items-center gap-1 bg-white border border-green-200 text-green-800 text-[11px] font-medium rounded-full pl-2 pr-1 py-0.5 dark:bg-gray-800"
                       >
                         {p.name}
                         <button
@@ -700,12 +700,12 @@ export function ClientOnboardingWizard() {
               {/* Template portfolios — click to select (stage), Continue to create them */}
               <div className="space-y-2 mb-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick start with a template</p>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Quick start with a template</p>
                   {stagedTemplateIds.size > 0 && (
                     <button
                       type="button"
                       onClick={() => setStagedTemplateIds(new Set())}
-                      className="text-[11px] text-gray-400 hover:text-gray-600"
+                      className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     >
                       Clear selection
                     </button>
@@ -736,11 +736,11 @@ export function ClientOnboardingWizard() {
                           ? 'border-green-200 bg-green-50/50'
                           : isStaged
                             ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300'
-                            : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50'
+                            : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-gray-700'
                       )}
                     >
                       <div className="flex items-center justify-between">
-                        <p className={clsx('text-sm font-medium', isStaged ? 'text-indigo-800' : 'text-gray-800')}>{tpl.name}</p>
+                        <p className={clsx('text-sm font-medium', isStaged ? 'text-indigo-800' : 'text-gray-800 dark:text-gray-100')}>{tpl.name}</p>
                         {alreadyCreated
                           ? <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
                           : isStaged
@@ -778,14 +778,14 @@ export function ClientOnboardingWizard() {
                         placeholder={i === 0 ? 'Portfolio name' : 'Portfolio name'}
                         value={p.name}
                         onChange={e => setPortfolios(prev => prev.map((pt, j) => j === i ? { ...pt, name: e.target.value } : pt))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
                       />
                       <input
                         type="text"
                         placeholder="Benchmark (optional, e.g., S&P 500)"
                         value={p.benchmark}
                         onChange={e => setPortfolios(prev => prev.map((pt, j) => j === i ? { ...pt, benchmark: e.target.value } : pt))}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-700 dark:text-gray-400"
                       />
                     </div>
                     {portfolios.length > 1 && (
@@ -819,10 +819,10 @@ export function ClientOnboardingWizard() {
               {/* CSV preview (shown after file selected) */}
               {csvText && parsedPositions.length > 0 && (
                 <div className="mt-4 space-y-3">
-                  <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 dark:bg-gray-900">
                     <div className="flex items-center gap-2 text-sm">
                       <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
-                      <span className="font-medium text-gray-700">{csvFileName}</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">{csvFileName}</span>
                       <span className="text-xs text-gray-400">({parsedPositions.length} positions)</span>
                     </div>
                     <button
@@ -844,11 +844,11 @@ export function ClientOnboardingWizard() {
                   {/* Portfolio selector for CSV upload */}
                   {existingPortfolios.length > 0 && !selectedPortfolioForHoldings && (
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Upload into which portfolio?</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Upload into which portfolio?</label>
                       <select
                         value={selectedPortfolioForHoldings}
                         onChange={e => setSelectedPortfolioForHoldings(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm dark:border-gray-600"
                       >
                         <option value="">Select portfolio...</option>
                         {existingPortfolios.map(p => (
@@ -918,14 +918,14 @@ export function ClientOnboardingWizard() {
               </div>
               <div className="space-y-3">
                 {recommendations.map((rec, i) => (
-                  <div key={i} className="space-y-2 p-3 bg-gray-50 rounded-lg">
+                  <div key={i} className="space-y-2 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         placeholder="Name"
                         value={rec.name}
                         onChange={e => setRecommendations(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-600 dark:bg-gray-800"
                       />
                       {recommendations.length > 1 && (
                         <button onClick={() => setRecommendations(prev => prev.filter((_, j) => j !== i))} className="p-2 text-gray-400 hover:text-red-500">
@@ -939,14 +939,14 @@ export function ClientOnboardingWizard() {
                         placeholder="Email (optional)"
                         value={rec.email}
                         onChange={e => setRecommendations(prev => prev.map((r, j) => j === i ? { ...r, email: e.target.value } : r))}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-600 dark:bg-gray-800"
                       />
                       <input
                         type="text"
                         placeholder="Role (e.g., PM, Analyst)"
                         value={rec.role}
                         onChange={e => setRecommendations(prev => prev.map((r, j) => j === i ? { ...r, role: e.target.value } : r))}
-                        className="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                        className="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:border-gray-600 dark:bg-gray-800"
                       />
                     </div>
                   </div>
@@ -1000,7 +1000,7 @@ export function ClientOnboardingWizard() {
               )}
 
               <div className="mt-6 flex items-center justify-between">
-                <button onClick={handleGoBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+                <button onClick={handleGoBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400">
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
@@ -1130,10 +1130,10 @@ function LaunchOverlay({ phase, orgName }: { phase: LaunchPhase; orgName: string
 
 function StepCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 space-y-6">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 space-y-6 dark:border-gray-700 dark:bg-gray-800">
       <div>
-        <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-        <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{subtitle}</p>
       </div>
       {children}
     </div>
@@ -1149,15 +1149,15 @@ function StepActions({ onNext, onBack, onSkip, isSubmitting, nextLabel, skippabl
   skippable?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-6">
+    <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-6 dark:border-gray-800">
       <div className="flex items-center gap-3">
         {onBack && (
-          <button onClick={onBack} disabled={isSubmitting} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50">
+          <button onClick={onBack} disabled={isSubmitting} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50 dark:hover:text-gray-200 dark:text-gray-400">
             <ArrowLeft className="w-4 h-4" /> Back
           </button>
         )}
         {skippable && onSkip && (
-          <button onClick={onSkip} disabled={isSubmitting} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50">
+          <button onClick={onSkip} disabled={isSubmitting} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 dark:hover:text-gray-300">
             <SkipForward className="w-4 h-4" /> Skip
           </button>
         )}
@@ -1183,7 +1183,7 @@ function SummaryRow({ icon: Icon, label, value }: { icon: typeof Building2; labe
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-gray-400">{label}</p>
-        <p className="text-sm font-medium text-gray-900 truncate">{value}</p>
+        <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{value}</p>
       </div>
     </div>
   )

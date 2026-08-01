@@ -5,15 +5,15 @@ export function AssetsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Assets</h1>
-        <p className="text-gray-600 mt-1">Manage your investment assets and ideas</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Assets</h1>
+        <p className="text-gray-600 mt-1 dark:text-gray-400">Manage your investment assets and ideas</p>
       </div>
       
       <Card>
         <div className="text-center py-12">
           <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Assets Page</h3>
-          <p className="text-gray-500">This page will display all your investment assets.</p>
+          <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">Assets Page</h3>
+          <p className="text-gray-500 dark:text-gray-400">This page will display all your investment assets.</p>
         </div>
       </Card>
     </div>

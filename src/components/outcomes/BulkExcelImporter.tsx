@@ -273,11 +273,11 @@ export function BulkExcelImporter({
   const errorCount = files.filter(f => f.status === 'error').length
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-            <Upload className="w-4 h-4 text-gray-500" />
+          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
+            <Upload className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             Bulk Import
           </h4>
           {files.length > 0 && (
@@ -289,7 +289,7 @@ export function BulkExcelImporter({
                 <span className="text-red-600">{errorCount} failed</span>
               )}
               {pendingCount > 0 && (
-                <span className="text-gray-500">{pendingCount} pending</span>
+                <span className="text-gray-500 dark:text-gray-400">{pendingCount} pending</span>
               )}
             </div>
           )}
@@ -303,11 +303,11 @@ export function BulkExcelImporter({
           onDragOver={(e) => e.preventDefault()}
           className={clsx(
             'border-2 border-dashed rounded-lg p-6 text-center transition-colors',
-            'border-gray-300 hover:border-primary-400 hover:bg-primary-50/50'
+            'border-gray-300 hover:border-primary-400 hover:bg-primary-50/50 dark:border-gray-600'
           )}
         >
           <FileSpreadsheet className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Drop multiple Excel files here or{' '}
             <label className="text-primary-600 hover:underline cursor-pointer">
               browse
@@ -330,7 +330,7 @@ export function BulkExcelImporter({
           <div className="mt-4">
             <button
               onClick={() => setShowFiles(!showFiles)}
-              className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2"
+              className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2 dark:text-gray-300"
             >
               {showFiles ? (
                 <ChevronDown className="w-4 h-4" />
@@ -350,7 +350,7 @@ export function BulkExcelImporter({
                       fileItem.status === 'success' ? 'bg-green-50' :
                       fileItem.status === 'error' ? 'bg-red-50' :
                       fileItem.status === 'processing' ? 'bg-blue-50' :
-                      'bg-gray-50'
+                      'bg-gray-50 dark:bg-gray-900'
                     )}
                   >
                     {/* Status Icon */}
@@ -369,7 +369,7 @@ export function BulkExcelImporter({
 
                     {/* File Name */}
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">
+                      <div className="font-medium text-gray-900 truncate dark:text-white">
                         {fileItem.file.name}
                       </div>
                       {fileItem.error && (
@@ -389,7 +389,7 @@ export function BulkExcelImporter({
                       <select
                         value={fileItem.selectedTemplateId || ''}
                         onChange={(e) => setFileTemplate(fileItem.id, e.target.value)}
-                        className="text-xs px-2 py-1 border border-gray-300 rounded bg-white"
+                        className="text-xs px-2 py-1 border border-gray-300 rounded bg-white dark:border-gray-600 dark:bg-gray-800"
                       >
                         <option value="">Select template...</option>
                         {templates.map(t => (
@@ -405,7 +405,7 @@ export function BulkExcelImporter({
                     {fileItem.status !== 'processing' && (
                       <button
                         onClick={() => removeFile(fileItem.id)}
-                        className="p-1 text-gray-400 hover:text-gray-600"
+                        className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -416,10 +416,10 @@ export function BulkExcelImporter({
             )}
 
             {/* Action Buttons */}
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setFiles([])}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
               >
                 Clear all
               </button>

@@ -294,7 +294,7 @@ export function HoverPreviewCard({
       {/* Sparkline Chart */}
       <div className="px-4 py-3 bg-gray-50/50 dark:bg-gray-900/30">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">
             7-Day Trend
           </span>
           <BarChart3 className="w-3.5 h-3.5 text-gray-400" />
@@ -321,8 +321,8 @@ export function HoverPreviewCard({
               <span className={clsx(
                 'text-[10px] font-medium px-1 py-0.5 rounded',
                 volumeRatio > 1.5 ? 'bg-blue-100 text-blue-700' :
-                volumeRatio < 0.5 ? 'bg-gray-100 text-gray-600' :
-                'bg-gray-50 text-gray-500'
+                volumeRatio < 0.5 ? 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800' :
+                'bg-gray-50 text-gray-500 dark:text-gray-400 dark:bg-gray-900'
               )}>
                 {volumeRatio.toFixed(1)}x avg
               </span>

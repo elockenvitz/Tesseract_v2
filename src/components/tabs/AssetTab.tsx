@@ -2402,7 +2402,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   onClick={() => setShowTickerDropdown(!showTickerDropdown)}
                   aria-haspopup="dialog"
                   aria-expanded={showTickerDropdown}
-                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group"
+                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
                 >
                   <span className="group-hover:underline underline-offset-4 decoration-gray-300">{asset.symbol}</span>
                   <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showTickerDropdown && 'rotate-180')} />
@@ -2410,7 +2410,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-2xl font-bold" />
                 <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-xl font-semibold" />
               </div>
-              <p className="text-lg text-gray-600 mt-1">{asset.company_name}</p>
+              <p className="text-lg text-gray-600 mt-1 dark:text-gray-400">{asset.company_name}</p>
 
               {/* Ticker Dropdown */}
               {showTickerDropdown && (
@@ -2588,12 +2588,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             {/* Active Processes chip */}
             <button
               onClick={() => setActiveSubPage('workflow')}
-              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-colors"
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
               title="View active processes"
             >
               <Repeat className="w-3 h-3" />
               <span>Processes</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
+              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
                 {activeProcessCount}
               </span>
             </button>
@@ -2607,12 +2607,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   document.getElementById('decisions-open-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 })
               }}
-              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 transition-colors"
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
               title="View decisions and exposure"
             >
               <Layers className="w-3 h-3" />
               <span>Decisions</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
+              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
                 0
               </span>
             </button>
@@ -2624,12 +2624,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   setActiveSubPage('lists')
                   setListsFocus('portfoliosContent')
                 }}
-                className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition-colors"
+                className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
                 title="View portfolio holdings"
               >
                 <Briefcase className="w-3 h-3" />
                 <span>Portfolios</span>
-                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
                   {headerContext.portfolios.length}
                 </span>
               </button>
@@ -2639,15 +2639,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       </div>
 
       {/* Sub-page Tab Selector */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-1" aria-label="Tabs">
           <button
             onClick={() => setActiveSubPage('research')}
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'research'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             <div className="flex items-center space-x-2">
@@ -2660,8 +2660,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'workflow'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             <div className="flex items-center space-x-2">
@@ -2679,8 +2679,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'decisions'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             <div className="flex items-center space-x-2">
@@ -2693,8 +2693,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             className={clsx(
               'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
               activeSubPage === 'lists'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
             )}
           >
             <div className="flex items-center space-x-2">
@@ -2908,7 +2908,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               {researchViewFilter === user?.id && (
                 <button
                   onClick={() => setShowFieldCustomizer(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                   title="Customize asset page layout"
                 >
                   <Settings2 className="w-4 h-4" />
@@ -2976,7 +2976,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               {/* Export Case Button */}
               <button
                 onClick={() => setShowCaseBuilder(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
                 title="Export investment case as PDF"
               >
                 <Download className="w-4 h-4" />
@@ -3033,12 +3033,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center">
                         <Target className="w-10 h-10 text-primary-400" />
                       </div>
-                      <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-100">
+                      <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-100 dark:border-gray-800 dark:bg-gray-800">
                         <Users className="w-4 h-4 text-gray-400" />
                       </div>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No team research yet</h3>
-                    <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No team research yet</h3>
+                    <p className="text-sm text-gray-500 text-center max-w-sm mb-6 dark:text-gray-400">
                       No one has shared their investment thesis on this asset yet. Switch to your personal view to start documenting your research.
                     </p>
                     {user && (
@@ -3120,7 +3120,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       onClick={() => toggleSection('outcomes')}
                       className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
                     >
-                      <span className="font-semibold text-gray-900">{section.section_name}</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                       {collapsedSections.outcomes ? (
                         <ChevronDown className="h-5 w-5 text-gray-400" />
                       ) : (
@@ -3128,7 +3128,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.outcomes && (
-                      <div className="border-t border-gray-100 px-5 py-2 space-y-3">
+                      <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
                         {section.fields
                           .filter(f => f.is_visible)
                           .map(field => {
@@ -3137,10 +3137,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
-                                    <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                    <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                   )}
                                   <OutcomesContainer
                                     assetId={asset.id}
@@ -3156,10 +3156,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
-                                    <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                    <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                   )}
                                   <AnalystRatingsSection
                                     assetId={asset.id}
@@ -3177,10 +3177,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
-                                    <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                    <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                   )}
                                   <AnalystEstimatesSection
                                     assetId={asset.id}
@@ -3231,7 +3231,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     onClick={() => toggleSection(section.section_slug as any)}
                     className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
                   >
-                    <span className="font-semibold text-gray-900">{section.section_name}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
                     {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
                       <ChevronDown className="h-5 w-5 text-gray-400" />
                     ) : (
@@ -3239,7 +3239,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     )}
                   </button>
                   {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
-                    <div className="border-t border-gray-100 px-5 py-2 space-y-3">
+                    <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
                       {section.fields
                         .filter(f => f.is_visible)
                         .map(field => {
@@ -3249,10 +3249,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <ChecklistField
                                   fieldId={field.field_id}
@@ -3266,10 +3266,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <MetricField
                                   fieldId={field.field_id}
@@ -3283,10 +3283,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <TimelineField
                                   fieldId={field.field_id}
@@ -3300,10 +3300,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <NumericField
                                   fieldId={field.field_id}
@@ -3317,10 +3317,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <DateField
                                   fieldId={field.field_id}
@@ -3334,10 +3334,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <AnalystRatingsSection
                                   assetId={asset.id}
@@ -3355,10 +3355,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <AnalystEstimatesSection
                                   assetId={asset.id}
@@ -3371,10 +3371,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-1">{field.field_name}</h4>
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
-                                  <p className="text-xs text-gray-500 mb-3">{field.field_description}</p>
+                                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
                                 )}
                                 <OutcomesContainer
                                   assetId={asset.id}
@@ -3420,7 +3420,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             {userWidgets.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 px-1">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Custom Fields</span>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Custom Fields</span>
                   <div className="flex-1 h-px bg-gray-200" />
                 </div>
                 {userWidgets.map(widget => (
@@ -3457,7 +3457,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             {/* Investment Case Builder Modal */}
             {showCaseBuilder && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden dark:bg-gray-800">
                   <div className="overflow-y-auto max-h-[90vh] p-6">
                     <InvestmentCaseBuilder
                       assetId={asset.id}
@@ -3482,7 +3482,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-3">
                     {showTimelineView ? (
-                      <h3 className="text-lg font-semibold text-gray-900">Activity Timeline</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Activity Timeline</h3>
                     ) : allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
                       <div className="flex items-center space-x-3 animate-pulse">
                         <div className="h-8 w-44 bg-gray-200 rounded-lg" />
@@ -3518,7 +3518,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       setShowTimelineView(!showTimelineView)
                       setShowTemplatesView(false)
                     }}
-                    className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300"
+                    className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400"
                   >
                     {showTimelineView ? (
                       <>
@@ -3540,7 +3540,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors duration-200 text-xs font-medium border ${
                       showTemplatesView
                         ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300'
+                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
                     }`}
                   >
                     <FileText className="w-4 h-4" />
@@ -3553,36 +3553,36 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <div className="mt-6 space-y-6">
                   {/* Workflow Templates Section */}
                   <Card>
-                    <div className="p-4 border-b border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900">Process Templates</h3>
-                      <p className="text-sm text-gray-500 mt-1">Templates available for this process</p>
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Process Templates</h3>
+                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Templates available for this process</p>
                     </div>
                     <div className="p-4">
                       {templatesLoading ? (
                         <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm">Loading templates...</p>
+                          <p className="text-gray-500 text-sm dark:text-gray-400">Loading templates...</p>
                         </div>
                       ) : workflowTemplates && workflowTemplates.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {workflowTemplates.map((template) => (
-                            <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                            <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
                               <div className="flex items-start justify-between mb-3">
                                 <div className="flex items-center space-x-3 flex-1 min-w-0">
                                   <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
                                     <FileText className="w-5 h-5 text-blue-600" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate">{template.name}</h4>
-                                    <p className="text-xs text-gray-500 truncate">{template.file_name}</p>
+                                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">{template.name}</h4>
+                                    <p className="text-xs text-gray-500 truncate dark:text-gray-400">{template.file_name}</p>
                                   </div>
                                 </div>
                               </div>
 
                               {template.description && (
-                                <p className="text-xs text-gray-600 mb-3 line-clamp-2">{template.description}</p>
+                                <p className="text-xs text-gray-600 mb-3 line-clamp-2 dark:text-gray-400">{template.description}</p>
                               )}
 
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
                                 <span className="text-xs text-gray-400">
                                   {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
                                 </span>
@@ -3598,9 +3598,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           ))}
                         </div>
                       ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
                           <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium">No templates available</p>
+                          <p className="text-sm text-gray-500 font-medium dark:text-gray-400">No templates available</p>
                           <p className="text-xs text-gray-400 mt-2">Process admins can upload templates in the Processes tab</p>
                         </div>
                       )}
@@ -3609,32 +3609,32 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
                   {/* Workflow Attachments Section */}
                   <Card>
-                    <div className="p-4 border-b border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900">Process Attachments</h3>
-                      <p className="text-sm text-gray-500 mt-1">Files attached to process tasks and stages</p>
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Process Attachments</h3>
+                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Files attached to process tasks and stages</p>
                     </div>
                     <div className="p-4">
                       {attachmentsLoading ? (
                         <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm">Loading attachments...</p>
+                          <p className="text-gray-500 text-sm dark:text-gray-400">Loading attachments...</p>
                         </div>
                       ) : checklistAttachments && checklistAttachments.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {checklistAttachments.map((attachment) => (
-                            <div key={attachment.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                            <div key={attachment.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
                               <div className="flex items-start justify-between mb-3">
                                 <div className="flex items-center space-x-3 flex-1 min-w-0">
                                   <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
                                     <FileText className="w-5 h-5 text-green-600" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate">{attachment.file_name}</h4>
-                                    <p className="text-xs text-gray-500">Stage: {attachment.stage_id}</p>
+                                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">{attachment.file_name}</h4>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Stage: {attachment.stage_id}</p>
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
                                 <span className="text-xs text-gray-400">
                                   {attachment.file_size ? `${(attachment.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
                                 </span>
@@ -3650,9 +3650,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           ))}
                         </div>
                       ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
                           <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium">No attachments yet</p>
+                          <p className="text-sm text-gray-500 font-medium dark:text-gray-400">No attachments yet</p>
                           <p className="text-xs text-gray-400 mt-2">Files can be attached to process tasks in the Stage view</p>
                         </div>
                       )}
@@ -3670,15 +3670,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 />
               ) : workflowIdLoading || pendingWorkflowSwitch || allWorkflowsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
                 </div>
               ) : !effectiveWorkflowId ? (
-                <div className="bg-white border border-gray-200 rounded-lg p-12">
+                <div className="bg-white border border-gray-200 rounded-lg p-12 dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex flex-col items-center justify-center text-center space-y-4">
                     <Activity className="w-16 h-16 text-gray-300" />
                     <div>
-                      <h3 className="text-lg font-medium text-gray-900">No Active Processes</h3>
-                      <p className="text-sm text-gray-500 mt-1">Add this asset to a process to start tracking progress</p>
+                      <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Active Processes</h3>
+                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Add this asset to a process to start tracking progress</p>
                     </div>
                   </div>
                 </div>
@@ -3765,16 +3765,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 ].map((metric) => (
                   <div
                     key={metric.label}
-                    className={`rounded-lg border px-3 py-2.5 ${metric.active ? 'border-gray-200/80 bg-white shadow-sm' : 'border-gray-200/60 bg-gray-50/80'}`}
+                    className={`rounded-lg border px-3 py-2.5 ${metric.active ? 'border-gray-200/80 bg-white shadow-sm dark:bg-gray-800' : 'border-gray-200/60 bg-gray-50/80'}`}
                   >
                     <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest block leading-none">
                       {metric.label}
                     </span>
-                    <span className={`text-[17px] font-extrabold tabular-nums block mt-1.5 leading-tight ${metric.active ? 'text-gray-900' : 'text-gray-400'}`}>
+                    <span className={`text-[17px] font-extrabold tabular-nums block mt-1.5 leading-tight ${metric.active ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>
                       {metric.value}
                     </span>
                     {metric.sub && (
-                      <span className="text-[10px] text-gray-500 block mt-0.5 leading-tight truncate">{metric.sub}</span>
+                      <span className="text-[10px] text-gray-500 block mt-0.5 leading-tight truncate dark:text-gray-400">{metric.sub}</span>
                     )}
                   </div>
                 ))}
@@ -3782,8 +3782,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
               {/* ─── Current Exposure ────────────────────────────── */}
               <Card padding="none">
-                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
-                  <h4 className="text-[13px] font-semibold text-gray-900">Current Exposure</h4>
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
+                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Current Exposure</h4>
                   {portfolioCount > 0 && (
                     <span className="text-[10px] text-gray-400 tabular-nums">{portfolioCount} position{portfolioCount !== 1 ? 's' : ''}</span>
                   )}
@@ -3791,7 +3791,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 {portfolioHoldings && portfolioHoldings.length > 0 ? (
                   <table className="min-w-full">
                     <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/60">
+                      <tr className="border-b border-gray-100 bg-gray-50/60 dark:border-gray-800">
                         <th className="px-4 py-1.5 text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider">Portfolio</th>
                         <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider">Port Wgt</th>
                         <th className="px-4 py-1.5 text-right text-[10px] font-medium text-gray-400 uppercase tracking-wider" title="Benchmark not configured">Bench Wgt</th>
@@ -3813,10 +3813,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         return (
                           <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
                             <td className="px-4 py-1.5">
-                              <span className="text-[13px] font-medium text-gray-900">{holding.portfolios?.name || 'Unknown'}</span>
+                              <span className="text-[13px] font-medium text-gray-900 dark:text-white">{holding.portfolios?.name || 'Unknown'}</span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
-                              <span className="text-[13px] font-bold text-gray-900 tabular-nums">
+                              <span className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white">
                                 {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
                               </span>
                             </td>
@@ -3827,10 +3827,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               <span className="text-[12px] text-gray-300 tabular-nums">{'\u2014'}</span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
-                              <span className="text-[12px] text-gray-500 tabular-nums">{shares.toLocaleString()}</span>
+                              <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">{shares.toLocaleString()}</span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
-                              <span className="text-[12px] text-gray-500 tabular-nums">
+                              <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">
                                 {currentPrice > 0
                                   ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : '\u2014'}
@@ -3863,7 +3863,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 ) : (
                   <div className="px-4 py-4 flex items-center justify-between">
                     <div>
-                      <span className="text-[13px] font-medium text-gray-500 block">Not currently held</span>
+                      <span className="text-[13px] font-medium text-gray-500 block dark:text-gray-400">Not currently held</span>
                       <span className="text-[11px] text-gray-400 block mt-0.5">No approved or executed trade recommendations exist for this asset.</span>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
@@ -3876,7 +3876,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             }
                           }))
                         }}
-                        className="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors"
+                        className="text-[11px] font-medium text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                       >
                         View Idea Pipeline
                       </button>
@@ -3901,8 +3901,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
               {/* ─── Open Items ──────────────────────────────────── */}
               <Card padding="none" id="decisions-open-items">
-                <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3">
-                  <h4 className="text-[13px] font-semibold text-gray-900">Open Items</h4>
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3 dark:border-gray-800">
+                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Open Items</h4>
                   <span className="text-[10px] font-medium text-gray-400 tabular-nums">({openItemsTotalHint})</span>
                   <div className="flex items-center gap-1 ml-1">
                     {([
@@ -3918,7 +3918,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         className={`px-2.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
                           openItemsFilter === key
                             ? 'bg-gray-900 text-white shadow-sm'
-                            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700'
                         }`}
                       >
                         {label}
@@ -3929,7 +3929,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 {openItemsLoading ? (
                   <div className="px-4 py-3 space-y-2">
                     {[1, 2].map((i) => (
-                      <div key={i} className="h-8 bg-gray-50 rounded animate-pulse" />
+                      <div key={i} className="h-8 bg-gray-50 rounded animate-pulse dark:bg-gray-900" />
                     ))}
                   </div>
                 ) : (() => {
@@ -3967,7 +3967,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 }
                               }))
                             }}
-                            className="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                            className="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
                           >
                             Open Idea Pipeline
                           </button>
@@ -3975,7 +3975,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </div>
                   ) : (
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
                       {filteredItems.map((item) => {
                         const actionConfig: Record<string, { bg: string; text: string; border: string }> = {
                           buy:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
@@ -3984,7 +3984,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           trim: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
                         }
                         const stageColors: Record<string, string> = {
-                          idea: 'bg-gray-100 text-gray-700 ring-gray-300',
+                          idea: 'bg-gray-100 text-gray-700 ring-gray-300 dark:text-gray-300 dark:bg-gray-800',
                           working_on: 'bg-blue-100/80 text-blue-800 ring-blue-300',
                           discussing: 'bg-blue-100/80 text-blue-800 ring-blue-300',
                           modeling: 'bg-purple-100/80 text-purple-800 ring-purple-300',
@@ -3999,7 +3999,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           simulating: 'Modeling',
                           deciding: 'Deciding',
                         }
-                        const ac = actionConfig[item.action] || { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-l-gray-300' }
+                        const ac = actionConfig[item.action] || { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-400', border: 'border-l-gray-300' }
                         const creatorName = item.creator
                           ? [item.creator.first_name, item.creator.last_name].filter(Boolean).join(' ') || 'Unknown'
                           : null
@@ -4020,7 +4020,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               {item.action}
                             </span>
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-semibold text-gray-900 block truncate leading-tight">
+                              <span className="text-[13px] font-semibold text-gray-900 block truncate leading-tight dark:text-white">
                                 {item.rationale || 'No rationale'}
                               </span>
                               <span className="text-[10px] text-gray-400 block mt-0.5 leading-tight">
@@ -4031,7 +4031,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
                               </span>
                             </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColors[item.stage] || 'bg-gray-100 text-gray-600 ring-gray-200'}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColors[item.stage] || 'bg-gray-100 text-gray-600 ring-gray-200 dark:text-gray-400 dark:bg-gray-800'}`}>
                               {stageLabels[item.stage] || item.stage}
                             </span>
                             <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
@@ -4069,7 +4069,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-listsContent">
                     <button
                       onClick={() => toggleSection('listsContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                     >
                       <div className="flex justify-between items-center flex-1 mr-2">
                         <h4
@@ -4084,7 +4084,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
                         >
                           Lists
                         </h4>
@@ -4097,13 +4097,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.listsContent && (
-                      <div className="border-t border-gray-100 px-4 py-2">
+                      <div className="border-t border-gray-100 px-4 py-2 dark:border-gray-800">
                         {listsByType.list && listsByType.list.length > 0 ? (
                           <div className="divide-y divide-gray-50">
                             {listsByType.list.map((list: any) => (
                               <div key={list.id} className="flex items-center justify-between py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors cursor-pointer">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-[13px] font-medium text-gray-900 truncate">{list.name}</span>
+                                  <span className="text-[13px] font-medium text-gray-900 truncate dark:text-white">{list.name}</span>
                                   {list.description && (
                                     <span className="text-[11px] text-gray-400 truncate hidden sm:inline">{list.description}</span>
                                   )}
@@ -4121,7 +4121,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           </div>
                         ) : (
                           <div className="py-1">
-                            <p className="text-[13px] text-gray-500">Not in any lists.</p>
+                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any lists.</p>
                             <p className="text-[11px] text-gray-400 mt-0.5">Add this asset to a list to organize and track it.</p>
                           </div>
                         )}
@@ -4133,7 +4133,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-themesContent">
                     <button
                       onClick={() => toggleSection('themesContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                     >
                       <div className="flex justify-between items-center flex-1 mr-2">
                         <h4
@@ -4148,7 +4148,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
                         >
                           Themes
                         </h4>
@@ -4161,7 +4161,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.themesContent && (
-                      <div className="border-t border-gray-100 px-4 py-2">
+                      <div className="border-t border-gray-100 px-4 py-2 dark:border-gray-800">
                         {assetThemes && assetThemes.length > 0 ? (
                           <div className="divide-y divide-gray-50">
                             {assetThemes.map((theme: any) => (
@@ -4180,7 +4180,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                       })
                                     }
                                   }}
-                                  className="text-[13px] font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                                  className="text-[13px] font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
                                 >
                                   {theme.name}
                                 </span>
@@ -4192,7 +4192,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           </div>
                         ) : (
                           <div className="py-1">
-                            <p className="text-[13px] text-gray-500">Not in any themes.</p>
+                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any themes.</p>
                             <p className="text-[11px] text-gray-400 mt-0.5">Themes group assets by investment thesis or macro trend.</p>
                           </div>
                         )}
@@ -4204,7 +4204,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-portfoliosContent">
                     <button
                       onClick={() => toggleSection('portfoliosContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                     >
                       <div className="flex justify-between items-center flex-1 mr-2">
                         <h4
@@ -4219,7 +4219,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               })
                             }
                           }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors"
+                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
                         >
                           Portfolios
                         </h4>
@@ -4232,7 +4232,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.portfoliosContent && (
-                      <div className="border-t border-gray-100 px-4 py-2.5">
+                      <div className="border-t border-gray-100 px-4 py-2.5 dark:border-gray-800">
                         {portfolioHoldings && portfolioHoldings.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {/* Deduplicate by portfolio_id, compute weight for tooltip */}
@@ -4255,7 +4255,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                     }
                                   }}
                                   title={weight ? `Open portfolio \u00B7 Port Wgt: ${weight}%` : 'Open portfolio'}
-                                  className="group/chip inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold text-gray-800 bg-gray-50 border border-gray-200 cursor-pointer hover:border-primary-400 hover:text-primary-700 hover:bg-primary-50 hover:shadow-sm transition-all"
+                                  className="group/chip inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold text-gray-800 bg-gray-50 border border-gray-200 cursor-pointer hover:border-primary-400 hover:text-primary-700 hover:bg-primary-50 hover:shadow-sm transition-all dark:border-gray-700 dark:text-gray-100 dark:bg-gray-900"
                                 >
                                   <Briefcase className="w-3.5 h-3.5 text-gray-400 group-hover/chip:text-primary-500 transition-colors" />
                                   {holding.portfolios?.name || 'Unknown Portfolio'}
@@ -4266,7 +4266,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           </div>
                         ) : (
                           <div className="py-0.5">
-                            <p className="text-[13px] text-gray-500">Not in any portfolios.</p>
+                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any portfolios.</p>
                             <p className="text-[11px] text-gray-400 mt-0.5">This asset has no current holdings across portfolios.</p>
                           </div>
                         )}
@@ -4278,10 +4278,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card padding="none" id="lists-section-projectsContent">
                     <button
                       onClick={() => toggleSection('projectsContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
                     >
                       <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4 className="text-[13px] font-semibold text-gray-900">Projects</h4>
+                        <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Projects</h4>
                         <AddToProjectButton assetId={asset.id} />
                       </div>
                       {collapsedSections.projectsContent ? (
@@ -4291,7 +4291,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       )}
                     </button>
                     {!collapsedSections.projectsContent && (
-                      <div className="border-t border-gray-100 px-4 py-1.5">
+                      <div className="border-t border-gray-100 px-4 py-1.5 dark:border-gray-800">
                         <RelatedProjects
                           contextType="asset"
                           contextId={asset.id}

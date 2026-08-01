@@ -90,11 +90,11 @@ export function EntityCaptureCard({
             <div className="flex items-center gap-2">
               <span className="font-semibold">{data.symbol}</span>
               {data.company_name && (
-                <span className="text-gray-500 text-sm truncate">{data.company_name}</span>
+                <span className="text-gray-500 text-sm truncate dark:text-gray-400">{data.company_name}</span>
               )}
             </div>
             {data.sector && (
-              <div className="text-xs text-gray-500">{data.sector} • {data.industry}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{data.sector} • {data.industry}</div>
             )}
             <div className="flex items-center gap-3 text-sm">
               {data.priority && (
@@ -102,13 +102,13 @@ export function EntityCaptureCard({
                   'px-1.5 py-0.5 rounded text-xs font-medium',
                   data.priority === 'high' ? 'bg-red-100 text-red-700' :
                   data.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
-                  'bg-gray-100 text-gray-700'
+                  'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'
                 )}>
                   {data.priority}
                 </span>
               )}
               {data.process_stage && (
-                <span className="text-gray-500 text-xs">{data.process_stage}</span>
+                <span className="text-gray-500 text-xs dark:text-gray-400">{data.process_stage}</span>
               )}
             </div>
           </div>
@@ -119,7 +119,7 @@ export function EntityCaptureCard({
           <div className="space-y-1">
             <div className="font-semibold">{data.name}</div>
             {data.description && (
-              <div className="text-sm text-gray-500 line-clamp-2">{data.description}</div>
+              <div className="text-sm text-gray-500 line-clamp-2 dark:text-gray-400">{data.description}</div>
             )}
           </div>
         )
@@ -129,7 +129,7 @@ export function EntityCaptureCard({
           <div className="space-y-1">
             <div className="font-semibold">{data.name}</div>
             {data.description && (
-              <div className="text-sm text-gray-500 line-clamp-2">{data.description}</div>
+              <div className="text-sm text-gray-500 line-clamp-2 dark:text-gray-400">{data.description}</div>
             )}
           </div>
         )
@@ -140,11 +140,11 @@ export function EntityCaptureCard({
             <div className="font-semibold">{data.title}</div>
             <div className="flex items-center gap-2 text-xs">
               {data.note_type && (
-                <span className="px-1.5 py-0.5 bg-gray-100 rounded">{data.note_type}</span>
+                <span className="px-1.5 py-0.5 bg-gray-100 rounded dark:bg-gray-800">{data.note_type}</span>
               )}
             </div>
             {data.content_preview && (
-              <div className="text-sm text-gray-500 line-clamp-2">{data.content_preview}</div>
+              <div className="text-sm text-gray-500 line-clamp-2 dark:text-gray-400">{data.content_preview}</div>
             )}
           </div>
         )
@@ -158,7 +158,7 @@ export function EntityCaptureCard({
                 'px-1.5 py-0.5 rounded text-xs font-medium',
                 data.status === 'active' ? 'bg-green-100 text-green-700' :
                 data.status === 'paused' ? 'bg-amber-100 text-amber-700' :
-                'bg-gray-100 text-gray-700'
+                'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'
               )}>
                 {data.status}
               </span>
@@ -175,13 +175,13 @@ export function EntityCaptureCard({
                 'px-1.5 py-0.5 rounded text-xs font-medium',
                 data.status === 'active' ? 'bg-green-100 text-green-700' :
                 data.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                'bg-gray-100 text-gray-700'
+                'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'
               )}>
                 {data.status}
               </span>
             )}
             {data.description && (
-              <div className="text-sm text-gray-500 line-clamp-2">{data.description}</div>
+              <div className="text-sm text-gray-500 line-clamp-2 dark:text-gray-400">{data.description}</div>
             )}
           </div>
         )
@@ -192,25 +192,25 @@ export function EntityCaptureCard({
             <div className="flex items-center gap-3">
               {data.bear_target && (
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Bear</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Bear</div>
                   <div className="font-semibold text-red-600">${data.bear_target}</div>
                 </div>
               )}
               {data.base_target && (
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Base</div>
-                  <div className="font-semibold text-gray-700">${data.base_target}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Base</div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300">${data.base_target}</div>
                 </div>
               )}
               {data.bull_target && (
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Bull</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Bull</div>
                   <div className="font-semibold text-green-600">${data.bull_target}</div>
                 </div>
               )}
             </div>
             {data.timeframe && (
-              <div className="text-xs text-gray-500">{data.timeframe}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{data.timeframe}</div>
             )}
           </div>
         )
@@ -225,13 +225,13 @@ export function EntityCaptureCard({
               )} />
               <span className={clsx(
                 'font-medium',
-                data.is_completed && 'line-through text-gray-500'
+                data.is_completed && 'line-through text-gray-500 dark:text-gray-400'
               )}>
                 {data.title}
               </span>
             </div>
             {data.description && (
-              <div className="text-sm text-gray-500 line-clamp-2">{data.description}</div>
+              <div className="text-sm text-gray-500 line-clamp-2 dark:text-gray-400">{data.description}</div>
             )}
           </div>
         )
@@ -277,7 +277,7 @@ export function EntityCaptureCard({
           <div className="text-xs space-y-1 bg-amber-50 rounded p-2">
             {changes.map(({ field, old, new: newVal }) => (
               <div key={field} className="flex items-center gap-2">
-                <span className="text-gray-500">{field}:</span>
+                <span className="text-gray-500 dark:text-gray-400">{field}:</span>
                 <span className="line-through text-red-500">{String(old)}</span>
                 <span className="text-gray-400">→</span>
                 <span className="text-green-600">{String(newVal)}</span>
@@ -327,7 +327,7 @@ export function EntityCaptureCard({
               className="p-1 hover:bg-white/50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
               title="Open"
             >
-              <ExternalLink className="h-3.5 w-3.5 text-gray-500" />
+              <ExternalLink className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
             </button>
           )}
           {onToggleExpand && (
@@ -336,9 +336,9 @@ export function EntityCaptureCard({
               className="p-1 hover:bg-white/50 rounded"
             >
               {isExpanded ? (
-                <ChevronUp className="h-3.5 w-3.5 text-gray-500" />
+                <ChevronUp className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
               ) : (
-                <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+                <ChevronDown className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
               )}
             </button>
           )}
@@ -348,7 +348,7 @@ export function EntityCaptureCard({
       {/* Content */}
       <div className="px-3 py-2">
         {isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <RefreshCw className="h-4 w-4 animate-spin" />
             Loading...
           </div>
@@ -361,7 +361,7 @@ export function EntityCaptureCard({
           <>
             {renderPreviewContent(isLive ? liveData : snapshotData)}
             {!isLive && snapshotAt && (
-              <div className="mt-2 text-xs text-gray-500">
+              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 Captured {new Date(snapshotAt).toLocaleDateString('en-US', {
                   month: 'short',
                   day: 'numeric',

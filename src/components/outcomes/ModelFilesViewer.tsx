@@ -32,7 +32,7 @@ interface ModelFilesViewerProps {
 // Sync status badge
 function SyncStatusBadge({ status }: { status: ModelFile['sync_status'] }) {
   const config = {
-    pending: { icon: Clock, color: 'text-gray-500 bg-gray-100', label: 'Pending' },
+    pending: { icon: Clock, color: 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800', label: 'Pending' },
     processing: { icon: Loader2, color: 'text-blue-600 bg-blue-100', label: 'Processing', animate: true },
     synced: { icon: CheckCircle2, color: 'text-green-600 bg-green-100', label: 'Synced' },
     error: { icon: AlertCircle, color: 'text-red-600 bg-red-100', label: 'Error' }
@@ -98,7 +98,7 @@ function VersionComparison({ currentFile, previousFile }: VersionComparisonProps
 
   if (changes.length === 0) {
     return (
-      <div className="text-xs text-gray-500 italic">
+      <div className="text-xs text-gray-500 italic dark:text-gray-400">
         No changes from previous version
       </div>
     )
@@ -106,14 +106,14 @@ function VersionComparison({ currentFile, previousFile }: VersionComparisonProps
 
   return (
     <div className="space-y-1">
-      <h6 className="text-xs font-medium text-gray-700 flex items-center gap-1">
+      <h6 className="text-xs font-medium text-gray-700 flex items-center gap-1 dark:text-gray-300">
         <GitCompare className="w-3 h-3" />
         Changes from v{previousFile.version}
       </h6>
       <div className="space-y-1">
         {changes.slice(0, 5).map((change, i) => (
           <div key={i} className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">{change.label}</span>
+            <span className="text-gray-600 dark:text-gray-400">{change.label}</span>
             <div className="flex items-center gap-2">
               {change.oldValue !== null && (
                 <span className="text-gray-400 line-through">
@@ -124,7 +124,7 @@ function VersionComparison({ currentFile, previousFile }: VersionComparisonProps
                 'font-medium flex items-center gap-0.5',
                 change.change === 'up' ? 'text-green-600' :
                 change.change === 'down' ? 'text-red-600' :
-                change.change === 'new' ? 'text-blue-600' : 'text-gray-900'
+                change.change === 'new' ? 'text-blue-600' : 'text-gray-900 dark:text-white'
               )}>
                 {change.change === 'up' && <ArrowUp className="w-3 h-3" />}
                 {change.change === 'down' && <ArrowDown className="w-3 h-3" />}
@@ -170,12 +170,12 @@ function FileRow({ file, previousVersion, isOwner, onDownload, onDelete, onResyn
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
       {/* Main row */}
-      <div className="flex items-center gap-3 p-3 bg-white hover:bg-gray-50">
+      <div className="flex items-center gap-3 p-3 bg-white hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-800">
         <button
           onClick={() => setShowDetails(!showDetails)}
-          className="p-1 text-gray-400 hover:text-gray-600"
+          className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
         >
           {showDetails ? (
             <ChevronDown className="w-4 h-4" />
@@ -188,14 +188,14 @@ function FileRow({ file, previousVersion, isOwner, onDownload, onDelete, onResyn
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-900 truncate">
+            <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
               {file.filename}
             </span>
             {file.version > 1 && (
-              <span className="text-xs text-gray-500">v{file.version}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">v{file.version}</span>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+          <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5 dark:text-gray-400">
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {formatDistanceToNow(new Date(file.created_at), { addSuffix: true })}
@@ -241,7 +241,7 @@ function FileRow({ file, previousVersion, isOwner, onDownload, onDelete, onResyn
                 'p-1.5 rounded transition-colors',
                 showComparison
                   ? 'text-blue-600 bg-blue-50'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
               )}
               title="Compare with previous version"
             >
@@ -251,7 +251,7 @@ function FileRow({ file, previousVersion, isOwner, onDownload, onDelete, onResyn
 
           <button
             onClick={onDownload}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
             title="Download"
           >
             <Download className="w-4 h-4" />
@@ -280,24 +280,24 @@ function FileRow({ file, previousVersion, isOwner, onDownload, onDelete, onResyn
 
       {/* Details panel */}
       {showDetails && (
-        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm">
+        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm dark:border-gray-700 dark:bg-gray-900">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <span className="text-gray-500">File Size:</span>
-              <span className="ml-2 text-gray-900">
+              <span className="text-gray-500 dark:text-gray-400">File Size:</span>
+              <span className="ml-2 text-gray-900 dark:text-white">
                 {file.file_size ? `${(file.file_size / 1024).toFixed(1)} KB` : 'Unknown'}
               </span>
             </div>
             <div>
-              <span className="text-gray-500">Uploaded:</span>
-              <span className="ml-2 text-gray-900">
+              <span className="text-gray-500 dark:text-gray-400">Uploaded:</span>
+              <span className="ml-2 text-gray-900 dark:text-white">
                 {format(new Date(file.created_at), 'MMM d, yyyy h:mm a')}
               </span>
             </div>
             {file.synced_at && (
               <div>
-                <span className="text-gray-500">Last Synced:</span>
-                <span className="ml-2 text-gray-900">
+                <span className="text-gray-500 dark:text-gray-400">Last Synced:</span>
+                <span className="ml-2 text-gray-900 dark:text-white">
                   {format(new Date(file.synced_at), 'MMM d, yyyy h:mm a')}
                 </span>
               </div>
@@ -312,13 +312,13 @@ function FileRow({ file, previousVersion, isOwner, onDownload, onDelete, onResyn
 
           {/* Extracted data preview */}
           {file.extracted_data && (
-            <div className="mt-3 pt-3 border-t border-gray-200">
-              <h5 className="text-xs font-medium text-gray-700 mb-2">Extracted Data</h5>
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+              <h5 className="text-xs font-medium text-gray-700 mb-2 dark:text-gray-300">Extracted Data</h5>
               <div className="grid grid-cols-3 gap-2">
                 {file.extracted_data.values?.slice(0, 6).map((val: any, i: number) => (
                   <div key={i} className="text-xs">
-                    <span className="text-gray-500">{val.label || val.field}:</span>
-                    <span className="ml-1 text-gray-900">
+                    <span className="text-gray-500 dark:text-gray-400">{val.label || val.field}:</span>
+                    <span className="ml-1 text-gray-900 dark:text-white">
                       {val.formattedValue ?? '—'}
                     </span>
                   </div>
@@ -415,7 +415,7 @@ export function ModelFilesViewer({ assetId, className }: ModelFilesViewerProps) 
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
@@ -432,13 +432,13 @@ export function ModelFilesViewer({ assetId, className }: ModelFilesViewerProps) 
   const otherFilesGroup = files.filter(f => f.user_id !== user?.id)
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-          <History className="w-4 h-4 text-gray-500" />
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
+        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
+          <History className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           Uploaded Models
         </h4>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-gray-500 dark:text-gray-400">
           {files.length} file{files.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -447,7 +447,7 @@ export function ModelFilesViewer({ assetId, className }: ModelFilesViewerProps) 
         {/* My Files */}
         {myFilesGroup.length > 0 && (
           <div>
-            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
               My Uploads ({myFilesGroup.length})
             </h5>
             <div className="space-y-2">
@@ -471,7 +471,7 @@ export function ModelFilesViewer({ assetId, className }: ModelFilesViewerProps) 
         {/* Other Files */}
         {otherFilesGroup.length > 0 && (
           <div>
-            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+            <h5 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
               Team Uploads ({otherFilesGroup.length})
             </h5>
             <div className="space-y-2">

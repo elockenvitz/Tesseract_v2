@@ -211,7 +211,7 @@ function DecisionStack({
           ) : null}
           <button
             onClick={() => setShowStandard(e => !e)}
-            className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 border-t border-gray-100 dark:border-gray-700/40 transition-colors"
+            className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 border-t border-gray-100 dark:border-gray-700/40 transition-colors dark:hover:text-gray-300"
           >
             {showStandard ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             {showStandard ? 'Hide standard' : `+${tiers.standard.length} standard priority`}
@@ -253,12 +253,12 @@ function DecisionRow({ ranked, onItemClick, onSnooze }: {
   return (
     <div onClick={() => onItemClick?.(item)} className={clsx('flex items-center gap-2.5 px-3.5 py-[6px] group transition-colors', onItemClick && 'cursor-pointer', 'hover:bg-gray-50/60 dark:hover:bg-gray-700/30')}>
       <span className={clsx('shrink-0 text-[11px] font-bold tabular-nums w-[22px] text-right', ageColor(age))}>{age}d</span>
-      {action && !item.meta?.isPairTrade && <span className={clsx('shrink-0 text-[12px] font-bold', ACTION_COLOR[action] ?? 'text-gray-500')}>{action}</span>}
+      {action && !item.meta?.isPairTrade && <span className={clsx('shrink-0 text-[12px] font-bold', ACTION_COLOR[action] ?? 'text-gray-500 dark:text-gray-400')}>{action}</span>}
       {ticker && !item.meta?.isPairTrade && <span className="shrink-0 text-[12px] font-bold text-blue-600 dark:text-blue-400">{ticker}</span>}
       {item.meta?.isPairTrade && action && <span className="shrink-0 text-[12px] font-bold text-gray-700 dark:text-gray-200 truncate max-w-[160px]">{action}</span>}
       {item.meta?.proposedWeight != null && <span className="shrink-0 text-[10px] font-bold tabular-nums text-violet-600 dark:text-violet-400">{item.meta.proposedWeight.toFixed(1)}%</span>}
       <span className="flex-1 min-w-0 text-[10px] text-gray-400 dark:text-gray-500 truncate">{ctx.whyNow}</span>
-      <button onClick={(e) => { e.stopPropagation(); item.primaryAction.onClick() }} className="shrink-0 text-[10px] font-medium px-2 py-[2px] rounded bg-gray-100 dark:bg-gray-700/50 text-gray-500 hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-all">{item.primaryAction.label}</button>
+      <button onClick={(e) => { e.stopPropagation(); item.primaryAction.onClick() }} className="shrink-0 text-[10px] font-medium px-2 py-[2px] rounded bg-gray-100 dark:bg-gray-700/50 text-gray-500 hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-all dark:text-gray-400">{item.primaryAction.label}</button>
     </div>
   )
 }

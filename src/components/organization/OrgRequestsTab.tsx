@@ -118,8 +118,8 @@ export function OrgRequestsTab({ isOrgAdmin, organizationId }: OrgRequestsTabPro
       {accessRequests.length === 0 ? (
         <div className="text-center py-12">
           <Bell className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No pending requests</h3>
-          <p className="text-sm text-gray-500">All access requests have been handled</p>
+          <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No pending requests</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">All access requests have been handled</p>
         </div>
       ) : (
         accessRequests.map(request => (
@@ -131,27 +131,27 @@ export function OrgRequestsTab({ isOrgAdmin, organizationId }: OrgRequestsTabPro
                 </div>
                 <div>
                   <div className="flex items-center space-x-2">
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-gray-900 dark:text-white">
                       {request.requester?.full_name}
                     </span>
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
                       {request.request_type === 'join_org'
                         ? 'wants to join the organization'
                         : `requested ${request.request_type.replace(/_/g, ' ')}`}
                     </span>
                   </div>
                   {request.target_team && (
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       Team: {request.target_team.name}
                     </p>
                   )}
                   {request.target_portfolio && (
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       Portfolio: {request.target_portfolio.name}
                     </p>
                   )}
                   {request.reason && (
-                    <p className="text-sm text-gray-500 mt-1 italic">"{request.reason}"</p>
+                    <p className="text-sm text-gray-500 mt-1 italic dark:text-gray-400">"{request.reason}"</p>
                   )}
                   <p className="text-xs text-gray-400 mt-1">
                     {new Date(request.created_at).toLocaleDateString()}
@@ -197,7 +197,7 @@ export function OrgRequestsTab({ isOrgAdmin, organizationId }: OrgRequestsTabPro
             className="absolute inset-0 bg-black/40"
             onClick={() => setConfirmAction(null)}
           />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4 dark:bg-gray-800">
             <div className="flex items-center space-x-3 mb-4">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                 confirmAction.status === 'approved'
@@ -211,10 +211,10 @@ export function OrgRequestsTab({ isOrgAdmin, organizationId }: OrgRequestsTabPro
                 )}
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-900">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">
                   {confirmAction.status === 'approved' ? 'Approve' : 'Reject'} request?
                 </h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {confirmAction.status === 'approved'
                     ? `This will grant ${confirmAction.requesterName} access and provision their membership.`
                     : `This will reject the access request from ${confirmAction.requesterName}. This action cannot be undone.`}

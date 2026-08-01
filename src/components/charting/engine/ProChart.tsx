@@ -1265,7 +1265,7 @@ export function ProChart({
       <div className="absolute top-2 right-2 z-10 flex items-center space-x-1">
         <button
           onClick={zoomIn}
-          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors"
+          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
           title="Zoom In"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1274,7 +1274,7 @@ export function ProChart({
         </button>
         <button
           onClick={zoomOut}
-          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors"
+          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
           title="Zoom Out"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1283,7 +1283,7 @@ export function ProChart({
         </button>
         <button
           onClick={resetView}
-          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors"
+          className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
           title="Reset View"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1297,7 +1297,7 @@ export function ProChart({
         <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-20">
           <div className="flex items-center space-x-2">
             <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-600">Loading chart data...</span>
+            <span className="text-gray-600 dark:text-gray-400">Loading chart data...</span>
           </div>
         </div>
       )}
@@ -1312,9 +1312,9 @@ export function ProChart({
 
       {/* Legend showing comparison symbols and display mode */}
       {(compareSymbols.length > 0 || displayMode !== 'absolute') && !isLoading && data.length > 0 && (
-        <div className="absolute top-2 left-2 z-10 bg-white/95 border border-gray-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+        <div className="absolute top-2 left-2 z-10 bg-white/95 border border-gray-200 rounded-lg shadow-sm px-3 py-2 text-xs dark:border-gray-700">
           {displayMode !== 'absolute' && (
-            <div className="text-gray-500 mb-1 font-medium">
+            <div className="text-gray-500 mb-1 font-medium dark:text-gray-400">
               {displayMode === 'indexed' ? `Indexed to ${indexBase}` : '% Change'}
             </div>
           )}
@@ -1331,7 +1331,7 @@ export function ProChart({
                 className="w-2.5 h-2.5 rounded-full"
                 style={{ backgroundColor: mainSymbolStyle?.color || '#3b82f6' }}
               />
-              <span className="text-gray-700 font-medium">{symbol}</span>
+              <span className="text-gray-700 font-medium dark:text-gray-300">{symbol}</span>
             </span>
             {compareSymbols.map((cs) => (
               <span
@@ -1347,7 +1347,7 @@ export function ProChart({
                   className="w-2.5 h-2.5 rounded-full"
                   style={{ backgroundColor: cs.color || '#666666' }}
                 />
-                <span className="text-gray-700">{cs.symbol}</span>
+                <span className="text-gray-700 dark:text-gray-300">{cs.symbol}</span>
                 {!compareData.has(cs.symbol) && (
                   <span className="text-gray-400 ml-1">(loading...)</span>
                 )}
@@ -1364,7 +1364,7 @@ export function ProChart({
             <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="text-gray-500">{error}</p>
+            <p className="text-gray-500 dark:text-gray-400">{error}</p>
           </div>
         </div>
       )}
@@ -1390,7 +1390,7 @@ export function ProChart({
             <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
             </svg>
-            <p className="text-gray-500">Select a symbol to view chart</p>
+            <p className="text-gray-500 dark:text-gray-400">Select a symbol to view chart</p>
           </div>
         </div>
       )}

@@ -75,8 +75,8 @@ export function ProcessesTab({ portfolio, onNavigate }: ProcessesTabProps) {
           <div className="w-2 h-2 rounded-full bg-gray-200" />
           <div className="h-4 w-16 bg-gray-200 rounded" />
         </div>
-        <div className="h-16 bg-gray-100 rounded-lg" />
-        <div className="h-16 bg-gray-100 rounded-lg" />
+        <div className="h-16 bg-gray-100 rounded-lg dark:bg-gray-800" />
+        <div className="h-16 bg-gray-100 rounded-lg dark:bg-gray-800" />
       </div>
     )
   }
@@ -105,7 +105,7 @@ export function ProcessesTab({ portfolio, onNavigate }: ProcessesTabProps) {
       <div>
         <div className="flex items-center gap-2 mb-3">
           <div className="w-2 h-2 rounded-full bg-blue-500" />
-          <h3 className="text-sm font-semibold text-gray-900">Active</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Active</h3>
           {activePortfolioRuns.length > 0 && (
             <span className="text-[11px] text-gray-400">{activePortfolioRuns.length}</span>
           )}
@@ -117,11 +117,11 @@ export function ProcessesTab({ portfolio, onNavigate }: ProcessesTabProps) {
               <button
                 key={run.id}
                 onClick={() => setActiveProcess({ id: run.workflow_id, name: run.workflow.name, scopeType: 'portfolio' })}
-                className="w-full text-left px-3 py-3 rounded-lg border border-gray-200 hover:border-blue-300 bg-white transition-colors group"
+                className="w-full text-left px-3 py-3 rounded-lg border border-gray-200 hover:border-blue-300 bg-white transition-colors group dark:border-gray-700 dark:bg-gray-800"
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
-                    <span className="text-[13px] font-medium text-gray-900 truncate">{run.workflow.name}</span>
+                    <span className="text-[13px] font-medium text-gray-900 truncate dark:text-white">{run.workflow.name}</span>
                     <p className="text-[11px] text-gray-400 mt-0.5">In progress</p>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-500 flex-shrink-0" />
@@ -142,7 +142,7 @@ export function ProcessesTab({ portfolio, onNavigate }: ProcessesTabProps) {
             className="flex items-center gap-2 mb-3 hover:opacity-80"
           >
             <Check className="w-3.5 h-3.5 text-emerald-500" />
-            <h3 className="text-sm font-semibold text-gray-900">Completed</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Completed</h3>
             <span className="text-[11px] text-gray-400">{completedPortfolioRuns.length}</span>
             <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showCompleted ? '' : '-rotate-90'}`} />
           </button>
@@ -152,12 +152,12 @@ export function ProcessesTab({ portfolio, onNavigate }: ProcessesTabProps) {
                 <button
                   key={run.id}
                   onClick={() => setActiveProcess({ id: run.workflow_id, name: run.workflow.name, scopeType: 'portfolio' })}
-                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-100 bg-gray-50/50 transition-colors hover:border-gray-200 group"
+                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-100 bg-gray-50/50 transition-colors hover:border-gray-200 group dark:border-gray-800"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                      <span className="text-[13px] text-gray-600 truncate">{run.workflow.name}</span>
+                      <span className="text-[13px] text-gray-600 truncate dark:text-gray-400">{run.workflow.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {run.completed_at && (

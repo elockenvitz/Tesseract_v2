@@ -132,12 +132,12 @@ export function OrgDomainsSection({ organizationId }: OrgDomainsSectionProps) {
     <Card className="p-4">
       <div className="mb-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-900">Verified Domains</h3>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white">Verified Domains</h3>
           {!isLoading && (
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
               verifiedCount > 0
                 ? 'bg-green-100 text-green-700'
-                : 'bg-gray-100 text-gray-500'
+                : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
             }`}>
               {verifiedCount > 0
                 ? `${verifiedCount} Verified Domain${verifiedCount !== 1 ? 's' : ''}`
@@ -145,7 +145,7 @@ export function OrgDomainsSection({ organizationId }: OrgDomainsSectionProps) {
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
           Verified domains let new users be automatically routed to this organization on sign-up based on their email.
         </p>
       </div>
@@ -167,7 +167,7 @@ export function OrgDomainsSection({ organizationId }: OrgDomainsSectionProps) {
                   <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
                 )}
                 <div>
-                  <span className="text-sm font-medium text-gray-900">{d.domain}</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{d.domain}</span>
                   {d.status === 'verified' && d.verified_at && (
                     <span className="text-xs text-gray-400 ml-2">
                       Verified {format(new Date(d.verified_at), 'MMM d, yyyy')}
@@ -186,7 +186,7 @@ export function OrgDomainsSection({ organizationId }: OrgDomainsSectionProps) {
                   <>
                     <button
                       onClick={() => handleCopyToken(d.verification_token!)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-900 border border-gray-300 rounded transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-900 border border-gray-300 rounded transition-colors dark:hover:text-white dark:border-gray-600 dark:text-gray-400"
                       title="Copy verification token"
                     >
                       {copiedToken === d.verification_token ? (
@@ -227,7 +227,7 @@ export function OrgDomainsSection({ organizationId }: OrgDomainsSectionProps) {
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
                 placeholder="Paste verification token"
-                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
               />
               <Button
                 size="sm"
@@ -256,7 +256,7 @@ export function OrgDomainsSection({ organizationId }: OrgDomainsSectionProps) {
           onChange={(e) => { setNewDomain(e.target.value); setAddError(null) }}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
           placeholder="e.g. firm.com"
-          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
         />
         <Button
           size="sm"

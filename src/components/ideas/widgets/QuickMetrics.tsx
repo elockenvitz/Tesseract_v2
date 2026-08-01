@@ -46,7 +46,7 @@ export function QuickMetrics({
       )}>
         {[...Array(4)].map((_, i) => (
           <div key={i} className="animate-pulse">
-            <div className="h-6 w-16 bg-gray-100 rounded-full" />
+            <div className="h-6 w-16 bg-gray-100 rounded-full dark:bg-gray-800" />
           </div>
         ))}
       </div>

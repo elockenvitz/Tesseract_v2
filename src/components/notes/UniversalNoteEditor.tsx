@@ -1608,7 +1608,7 @@ export function UniversalNoteEditor({
     if (fileType.includes('document') || fileType.includes('word') || fileType.includes('msword')) {
       return { icon: FileText, bgColor: 'bg-blue-50', iconColor: 'text-blue-500' }
     }
-    return { icon: File, bgColor: 'bg-gray-100', iconColor: 'text-gray-500' }
+    return { icon: File, bgColor: 'bg-gray-100 dark:bg-gray-800', iconColor: 'text-gray-500 dark:text-gray-400' }
   }
 
   const formatFileSize = (bytes: number): string => {
@@ -1647,10 +1647,10 @@ export function UniversalNoteEditor({
   const getNoteTypeColor = (type: string | null) => getNoteType(type).badgeVariant
 
   return (
-    <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
+    <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
       {/* Left Sidebar - Notes List */}
       <div className={clsx(
-        'bg-gray-50/50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out',
+        'bg-gray-50/50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out dark:border-gray-700',
         isSidebarCollapsed ? 'w-12' : 'w-72'
       )}>
         {/* Collapsed State */}
@@ -1658,7 +1658,7 @@ export function UniversalNoteEditor({
           <div className="flex flex-col items-center py-3 gap-2">
             <button
               onClick={() => setIsSidebarCollapsed(false)}
-              className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
               title="Expand sidebar"
             >
               <PanelLeft className="h-4 w-4" />
@@ -1675,19 +1675,19 @@ export function UniversalNoteEditor({
         ) : (
         <>
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 bg-white">
+        <div className="p-4 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsSidebarCollapsed(true)}
-                className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 title="Collapse sidebar"
               >
                 <PanelLeftClose className="h-4 w-4" />
               </button>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 tracking-tight">{entityName}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">{filteredNotes.length} notes</p>
+                <h3 className="text-sm font-semibold text-gray-900 tracking-tight dark:text-white">{entityName}</h3>
+                <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{filteredNotes.length} notes</p>
               </div>
             </div>
             <button
@@ -1707,12 +1707,12 @@ export function UniversalNoteEditor({
               placeholder="Search notes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 placeholder-gray-400 transition-all"
+              className="w-full pl-9 pr-8 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 placeholder-gray-400 transition-all dark:border-gray-700 dark:bg-gray-900"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1726,7 +1726,7 @@ export function UniversalNoteEditor({
               <select
                 value={noteTypeFilter || ''}
                 onChange={(e) => setNoteTypeFilter(e.target.value || null)}
-                className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-8 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 cursor-pointer"
+                className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-8 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 cursor-pointer dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900"
               >
                 <option value="">All Types</option>
                 {NOTE_TYPES_GROUPED.map(({ group, types }) => (
@@ -1744,7 +1744,7 @@ export function UniversalNoteEditor({
             <div className="relative flex-1" ref={sortDropdownRef}>
               <button
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="w-full flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                className="w-full flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900"
               >
                 <span className="flex items-center gap-1.5">
                   <ArrowUpDown className="h-3 w-3 text-gray-400" />
@@ -1754,7 +1754,7 @@ export function UniversalNoteEditor({
               </button>
 
               {showSortDropdown && (
-                <div className="absolute right-0 left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50">
+                <div className="absolute right-0 left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 dark:border-gray-800 dark:bg-gray-800">
                   {[
                     { key: 'updated', label: 'Recently Updated', short: 'Recent' },
                     { key: 'created', label: 'Recently Created', short: 'Created' },
@@ -1764,8 +1764,8 @@ export function UniversalNoteEditor({
                       key={option.key}
                       onClick={() => { setSortBy(option.key as any); setShowSortDropdown(false) }}
                       className={clsx(
-                        'w-full px-3 py-2 text-left text-xs hover:bg-gray-50 flex items-center justify-between transition-colors',
-                        sortBy === option.key ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700'
+                        'w-full px-3 py-2 text-left text-xs hover:bg-gray-50 flex items-center justify-between transition-colors dark:hover:bg-gray-800',
+                        sortBy === option.key ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700 dark:text-gray-300'
                       )}
                     >
                       {option.label}
@@ -1783,10 +1783,10 @@ export function UniversalNoteEditor({
           {isLoading ? (
             <div className="space-y-3 p-2">
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="animate-pulse p-3 rounded-lg bg-gray-50">
+                <div key={i} className="animate-pulse p-3 rounded-lg bg-gray-50 dark:bg-gray-900">
                   <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-3 bg-gray-100 rounded w-full mb-1"></div>
-                  <div className="h-3 bg-gray-100 rounded w-1/2"></div>
+                  <div className="h-3 bg-gray-100 rounded w-full mb-1 dark:bg-gray-800"></div>
+                  <div className="h-3 bg-gray-100 rounded w-1/2 dark:bg-gray-800"></div>
                 </div>
               ))}
             </div>
@@ -1799,7 +1799,7 @@ export function UniversalNoteEditor({
                     'p-3 rounded-lg cursor-pointer transition-all group relative',
                     selectedNoteId === note.id
                       ? 'bg-primary-50 ring-1 ring-primary-200 shadow-sm'
-                      : 'hover:bg-white bg-transparent'
+                      : 'hover:bg-white bg-transparent dark:hover:bg-gray-800'
                   )}
                   onClick={() => handleNoteClick(note.id)}
                 >
@@ -1807,7 +1807,7 @@ export function UniversalNoteEditor({
                     <div className="flex-1 min-w-0">
                       <h4 className={clsx(
                         'font-medium truncate text-sm mb-1',
-                        selectedNoteId === note.id ? 'text-primary-900' : 'text-gray-900'
+                        selectedNoteId === note.id ? 'text-primary-900' : 'text-gray-900 dark:text-white'
                       )}>
                         {note.title}
                       </h4>
@@ -1816,7 +1816,7 @@ export function UniversalNoteEditor({
                       {note.content_preview && (
                         <p className={clsx(
                           'text-xs truncate mt-1',
-                          selectedNoteId === note.id ? 'text-primary-700/70' : 'text-gray-500'
+                          selectedNoteId === note.id ? 'text-primary-700/70' : 'text-gray-500 dark:text-gray-400'
                         )}>
                           {fixPreviewSpacing(note.content_preview)}
                         </p>
@@ -1865,7 +1865,7 @@ export function UniversalNoteEditor({
                       </button>
 
                       {showNoteMenu === note.id && (
-                        <div className="note-menu-dropdown absolute right-0 top-8 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 min-w-[160px]">
+                        <div className="note-menu-dropdown absolute right-0 top-8 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50 min-w-[160px] dark:border-gray-800 dark:bg-gray-800">
                           {/* Add Follow-up - only for selected note */}
                           {note.id === selectedNoteId && (
                             <>
@@ -1875,12 +1875,12 @@ export function UniversalNoteEditor({
                                   handleAddFollowUp()
                                   setShowNoteMenu(null)
                                 }}
-                                className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                               >
                                 <CornerDownRight className="h-3.5 w-3.5 text-blue-500" />
                                 Add Follow-up
                               </button>
-                              <div className="h-px bg-gray-100 my-1" />
+                              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                             </>
                           )}
                           <button
@@ -1892,12 +1892,12 @@ export function UniversalNoteEditor({
                               }
                               setShowNoteMenu(null)
                             }}
-                            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                           >
                             <Copy className="h-3.5 w-3.5" />
                             Copy content
                           </button>
-                          <div className="h-px bg-gray-100 my-1" />
+                          <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1928,7 +1928,7 @@ export function UniversalNoteEditor({
       </div>
 
       {/* Right Side - Note Editor */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
         {!selectedNote && (isLoading || isLoadingContent || createNoteMutation.isPending || (notes && notes.length > 0) || (notes?.length === 0 && !hasAutoCreatedRef.current)) ? (
           /* Loading/Creating state - show spinner whenever we don't have a selected note ready */
           <div className="flex-1 flex items-center justify-center bg-gray-50/50">
@@ -1936,7 +1936,7 @@ export function UniversalNoteEditor({
               <div className="w-14 h-14 bg-primary-50 rounded-xl flex items-center justify-center mx-auto mb-4">
                 <Loader2 className="h-7 w-7 text-primary-500 animate-spin" />
               </div>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">
+              <h3 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">
                 {createNoteMutation.isPending ? 'Creating note...' : 'Loading...'}
               </h3>
             </div>
@@ -1944,7 +1944,7 @@ export function UniversalNoteEditor({
         ) : (isLoading || isLoadingContent) && selectedNoteId ? (
           /* Loading state when we have a selected note ID but still fetching */
           <div className="flex-1 flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-100 bg-white">
+            <div className="px-6 py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
               <div className="animate-pulse flex items-center space-x-3">
                 <div className="h-6 w-20 bg-gray-200 rounded" />
                 <div className="h-4 w-px bg-gray-200" />
@@ -1954,9 +1954,9 @@ export function UniversalNoteEditor({
             <div className="flex-1 px-8 pt-8 animate-pulse">
               <div className="h-8 w-1/3 bg-gray-200 rounded mb-6" />
               <div className="space-y-3">
-                <div className="h-4 w-full bg-gray-100 rounded" />
-                <div className="h-4 w-5/6 bg-gray-100 rounded" />
-                <div className="h-4 w-4/6 bg-gray-100 rounded" />
+                <div className="h-4 w-full bg-gray-100 rounded dark:bg-gray-800" />
+                <div className="h-4 w-5/6 bg-gray-100 rounded dark:bg-gray-800" />
+                <div className="h-4 w-4/6 bg-gray-100 rounded dark:bg-gray-800" />
               </div>
             </div>
           </div>
@@ -1969,7 +1969,7 @@ export function UniversalNoteEditor({
               </div>
             )}
             {/* Editor Header */}
-            <div className="px-6 py-4 border-b border-gray-100 bg-white">
+            <div className="px-6 py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3 flex-1">
                   <div className="flex items-center space-x-3" ref={noteTypeDropdownRef}>
@@ -1996,7 +1996,7 @@ export function UniversalNoteEditor({
                       {/* Dropdown: single-select controlled taxonomy, grouped */}
                       {showNoteTypeDropdown && (
                         <div
-                          className="absolute top-full left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[190px]"
+                          className="absolute top-full left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[190px] dark:border-gray-700 dark:bg-gray-800"
                           onKeyDown={(e) => {
                             if (e.key === 'ArrowDown') {
                               e.preventDefault()
@@ -2031,7 +2031,7 @@ export function UniversalNoteEditor({
                                     onMouseEnter={() => setNoteTypeActiveIdx(flatIdx)}
                                     className={clsx(
                                       'w-full px-3 py-[7px] text-left text-[12px] flex items-center gap-2.5 transition-colors',
-                                      isHighlighted ? 'bg-gray-50' : 'hover:bg-gray-50',
+                                      isHighlighted ? 'bg-gray-50 dark:bg-gray-900' : 'hover:bg-gray-50',
                                       isActive && 'bg-gray-50/80'
                                     )}
                                     disabled={updateNoteTypeMutation.isPending}
@@ -2039,7 +2039,7 @@ export function UniversalNoteEditor({
                                     <span className={clsx('h-2 w-2 rounded-full flex-shrink-0', nt.dotColor)} />
                                     <span className={clsx(
                                       'font-medium flex-1',
-                                      isActive ? 'text-gray-900' : 'text-gray-600'
+                                      isActive ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'
                                     )}>
                                       {nt.label}
                                     </span>
@@ -2062,7 +2062,7 @@ export function UniversalNoteEditor({
                     )}
 
                     {typeof backlinkCount === 'number' && backlinkCount > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 bg-gray-50 rounded-md border border-gray-200/60"
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 bg-gray-50 rounded-md border border-gray-200/60 dark:text-gray-400 dark:bg-gray-900"
                         title={`Referenced in ${backlinkCount} other note${backlinkCount === 1 ? '' : 's'}`}
                       >
                         <Link2 className="h-3 w-3 text-gray-400" />
@@ -2073,7 +2073,7 @@ export function UniversalNoteEditor({
                     {/* Link to Object */}
                     <button
                       onClick={() => setShowLinkPicker(true)}
-                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                       title="Link to an object"
                     >
                       <Link2 className="h-3.5 w-3.5" />
@@ -2085,7 +2085,7 @@ export function UniversalNoteEditor({
                     {/* Collaboration Button */}
                     <button
                       onClick={() => setShowCollaborationManager(true)}
-                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                       title="Manage collaborators"
                     >
                       <Users className="h-3.5 w-3.5" />
@@ -2095,7 +2095,7 @@ export function UniversalNoteEditor({
                     {/* Save Checkpoint */}
                     <button
                       onClick={() => setShowVersionHistory(true)}
-                      className="flex items-center space-x-1 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all"
+                      className="flex items-center space-x-1 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all dark:hover:bg-gray-700 dark:text-gray-400"
                       title="Save checkpoint & view history"
                     >
                       <Pin className="h-3.5 w-3.5" />
@@ -2104,13 +2104,13 @@ export function UniversalNoteEditor({
                     {/* Version History Button */}
                     <button
                       onClick={() => setShowVersionHistory(true)}
-                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                      className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                       title="Saved versions"
                     >
                       <History className="h-3.5 w-3.5" />
                       <span className="font-medium">History</span>
                       {versions.length > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium tabular-nums">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium tabular-nums dark:text-gray-400 dark:bg-gray-800">
                           {versions.length}
                         </span>
                       )}
@@ -2120,13 +2120,13 @@ export function UniversalNoteEditor({
                     <div className="relative" ref={filesLinksDropdownRef}>
                       <button
                         onClick={() => setShowFilesLinksDropdown(!showFilesLinksDropdown)}
-                        className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                        className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                         title="Files & Links"
                       >
                         <Paperclip className="h-3.5 w-3.5" />
                         <span className="font-medium">Files</span>
                         {(noteFiles.length > 0 || noteLinks.length > 0) && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded-full font-medium">
+                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded-full font-medium dark:text-gray-300 dark:bg-gray-800">
                             {noteFiles.length + noteLinks.length}
                           </span>
                         )}
@@ -2134,11 +2134,11 @@ export function UniversalNoteEditor({
                       </button>
 
                       {showFilesLinksDropdown && (
-                        <div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 min-w-[280px] max-w-[360px] max-h-[400px] overflow-y-auto">
+                        <div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 min-w-[280px] max-w-[360px] max-h-[400px] overflow-y-auto dark:border-gray-800 dark:bg-gray-800">
                           {noteFiles.length === 0 && noteLinks.length === 0 ? (
                             <div className="px-4 py-6 text-center">
                               <Paperclip className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                              <p className="text-sm text-gray-500">No files or links</p>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">No files or links</p>
                               <p className="text-xs text-gray-400 mt-1">Attach files or add links to see them here</p>
                             </div>
                           ) : (
@@ -2157,14 +2157,14 @@ export function UniversalNoteEditor({
                                         href={file.fileUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors group"
+                                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors group dark:hover:bg-gray-800"
                                         onClick={() => setShowFilesLinksDropdown(false)}
                                       >
                                         <div className={`flex-shrink-0 w-8 h-8 rounded-lg ${bgColor} flex items-center justify-center`}>
                                           <FileIcon className={`h-4 w-4 ${iconColor}`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                          <p className="text-xs font-medium text-gray-900 truncate">{file.fileName}</p>
+                                          <p className="text-xs font-medium text-gray-900 truncate dark:text-white">{file.fileName}</p>
                                           <p className="text-[10px] text-gray-400">{formatFileSize(file.fileSize)}</p>
                                         </div>
                                         <Download className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -2176,7 +2176,7 @@ export function UniversalNoteEditor({
 
                               {/* Divider */}
                               {noteFiles.length > 0 && noteLinks.length > 0 && (
-                                <div className="h-px bg-gray-100 my-2" />
+                                <div className="h-px bg-gray-100 my-2 dark:bg-gray-800" />
                               )}
 
                               {/* Links Section */}
@@ -2191,14 +2191,14 @@ export function UniversalNoteEditor({
                                       href={link.url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors group"
+                                      className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors group dark:hover:bg-gray-800"
                                       onClick={() => setShowFilesLinksDropdown(false)}
                                     >
                                       <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
                                         <Link2 className="h-4 w-4 text-blue-500" />
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-medium text-gray-900 truncate">{link.text}</p>
+                                        <p className="text-xs font-medium text-gray-900 truncate dark:text-white">{link.text}</p>
                                         <p className="text-[10px] text-gray-400 truncate">{link.url}</p>
                                       </div>
                                       <ExternalLink className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -2217,7 +2217,7 @@ export function UniversalNoteEditor({
                       <button
                         onClick={() => setShowExportDropdown(!showExportDropdown)}
                         disabled={isExporting}
-                        className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50"
+                        className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400"
                         title="Export note"
                       >
                         {isExporting ? (
@@ -2230,17 +2230,17 @@ export function UniversalNoteEditor({
                       </button>
 
                       {showExportDropdown && (
-                        <div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-50 min-w-[160px]">
+                        <div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-50 min-w-[160px] dark:border-gray-800 dark:bg-gray-800">
                           <button
                             onClick={exportToPdf}
-                            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                           >
                             <FileDown className="h-3.5 w-3.5 text-red-500" />
                             <span>Export as PDF</span>
                           </button>
                           <button
                             onClick={exportToWord}
-                            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                           >
                             <FileText className="h-3.5 w-3.5 text-blue-500" />
                             <span>Export as Word</span>
@@ -2273,11 +2273,11 @@ export function UniversalNoteEditor({
             />
 
             {/* Editor Content */}
-            <div className="flex-1 overflow-y-auto bg-white">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
               {/* Sticky Header: Title + Toolbar */}
-              <div className="sticky top-0 z-10 bg-white">
+              <div className="sticky top-0 z-10 bg-white dark:bg-gray-800">
                 {/* Title */}
-                <div className="px-4 py-1.5 border-b border-gray-100">
+                <div className="px-4 py-1.5 border-b border-gray-100 dark:border-gray-800">
                   {isTitleEditing ? (
                     <input
                       ref={titleInputRef}
@@ -2286,12 +2286,12 @@ export function UniversalNoteEditor({
                       onChange={(e) => handleTitleChange(e.target.value)}
                       onKeyDown={handleTitleKeyDown}
                       onBlur={handleTitleBlur}
-                      className="w-full text-xl font-semibold text-gray-900 bg-transparent border-0 border-b-2 border-primary-500 focus:outline-none tracking-tight"
+                      className="w-full text-xl font-semibold text-gray-900 bg-transparent border-0 border-b-2 border-primary-500 focus:outline-none tracking-tight dark:text-white"
                       placeholder="Untitled"
                     />
                   ) : (
                     <h1
-                      className="text-xl font-semibold text-gray-900 cursor-text hover:text-gray-700 transition-colors tracking-tight"
+                      className="text-xl font-semibold text-gray-900 cursor-text hover:text-gray-700 transition-colors tracking-tight dark:hover:text-gray-200 dark:text-white"
                       onClick={handleTitleClick}
                     >
                       {editingTitle || selectedNote.title || 'Untitled'}
@@ -2334,7 +2334,7 @@ export function UniversalNoteEditor({
             </div>
 
             {/* Status Bar */}
-            <div className="px-6 py-2.5 border-t border-gray-200 bg-white">
+            <div className="px-6 py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center space-x-3 text-gray-400">
                   {/* Offline Status Indicator */}
@@ -2371,9 +2371,9 @@ export function UniversalNoteEditor({
                     const charCount = plainText.length
                     return (
                       <>
-                        <span className="font-medium text-gray-500">{wordCount} words</span>
+                        <span className="font-medium text-gray-500 dark:text-gray-400">{wordCount} words</span>
                         <span className="text-gray-300">•</span>
-                        <span className="text-gray-500">{charCount >= 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} chars</span>
+                        <span className="text-gray-500 dark:text-gray-400">{charCount >= 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} chars</span>
                       </>
                     )
                   })()}
@@ -2381,7 +2381,7 @@ export function UniversalNoteEditor({
                   <button
                     type="button"
                     onClick={() => setShowSmartInputHelp(true)}
-                    className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors cursor-help"
+                    className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors cursor-help dark:hover:text-gray-300"
                   >
                     <HelpCircle className="w-3 h-3" />
                     <span className="text-primary-500">@</span>mention
@@ -2404,8 +2404,8 @@ export function UniversalNoteEditor({
                 <div className="flex items-center space-x-3">
                   {/* Save status indicator */}
                   {isSaving ? (
-                    <div className="flex items-center text-gray-500 font-medium">
-                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-gray-300 border-t-gray-600 mr-1.5" />
+                    <div className="flex items-center text-gray-500 font-medium dark:text-gray-400">
+                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-gray-300 border-t-gray-600 mr-1.5 dark:border-gray-600" />
                       {isOnline ? 'Saving...' : 'Saving locally...'}
                     </div>
                   ) : saveNoteMutation.isError && isOnline ? (
@@ -2438,7 +2438,7 @@ export function UniversalNoteEditor({
                       'flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
                       hasUnsavedChanges && !isSaving
                         ? 'bg-primary-600 text-white hover:bg-primary-700 shadow-sm'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800'
                     )}
                     title="Save now (Ctrl+S)"
                   >
@@ -2455,8 +2455,8 @@ export function UniversalNoteEditor({
               <div className="w-14 h-14 bg-primary-50 rounded-xl flex items-center justify-center mx-auto mb-4">
                 <FileText className="h-7 w-7 text-primary-400" />
               </div>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">Select a note</h3>
-              <p className="text-sm text-gray-500">Choose from the sidebar or create a new one</p>
+              <h3 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">Select a note</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Choose from the sidebar or create a new one</p>
             </div>
           </div>
         )}
@@ -2556,17 +2556,17 @@ export function UniversalNoteEditor({
           onClick={() => setShowSmartInputHelp(false)}
         >
           <div
-            className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden"
+            className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden dark:bg-gray-800"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Smart Input Shortcuts</h3>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Smart Input Shortcuts</h3>
               <button
                 onClick={() => setShowSmartInputHelp(false)}
-                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
 
@@ -2578,9 +2578,9 @@ export function UniversalNoteEditor({
                   <AtSign className="w-5 h-5 text-primary-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">@mention</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">@</code> followed by a name to mention a team member. They'll be notified when you save.
+                  <div className="font-medium text-gray-900 dark:text-white">@mention</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">@</code> followed by a name to mention a team member. They'll be notified when you save.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Example: @JohnSmith</p>
                 </div>
@@ -2592,9 +2592,9 @@ export function UniversalNoteEditor({
                   <DollarSign className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">$asset</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">$</code> followed by a ticker symbol to reference an asset. Creates a clickable link.
+                  <div className="font-medium text-gray-900 dark:text-white">$asset</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">$</code> followed by a ticker symbol to reference an asset. Creates a clickable link.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Example: $AAPL, $MSFT</p>
                 </div>
@@ -2606,9 +2606,9 @@ export function UniversalNoteEditor({
                   <Hash className="w-5 h-5 text-amber-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">#reference</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">#</code> to link to themes, portfolios, or other entities.
+                  <div className="font-medium text-gray-900 dark:text-white">#reference</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">#</code> to link to themes, portfolios, or other entities.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Example: #TechTheme, #GrowthPortfolio</p>
                 </div>
@@ -2620,9 +2620,9 @@ export function UniversalNoteEditor({
                   <Link2 className="w-5 h-5 text-violet-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">[[note link</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">[[</code> to search and link to other notes. Click the link to navigate.
+                  <div className="font-medium text-gray-900 dark:text-white">[[note link</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">[[</code> to search and link to other notes. Click the link to navigate.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Example: [[Q4 Earnings Analysis]]</p>
                 </div>
@@ -2634,9 +2634,9 @@ export function UniversalNoteEditor({
                   <FileCode className="w-5 h-5 text-violet-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">.template</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">.template</code> or <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">.t</code> to insert a note template with placeholders.
+                  <div className="font-medium text-gray-900 dark:text-white">.template</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.template</code> or <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.t</code> to insert a note template with placeholders.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Press Tab to move between placeholders</p>
                 </div>
@@ -2648,9 +2648,9 @@ export function UniversalNoteEditor({
                   <BarChart3 className="w-5 h-5 text-cyan-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">.price, .volume, .marketcap</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">.price</code> or other data commands to insert live or snapshot data for the current asset.
+                  <div className="font-medium text-gray-900 dark:text-white">.price, .volume, .marketcap</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.price</code> or other data commands to insert live or snapshot data for the current asset.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">Choose snapshot (fixed) or live (updates automatically)</p>
                 </div>
@@ -2662,21 +2662,21 @@ export function UniversalNoteEditor({
                   <Sparkles className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">.AI</div>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">.AI</code> then space to enter AI prompt mode. Type your question and press Enter.
+                  <div className="font-medium text-gray-900 dark:text-white">.AI</div>
+                  <p className="text-sm text-gray-600 mt-0.5 dark:text-gray-400">
+                    Type <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs dark:bg-gray-800">.AI</code> then space to enter AI prompt mode. Type your question and press Enter.
                   </p>
                   <p className="text-xs text-gray-400 mt-1">
-                    Select a model: <code className="px-1 py-0.5 bg-gray-100 rounded">.AI.claude</code>, <code className="px-1 py-0.5 bg-gray-100 rounded">.AI.gpt</code>
+                    Select a model: <code className="px-1 py-0.5 bg-gray-100 rounded dark:bg-gray-800">.AI.claude</code>, <code className="px-1 py-0.5 bg-gray-100 rounded dark:bg-gray-800">.AI.gpt</code>
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 bg-gray-50 border-t border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
-                Press <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-xs font-mono">Esc</kbd> to close
+            <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <p className="text-xs text-gray-500 text-center dark:text-gray-400">
+                Press <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-xs font-mono dark:border-gray-600 dark:bg-gray-800">Esc</kbd> to close
               </p>
             </div>
           </div>

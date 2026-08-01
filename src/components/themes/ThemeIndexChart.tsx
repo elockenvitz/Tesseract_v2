@@ -91,10 +91,10 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
 
   if (!enabled) {
     return (
-      <div className="bg-gray-50 rounded-lg p-12 text-center">
+      <div className="bg-gray-50 rounded-lg p-12 text-center dark:bg-gray-900">
         <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-        <h3 className="text-base font-medium text-gray-900 mb-1">No related assets</h3>
-        <p className="text-sm text-gray-500">Add assets to this theme to see its index.</p>
+        <h3 className="text-base font-medium text-gray-900 mb-1 dark:text-white">No related assets</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Add assets to this theme to see its index.</p>
       </div>
     )
   }
@@ -105,14 +105,14 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Lookback pill group */}
-          <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+          <div className="inline-flex bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
             {LOOKBACKS.map(lb => (
               <button
                 key={lb.value}
                 onClick={() => setLookback(lb.value)}
                 className={clsx(
                   'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
-                  lookback === lb.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  lookback === lb.value ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                 )}
               >
                 {lb.label}
@@ -124,7 +124,7 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
           <select
             value={measure}
             onChange={(e) => setMeasure(e.target.value as ThemeIndexMeasure)}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-300 dark:border-gray-700 dark:bg-gray-800"
             title={MEASURES.find(m => m.value === measure)?.hint}
           >
             {MEASURES.map(m => (
@@ -136,7 +136,7 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
           <select
             value={benchmark}
             onChange={(e) => setBenchmark(e.target.value)}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-300 dark:border-gray-700 dark:bg-gray-800"
           >
             {BENCHMARKS.map(b => (
               <option key={b.value} value={b.value}>vs {b.label}</option>
@@ -148,19 +148,19 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
         {data.length > 0 && (
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
-              <span className="text-gray-500">Index:</span>
+              <span className="text-gray-500 dark:text-gray-400">Index:</span>
               <span className={clsx('font-semibold tabular-nums', stats.indexReturn >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
                 {stats.indexReturn >= 0 ? '+' : ''}{stats.indexReturn.toFixed(2)}%
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-gray-500">{benchmarkLabel}:</span>
+              <span className="text-gray-500 dark:text-gray-400">{benchmarkLabel}:</span>
               <span className={clsx('font-semibold tabular-nums', stats.benchmarkReturn >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
                 {stats.benchmarkReturn >= 0 ? '+' : ''}{stats.benchmarkReturn.toFixed(2)}%
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-gray-500">Excess:</span>
+              <span className="text-gray-500 dark:text-gray-400">Excess:</span>
               <span className={clsx('font-semibold tabular-nums', stats.excessReturn >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
                 {stats.excessReturn >= 0 ? '+' : ''}{stats.excessReturn.toFixed(2)}%
                 {stats.excessReturn >= 0 ? <TrendingUp className="inline w-3 h-3 ml-0.5" /> : <TrendingDown className="inline w-3 h-3 ml-0.5" />}
@@ -185,16 +185,16 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
       )}
 
       {/* Chart */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
         {isLoading ? (
           <div className="h-[360px] flex items-center justify-center">
-            <div className="text-sm text-gray-500">Loading chart…</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Loading chart…</div>
           </div>
         ) : isError || data.length === 0 ? (
           <div className="h-[360px] flex flex-col items-center justify-center text-center">
             <AlertCircle className="h-8 w-8 text-gray-400 mb-2" />
-            <p className="text-sm text-gray-700 font-medium">No price data available</p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-sm text-gray-700 font-medium dark:text-gray-300">No price data available</p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Could not fetch historical prices for {themeName ? `"${themeName}" constituents` : 'these symbols'}.
             </p>
           </div>
@@ -248,7 +248,7 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
       </div>
 
       {/* Footer note */}
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Equal-weighted index of {symbols.length} asset{symbols.length === 1 ? '' : 's'}, rebased to 100 at start of window. Daily closes via Yahoo Finance.
       </p>
     </div>

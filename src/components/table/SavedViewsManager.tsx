@@ -181,7 +181,7 @@ export function SavedViewsManager({
           'flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors text-sm',
           activeView
             ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'
         )}
       >
         {activeView && activeView.icon && ICON_MAP[activeView.icon]}
@@ -196,7 +196,7 @@ export function SavedViewsManager({
 
       {/* Dropdown menu */}
       {dropdownOpen && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+        <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800">
           {/* Views list */}
           <div className="max-h-64 overflow-y-auto p-1">
             {isLoading ? (
@@ -204,7 +204,7 @@ export function SavedViewsManager({
                 <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
               </div>
             ) : views.length === 0 ? (
-              <div className="px-3 py-6 text-center text-gray-500 text-sm">
+              <div className="px-3 py-6 text-center text-gray-500 text-sm dark:text-gray-400">
                 No saved views yet
               </div>
             ) : (
@@ -239,7 +239,7 @@ export function SavedViewsManager({
                       <div className="flex items-center gap-1.5">
                         <span className={clsx(
                           'font-medium text-sm truncate',
-                          view.id === activeViewId ? 'text-blue-700' : 'text-gray-900'
+                          view.id === activeViewId ? 'text-blue-700' : 'text-gray-900 dark:text-white'
                         )}>
                           {view.name}
                         </span>
@@ -251,7 +251,7 @@ export function SavedViewsManager({
 
                     {/* Keyboard shortcut */}
                     {index < 9 && (
-                      <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 text-gray-500 border border-gray-200 rounded hidden group-hover:inline">
+                      <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 text-gray-500 border border-gray-200 rounded hidden group-hover:inline dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
                         {index + 1}
                       </kbd>
                     )}
@@ -269,7 +269,7 @@ export function SavedViewsManager({
                         e.stopPropagation()
                         handleEditView(view)
                       }}
-                      className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                      className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                       title="Edit"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -279,7 +279,7 @@ export function SavedViewsManager({
                         e.stopPropagation()
                         handleDuplicateView(view)
                       }}
-                      className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                      className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                       title="Duplicate"
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -301,7 +301,7 @@ export function SavedViewsManager({
           </div>
 
           {/* Footer actions */}
-          <div className="p-2 bg-gray-50 border-t border-gray-100 flex gap-1">
+          <div className="p-2 bg-gray-50 border-t border-gray-100 flex gap-1 dark:border-gray-800 dark:bg-gray-900">
             <button
               onClick={() => {
                 setEditingView(null)
@@ -323,7 +323,7 @@ export function SavedViewsManager({
                   setShowManageModal(true)
                   setDropdownOpen(false)
                 }}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors dark:hover:text-gray-300"
                 title="Manage Views"
               >
                 <Settings className="w-4 h-4" />
@@ -336,9 +336,9 @@ export function SavedViewsManager({
       {/* Save/Edit Modal */}
       {showSaveModal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200 dark:bg-gray-800">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editingView ? 'Edit View' : 'Save View'}
               </h3>
               <button
@@ -346,7 +346,7 @@ export function SavedViewsManager({
                   setShowSaveModal(false)
                   setEditingView(null)
                 }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -355,7 +355,7 @@ export function SavedViewsManager({
             <div className="px-5 py-4 space-y-4">
               {/* Name */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                   View Name
                 </label>
                 <input
@@ -363,14 +363,14 @@ export function SavedViewsManager({
                   value={newViewName}
                   onChange={(e) => setNewViewName(e.target.value)}
                   placeholder="e.g., High Priority Watchlist"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none dark:border-gray-700"
                   autoFocus
                 />
               </div>
 
               {/* Icon */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                   Icon
                 </label>
                 <div className="flex gap-2">
@@ -382,7 +382,7 @@ export function SavedViewsManager({
                         'p-2.5 rounded-lg border transition-colors',
                         newViewIcon === icon
                           ? 'border-blue-500 bg-blue-50 text-blue-600'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-500'
+                          : 'border-gray-200 hover:border-gray-300 text-gray-500 dark:border-gray-700 dark:text-gray-400'
                       )}
                     >
                       {ICON_MAP[icon]}
@@ -393,7 +393,7 @@ export function SavedViewsManager({
 
               {/* Color */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300">
                   Color
                 </label>
                 <div className="flex gap-2">
@@ -417,9 +417,9 @@ export function SavedViewsManager({
                   type="checkbox"
                   checked={newViewIsDefault}
                   onChange={(e) => setNewViewIsDefault(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
                 />
-                <span className="text-sm text-gray-700">Set as default view</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Set as default view</span>
                 <Star className={clsx(
                   'w-4 h-4',
                   newViewIsDefault ? 'text-amber-500 fill-amber-500' : 'text-gray-300'
@@ -427,13 +427,13 @@ export function SavedViewsManager({
               </label>
             </div>
 
-            <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+            <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 dark:border-gray-800 dark:bg-gray-900">
               <button
                 onClick={() => {
                   setShowSaveModal(false)
                   setEditingView(null)
                 }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors dark:text-gray-300"
               >
                 Cancel
               </button>

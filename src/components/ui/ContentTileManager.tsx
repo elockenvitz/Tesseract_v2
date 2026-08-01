@@ -225,17 +225,17 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
       <div className="flex items-center justify-between">
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="flex items-center space-x-2 hover:text-gray-700 transition-colors"
+          className="flex items-center space-x-2 hover:text-gray-700 transition-colors dark:hover:text-gray-200"
         >
           {isCollapsed ? (
-            <ChevronRight className="w-4 h-4 text-gray-500" />
+            <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           )}
           <div className="text-left">
-            <h4 className="font-semibold text-gray-900">Content Tiles {contentTiles && contentTiles.length > 0 && `(${contentTiles.length})`}</h4>
+            <h4 className="font-semibold text-gray-900 dark:text-white">Content Tiles {contentTiles && contentTiles.length > 0 && `(${contentTiles.length})`}</h4>
             {isCollapsed && (
-              <p className="text-xs text-gray-500">Click to expand</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Click to expand</p>
             )}
           </div>
         </button>
@@ -278,7 +278,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                     />
                   ))
               ) : (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   No content tiles configured for this stage
                 </div>
               )}
@@ -313,14 +313,14 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                                 {isEditable && (
                                   <div
                                     {...provided.dragHandleProps}
-                                    className="text-gray-400 hover:text-gray-600 cursor-grab"
+                                    className="text-gray-400 hover:text-gray-600 cursor-grab dark:hover:text-gray-300"
                                   >
                                     <GripVertical className="w-4 h-4" />
                                   </div>
                                 )}
                                 <div>
                                   <div className="flex items-center space-x-2">
-                                    <h5 className="font-medium text-gray-900">{tile.title}</h5>
+                                    <h5 className="font-medium text-gray-900 dark:text-white">{tile.title}</h5>
                                     <Badge variant="secondary" size="sm">
                                       {tile.tile_type}
                                     </Badge>
@@ -331,7 +331,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                                     )}
                                   </div>
                                   {tile.description && (
-                                    <p className="text-sm text-gray-600 mt-1">{tile.description}</p>
+                                    <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">{tile.description}</p>
                                   )}
                                 </div>
                               </div>
@@ -373,7 +373,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
               </Droppable>
             </DragDropContext>
           ) : (
-            <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+            <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg dark:border-gray-600 dark:text-gray-400">
               No content tiles configured. Click "Add Tile" to get started.
             </div>
           )}
@@ -386,7 +386,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                 <div className="flex gap-6 h-full">
                   {/* Tile Selection */}
                   <div className="w-1/2">
-                    <h4 className="font-medium text-gray-900 mb-3">Select Tile Type</h4>
+                    <h4 className="font-medium text-gray-900 mb-3 dark:text-white">Select Tile Type</h4>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
                       {AVAILABLE_TILE_TYPES.map((tileType) => (
                         <div
@@ -394,12 +394,12 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                           className={`p-3 border rounded-lg cursor-pointer transition-colors ${
                             selectedTileForPreview === tileType.type
                               ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-blue-300'
+                              : 'border-gray-200 hover:border-blue-300 dark:border-gray-700'
                           }`}
                           onClick={() => setSelectedTileForPreview(tileType.type)}
                         >
-                          <h4 className="font-medium text-gray-900">{tileType.name}</h4>
-                          <p className="text-sm text-gray-600">{tileType.description}</p>
+                          <h4 className="font-medium text-gray-900 dark:text-white">{tileType.name}</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{tileType.description}</p>
                         </div>
                       ))}
                     </div>
@@ -407,10 +407,10 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
 
                   {/* Preview */}
                   <div className="w-1/2">
-                    <h4 className="font-medium text-gray-900 mb-3">Preview</h4>
-                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 min-h-[300px]">
+                    <h4 className="font-medium text-gray-900 mb-3 dark:text-white">Preview</h4>
+                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 min-h-[300px] dark:border-gray-700 dark:bg-gray-900">
                       {selectedTileForPreview ? (
-                        <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <div className="bg-white rounded-lg p-4 shadow-sm dark:bg-gray-800">
                           <ContentTile
                             tile={{
                               id: 'preview',
@@ -426,7 +426,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
                           />
                         </div>
                       ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500">
+                        <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
                           Select a tile type to see preview
                         </div>
                       )}

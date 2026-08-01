@@ -542,10 +542,10 @@ function ChartTooltip({ active, payload, hasHoldings, overlayField }: any) {
   const cfg = overlayField ? OVERLAY_CONFIG[overlayField as OverlayField] : null
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 max-w-60">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 max-w-60 dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center justify-between gap-4">
-        <span className="text-[10px] text-gray-500">{format(parseISO(data.date), 'MMM d, yyyy')}</span>
-        <span className="text-[11px] font-semibold text-gray-900 tabular-nums">${data.price?.toFixed(2)}</span>
+        <span className="text-[10px] text-gray-500 dark:text-gray-400">{format(parseISO(data.date), 'MMM d, yyyy')}</span>
+        <span className="text-[11px] font-semibold text-gray-900 tabular-nums dark:text-white">${data.price?.toFixed(2)}</span>
       </div>
       {hasHoldings && cfg && data[cfg.dataKey] != null && (
         <div className="text-[10px] mt-1" style={{ color: cfg.color }}>

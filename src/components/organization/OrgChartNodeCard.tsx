@@ -172,7 +172,7 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
       <div className="relative group/node">
         {/* Hover overlay actions */}
         {(isOrgAdmin || (hasChildren && onFocusNode)) && (
-          <div className="absolute -top-1 -right-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-20 flex items-center space-x-0.5 bg-white rounded-lg shadow-md p-1">
+          <div className="absolute -top-1 -right-1 opacity-0 group-hover/node:opacity-100 transition-all duration-200 z-20 flex items-center space-x-0.5 bg-white rounded-lg shadow-md p-1 dark:bg-gray-800">
             {hasChildren && onFocusNode && (
               <button
                 onClick={(e) => {
@@ -231,8 +231,8 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
         <div
           className={`relative border rounded-lg cursor-pointer transition-all hover:shadow-md ${
             node.is_non_investment
-              ? 'bg-gray-50 border-gray-300 border-dashed'
-              : `bg-white ${isExpanded && hasChildren ? 'border-gray-300 shadow-sm' : 'border-gray-200 shadow-sm'}`
+              ? 'bg-gray-50 border-gray-300 border-dashed dark:border-gray-600 dark:bg-gray-900'
+              : `bg-white ${isExpanded && hasChildren ? 'border-gray-300 shadow-sm dark:border-gray-600' : 'border-gray-200 shadow-sm dark:border-gray-700'}`
           } ${node.node_type === 'portfolio' ? 'border-l-2' : ''} ${isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}`}
           style={{
             borderTopColor: node.is_non_investment ? '#9ca3af' : node.color,
@@ -272,7 +272,7 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
           {/* Non-investment indicator */}
           {node.is_non_investment && (
             <div className="absolute top-2 left-2 z-10">
-              <span className="inline-flex items-center px-1.5 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-medium rounded">
+              <span className="inline-flex items-center px-1.5 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-medium rounded dark:text-gray-400">
                 Non-Investment
               </span>
             </div>
@@ -317,11 +317,11 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
                 e.stopPropagation()
                 onViewDetails(node)
               }}
-              className="block w-full font-semibold text-gray-900 text-[13px] leading-tight hover:text-indigo-600 hover:underline"
+              className="block w-full font-semibold text-gray-900 text-[13px] leading-tight hover:text-indigo-600 hover:underline dark:text-white"
             >
               {node.name}
             </button>
-            <p className="text-[11px] text-gray-500 mt-0.5">
+            <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
               {getTypeLabel()}
               {totalMemberCount > 0 && ` · ${totalMemberCount} member${totalMemberCount !== 1 ? 's' : ''}`}
               {linkedTeamId && teamPortfolios.length > 0 && ` · ${teamPortfolios.length} portfolio${teamPortfolios.length !== 1 ? 's' : ''}`}
@@ -335,11 +335,11 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
               if (nodeMembers.length === 0) return null
               return (
                 <div className="flex items-center justify-center gap-1 mt-1 text-[10px]">
-                  <span className={pmCount === 0 ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                  <span className={pmCount === 0 ? 'text-red-600 font-medium' : 'text-gray-500 dark:text-gray-400'}>
                     {pmCount} PM{pmCount !== 1 ? 's' : ''}
                   </span>
                   <span className="text-gray-300">&bull;</span>
-                  <span className="text-gray-500">{analystCount} Analyst{analystCount !== 1 ? 's' : ''}</span>
+                  <span className="text-gray-500 dark:text-gray-400">{analystCount} Analyst{analystCount !== 1 ? 's' : ''}</span>
                 </div>
               )
             })()}
@@ -376,14 +376,14 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
               <Plus className="w-3 h-3 text-white" />
             </button>
             {showAddMenu && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px] z-30">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px] z-30 dark:border-gray-700 dark:bg-gray-800">
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     onAddChild(node.id)
                     setShowAddMenu(false)
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 dark:hover:bg-gray-800 dark:text-gray-300"
                 >
                   <ChevronDown className="w-4 h-4 text-gray-400" />
                   <span>Add child below</span>
@@ -395,7 +395,7 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
                       onAddSibling(parentId || null)
                       setShowAddMenu(false)
                     }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <ChevronRight className="w-4 h-4 text-gray-400" />
                     <span>Add sibling</span>
@@ -408,7 +408,7 @@ export function OrgChartNodeCard({ node, isOrgAdmin, onEdit, onAddChild, onAddSi
                       onInsertBetween(node.id, node.children!.map(c => c.id))
                       setShowAddMenu(false)
                     }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <MoreHorizontal className="w-4 h-4 text-gray-400" />
                     <span>Insert between</span>

@@ -78,23 +78,23 @@ export function ThemeThesisSummaryView({ themeId, viewFilter }: ThemeThesisSumma
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse" />)}
+        {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse dark:bg-gray-800" />)}
       </div>
     )
   }
 
   if (!hasAny) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center dark:border-gray-700 dark:bg-gray-900">
         <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No contributions to summarize.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No contributions to summarize.</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800">
         {/* Primary highlight */}
         {primary && (
           <div className="p-4 bg-primary-50 border-b border-primary-100">
@@ -107,10 +107,10 @@ export function ThemeThesisSummaryView({ themeId, viewFilter }: ThemeThesisSumma
                 {formatDistanceToNow(new Date(primary.contribution.updated_at), { addSuffix: true })}
               </span>
             </div>
-            <p className="text-sm text-gray-800 leading-relaxed">
+            <p className="text-sm text-gray-800 leading-relaxed dark:text-gray-100">
               {truncateToSentences(toText(primary.contribution.content), 3)}
             </p>
-            <p className="text-xs text-gray-500 mt-2">— {authorName(primary.contribution)}</p>
+            <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">— {authorName(primary.contribution)}</p>
           </div>
         )}
 
@@ -119,7 +119,7 @@ export function ThemeThesisSummaryView({ themeId, viewFilter }: ThemeThesisSumma
           {sections.map(({ section, fields }) => (
             <div key={section.id}>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-semibold text-gray-900 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-gray-900 uppercase tracking-wide dark:text-white">
                   {section.name}
                 </span>
               </div>
@@ -133,14 +133,14 @@ export function ThemeThesisSummaryView({ themeId, viewFilter }: ThemeThesisSumma
                     <div key={field.id}>
                       <div className="flex items-center gap-2 mb-1.5">
                         <Target className="w-3.5 h-3.5 text-primary-600" />
-                        <span className="text-xs font-semibold text-gray-700">
+                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                           {field.name} ({visible.length})
                         </span>
                       </div>
                       <ul className="space-y-1.5 pl-5">
                         {visible.map(c => (
-                          <li key={c.id} className="text-xs text-gray-600 leading-relaxed">
-                            <span className="font-medium text-gray-700">{authorName(c)}:</span>{' '}
+                          <li key={c.id} className="text-xs text-gray-600 leading-relaxed dark:text-gray-400">
+                            <span className="font-medium text-gray-700 dark:text-gray-300">{authorName(c)}:</span>{' '}
                             {truncateToSentences(toText(c.content), 2)}
                           </li>
                         ))}

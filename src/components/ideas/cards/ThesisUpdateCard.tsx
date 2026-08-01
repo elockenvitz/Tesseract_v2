@@ -35,7 +35,7 @@ export function ThesisUpdateCard({
       </span>
 
       {/* Section/Field name */}
-      <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+      <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">
         {formatFieldName(item.section || item.field_name)}
       </span>
     </div>
@@ -110,7 +110,7 @@ export function ThesisUpdateCard({
       item={item}
       headerWidget={headerWidget}
       contentWidget={
-        <div className="text-sm text-gray-700 leading-relaxed space-y-0.5">
+        <div className="text-sm text-gray-700 leading-relaxed space-y-0.5 dark:text-gray-300">
           {richContent}
         </div>
       }
@@ -128,7 +128,7 @@ function renderInlineFormatting(text: string): React.ReactNode {
   return parts.map((part, i) => {
     const boldMatch = part.match(/^\*\*(.+)\*\*$/)
     if (boldMatch) {
-      return <strong key={i} className="font-semibold text-gray-900">{boldMatch[1]}</strong>
+      return <strong key={i} className="font-semibold text-gray-900 dark:text-white">{boldMatch[1]}</strong>
     }
     return part || null
   })

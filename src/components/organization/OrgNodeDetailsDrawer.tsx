@@ -173,10 +173,10 @@ export function OrgNodeDetailsDrawer({
         role="dialog"
         aria-label={`Details for ${node.name}`}
         tabIndex={-1}
-        className="fixed right-0 top-0 bottom-0 w-[380px] bg-white shadow-2xl z-50 flex flex-col outline-none overflow-hidden animate-slide-in-right"
+        className="fixed right-0 top-0 bottom-0 w-[380px] bg-white shadow-2xl z-50 flex flex-col outline-none overflow-hidden animate-slide-in-right dark:bg-gray-800"
       >
         {/* ── Header / Overview ── */}
-        <div className="flex items-start justify-between px-4 pt-3 pb-2.5 border-b border-gray-200">
+        <div className="flex items-start justify-between px-4 pt-3 pb-2.5 border-b border-gray-200 dark:border-gray-700">
           <div className="flex-1 min-w-0">
             {/* Breadcrumb */}
             {breadcrumb.length > 0 && (
@@ -200,9 +200,9 @@ export function OrgNodeDetailsDrawer({
             )}
 
             {/* Name + type */}
-            <h2 className="text-base font-semibold text-gray-900 truncate">{node.name}</h2>
+            <h2 className="text-base font-semibold text-gray-900 truncate dark:text-white">{node.name}</h2>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs text-gray-500">{node.customTypeLabel || NODE_TYPE_LABELS[node.nodeType] || node.nodeType}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{node.customTypeLabel || NODE_TYPE_LABELS[node.nodeType] || node.nodeType}</span>
               {showGovernanceSignals && <HealthPill score={node.healthScore} size="sm" showTooltip />}
               {showGovernanceSignals && <RiskDots flags={node.riskFlags} />}
             </div>
@@ -212,7 +212,7 @@ export function OrgNodeDetailsDrawer({
             {isAdmin && onEditNode && (
               <button
                 onClick={onEditNode}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 title="Edit node"
               >
                 <Edit3 className="w-4 h-4" />
@@ -221,7 +221,7 @@ export function OrgNodeDetailsDrawer({
             <button
               ref={closeButtonRef}
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               title="Close (Esc)"
             >
               <X className="w-4 h-4" />
@@ -257,8 +257,8 @@ export function OrgNodeDetailsDrawer({
               {/* Coverage admins */}
               <div className="mt-2.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500">Coverage Admins</span>
-                  <span className="font-medium text-gray-800">
+                  <span className="text-gray-500 dark:text-gray-400">Coverage Admins</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-100">
                     {coverageAdmins.length > 0
                       ? coverageAdmins.map(m => m.user?.full_name || m.user?.email || 'Unknown').join(', ')
                       : <span className="text-gray-400 italic">None assigned</span>
@@ -266,7 +266,7 @@ export function OrgNodeDetailsDrawer({
                   </span>
                 </div>
                 {node.isNonInvestment && (
-                  <div className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded mt-1.5">
+                  <div className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded mt-1.5 dark:bg-gray-900">
                     Non-investment node — excluded from coverage health
                   </div>
                 )}
@@ -277,7 +277,7 @@ export function OrgNodeDetailsDrawer({
           {/* ═══ B. Membership ═══ */}
           <Section title="Membership" icon={<Users className="w-3.5 h-3.5" />}>
             {/* Role distribution line */}
-            <div className="flex items-center gap-2 text-xs text-gray-600 mb-2">
+            <div className="flex items-center gap-2 text-xs text-gray-600 mb-2 dark:text-gray-400">
               {roleGroups.pm.length > 0 && (
                 <span className="font-medium">{roleGroups.pm.length} PM{roleGroups.pm.length > 1 ? 's' : ''}</span>
               )}
@@ -376,7 +376,7 @@ function HealthDiagnostics({
             ) : (
               <X className="w-3 h-3 text-red-400 shrink-0" />
             )}
-            <span className={c.pass ? 'text-gray-600' : 'text-red-600 font-medium'}>{c.label}</span>
+            <span className={c.pass ? 'text-gray-600 dark:text-gray-400' : 'text-red-600 font-medium'}>{c.label}</span>
           </div>
         ))}
       </div>
@@ -384,7 +384,7 @@ function HealthDiagnostics({
       {/* Scoring details toggle */}
       <button
         onClick={onToggleScoringDetails}
-        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mt-1.5 transition-colors"
+        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mt-1.5 transition-colors dark:hover:text-gray-300"
       >
         <ChevronDown className={`w-3 h-3 transition-transform ${showScoringDetails ? 'rotate-180' : ''}`} />
         Scoring details
@@ -394,14 +394,14 @@ function HealthDiagnostics({
         <div className="mt-1.5 space-y-1 pl-1">
           {checks.map(c => (
             <div key={c.label} className="flex items-center justify-between text-[11px]">
-              <span className="text-gray-500">{c.label}</span>
+              <span className="text-gray-500 dark:text-gray-400">{c.label}</span>
               <span className={`font-medium tabular-nums ${c.pass ? 'text-emerald-600' : 'text-red-500'}`}>
                 {c.pass ? c.weight : 0}/{c.weight}
               </span>
             </div>
           ))}
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100">
-            <span className="text-gray-500 font-medium">Total</span>
+          <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100 dark:border-gray-800">
+            <span className="text-gray-500 font-medium dark:text-gray-400">Total</span>
             <span className={`font-semibold tabular-nums ${node.healthScore >= 80 ? 'text-emerald-600' : node.healthScore >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
               {node.healthScore}/100
             </span>
@@ -421,13 +421,13 @@ function MemberList({ members }: { members: RawNodeMember[] }) {
       {members.map(m => (
         <div key={m.id} className="flex items-center gap-2 py-0.5">
           <div
-            className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-medium text-gray-600 shrink-0"
+            className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-medium text-gray-600 shrink-0 dark:text-gray-400"
             title={m.user?.full_name || m.user?.email || m.user_id}
           >
             {(m.user?.full_name || m.user?.email || '?').charAt(0).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-gray-800 truncate">
+            <div className="text-xs font-medium text-gray-800 truncate dark:text-gray-100">
               {m.user?.full_name || m.user?.email || m.user_id}
             </div>
             <div className="text-[10px] text-gray-400">{m.role}{m.focus ? ` — ${m.focus}` : ''}</div>
@@ -447,10 +447,10 @@ function MemberList({ members }: { members: RawNodeMember[] }) {
 
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="px-4 py-2 border-b border-gray-100">
+    <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800">
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-gray-400">{icon}</span>
-        <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
+        <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">{title}</h3>
       </div>
       {children}
     </div>
@@ -460,8 +460,8 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
 function StatRow({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center justify-between text-xs">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-semibold text-gray-900 tabular-nums">{value}</span>
+      <span className="text-gray-500 dark:text-gray-400">{label}</span>
+      <span className="font-semibold text-gray-900 tabular-nums dark:text-white">{value}</span>
     </div>
   )
 }

@@ -222,8 +222,8 @@ function ViewReferences({
   if (attachments.length === 0) return null
 
   return (
-    <div className="pt-3 border-t border-gray-100">
-      <div className="text-xs font-medium text-gray-500 mb-2">References</div>
+    <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+      <div className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">References</div>
       <div className="flex flex-wrap gap-2">
         {attachments.map((attachment, index) => (
           <div
@@ -280,7 +280,7 @@ function CollapsibleContent({ content }: { content: string }) {
       <div
         ref={contentRef}
         className={clsx(
-          'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200',
+          'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
           !expanded && needsCollapse && 'max-h-[240px]',
         )}
       >
@@ -541,7 +541,7 @@ function EditingPane({
             Discard Draft
           </button>
         )}
-        <button onClick={() => collapseAndRun(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
+        <button onClick={() => collapseAndRun(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400">
           Cancel
         </button>
         <button onClick={() => collapseAndRun(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50">
@@ -1170,10 +1170,10 @@ export function ContributionSection({
           </button>
 
           {showVisibilityChange && (
-            <div className="absolute left-0 top-7 z-20 w-64 bg-white border rounded-lg shadow-lg py-1">
+            <div className="absolute left-0 top-7 z-20 w-64 bg-white border rounded-lg shadow-lg py-1 dark:bg-gray-800">
               {visibilityChangeStep === 'level' ? (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b">
+                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b dark:text-gray-400">
                     Change visibility
                   </div>
                   {VISIBILITY_OPTIONS.map((option) => {
@@ -1186,13 +1186,13 @@ export function ContributionSection({
                         key={option.value}
                         onClick={() => handleVisibilityLevelSelect(option.value)}
                         className={clsx(
-                          'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50',
+                          'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                           isSelected && 'bg-primary-50'
                         )}
                       >
-                        <OptionIcon className="w-4 h-4 mr-2 text-gray-500" />
+                        <OptionIcon className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
                         <div className="flex-1">
-                          <span className="font-medium text-gray-900">{option.label}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{option.label}</span>
                           {needsTargets && (
                             <span className="text-xs text-gray-400 ml-1">→</span>
                           )}
@@ -1204,10 +1204,10 @@ export function ContributionSection({
                 </>
               ) : (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b flex items-center">
+                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b flex items-center dark:text-gray-400">
                     <button
                       onClick={() => setVisibilityChangeStep('level')}
-                      className="mr-2 text-gray-400 hover:text-gray-600"
+                      className="mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     >
                       ←
                     </button>
@@ -1229,13 +1229,13 @@ export function ContributionSection({
                             )
                           }}
                           className={clsx(
-                            'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50',
+                            'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800',
                             isSelected && 'bg-primary-50'
                           )}
                         >
                           <div className={clsx(
                             'w-4 h-4 rounded border mr-3 flex items-center justify-center',
-                            isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                            isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
                           )}>
                             {isSelected && <Check className="w-3 h-3 text-white" />}
                           </div>
@@ -1251,7 +1251,7 @@ export function ContributionSection({
                   <div className="border-t px-3 py-2 flex justify-end space-x-2">
                     <button
                       onClick={() => resetVisibilityChangeState()}
-                      className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"
+                      className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                     >
                       Cancel
                     </button>
@@ -1326,8 +1326,8 @@ export function ContributionSection({
     return (
       <div className={clsx("space-y-4", className)}>
         {/* Section header */}
-        <div className="flex items-center gap-2.5 border-b border-gray-100 pb-2">
-          <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+        <div className="flex items-center gap-2.5 border-b border-gray-100 pb-2 dark:border-gray-800">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{title}</h3>
           <span className="text-xs text-gray-400">
             {contributions.length} {contributions.length === 1 ? 'analyst' : 'analysts'}
           </span>
@@ -1350,7 +1350,7 @@ export function ContributionSection({
                       "text-sm font-medium hover:underline transition-colors",
                       isCovering
                         ? "text-amber-700 hover:text-amber-800"
-                        : "text-gray-700 hover:text-primary-600"
+                        : "text-gray-700 hover:text-primary-600 dark:text-gray-300"
                     )}
                     title={`View ${c.user?.full_name}'s full research`}
                   >
@@ -1363,7 +1363,7 @@ export function ContributionSection({
                 {/* Content - clickable to view analyst's full research */}
                 <button
                   onClick={() => onTabChange?.(c.created_by)}
-                  className="text-left w-full text-sm text-gray-600 leading-relaxed pl-5 prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 hover:text-gray-900 transition-colors cursor-pointer"
+                  className="text-left w-full text-sm text-gray-600 leading-relaxed pl-5 prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 hover:text-gray-900 transition-colors cursor-pointer dark:hover:text-white dark:text-gray-400"
                   title={`View ${c.user?.full_name}'s full research`}
                 >
                   <SmartInputRenderer content={c.content} />
@@ -1379,7 +1379,7 @@ export function ContributionSection({
   return (
     <div
       className={clsx(
-        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200',
+        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
         theme.accent,
         theme.hoverBorder,
         theme.hoverBg,
@@ -1390,7 +1390,7 @@ export function ContributionSection({
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center space-x-3">
           {Icon && (
             <div className={clsx('p-1.5 rounded-lg', theme.iconBg)}>
@@ -1404,11 +1404,11 @@ export function ContributionSection({
                 className="group flex items-center gap-1.5"
                 title="Click to add your view"
               >
-                <h3 className="text-base font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">{title}</h3>
+                <h3 className="text-base font-semibold text-gray-900 group-hover:text-primary-600 transition-colors dark:text-white">{title}</h3>
                 <Edit3 className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
             ) : (
-              <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
             )}
             {description && (
               <InfoTooltip content={description} position="right" />
@@ -1455,7 +1455,7 @@ export function ContributionSection({
           <div className="flex items-center space-x-2 animate-in fade-in duration-150">
             {/* View toggles - hidden when controlled from parent */}
             {!hideViewModeButtons && (
-              <div className="flex items-center bg-gray-100 rounded p-0.5">
+              <div className="flex items-center bg-gray-100 rounded p-0.5 dark:bg-gray-800">
                 {activeTab === 'aggregated' ? (
                   <>
                     <button
@@ -1463,8 +1463,8 @@ export function ContributionSection({
                       className={clsx(
                         'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
                         viewMode === 'combined' && !showHistory
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
+                          ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                          : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                       )}
                     >
                       <List className="w-3 h-3 mr-1" />
@@ -1489,8 +1489,8 @@ export function ContributionSection({
                     className={clsx(
                       'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
                       !showHistory
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                        : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                     )}
                   >
                     <List className="w-3 h-3 mr-1" />
@@ -1502,8 +1502,8 @@ export function ContributionSection({
                   className={clsx(
                     'flex items-center px-2 py-0.5 text-xs rounded transition-colors',
                     showHistory
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                      : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                   )}
                 >
                   <History className="w-3 h-3 mr-1" />
@@ -1547,17 +1547,17 @@ export function ContributionSection({
                 {showHistory ? (
                   <div className="space-y-2">
                     {historyLoading ? (
-                      <div className="text-sm text-gray-500 text-center py-2">Loading history...</div>
+                      <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">Loading history...</div>
                     ) : aggregateHistory.length === 0 ? (
                       <div className="text-sm text-gray-400 text-center py-2">No edit history yet</div>
                     ) : (
                       aggregateHistory.slice(0, 10).map((h: any) => (
-                        <div key={h.id} className="pb-2 border-b border-gray-100 last:border-0">
+                        <div key={h.id} className="pb-2 border-b border-gray-100 last:border-0 dark:border-gray-800">
                           <div className="flex items-center space-x-2 mb-1">
-                            <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600">
+                            <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium text-gray-600 dark:text-gray-400">
                               {h.user?.full_name?.charAt(0) || '?'}
                             </div>
-                            <span className="font-medium text-gray-900 text-sm">{h.user?.full_name}</span>
+                            <span className="font-medium text-gray-900 text-sm dark:text-white">{h.user?.full_name}</span>
                             <span className="text-xs text-gray-400">
                               {formatDistanceToNow(new Date(h.changed_at), { addSuffix: true })}
                             </span>
@@ -1589,8 +1589,8 @@ export function ContributionSection({
                       {contributions.map((c) => {
                         const isCovering = coveringAnalystIds.has(c.created_by)
                         return (
-                          <div key={c.id} className="text-sm text-gray-700 leading-relaxed">
-                            <span className="font-medium text-gray-900 inline-flex items-center gap-1 align-top">
+                          <div key={c.id} className="text-sm text-gray-700 leading-relaxed dark:text-gray-300">
+                            <span className="font-medium text-gray-900 inline-flex items-center gap-1 align-top dark:text-white">
                               {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" title="Covering Analyst" />}
                               {c.user?.full_name}:
                             </span>{' '}
@@ -1650,7 +1650,7 @@ export function ContributionSection({
                       <div className="text-sm text-gray-400 text-center py-2">No edit history yet</div>
                     ) : (
                       individualHistory.slice(0, 10).map((h) => (
-                        <div key={h.id} className="pb-2 border-b border-gray-100 last:border-0">
+                        <div key={h.id} className="pb-2 border-b border-gray-100 last:border-0 dark:border-gray-800">
                           <div className="text-xs text-gray-400 mb-1">
                             {formatDistanceToNow(new Date(h.changed_at), { addSuffix: true })}
                           </div>
@@ -1675,12 +1675,12 @@ export function ContributionSection({
                               : 'recently'
                             }
                           </div>
-                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
+                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed dark:text-gray-300">
                             <SmartInputRenderer content={myContribution?.draft_content || ''} />
                           </div>
                         </div>
                         {/* Draft action buttons */}
-                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                           <button
                             onClick={handleStartEdit}
                             className="flex items-center px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg"

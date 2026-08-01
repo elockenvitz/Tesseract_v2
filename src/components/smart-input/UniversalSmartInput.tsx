@@ -347,7 +347,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
           {!isAIPromptMode && hasStyledContent && !isFocused && (
             <div
               className={clsx(
-                'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-gray-900 leading-relaxed',
+                'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-gray-900 leading-relaxed dark:text-white',
                 textareaClassName || 'p-3',
               )}
               style={{
@@ -379,14 +379,14 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                 const match = value.match(/^(.*?)(\.[aA][iI]\s+)(.*)$/s)
                 if (!match) {
                   // No .AI pattern found, show all text normally
-                  return <span className="text-gray-900">{value}</span>
+                  return <span className="text-gray-900 dark:text-white">{value}</span>
                 }
 
                 const [, before, trigger, after] = match
                 return (
                   <>
                     {/* Text before .AI - normal color */}
-                    <span className="text-gray-900">{before}</span>
+                    <span className="text-gray-900 dark:text-white">{before}</span>
                     {/* The .AI trigger - purple */}
                     <span className="text-purple-600 font-medium">{trigger}</span>
                     {/* The prompt after .AI - purple with background */}
@@ -480,7 +480,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                 ? 'border-purple-300 focus:ring-purple-500 caret-purple-600'
                 : isTemplateFillMode
                   ? 'border-blue-300 focus:ring-blue-500'
-                  : 'border-gray-300 focus:ring-primary-500'),
+                  : 'border-gray-300 focus:ring-primary-500 dark:border-gray-600'),
               // Special padding for header modes
               (isAIPromptMode || isTemplateFillMode || aiError) && 'pt-12',
               isAILoading && 'opacity-75',
@@ -592,11 +592,11 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                     >
                       <span className={clsx(
                         'w-14 text-center py-0.5 rounded text-[11px] font-bold shrink-0',
-                        index === selectedIndex ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-700'
+                        index === selectedIndex ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'
                       )}>
                         {asset.title}
                       </span>
-                      <span className="text-sm text-gray-600 truncate">{asset.subtitle}</span>
+                      <span className="text-sm text-gray-600 truncate dark:text-gray-400">{asset.subtitle}</span>
                     </button>
                   ))
                 ) : (
@@ -650,11 +650,11 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                 <Sparkles className="w-4 h-4" />
                 <span className="font-medium">AI Prompt</span>
               </div>
-              <p className="text-gray-600 text-xs mb-2">
-                Press <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">Space</span> to start with default model
+              <p className="text-gray-600 text-xs mb-2 dark:text-gray-400">
+                Press <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono dark:bg-gray-800">Space</span> to start with default model
               </p>
-              <p className="text-gray-600 text-xs">
-                Or type <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">.</span> to select a model (e.g., .AI.claude)
+              <p className="text-gray-600 text-xs dark:text-gray-400">
+                Or type <span className="px-1.5 py-0.5 bg-gray-100 rounded font-mono dark:bg-gray-800">.</span> to select a model (e.g., .AI.claude)
               </p>
             </div>
           </SmartInputDropdown>
@@ -669,7 +669,7 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
             onClose={closeDropdown}
           >
             <div className="py-1">
-              <div className="px-3 py-1.5 text-xs text-gray-500 font-medium">Select AI Model</div>
+              <div className="px-3 py-1.5 text-xs text-gray-500 font-medium dark:text-gray-400">Select AI Model</div>
               {AI_MODELS
                 .filter(model => model.id.toLowerCase().includes(dropdownQuery.toLowerCase()))
                 .map((model, index) => (
@@ -685,13 +685,13 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                       <span className="text-white text-[10px] font-bold">{model.id.slice(0, 2).toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900">{model.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{model.description}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">{model.name}</div>
+                      <div className="text-xs text-gray-500 truncate dark:text-gray-400">{model.description}</div>
                     </div>
                   </button>
                 ))}
               {AI_MODELS.filter(model => model.id.toLowerCase().includes(dropdownQuery.toLowerCase())).length === 0 && (
-                <div className="px-3 py-2 text-sm text-gray-500">No matching models</div>
+                <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No matching models</div>
               )}
             </div>
           </SmartInputDropdown>
@@ -744,7 +744,7 @@ function DotCommandMenu({ query, selectedIndex }: { query: string; selectedIndex
   })
 
   if (filtered.length === 0) {
-    return <div className="p-3 text-sm text-gray-500">No commands found</div>
+    return <div className="p-3 text-sm text-gray-500 dark:text-gray-400">No commands found</div>
   }
 
   let globalIndex = 0
@@ -770,14 +770,14 @@ function DotCommandMenu({ query, selectedIndex }: { query: string; selectedIndex
                     itemIndex === selectedIndex ? 'bg-primary-50' : 'hover:bg-gray-50'
                   )}
                 >
-                  <div className={clsx('w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center', item.color)}>
+                  <div className={clsx('w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center dark:bg-gray-800', item.color)}>
                     <Icon className="w-4 h-4" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className={clsx('text-sm font-medium', itemIndex === selectedIndex ? 'text-primary-700' : 'text-gray-900')}>
+                    <div className={clsx('text-sm font-medium', itemIndex === selectedIndex ? 'text-primary-700' : 'text-gray-900 dark:text-white')}>
                       {item.name}
                     </div>
-                    <div className="text-xs text-gray-500 truncate">{item.description}</div>
+                    <div className="text-xs text-gray-500 truncate dark:text-gray-400">{item.description}</div>
                   </div>
                 </div>
               )

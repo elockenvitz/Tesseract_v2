@@ -270,7 +270,7 @@ export function AIConfigurationSection() {
                 )}>
                   <Key className={clsx(
                     'h-5 w-5',
-                    isConfigured ? 'text-green-600 dark:text-green-400' : 'text-gray-500'
+                    isConfigured ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'
                   )} />
                 </div>
                 <div className="text-left">

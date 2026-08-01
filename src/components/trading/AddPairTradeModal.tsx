@@ -251,7 +251,7 @@ export function AddPairTradeModal({
             onClick={onClose}
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -287,7 +287,7 @@ export function AddPairTradeModal({
               required
             />
             {autoGenerateName && !name && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                 Suggested: {autoGenerateName}
               </p>
             )}

@@ -111,19 +111,19 @@ export function AIPromptModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-lg"
+        className="bg-white rounded-xl shadow-xl w-full max-w-lg dark:bg-gray-800"
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <Sparkles className="w-5 h-5 text-purple-500 mr-2" />
-            <h3 className="font-semibold text-gray-900">AI Generate</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">AI Generate</h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -133,7 +133,7 @@ export function AIPromptModal({
         <div className="p-4 space-y-4">
           {/* Context indicator */}
           {assetContext && (
-            <div className="flex items-center text-sm text-gray-500">
+            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
               <span>Context:</span>
               <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 rounded font-medium">
                 {assetContext.symbol}
@@ -143,7 +143,7 @@ export function AIPromptModal({
 
           {/* Prompt input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               What would you like AI to write?
             </label>
             <textarea
@@ -151,7 +151,7 @@ export function AIPromptModal({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="e.g., Write a brief summary of the investment thesis..."
-              className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:border-gray-600"
               rows={3}
               disabled={isGenerating}
             />
@@ -168,10 +168,10 @@ export function AIPromptModal({
           {/* Generated content preview */}
           {generatedContent && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Generated content:
               </label>
-              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-gray-700 max-h-48 overflow-y-auto">
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-gray-700 max-h-48 overflow-y-auto dark:text-gray-300">
                 {generatedContent}
               </div>
             </div>
@@ -180,7 +180,7 @@ export function AIPromptModal({
           {/* Quick prompts */}
           {!generatedContent && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">
+              <label className="block text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">
                 Quick prompts:
               </label>
               <div className="flex flex-wrap gap-2">
@@ -189,7 +189,7 @@ export function AIPromptModal({
                     key={i}
                     type="button"
                     onClick={() => setPrompt(quickPrompt)}
-                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800"
                   >
                     {quickPrompt}
                   </button>
@@ -200,15 +200,15 @@ export function AIPromptModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-          <span className="text-xs text-gray-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
             {generatedContent ? '⌘+Enter to insert' : '⌘+Enter to generate'}
           </span>
           <div className="flex items-center space-x-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded transition-colors"
+              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded transition-colors dark:text-gray-400"
             >
               Cancel
             </button>
@@ -217,7 +217,7 @@ export function AIPromptModal({
                 <button
                   type="button"
                   onClick={() => setGeneratedContent(null)}
-                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded transition-colors"
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded transition-colors dark:text-gray-400"
                 >
                   Regenerate
                 </button>

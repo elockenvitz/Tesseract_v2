@@ -32,7 +32,7 @@ export function WorkflowPerformanceCard({ workflow }: WorkflowPerformanceCardPro
     <Card>
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Performance Metrics</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Performance Metrics</h3>
           <BarChart3 className="w-5 h-5 text-gray-400" />
         </div>
 
@@ -52,7 +52,7 @@ export function WorkflowPerformanceCard({ workflow }: WorkflowPerformanceCardPro
           </div>
         ) : (
           <div className="text-center py-4">
-            <div className="text-sm text-gray-500">No usage data yet</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">No usage data yet</div>
             <div className="text-xs text-gray-400 mt-1">
               Apply this workflow to see performance metrics
             </div>

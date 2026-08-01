@@ -40,7 +40,7 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-500">
+      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
         <Loader2 className="w-4 h-4 animate-spin" />
         <span>Loading templates...</span>
       </div>
@@ -55,7 +55,7 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
           'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
           isOpen
             ? 'border-primary-300 bg-primary-50 text-primary-700'
-            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800'
         )}
       >
         <FileText className="w-4 h-4" />
@@ -69,7 +69,7 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1 max-h-80 overflow-auto">
+        <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1 max-h-80 overflow-auto dark:border-gray-700 dark:bg-gray-800">
           {/* No template option */}
           <button
             onClick={() => {
@@ -77,20 +77,20 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
               setIsOpen(false)
             }}
             className={clsx(
-              'w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50',
+              'w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800',
               !selectedTemplateId && 'bg-primary-50'
             )}
           >
             <div className="w-4 h-4 flex items-center justify-center">
               {!selectedTemplateId && <Check className="w-4 h-4 text-primary-600" />}
             </div>
-            <span className="text-gray-700">Default (No Template)</span>
+            <span className="text-gray-700 dark:text-gray-300">Default (No Template)</span>
           </button>
 
           {/* My Templates */}
           {myTemplates.length > 0 && (
             <>
-              <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide border-t border-gray-100 mt-1">
+              <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide border-t border-gray-100 mt-1 dark:border-gray-800 dark:text-gray-400">
                 My Templates
               </div>
               {myTemplates.map(template => (
@@ -113,7 +113,7 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
           {/* Shared Templates */}
           {sharedTemplates.length > 0 && (
             <>
-              <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide border-t border-gray-100 mt-1">
+              <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide border-t border-gray-100 mt-1 dark:border-gray-800 dark:text-gray-400">
                 Shared Templates
               </div>
               {sharedTemplates.map(template => (
@@ -136,7 +136,7 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
 
           {/* Empty state */}
           {templates.length === 0 && (
-            <div className="px-3 py-4 text-center text-sm text-gray-500">
+            <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
               No templates available
             </div>
           )}
@@ -148,7 +148,7 @@ export function InvestmentCaseTemplateSelector({ selectedTemplateId, onSelect, o
                 onManageTemplates()
                 setIsOpen(false)
               }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-primary-600 hover:bg-primary-50 border-t border-gray-100 mt-1"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-primary-600 hover:bg-primary-50 border-t border-gray-100 mt-1 dark:border-gray-800"
             >
               <Settings className="w-4 h-4" />
               Manage Templates
@@ -186,7 +186,7 @@ function TemplateOption({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       className={clsx(
-        'w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50',
+        'w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800',
         isSelected && 'bg-primary-50'
       )}
     >
@@ -195,7 +195,7 @@ function TemplateOption({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
-          <span className="text-sm text-gray-900 truncate">{template.name}</span>
+          <span className="text-sm text-gray-900 truncate dark:text-white">{template.name}</span>
           {template.is_default && (
             <Star className="w-3 h-3 text-yellow-500 flex-shrink-0" />
           )}
@@ -204,7 +204,7 @@ function TemplateOption({
           )}
         </div>
         {template.description && (
-          <p className="text-xs text-gray-500 truncate">{template.description}</p>
+          <p className="text-xs text-gray-500 truncate dark:text-gray-400">{template.description}</p>
         )}
       </div>
       {/* Color indicator */}

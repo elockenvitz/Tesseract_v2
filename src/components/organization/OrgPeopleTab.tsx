@@ -347,8 +347,8 @@ export function OrgPeopleTab({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Members</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Invite, suspend, and manage organization membership</p>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Members</h2>
+            <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Invite, suspend, and manage organization membership</p>
           </div>
           <div className="flex items-center gap-3">
             <SeatSummaryBar seats={{ active: activeCount, invited: invitedCount, suspended: suspendedCount }} />
@@ -370,7 +370,7 @@ export function OrgPeopleTab({
               placeholder="Search members..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
             />
           </div>
 
@@ -378,7 +378,7 @@ export function OrgPeopleTab({
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
           >
             <option value="all">All statuses</option>
             <option value="active">Active</option>
@@ -386,13 +386,13 @@ export function OrgPeopleTab({
           </select>
 
           {/* View toggle: Members / Contacts */}
-          <div className="inline-flex items-center bg-gray-100 rounded p-0.5 ml-auto">
+          <div className="inline-flex items-center bg-gray-100 rounded p-0.5 ml-auto dark:bg-gray-800">
             <button
               onClick={() => setPeopleView('users')}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                 peopleView === 'users'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               Members
@@ -402,8 +402,8 @@ export function OrgPeopleTab({
               onClick={() => setPeopleView('contacts')}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                 peopleView === 'contacts'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               Contacts
@@ -426,8 +426,8 @@ export function OrgPeopleTab({
                       <Mail className="w-4 h-4 text-amber-600" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{invite.email}</p>
-                      <p className="text-[11px] text-gray-500">
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{invite.email}</p>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
                         Sent {new Date(invite.created_at).toLocaleDateString()}
                       </p>
                     </div>
@@ -450,10 +450,10 @@ export function OrgPeopleTab({
 
           {/* Member rows */}
           {displayMembers.length > 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-gray-50/80 border-b border-gray-200">
+                  <tr className="bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
                     <th className="px-4 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[40%]">Name</th>
                     <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</th>
                     <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Org Role</th>
@@ -463,7 +463,7 @@ export function OrgPeopleTab({
                     <th className="px-4 py-1.5 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wider"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {displayMembers.map((member) => {
                     const auth = authorityByUser.get(member.user_id)
                     return (
@@ -493,7 +493,7 @@ export function OrgPeopleTab({
                 <button
                   onClick={() => fetchNextPage()}
                   disabled={isFetchingNextPage}
-                  className="w-full px-4 py-2.5 text-sm text-indigo-600 hover:bg-indigo-50 transition-colors font-medium border-t border-gray-100"
+                  className="w-full px-4 py-2.5 text-sm text-indigo-600 hover:bg-indigo-50 transition-colors font-medium border-t border-gray-100 dark:border-gray-800"
                 >
                   {isFetchingNextPage
                     ? 'Loading...'
@@ -502,9 +502,9 @@ export function OrgPeopleTab({
               )}
             </div>
           ) : (
-            <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <div className="text-center py-12 bg-gray-50 rounded-lg dark:bg-gray-900">
               <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">No members match your search</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No members match your search</p>
             </div>
           )}
         </div>
@@ -514,7 +514,7 @@ export function OrgPeopleTab({
       {peopleView === 'contacts' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               People who don't have platform access but receive reports or communications.
             </p>
             {isOrgAdmin && (
@@ -526,10 +526,10 @@ export function OrgPeopleTab({
           </div>
 
           {filteredContacts.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <div className="text-center py-12 bg-gray-50 rounded-lg dark:bg-gray-900">
               <AtSign className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No contacts yet</h3>
-              <p className="text-sm text-gray-500 mb-4">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No contacts yet</h3>
+              <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
                 Add external contacts who need to receive reports or communications
               </p>
               {isOrgAdmin && (
@@ -552,8 +552,8 @@ export function OrgPeopleTab({
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900">{contact.full_name}</span>
-                          <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full capitalize">
+                          <span className="font-medium text-gray-900 dark:text-white">{contact.full_name}</span>
+                          <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full capitalize dark:text-gray-400 dark:bg-gray-800">
                             {contact.contact_type}
                           </span>
                           {contact.receives_reports && (
@@ -564,11 +564,11 @@ export function OrgPeopleTab({
                           )}
                         </div>
                         {contact.title && (
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
                             {contact.title}{contact.company ? ` at ${contact.company}` : ''}
                           </p>
                         )}
-                        <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                        <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
                           {contact.email && (
                             <span className="flex items-center">
                               <Mail className="w-3 h-3 mr-1" />{contact.email}
@@ -581,7 +581,7 @@ export function OrgPeopleTab({
                           )}
                         </div>
                         {contact.notes && (
-                          <p className="text-sm text-gray-500 mt-2 italic">"{contact.notes}"</p>
+                          <p className="text-sm text-gray-500 mt-2 italic dark:text-gray-400">"{contact.notes}"</p>
                         )}
                       </div>
                     </div>
@@ -612,11 +612,11 @@ export function OrgPeopleTab({
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/40" onClick={() => { setSuspendTarget(null); setSuspendReason('') }} />
-            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4 dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1 dark:text-white">
                 Suspend access for {suspendTarget.user?.full_name}?
               </h3>
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
                 They will immediately lose access to the organization and all portfolios.
               </p>
 
@@ -629,14 +629,14 @@ export function OrgPeopleTab({
                 </div>
               )}
 
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Reason <span className="text-gray-400">(optional)</span>
               </label>
               <textarea
                 value={suspendReason}
                 onChange={(e) => setSuspendReason(e.target.value)}
                 placeholder="e.g. Left the team, compliance review..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm dark:border-gray-600"
                 rows={2}
                 autoFocus
               />
@@ -667,14 +667,14 @@ export function OrgPeopleTab({
       {reactivateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => { setReactivateTarget(null); setReactivateReason('') }} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4 dark:bg-gray-800">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1 dark:text-white">
               Reactivate access for {reactivateTarget.user?.full_name}?
             </h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
               They will regain access to the organization and their previous role assignments.
             </p>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               Reason <span className="text-gray-400">(optional)</span>
             </label>
             <input
@@ -682,7 +682,7 @@ export function OrgPeopleTab({
               value={reactivateReason}
               onChange={(e) => setReactivateReason(e.target.value)}
               placeholder="e.g. Suspension reviewed, access restored"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
               autoFocus
             />
             <div className="flex justify-end space-x-3 mt-5">
@@ -904,7 +904,7 @@ const SEVERITY_ICON: Record<string, React.ReactNode> = {
 const SEVERITY_STYLE: Record<string, string> = {
   high: 'bg-red-50 text-red-700 border-red-200',
   medium: 'bg-amber-50 text-amber-700 border-amber-200',
-  low: 'bg-gray-100 text-gray-600 border-gray-200',
+  low: 'bg-gray-100 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800',
 }
 
 function RiskPill({
@@ -994,7 +994,7 @@ function MemberRow({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-medium text-gray-900 truncate">{member.user?.full_name}</span>
+                <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{member.user?.full_name}</span>
                 {onUserClick && member.user_id && (
                   <button
                     onClick={(e) => {
@@ -1031,12 +1031,12 @@ function MemberRow({
 
         {/* Teams */}
         <td className="px-3 py-2.5 text-center">
-          <span className="text-sm font-medium text-gray-700">{teamCount}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{teamCount}</span>
         </td>
 
         {/* Portfolios */}
         <td className="px-3 py-2.5 text-center">
-          <span className="text-sm font-medium text-gray-700">{portfolioCount}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{portfolioCount}</span>
         </td>
 
         {/* Risk */}
@@ -1088,14 +1088,14 @@ function MemberRow({
       {isExpanded && (
         <tr>
           <td colSpan={7} className="px-0 py-0">
-            <div className="px-4 pb-3 pt-2 ml-[52px] border-t border-gray-100 space-y-2 bg-gray-50/30">
+            <div className="px-4 pb-3 pt-2 ml-[52px] border-t border-gray-100 space-y-2 bg-gray-50/30 dark:border-gray-800">
               {/* Profile tags */}
               {(member.title || member.profile) && (
                 <div className="flex flex-wrap gap-2 text-xs">
                   {member.title && (
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-500">Title:</span>
-                      <span className="text-gray-700">{member.title}</span>
+                      <span className="text-gray-500 dark:text-gray-400">Title:</span>
+                      <span className="text-gray-700 dark:text-gray-300">{member.title}</span>
                     </div>
                   )}
                   {member.profile && renderProfileTags(member.profile, formatProfileValue)}
@@ -1160,7 +1160,7 @@ function renderProfileTags(profileInfo: UserProfileData, format: (v: string) => 
     if (values.length === 0) return
     tags.push(
       <div key={key} className="flex items-center gap-1 flex-wrap">
-        <span className="text-gray-500">{label}:</span>
+        <span className="text-gray-500 dark:text-gray-400">{label}:</span>
         {values.map((v) => (
           <span key={v} className={`px-1.5 py-0.5 rounded ${style}`}>{format(v)}</span>
         ))}

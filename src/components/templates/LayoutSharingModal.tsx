@@ -45,7 +45,7 @@ const NODE_TYPE_ICONS: Record<string, React.ReactNode> = {
   department: <Layers className="w-4 h-4 text-purple-500" />,
   team: <Users className="w-4 h-4 text-green-500" />,
   portfolio: <Briefcase className="w-4 h-4 text-amber-500" />,
-  user: <User className="w-4 h-4 text-gray-500" />
+  user: <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
 }
 
 const NODE_TYPE_LABELS: Record<string, string> = {
@@ -230,16 +230,16 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Share Layout</h3>
-            <p className="text-sm text-gray-500 mt-0.5">{layout.name}</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Share Layout</h3>
+            <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{layout.name}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
@@ -258,20 +258,20 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
               }}
               onFocus={() => setShowDropdown(true)}
               placeholder="Search people, teams, or groups..."
-              className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
             />
 
             {/* Search Dropdown */}
             {showDropdown && (
               <>
                 <div className="fixed inset-0 z-[60]" onClick={() => setShowDropdown(false)} />
-                <div className="absolute left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-80 overflow-y-auto z-[61]">
+                <div className="absolute left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-80 overflow-y-auto z-[61] dark:border-gray-700 dark:bg-gray-800">
                   {isSearching && searchQuery.length >= 2 ? (
                     <div className="flex items-center justify-center py-6">
                       <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                     </div>
                   ) : filteredEntities.length === 0 ? (
-                    <p className="text-sm text-gray-500 py-4 px-4 text-center">
+                    <p className="text-sm text-gray-500 py-4 px-4 text-center dark:text-gray-400">
                       {searchQuery ? 'No results found' : 'Start typing to search...'}
                     </p>
                   ) : (
@@ -279,7 +279,7 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
                       {/* Organization */}
                       {groupedEntities.organization.length > 0 && (
                         <div>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 dark:text-gray-400 dark:bg-gray-900">
                             Organization
                           </div>
                           {groupedEntities.organization.map(entity => (
@@ -299,7 +299,7 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
                         groupedEntities.team.length > 0 ||
                         groupedEntities.portfolio.length > 0) && (
                         <div>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 dark:text-gray-400 dark:bg-gray-900">
                             Groups
                           </div>
                           {[...groupedEntities.division, ...groupedEntities.department, ...groupedEntities.team, ...groupedEntities.portfolio].map(entity => (
@@ -316,7 +316,7 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
                       {/* People */}
                       {groupedEntities.user.length > 0 && (
                         <div>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 dark:text-gray-400 dark:bg-gray-900">
                             People
                           </div>
                           {groupedEntities.user.map(entity => (
@@ -339,7 +339,7 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
           {/* Collaborators List */}
           {hasCollaborators && (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                 Shared with
               </h4>
 
@@ -400,7 +400,7 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
           )}
 
           {!hasCollaborators && (
-            <div className="text-center py-6 text-gray-500">
+            <div className="text-center py-6 text-gray-500 dark:text-gray-400">
               <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
               <p className="text-sm">This layout is private</p>
               <p className="text-xs mt-1">Search above to share with people or groups</p>
@@ -409,7 +409,7 @@ export function LayoutSharingModal({ layout, onClose }: LayoutSharingModalProps)
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+        <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
           <Button onClick={onClose} className="w-full">
             Done
           </Button>
@@ -431,22 +431,22 @@ function EntitySearchRow({ entity, onSelect, isAdding }: EntitySearchRowProps) {
       type="button"
       onClick={onSelect}
       disabled={isAdding}
-      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
     >
       <div className={clsx(
         'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
-        entity.type === 'user' ? 'bg-gray-100' : 'bg-blue-50'
+        entity.type === 'user' ? 'bg-gray-100 dark:bg-gray-800' : 'bg-blue-50'
       )}>
         {entity.type === 'user' ? (
-          <span className="text-sm font-medium text-gray-600">{entity.initials}</span>
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{entity.initials}</span>
         ) : (
           NODE_TYPE_ICONS[entity.type]
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{entity.name}</p>
+        <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{entity.name}</p>
         {entity.subtitle && (
-          <p className="text-xs text-gray-500 truncate">{entity.subtitle}</p>
+          <p className="text-xs text-gray-500 truncate dark:text-gray-400">{entity.subtitle}</p>
         )}
       </div>
     </button>
@@ -479,18 +479,18 @@ function CollaboratorRow({
   const [showPermissionDropdown, setShowPermissionDropdown] = useState(false)
 
   return (
-    <div className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
-      <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center shrink-0">
+    <div className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+      <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center shrink-0 dark:border-gray-700 dark:bg-gray-800">
         {initials ? (
-          <span className="text-sm font-medium text-gray-600">{initials}</span>
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{initials}</span>
         ) : (
           icon
         )}
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-        {subtitle && <p className="text-xs text-gray-500 truncate">{subtitle}</p>}
+        <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{name}</p>
+        {subtitle && <p className="text-xs text-gray-500 truncate dark:text-gray-400">{subtitle}</p>}
       </div>
 
       {/* Permission Dropdown */}
@@ -502,8 +502,8 @@ function CollaboratorRow({
           className={clsx(
             'flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors',
             isUpdating
-              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800'
+              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800'
           )}
         >
           {PERMISSION_LABELS[permission].label}
@@ -513,7 +513,7 @@ function CollaboratorRow({
         {showPermissionDropdown && (
           <>
             <div className="fixed inset-0 z-[70]" onClick={() => setShowPermissionDropdown(false)} />
-            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[71]">
+            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[71] dark:border-gray-700 dark:bg-gray-800">
               {(Object.entries(PERMISSION_LABELS) as [PermissionLevel, { label: string; description: string }][]).map(
                 ([level, { label, description }]) => (
                   <button
@@ -523,13 +523,13 @@ function CollaboratorRow({
                       setShowPermissionDropdown(false)
                     }}
                     className={clsx(
-                      'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50',
+                      'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                       permission === level && 'bg-primary-50'
                     )}
                   >
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{label}</p>
-                      <p className="text-xs text-gray-500">{description}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
                     </div>
                     {permission === level && <Check className="w-4 h-4 text-primary-600" />}
                   </button>

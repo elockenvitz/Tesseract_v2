@@ -229,7 +229,7 @@ export function SmartStageManager({
         {/* Main Display */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center space-x-4 px-6 py-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 hover:shadow-md transition-all duration-200 min-w-[280px]"
+          className="flex items-center space-x-4 px-6 py-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 hover:shadow-md transition-all duration-200 min-w-[280px] dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
         >
           {/* Stage Indicator */}
           <div className="flex items-center space-x-3">
@@ -237,8 +237,8 @@ export function SmartStageManager({
               <currentStageConfig.icon className="w-3 h-3 text-white" />
             </div>
             <div className="text-left">
-              <div className="text-sm font-semibold text-gray-800">{currentStageConfig.label}</div>
-              <div className="text-xs text-gray-500">{currentStageConfig.description}</div>
+              <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{currentStageConfig.label}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{currentStageConfig.description}</div>
             </div>
           </div>
 
@@ -264,11 +264,11 @@ export function SmartStageManager({
           />
 
           {/* Dropdown Content */}
-          <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden">
+          <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
             <div className="p-4">
               {/* Priority Selection */}
               <div className="mb-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Set Priority:</div>
+                <div className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Set Priority:</div>
                 <div className="grid grid-cols-2 gap-2">
                   {PRIORITY_LEVELS.map((priority) => (
                     <button
@@ -288,8 +288,8 @@ export function SmartStageManager({
               </div>
 
               {/* Stage Selection */}
-              <div className="pt-3 border-t border-gray-200">
-                <div className="text-sm font-medium text-gray-700 mb-3">View Stage:</div>
+              <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                <div className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">View Stage:</div>
                 <div className="space-y-1">
                   {STAGE_CONFIGS.map((stage, index) => {
                     const isActive = stage.id === currentStage
@@ -301,7 +301,7 @@ export function SmartStageManager({
                         className={`w-full p-2 rounded-lg border transition-all text-left flex items-center justify-between ${
                           isActive
                             ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                         }`}
                       >
                         <div className="flex items-center space-x-3">
@@ -311,7 +311,7 @@ export function SmartStageManager({
                           <div className={`w-3 h-3 rounded-full ${stage.color} flex items-center justify-center`}>
                             <stage.icon className="w-1.5 h-1.5 text-white" />
                           </div>
-                          <span className="text-sm font-medium text-gray-800">{stage.label}</span>
+                          <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{stage.label}</span>
                         </div>
                         {isActive && (
                           <div className="text-xs text-blue-600 font-medium">Current</div>

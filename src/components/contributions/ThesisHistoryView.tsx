@@ -94,7 +94,7 @@ function groupIntoSessions(events: HistoryEvent[]): RevisionSession[] {
 // ============================================================================
 
 const filterConfig: { value: HistoryFilter; label: string; color: string }[] = [
-  { value: 'all', label: 'All', color: 'text-gray-600' },
+  { value: 'all', label: 'All', color: 'text-gray-600 dark:text-gray-400' },
   { value: 'thesis', label: 'Thesis', color: 'text-primary-600' },
   { value: 'where_different', label: 'Differs', color: 'text-purple-600' },
   { value: 'risks_to_thesis', label: 'Risks', color: 'text-amber-600' },
@@ -188,7 +188,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string | null; newCo
       {diff.map((part, idx) => {
         const needsSpace = idx > 0
         if (part.type === 'unchanged') {
-          return <span key={idx} className="text-gray-700">{needsSpace ? ' ' : ''}{part.text}</span>
+          return <span key={idx} className="text-gray-700 dark:text-gray-300">{needsSpace ? ' ' : ''}{part.text}</span>
         } else if (part.type === 'added') {
           return (
             <span key={idx}>
@@ -223,18 +223,18 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
     reference: { color: 'text-blue-600', label: 'Supporting Docs' }
   }
 
-  const config = typeConfig[event.type] || { color: 'text-gray-600', label: event.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
+  const config = typeConfig[event.type] || { color: 'text-gray-600 dark:text-gray-400', label: event.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
 
   const priceChange = event.type === 'price_target' && event.priceTarget && event.previousPriceTarget
     ? ((event.priceTarget - event.previousPriceTarget) / event.previousPriceTarget) * 100
     : null
 
   return (
-    <div className="py-2 border-b border-gray-100 last:border-b-0">
+    <div className="py-2 border-b border-gray-100 last:border-b-0 dark:border-gray-800">
       <div className="flex items-center gap-1.5 text-xs mb-1 flex-wrap">
         <span className={clsx('font-semibold', config.color)}>{config.label}</span>
         <span className="text-gray-300">·</span>
-        <span className="font-medium text-gray-600">{event.userName}</span>
+        <span className="font-medium text-gray-600 dark:text-gray-400">{event.userName}</span>
         <span className="text-gray-300">·</span>
         <span className="text-gray-400" title={format(event.timestamp, 'PPpp')}>
           {formatDistanceToNow(event.timestamp, { addSuffix: true })}
@@ -249,11 +249,11 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
               <ChevronRight className="w-3 h-3 text-gray-300" />
             </>
           )}
-          <span className="font-semibold text-gray-900">${event.priceTarget}</span>
+          <span className="font-semibold text-gray-900 dark:text-white">${event.priceTarget}</span>
           {priceChange !== null && (
             <span className={clsx(
               'text-xs px-1 rounded',
-              priceChange > 0 ? 'text-green-600' : priceChange < 0 ? 'text-red-600' : 'text-gray-500'
+              priceChange > 0 ? 'text-green-600' : priceChange < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'
             )}>
               {priceChange > 0 ? '+' : ''}{priceChange.toFixed(1)}%
             </span>
@@ -353,7 +353,7 @@ function ContextDisclosure({
             </button>
             <button
               onClick={() => { setEditing(false); setDraft('') }}
-              className="text-xs text-gray-400 hover:text-gray-600"
+              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               Cancel
             </button>
@@ -380,7 +380,7 @@ function ContextDisclosure({
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
       >
         <ChevronRight className="w-3 h-3 text-gray-400" />
-        <span className="text-xs text-gray-500 font-medium">Context</span>
+        <span className="text-xs text-gray-500 font-medium dark:text-gray-400">Context</span>
       </button>
     )
   }
@@ -394,7 +394,7 @@ function ContextDisclosure({
           className="flex items-center gap-1.5 mb-1.5"
         >
           <ChevronDown className="w-3 h-3 text-gray-400" />
-          <span className="text-xs text-gray-500 font-medium">Context</span>
+          <span className="text-xs text-gray-500 font-medium dark:text-gray-400">Context</span>
         </button>
         <textarea
           autoFocus
@@ -421,7 +421,7 @@ function ContextDisclosure({
           </button>
           <button
             onClick={() => { setEditing(false); setDraft(text || '') }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             Cancel
           </button>
@@ -438,12 +438,12 @@ function ContextDisclosure({
           className="flex items-center gap-1.5"
         >
           <ChevronDown className="w-3 h-3 text-gray-400" />
-          <span className="text-xs text-gray-500 font-medium">Context</span>
+          <span className="text-xs text-gray-500 font-medium dark:text-gray-400">Context</span>
         </button>
         {editable && (
           <button
             onClick={() => { setDraft(text || ''); setEditing(true) }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             Edit
           </button>
@@ -514,7 +514,7 @@ function RevisionSessionCard({
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg transition-colors group"
       >
         <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 flex-shrink-0" />
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-gray-500 dark:text-gray-400">
           {format(session.lastActivityAt, 'MMM d')}
         </span>
         <span className="text-gray-300">·</span>
@@ -528,7 +528,7 @@ function RevisionSessionCard({
           </>
         )}
         <span className="text-gray-300">·</span>
-        <span className="text-xs text-gray-500">{changeLabel}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{changeLabel}</span>
         {revisionRow?.revision_note && (
           <>
             <span className="text-gray-300">·</span>
@@ -562,11 +562,11 @@ function RevisionSessionCard({
           </>
         )}
         <span className="text-gray-300">·</span>
-        <span className="text-xs text-gray-500" title={format(session.lastActivityAt, 'PPpp')}>
+        <span className="text-xs text-gray-500 dark:text-gray-400" title={format(session.lastActivityAt, 'PPpp')}>
           {formatDistanceToNow(session.lastActivityAt, { addSuffix: true })}
         </span>
         <span className="text-gray-300">·</span>
-        <span className="text-xs text-gray-500">{changeLabel}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{changeLabel}</span>
       </button>
 
       {/* Contextualization (only if DB revision exists) */}
@@ -583,7 +583,7 @@ function RevisionSessionCard({
       {/* Categorized changes */}
       <div className="p-3 space-y-3">
         {Object.entries(categorized).map(([cat, catEvents]) => {
-          const cfg = categoryConfig[cat] || { label: cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), color: 'text-gray-600' }
+          const cfg = categoryConfig[cat] || { label: cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), color: 'text-gray-600 dark:text-gray-400' }
           return (
             <div key={cat}>
               <p className={clsx('text-xs font-semibold mb-1.5', cfg.color)}>{cfg.label}</p>
@@ -618,7 +618,7 @@ function RevisionEventRow({ event }: { event: HistoryEvent }) {
       <div className="flex items-center gap-2 text-sm py-0.5">
         <DollarSign className="w-3 h-3 text-green-500 flex-shrink-0" />
         {event.scenarioLabel && (
-          <span className="text-xs font-medium text-gray-500">{event.scenarioLabel}:</span>
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{event.scenarioLabel}:</span>
         )}
         {event.previousPriceTarget && (
           <>
@@ -630,7 +630,7 @@ function RevisionEventRow({ event }: { event: HistoryEvent }) {
         {priceChange !== null && (
           <span className={clsx(
             'text-xs px-1 rounded',
-            priceChange > 0 ? 'text-green-600' : priceChange < 0 ? 'text-red-600' : 'text-gray-500'
+            priceChange > 0 ? 'text-green-600' : priceChange < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'
           )}>
             ({priceChange > 0 ? '+' : ''}{priceChange.toFixed(1)}%)
           </span>
@@ -668,7 +668,7 @@ function RevisionEventRow({ event }: { event: HistoryEvent }) {
 
   return (
     <div className="flex items-start gap-2 text-sm py-0.5">
-      <span className="text-gray-500 text-xs mt-0.5 flex-shrink-0 whitespace-nowrap">
+      <span className="text-gray-500 text-xs mt-0.5 flex-shrink-0 whitespace-nowrap dark:text-gray-400">
         {friendlyType} {verb}{excerpt ? ':' : ''}
       </span>
       {excerpt && (
@@ -793,7 +793,7 @@ function ViewModeToggle({ mode, onChange }: ViewModeToggleProps) {
   ]
 
   return (
-    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
       {modes.map(m => {
         const Icon = m.icon
         return (
@@ -803,8 +803,8 @@ function ViewModeToggle({ mode, onChange }: ViewModeToggleProps) {
             className={clsx(
               'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
               mode === m.value
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             <Icon className="w-3 h-3" />
@@ -1272,10 +1272,10 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
   if (isLoading) {
     return (
       <div className={clsx('space-y-4', className)}>
-        <div className="h-8 bg-gray-100 rounded animate-pulse" />
-        <div className="h-32 bg-gray-100 rounded animate-pulse" />
-        <div className="h-24 bg-gray-100 rounded animate-pulse" />
-        <div className="h-24 bg-gray-100 rounded animate-pulse" />
+        <div className="h-8 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
+        <div className="h-32 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
+        <div className="h-24 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
+        <div className="h-24 bg-gray-100 rounded animate-pulse dark:bg-gray-800" />
       </div>
     )
   }
@@ -1284,7 +1284,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
     return (
       <div className={clsx('text-center py-8', className)}>
         <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No history yet</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No history yet</p>
         <p className="text-xs text-gray-400 mt-1">Changes will be tracked as you edit</p>
       </div>
     )
@@ -1317,7 +1317,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
               'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors',
               significantOnly
                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                : 'bg-gray-100 text-gray-500 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                : 'bg-gray-100 text-gray-500 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
             )}
             title="Show only material changes (thesis, targets, risks)"
           >
@@ -1337,7 +1337,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
                   'px-2 py-0.5 text-xs rounded-full transition-colors',
                   typeFilter === f.value
                     ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                 )}
               >
                 {f.label}
@@ -1385,7 +1385,7 @@ export function ThesisHistoryView({ assetId, viewFilter, className }: ThesisHist
           {visibleSessions.length > 0 && (
             <button
               onClick={() => setViewMode('timeline')}
-              className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 transition-colors"
+              className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 transition-colors dark:hover:text-gray-300"
             >
               View all in Timeline →
             </button>

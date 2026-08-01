@@ -105,17 +105,17 @@ export function AddModelDropdown({
 
       {/* Dropdown menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+        <div className="absolute right-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
           {menuItems.map((item, index) => (
             <button
               key={index}
               onClick={item.onClick}
-              className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left"
+              className="w-full px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left dark:hover:bg-gray-800"
             >
-              <item.icon className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+              <item.icon className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0 dark:text-gray-400" />
               <div>
-                <div className="font-medium text-sm text-gray-900">{item.label}</div>
-                <div className="text-xs text-gray-500">{item.description}</div>
+                <div className="font-medium text-sm text-gray-900 dark:text-white">{item.label}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{item.description}</div>
               </div>
             </button>
           ))}

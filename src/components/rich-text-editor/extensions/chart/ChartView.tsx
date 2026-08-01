@@ -174,7 +174,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
 
     if (!symbol) {
       return (
-        <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm gap-2">
+        <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm gap-2 dark:text-gray-400">
           <TrendingUp className="h-8 w-8 text-gray-300" />
           <span>No symbol specified</span>
           <span className="text-xs text-gray-400">Use .chart.price.AAPL to specify a symbol</span>
@@ -184,7 +184,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
 
     if (error || !chartData.length) {
       return (
-        <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+        <div className="flex items-center justify-center h-full text-gray-500 text-sm dark:text-gray-400">
           {error ? 'Failed to load chart data' : 'No data available'}
         </div>
       )
@@ -335,21 +335,21 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
     <NodeViewWrapper
       className={clsx(
         'chart-wrapper my-3 rounded-lg border transition-all overflow-hidden',
-        selected ? 'border-primary-300 ring-2 ring-primary-100' : 'border-gray-200',
-        'hover:border-gray-300 bg-white'
+        selected ? 'border-primary-300 ring-2 ring-primary-100' : 'border-gray-200 dark:border-gray-700',
+        'hover:border-gray-300 bg-white dark:bg-gray-800'
       )}
       data-drag-handle
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center gap-2">
           <div className={clsx('p-1.5 rounded-md', chartConfig.color)}>
             <ChartIcon className="h-4 w-4" />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-900">{symbol || 'No Symbol'}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{symbol || 'No Symbol'}</span>
             {assetName && (
-              <span className="text-sm text-gray-500 hidden sm:inline">{assetName}</span>
+              <span className="text-sm text-gray-500 hidden sm:inline dark:text-gray-400">{assetName}</span>
             )}
             {quoteData && (
               <span className={clsx(
@@ -377,7 +377,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
 
         <div className="flex items-center gap-1">
           {/* Timeframe selector */}
-          <div className="flex items-center gap-0.5 bg-white rounded-md border border-gray-200 p-0.5">
+          <div className="flex items-center gap-0.5 bg-white rounded-md border border-gray-200 p-0.5 dark:border-gray-700 dark:bg-gray-800">
             {TIMEFRAME_OPTIONS.map((tf) => (
               <button
                 key={tf.value}
@@ -386,7 +386,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
                   'px-2 py-1 text-xs font-medium rounded transition-colors',
                   localTimeframe === tf.value
                     ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
                 )}
               >
                 {tf.label}
@@ -397,7 +397,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
           {/* Refresh button */}
           <button
             onClick={() => refetch()}
-            className="p-1.5 rounded-md hover:bg-gray-200 text-gray-500 transition-colors"
+            className="p-1.5 rounded-md hover:bg-gray-200 text-gray-500 transition-colors dark:text-gray-400"
             title="Refresh"
           >
             <RefreshCw className="h-4 w-4" />
@@ -406,7 +406,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
           {/* Expand button */}
           <button
             onClick={toggleExpanded}
-            className="p-1.5 rounded-md hover:bg-gray-200 text-gray-500 transition-colors"
+            className="p-1.5 rounded-md hover:bg-gray-200 text-gray-500 transition-colors dark:text-gray-400"
             title={isExpanded ? 'Collapse' : 'Expand'}
           >
             {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
@@ -433,13 +433,13 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
 
       {/* Footer with price info */}
       {(quoteData || embeddedAt) && (
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500">
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 dark:bg-gray-900">
           <div className="flex items-center gap-4">
             {quoteData && (
               <>
                 <span>
                   <span className="text-gray-400">Price:</span>{' '}
-                  <span className="font-medium text-gray-700">${quoteData.regularMarketPrice?.toFixed(2)}</span>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">${quoteData.regularMarketPrice?.toFixed(2)}</span>
                 </span>
                 <span>
                   <span className="text-gray-400">Change:</span>{' '}

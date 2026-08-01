@@ -181,16 +181,16 @@ export function AddToThemeButton({
             onClick={() => { setShowDialog(false); setSearchQuery('') }}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all max-h-[70vh] overflow-hidden flex flex-col">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all max-h-[70vh] overflow-hidden flex flex-col dark:bg-gray-800">
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-gray-900">Add to Theme</h3>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Select a theme to add this asset to</p>
+                  <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Add to Theme</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">Select a theme to add this asset to</p>
                 </div>
                 <button
                   onClick={() => { setShowDialog(false); setSearchQuery('') }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -205,7 +205,7 @@ export function AddToThemeButton({
                     placeholder="Search themes\u2026"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                     autoFocus
                   />
                 </div>
@@ -216,7 +216,7 @@ export function AddToThemeButton({
                 {isLoading ? (
                   <div className="space-y-1 px-2 py-1">
                     {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="h-11 bg-gray-50 rounded-lg animate-pulse" />
+                      <div key={i} className="h-11 bg-gray-50 rounded-lg animate-pulse dark:bg-gray-900" />
                     ))}
                   </div>
                 ) : (
@@ -235,7 +235,7 @@ export function AddToThemeButton({
                             className="w-full flex items-center justify-between px-3 py-[7px] rounded-lg cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors text-left group"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-semibold text-gray-900 truncate block leading-tight">
+                              <span className="text-[13px] font-semibold text-gray-900 truncate block leading-tight dark:text-white">
                                 {theme.name}
                               </span>
                               {theme.updated_at && (
@@ -263,7 +263,7 @@ export function AddToThemeButton({
                             className="flex items-center justify-between px-3 py-[7px] rounded-lg cursor-default"
                           >
                             <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-medium text-gray-500 truncate block leading-tight">{theme.name}</span>
+                              <span className="text-[13px] font-medium text-gray-500 truncate block leading-tight dark:text-gray-400">{theme.name}</span>
                               {theme.description && (
                                 <span className="text-[11px] text-gray-400/60 block mt-0.5 leading-tight truncate">{theme.description}</span>
                               )}
@@ -287,7 +287,7 @@ export function AddToThemeButton({
               </div>
 
               {/* Create new — visually secondary footer */}
-              <div className="border-t border-gray-200 px-5 py-2.5 flex-shrink-0 bg-gray-50/50">
+              <div className="border-t border-gray-200 px-5 py-2.5 flex-shrink-0 bg-gray-50/50 dark:border-gray-700">
                 {showCreateForm ? (
                   <div className="flex items-center gap-2">
                     <input
@@ -302,7 +302,7 @@ export function AddToThemeButton({
                           setNewName('')
                         }
                       }}
-                      className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                       autoFocus
                     />
                     <Button
@@ -314,7 +314,7 @@ export function AddToThemeButton({
                     </Button>
                     <button
                       onClick={() => { setShowCreateForm(false); setNewName('') }}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -322,7 +322,7 @@ export function AddToThemeButton({
                 ) : (
                   <button
                     onClick={() => setShowCreateForm(true)}
-                    className="flex items-center gap-1.5 text-[11px] font-normal text-gray-400 hover:text-gray-600 transition-colors"
+                    className="flex items-center gap-1.5 text-[11px] font-normal text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                   >
                     <Plus className="w-3 h-3" />
                     Create new theme

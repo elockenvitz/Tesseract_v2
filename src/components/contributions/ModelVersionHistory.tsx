@@ -87,21 +87,21 @@ export function ModelVersionHistory({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col m-4">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col m-4 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
               <History className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">{modelName}</h2>
-              <p className="text-sm text-gray-500">Version History</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{modelName}</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Version History</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -120,20 +120,20 @@ export function ModelVersionHistory({
         {/* Version list */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="py-12 text-center text-gray-500">
+            <div className="py-12 text-center text-gray-500 dark:text-gray-400">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
               Loading version history...
             </div>
           ) : versions.length === 0 ? (
             <div className="py-12 text-center">
               <History className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">No version history yet</p>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-gray-600 font-medium dark:text-gray-400">No version history yet</p>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
                 Upload new versions to see them here
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 dark:divide-gray-800">
               {versions.map((version, index) => {
                 const isExpanded = expandedVersionId === version.id
                 const isLatestArchived = index === 0
@@ -148,8 +148,8 @@ export function ModelVersionHistory({
                       <div className={clsx(
                         'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-medium',
                         isLatestArchived
-                          ? 'bg-gray-200 text-gray-600'
-                          : 'bg-gray-100 text-gray-500'
+                          ? 'bg-gray-200 text-gray-600 dark:text-gray-400'
+                          : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                       )}>
                         v{version.version_number}
                       </div>
@@ -157,18 +157,18 @@ export function ModelVersionHistory({
                       {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-medium text-gray-900">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
                             {version.file_name}
                           </span>
                           {isLatestArchived && (
-                            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
+                            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">
                               Previous
                             </span>
                           )}
                         </div>
 
                         {/* Metadata */}
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {format(new Date(version.created_at), 'MMM d, yyyy h:mm a')}
@@ -181,15 +181,15 @@ export function ModelVersionHistory({
 
                         {/* Change summary */}
                         {version.change_summary && (
-                          <p className="mt-2 text-sm text-gray-600 italic border-l-2 border-gray-200 pl-3">
+                          <p className="mt-2 text-sm text-gray-600 italic border-l-2 border-gray-200 pl-3 dark:border-gray-700 dark:text-gray-400">
                             "{version.change_summary}"
                           </p>
                         )}
 
                         {/* Expanded details */}
                         {isExpanded && (
-                          <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm">
-                            <div className="grid grid-cols-2 gap-2 text-gray-600">
+                          <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm dark:bg-gray-900">
+                            <div className="grid grid-cols-2 gap-2 text-gray-600 dark:text-gray-400">
                               <div>
                                 <span className="text-gray-400">Size:</span>{' '}
                                 {version.file_size
@@ -251,7 +251,7 @@ export function ModelVersionHistory({
                           onClick={() => setExpandedVersionId(
                             isExpanded ? null : version.id
                           )}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                           title={isExpanded ? 'Hide details' : 'Show details'}
                         >
                           {isExpanded ? (
@@ -264,7 +264,7 @@ export function ModelVersionHistory({
                         <button
                           onClick={() => handleDownload(version)}
                           disabled={isDownloading}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50 dark:hover:text-gray-300 dark:hover:bg-gray-700"
                           title="Download"
                         >
                           {isDownloading ? (
@@ -292,9 +292,9 @@ export function ModelVersionHistory({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {versions.length} version{versions.length !== 1 ? 's' : ''} in history
             </p>
             <Button variant="outline" onClick={onClose}>

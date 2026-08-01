@@ -165,7 +165,7 @@ export function IdeaComments({
                 onBlur={handleInputBlur}
                 placeholder={composerPlaceholder}
                 autoFocus
-                className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-gray-300"
+                className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-gray-300 dark:border-gray-700"
               />
               <button
                 type="submit"
@@ -174,7 +174,7 @@ export function IdeaComments({
                   'p-1.5 rounded transition-colors',
                   newComment.trim()
                     ? 'bg-gray-700 text-white hover:bg-gray-800'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800'
                 )}
               >
                 <Send className="h-3.5 w-3.5" />
@@ -184,7 +184,7 @@ export function IdeaComments({
             /* Collapsed: minimal text button affordance */
             <button
               onClick={() => setIsCommentInputExpanded(true)}
-              className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               {collapsedCta}
             </button>
@@ -203,7 +203,7 @@ export function IdeaComments({
         {isLoading ? (
           <div className="flex items-center justify-center py-3">
             <div className="flex items-center gap-2 text-gray-400">
-              <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+              <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />
               <span className="text-[11px]">Loading...</span>
             </div>
           </div>
@@ -211,7 +211,7 @@ export function IdeaComments({
           <>
             {/* Comments count header - ONLY show when there ARE comments */}
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1 text-xs text-gray-500">
+              <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                 <MessageSquare className="h-3.5 w-3.5" />
                 <span>{comments.length} {comments.length === 1 ? nounSingular : nounPlural}</span>
               </div>
@@ -246,21 +246,21 @@ export function IdeaComments({
                     />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[9px] font-medium text-gray-600">
+                      <span className="text-[9px] font-medium text-gray-600 dark:text-gray-400">
                         {getInitials(comment)}
                       </span>
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-medium text-gray-900">
+                      <span className="text-[11px] font-medium text-gray-900 dark:text-white">
                         {getDisplayName(comment)}
                       </span>
                       <span className="text-[10px] text-gray-400">
                         {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-700 leading-snug">{comment.content}</p>
+                    <p className="text-xs text-gray-700 leading-snug dark:text-gray-300">{comment.content}</p>
                   </div>
                 </div>
               ))}

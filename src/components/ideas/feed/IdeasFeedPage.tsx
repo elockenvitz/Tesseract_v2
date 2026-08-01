@@ -229,18 +229,18 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   return (
     <div className="h-full flex flex-col bg-gray-50/50">
       {/* ═══ HEADER ═══ */}
-      <div className="bg-white border-b border-gray-100 px-6 py-2.5 shrink-0">
+      <div className="bg-white border-b border-gray-100 px-6 py-2.5 shrink-0 dark:border-gray-800 dark:bg-gray-800">
         <div className="max-w-[1060px] mx-auto">
           {/* Title + mode + actions row */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-4">
-              <h1 className="text-[16px] font-semibold text-gray-900 flex items-center gap-2">
+              <h1 className="text-[16px] font-semibold text-gray-900 flex items-center gap-2 dark:text-white">
                 <Lightbulb className="w-4.5 h-4.5 text-primary-600" />
                 Ideas
               </h1>
 
               {/* Mode selector */}
-              <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg">
+              <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800">
                 {MODE_OPTIONS.map(opt => {
                   const Icon = opt.icon
                   return (
@@ -250,8 +250,8 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                       className={clsx(
                         'flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium transition-colors',
                         mode === opt.value
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700',
+                          ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
                       )}
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -268,7 +268,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                 onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery('') }}
                 className={clsx(
                   'p-2 rounded-lg transition-colors',
-                  showSearch ? 'bg-primary-50 text-primary-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100',
+                  showSearch ? 'bg-primary-50 text-primary-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700',
                 )}
               >
                 <Search className="w-4 h-4" />
@@ -278,7 +278,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
               <button
                 onClick={() => refetch()}
                 disabled={isLoading}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
               </button>
@@ -304,12 +304,12 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search ideas, assets, people..."
-                className="w-full pl-9 pr-8 py-2 text-[13px] border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full pl-9 pr-8 py-2 text-[13px] border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-700 dark:bg-gray-800"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -330,7 +330,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                     'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
                     isActive
                       ? 'bg-primary-100 text-primary-700'
-                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700',
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400 dark:bg-gray-800',
                   )}
                 >
                   <Icon className="w-3 h-3" />
@@ -351,7 +351,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
           {/* Error state */}
           {isError && !isLoading && (
             <div className="text-center py-16">
-              <p className="text-[13px] text-gray-500 mb-3">Failed to load feed</p>
+              <p className="text-[13px] text-gray-500 mb-3 dark:text-gray-400">Failed to load feed</p>
               <button
                 onClick={() => refetch()}
                 className="text-[12px] font-medium text-primary-600 hover:text-primary-700"
@@ -365,7 +365,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
           {!isLoading && !isError && displayItems.length === 0 && (
             <div className="text-center py-20">
               <Lightbulb className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <h3 className="text-[15px] font-semibold text-gray-700 mb-1">
+              <h3 className="text-[15px] font-semibold text-gray-700 mb-1 dark:text-gray-300">
                 {searchQuery ? 'No matches' : 'No ideas yet'}
               </h3>
               <p className="text-[13px] text-gray-400 mb-4 max-w-xs mx-auto">
@@ -420,14 +420,14 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
                 if ((item as any).meta?.isDiscovery) {
                   const meta = (item as any).meta
                   return (
-                    <div key={item.id} className="rounded-xl border border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-white p-4">
+                    <div key={item.id} className="rounded-xl border border-dashed border-gray-300 bg-gradient-to-br from-gray-50 to-white p-4 dark:border-gray-600">
                       <div className="flex items-start gap-3">
                         <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center shrink-0 mt-0.5">
                           <Sparkles className="w-4 h-4 text-primary-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-[13px] font-semibold text-gray-900 leading-snug">{(item as any).title}</h4>
-                          <p className="text-[12px] text-gray-500 mt-0.5 leading-relaxed">{item.content}</p>
+                          <h4 className="text-[13px] font-semibold text-gray-900 leading-snug dark:text-white">{(item as any).title}</h4>
+                          <p className="text-[12px] text-gray-500 mt-0.5 leading-relaxed dark:text-gray-400">{item.content}</p>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()

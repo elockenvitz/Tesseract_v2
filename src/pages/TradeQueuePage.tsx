@@ -3904,7 +3904,7 @@ function ProposalCard({
                   className="flex-1 h-8 px-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"
                   onClick={(e) => e.stopPropagation()}
                 />
-                <span className="text-xs text-gray-500">%</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -3957,7 +3957,7 @@ function ProposalCard({
         <div onClick={(e) => e.stopPropagation()} className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
           <button
             onClick={() => onWithdraw(proposal.id)}
-            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition-colors dark:text-gray-400"
           >
             <Trash2 className="h-3 w-3" />
             Withdraw Recommendation

@@ -377,7 +377,7 @@ function HoldingsTable({ holdings, onNavigate }: { holdings: ClassifiedHolding[]
               className="flex items-center gap-2 px-3.5 py-[4px] cursor-pointer hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors"
             >
               <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 w-[44px] shrink-0">{h.symbol}</span>
-              <span className="text-[10px] text-gray-500 tabular-nums w-[36px] text-right shrink-0">{h.weight.toFixed(1)}</span>
+              <span className="text-[10px] text-gray-500 tabular-nums w-[36px] text-right shrink-0 dark:text-gray-400">{h.weight.toFixed(1)}</span>
               <span className={clsx('text-[10px] font-bold tabular-nums w-[48px] text-right shrink-0', h.returnPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
                 {h.returnPct >= 0 ? '+' : ''}{h.returnPct.toFixed(1)}%
               </span>
@@ -397,7 +397,7 @@ function HoldingsTable({ holdings, onNavigate }: { holdings: ClassifiedHolding[]
       {hasMore && (
         <button
           onClick={() => setExpanded(e => !e)}
-          className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 border-t border-gray-100 dark:border-gray-700/40 transition-colors"
+          className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 border-t border-gray-100 dark:border-gray-700/40 transition-colors dark:hover:text-gray-300"
         >
           {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           {expanded ? 'Show less' : `+${holdings.length - PREVIEW} more`}

@@ -42,44 +42,44 @@ const typeConfig: Record<ItemType, {
   quick_thought: {
     icon: Lightbulb,
     label: 'Thought',
-    bgColor: 'bg-white',
+    bgColor: 'bg-white dark:bg-gray-800',
     badgeColor: 'bg-amber-100 text-amber-700 border-amber-200',
     iconColor: 'text-amber-500'
   },
   trade_idea: {
     icon: TrendingUp,
     label: 'Trade Idea',
-    bgColor: 'bg-white',
+    bgColor: 'bg-white dark:bg-gray-800',
     badgeColor: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     iconColor: 'text-emerald-500'
   },
   note: {
     icon: FileText,
     label: 'Research Note',
-    bgColor: 'bg-white',
+    bgColor: 'bg-white dark:bg-gray-800',
     badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
     iconColor: 'text-blue-500'
   },
   thesis_update: {
     icon: GitBranch,
     label: 'Thesis Update',
-    bgColor: 'bg-white',
+    bgColor: 'bg-white dark:bg-gray-800',
     badgeColor: 'bg-purple-100 text-purple-700 border-purple-200',
     iconColor: 'text-purple-500'
   },
   insight: {
     icon: Sparkles,
     label: 'AI Insight',
-    bgColor: 'bg-white',
+    bgColor: 'bg-white dark:bg-gray-800',
     badgeColor: 'bg-orange-100 text-orange-700 border-orange-200',
     iconColor: 'text-orange-500'
   },
   message: {
     icon: MessageSquare,
     label: 'Discussion',
-    bgColor: 'bg-white',
-    badgeColor: 'bg-gray-100 text-gray-700 border-gray-200',
-    iconColor: 'text-gray-500'
+    bgColor: 'bg-white dark:bg-gray-800',
+    badgeColor: 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',
+    iconColor: 'text-gray-500 dark:text-gray-400'
   }
 }
 
@@ -126,7 +126,7 @@ export function ReelsFeedItem({
       config.bgColor
     )}>
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
+      <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
         <div className="flex items-center gap-3">
           {/* Type badge */}
           <span className={clsx(
@@ -143,17 +143,17 @@ export function ReelsFeedItem({
               e.stopPropagation()
               onAuthorClick?.(item.author.id)
             }}
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
+            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-300"
           >
             {item.author.avatar_url ? (
               <img
                 src={item.author.avatar_url}
                 alt={item.author.full_name || ''}
-                className="w-7 h-7 rounded-full object-cover border border-gray-200"
+                className="w-7 h-7 rounded-full object-cover border border-gray-200 dark:border-gray-700"
               />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200">
-                <User className="h-4 w-4 text-gray-500" />
+              <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
               </div>
             )}
             <span className="text-sm font-medium hidden sm:inline">
@@ -178,7 +178,7 @@ export function ReelsFeedItem({
               e.stopPropagation()
               onShare?.(item)
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800"
             title="Share"
           >
             <Share2 className="h-4 w-4" />
@@ -211,10 +211,10 @@ export function ReelsFeedItem({
             eventLabel={eventLabel}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200">
+          <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
             <div className="text-center text-gray-400 p-8">
               <TypeIcon className={clsx('w-12 h-12 mx-auto mb-3', config.iconColor, 'opacity-50')} />
-              <p className="text-base text-gray-500">No chart available</p>
+              <p className="text-base text-gray-500 dark:text-gray-400">No chart available</p>
               <p className="text-sm mt-1 text-gray-400">This item doesn't have an associated asset</p>
             </div>
           </div>
@@ -223,16 +223,16 @@ export function ReelsFeedItem({
 
       {/* Content area */}
       <div className="absolute top-[calc(52px+50%)] left-0 right-0 bottom-0 px-4 py-3 overflow-y-auto">
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto">
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
           {/* Title for notes/insights */}
           {'title' in item && item.title && (
-            <h2 className="text-lg font-bold text-gray-900 mb-2">
+            <h2 className="text-lg font-bold text-gray-900 mb-2 dark:text-white">
               {item.title}
             </h2>
           )}
 
           {/* Content */}
-          <p className="text-gray-700 text-base leading-relaxed">
+          <p className="text-gray-700 text-base leading-relaxed dark:text-gray-300">
             {displayContent}
           </p>
 
@@ -281,7 +281,7 @@ export function ReelsFeedItem({
                   item.urgency === 'urgent' && 'bg-red-100 text-red-700',
                   item.urgency === 'high' && 'bg-orange-100 text-orange-700',
                   item.urgency === 'medium' && 'bg-yellow-100 text-yellow-700',
-                  item.urgency === 'low' && 'bg-gray-100 text-gray-600'
+                  item.urgency === 'low' && 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                 )}>
                   {item.urgency}
                 </span>
@@ -312,7 +312,7 @@ export function ReelsFeedItem({
               {item.tags.slice(0, 5).map(tag => (
                 <span
                   key={tag}
-                  className="px-2 py-0.5 bg-gray-200 rounded-full text-gray-600 text-xs"
+                  className="px-2 py-0.5 bg-gray-200 rounded-full text-gray-600 text-xs dark:text-gray-400"
                 >
                   #{tag}
                 </span>

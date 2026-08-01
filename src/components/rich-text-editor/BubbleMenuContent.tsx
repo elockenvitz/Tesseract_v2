@@ -41,7 +41,7 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
         'p-1.5 rounded transition-all',
         isActive
           ? 'bg-primary-100 text-primary-700'
-          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400'
       )}
     >
       {children}
@@ -105,7 +105,7 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
             'flex items-center p-1.5 rounded transition-all',
             editor.isActive('highlight')
               ? 'bg-yellow-100 text-yellow-700'
-              : 'text-gray-600 hover:bg-gray-100'
+              : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
           )}
           title="Highlight"
         >
@@ -114,7 +114,7 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
         </button>
 
         {showColors && (
-          <div className="absolute bottom-full left-0 mb-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
+          <div className="absolute bottom-full left-0 mb-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center gap-1">
               {HIGHLIGHT_COLORS.map((color) => (
                 <button
@@ -138,7 +138,7 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
                   editor.chain().focus().unsetHighlight().run()
                   setShowColors(false)
                 }}
-                className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all"
+                className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all dark:hover:text-gray-300 dark:border-gray-600 dark:bg-gray-800"
                 title="Remove"
               >
                 ×
@@ -165,7 +165,7 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
             'p-1.5 rounded transition-all',
             editor.isActive('link')
               ? 'bg-primary-100 text-primary-700'
-              : 'text-gray-600 hover:bg-gray-100'
+              : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
           )}
           title="Link"
         >
@@ -173,13 +173,13 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
         </button>
 
         {showLinkInput && (
-          <div className="absolute bottom-full left-0 mb-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-56">
+          <div className="absolute bottom-full left-0 mb-1 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-56 dark:border-gray-700 dark:bg-gray-800">
             <input
               type="url"
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
               placeholder="https://..."
-              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
+              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2 dark:border-gray-700"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -193,7 +193,7 @@ export function BubbleMenuContent({ editor }: BubbleMenuContentProps) {
             <div className="flex justify-end gap-1">
               <button
                 onClick={() => setShowLinkInput(false)}
-                className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
+                className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800 dark:text-gray-400"
               >
                 Cancel
               </button>

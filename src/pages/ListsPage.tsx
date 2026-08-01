@@ -416,7 +416,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950/30">
           <List className="h-8 w-8 text-red-400 mx-auto mb-2" />
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Failed to load lists</h3>
-          <p className="text-xs text-gray-500 mb-3">
+          <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
             {(listsError as Error).message || 'Unable to fetch your lists.'}
           </p>
           <Button size="sm" variant="outline" onClick={() => window.location.reload()}>Refresh</Button>
@@ -582,19 +582,19 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       {/* ── Edit List Modal (unchanged) ─────────────────────────────────── */}
       {editingList && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Edit List</h2>
-              <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col dark:bg-gray-800">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit List</h2>
+              <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">
                 <X className="h-6 w-6" />
               </button>
             </div>
 
-            <div className="flex border-b border-gray-200">
+            <div className="flex border-b border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setActiveTab('details')}
                 className={`px-6 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'details' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'
+                  activeTab === 'details' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 }`}
               >
                 <Palette className="h-4 w-4 inline mr-2" />
@@ -603,13 +603,13 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
               <button
                 onClick={() => setActiveTab('collaborators')}
                 className={`px-6 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'collaborators' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'
+                  activeTab === 'collaborators' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                 }`}
               >
                 <Users className="h-4 w-4 inline mr-2" />
                 Collaborators
                 {editingList.collaborators && editingList.collaborators.length > 0 && (
-                  <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs">
+                  <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs dark:text-gray-400 dark:bg-gray-800">
                     {editingList.collaborators.length}
                   </span>
                 )}
@@ -620,29 +620,29 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
               {activeTab === 'details' ? (
                 <div className="p-6 space-y-4">
                   <div>
-                    <label htmlFor="list-name" className="block text-sm font-medium text-gray-700 mb-2">List Name</label>
+                    <label htmlFor="list-name" className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">List Name</label>
                     <input
                       id="list-name"
                       type="text"
                       value={editForm.name}
                       onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                       placeholder="Enter list name"
                     />
                   </div>
                   <div>
-                    <label htmlFor="list-description" className="block text-sm font-medium text-gray-700 mb-2">Description (optional)</label>
+                    <label htmlFor="list-description" className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Description (optional)</label>
                     <textarea
                       id="list-description"
                       value={editForm.description}
                       onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                       placeholder="Enter list description"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                       <Palette className="h-4 w-4 inline mr-1" />
                       Color
                     </label>
@@ -652,7 +652,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                           key={color}
                           onClick={() => setEditForm({ ...editForm, color })}
                           className={`w-8 h-8 rounded-lg border-2 transition-all ${
-                            editForm.color === color ? 'border-gray-900 scale-110' : 'border-gray-300 hover:border-gray-400'
+                            editForm.color === color ? 'border-gray-900 scale-110' : 'border-gray-300 hover:border-gray-400 dark:border-gray-600'
                           }`}
                           style={{ backgroundColor: color }}
                           title={color}
@@ -665,11 +665,11 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                 <div className="p-6 space-y-6">
                   {/* Owner */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                    <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center dark:text-white">
                       <Shield className="h-4 w-4 mr-2" />
                       Owner
                     </h3>
-                    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
                       <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
                         <span className="text-white text-sm font-medium">
                           {(() => {
@@ -681,7 +681,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                         </span>
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {(() => {
                             if (user?.first_name && user?.last_name) return `${user.first_name} ${user.last_name}`
                             if (user?.user_metadata?.first_name && user?.user_metadata?.last_name) return `${user.user_metadata.first_name} ${user.user_metadata.last_name}`
@@ -689,7 +689,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                             return user?.email || 'Unknown User'
                           })()}
                         </p>
-                        <p className="text-xs text-gray-500">Full access</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Full access</p>
                       </div>
                     </div>
                   </div>
@@ -697,11 +697,11 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                   {/* Invite */}
                   {isListOwner && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                      <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center dark:text-white">
                         <UserPlus className="h-4 w-4 mr-2" />
                         Invite New Collaborator
                       </h3>
-                      <div className="space-y-3 p-4 border border-gray-200 rounded-lg">
+                      <div className="space-y-3 p-4 border border-gray-200 rounded-lg dark:border-gray-700">
                         <div className="flex space-x-3">
                           <div className="flex-1 relative">
                             <input
@@ -711,15 +711,15 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                               onFocus={() => { if (searchResults.length > 0) setShowUserDropdown(true) }}
                               onBlur={() => setTimeout(() => setShowUserDropdown(false), 150)}
                               placeholder="Search by name or email..."
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                             />
                             {showUserDropdown && searchResults.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto dark:border-gray-600 dark:bg-gray-800">
                                 {searchResults.map((u) => (
                                   <button
                                     key={u.id}
                                     onClick={() => handleUserSelect(u)}
-                                    className="w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                                    className="w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0 dark:hover:bg-gray-800 dark:border-gray-800"
                                   >
                                     <div className="flex items-center space-x-3">
                                       <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
@@ -731,11 +731,11 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                                         </span>
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                        <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                                           {u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.email}
                                         </p>
                                         {u.first_name && u.last_name && (
-                                          <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                                          <p className="text-xs text-gray-500 truncate dark:text-gray-400">{u.email}</p>
                                         )}
                                       </div>
                                     </div>
@@ -744,8 +744,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                               </div>
                             )}
                             {showUserDropdown && searchResults.length === 0 && userSearchQuery.length >= 2 && (
-                              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg">
-                                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg dark:border-gray-600 dark:bg-gray-800">
+                                <div className="px-4 py-3 text-sm text-gray-500 text-center dark:text-gray-400">
                                   No users found matching &quot;{userSearchQuery}&quot;
                                 </div>
                               </div>
@@ -754,7 +754,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                           <select
                             value={invitePermission}
                             onChange={(e) => setInvitePermission(e.target.value as 'read' | 'write')}
-                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                           >
                             <option value="read">Read</option>
                             <option value="write">Write</option>
@@ -773,13 +773,13 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                   {/* Collaborators list */}
                   {editingList.collaborators && editingList.collaborators.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                      <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center dark:text-white">
                         <Users className="h-4 w-4 mr-2" />
                         Collaborators ({editingList.collaborators.length})
                       </h3>
                       <div className="space-y-2">
                         {editingList.collaborators.map((collab: any) => (
-                          <div key={collab.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                          <div key={collab.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg dark:border-gray-700">
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
                                 <span className="text-white text-sm font-medium">
@@ -790,7 +790,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                                 </span>
                               </div>
                               <div>
-                                <p className="text-sm font-medium text-gray-900">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
                                   {(() => {
                                     const u = collab.user || collab.collaborator_user
                                     return u?.first_name && u?.last_name ? `${u.first_name} ${u.last_name}` : u?.email || 'Unknown User'
@@ -798,7 +798,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                                 </p>
                                 {(() => {
                                   const u = collab.user || collab.collaborator_user
-                                  return u?.first_name && u?.last_name && <p className="text-xs text-gray-500">{u?.email}</p>
+                                  return u?.first_name && u?.last_name && <p className="text-xs text-gray-500 dark:text-gray-400">{u?.email}</p>
                                 })()}
                               </div>
                             </div>
@@ -807,7 +807,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                                 <select
                                   value={collab.permission}
                                   onChange={(e) => updateCollaboratorMutation.mutate({ collaborationId: collab.id, permission: e.target.value as 'read' | 'write' })}
-                                  className="text-sm px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                  className="text-sm px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600"
                                   disabled={updateCollaboratorMutation.isPending}
                                 >
                                   <option value="read">Read</option>
@@ -839,8 +839,8 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                   {(!editingList.collaborators || editingList.collaborators.length === 0) && (
                     <div className="text-center py-8">
                       <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                      <h3 className="text-sm font-medium text-gray-900 mb-1">No collaborators yet</h3>
-                      <p className="text-sm text-gray-500">
+                      <h3 className="text-sm font-medium text-gray-900 mb-1 dark:text-white">No collaborators yet</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
                         {isListOwner ? 'Invite people to collaborate on this list' : 'Only you have access to this list'}
                       </p>
                     </div>
@@ -849,7 +849,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
               )}
             </div>
 
-            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200">
+            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
               <Button variant="outline" onClick={handleCancelEdit} disabled={updateListMutation.isPending}>Cancel</Button>
               {activeTab === 'details' && (
                 <Button onClick={handleSaveList} disabled={!editForm.name.trim() || updateListMutation.isPending}>

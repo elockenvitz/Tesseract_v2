@@ -283,13 +283,13 @@ export function OpsMetricsPage() {
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Platform Metrics</h1>
-        <p className="text-sm text-gray-500 mt-1">Engagement, workflow adoption, and time-to-value</p>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Platform Metrics</h1>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Engagement, workflow adoption, and time-to-value</p>
       </div>
 
       {/* ── DAU / WAU / MAU ────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-800 mb-3">User Engagement</h2>
+        <h2 className="text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">User Engagement</h2>
         <div className="grid grid-cols-5 gap-3 mb-4">
           <MetricTile label="DAU" value={engagement?.dau ?? 0} sublabel="Today" accent="text-green-600" />
           <MetricTile label="WAU" value={engagement?.wau ?? 0} sublabel="Last 7 days" accent="text-blue-600" />
@@ -304,14 +304,14 @@ export function OpsMetricsPage() {
             label="Avg Session"
             value={engagement ? `${engagement.avgSessionMin}m` : '—'}
             sublabel={`${engagement?.totalSessions ?? 0} sessions`}
-            accent="text-gray-700"
+            accent="text-gray-700 dark:text-gray-300"
           />
         </div>
 
         {/* Daily active users chart (simple bar chart) */}
         {engagement && engagement.dailyChart.length > 0 && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <p className="text-xs font-medium text-gray-500 mb-3">Daily Active Users (14 days)</p>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
+            <p className="text-xs font-medium text-gray-500 mb-3 dark:text-gray-400">Daily Active Users (14 days)</p>
             <div className="flex items-end gap-1 h-24">
               {engagement.dailyChart.map((day, i) => {
                 const maxUsers = Math.max(...engagement.dailyChart.map(d => d.users), 1)
@@ -323,7 +323,7 @@ export function OpsMetricsPage() {
                     <div
                       className={clsx(
                         'w-full rounded-t transition-all',
-                        isToday ? 'bg-indigo-500' : day.users > 0 ? 'bg-indigo-200' : 'bg-gray-100'
+                        isToday ? 'bg-indigo-500' : day.users > 0 ? 'bg-indigo-200' : 'bg-gray-100 dark:bg-gray-800'
                       )}
                       style={{ height: `${Math.max(height, 2)}%` }}
                     />
@@ -340,11 +340,11 @@ export function OpsMetricsPage() {
 
       {/* ── Workflow Completion Funnel ──────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-800 mb-3">Workflow Funnel</h2>
+        <h2 className="text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Workflow Funnel</h2>
         <p className="text-xs text-gray-400 mb-4">How many users reach each stage of the core workflow (all time)</p>
 
         {funnel && (
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
+          <div className="bg-white border border-gray-200 rounded-xl p-5 dark:border-gray-700 dark:bg-gray-800">
             <div className="space-y-2">
               {funnel.map((step, i) => {
                 const pct = funnel[0].count > 0 ? Math.round((step.count / funnel[0].count) * 100) : 0
@@ -360,16 +360,16 @@ export function OpsMetricsPage() {
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium text-gray-700">{step.label}</span>
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{step.label}</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-gray-900 tabular-nums">{step.count}</span>
+                            <span className="text-xs font-semibold text-gray-900 tabular-nums dark:text-white">{step.count}</span>
                             <span className="text-[10px] text-gray-400 tabular-nums w-8 text-right">{pct}%</span>
                             {i > 0 && dropoff > 0 && (
                               <span className="text-[10px] text-red-400 tabular-nums">-{dropoff}%</span>
                             )}
                           </div>
                         </div>
-                        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
                           <div
                             className="h-full bg-indigo-500 rounded-full transition-all"
                             style={{ width: `${pct}%` }}
@@ -378,7 +378,7 @@ export function OpsMetricsPage() {
                       </div>
                     </div>
                     {i < funnel.length - 1 && (
-                      <div className="ml-3 h-3 border-l border-gray-200" />
+                      <div className="ml-3 h-3 border-l border-gray-200 dark:border-gray-700" />
                     )}
                   </div>
                 )
@@ -390,7 +390,7 @@ export function OpsMetricsPage() {
 
       {/* ── Time-to-Value ──────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-800 mb-3">Time-to-Value</h2>
+        <h2 className="text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Time-to-Value</h2>
         <p className="text-xs text-gray-400 mb-4">How quickly new users take their first meaningful action after first login</p>
 
         <div className="grid grid-cols-4 gap-3">
@@ -410,18 +410,18 @@ export function OpsMetricsPage() {
             label="P90 TTV"
             value={ttv ? formatDuration(ttv.p90) : '—'}
             sublabel="90th percentile"
-            accent="text-gray-700"
+            accent="text-gray-700 dark:text-gray-300"
           />
           <MetricTile
             label="Avg TTV"
             value={ttv ? formatDuration(ttv.avg) : '—'}
             sublabel="Mean time"
-            accent="text-gray-700"
+            accent="text-gray-700 dark:text-gray-300"
           />
         </div>
 
         {ttv && (
-          <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500">
+          <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500 dark:text-gray-400 dark:bg-gray-900">
             <p>
               <strong>Activation Rate:</strong> {ttv.activationRate}% of users who logged in went on to take at least one action (research, note, rating, idea, or thought).
               {ttv.activationRate >= 70 && ' This is excellent.'}
@@ -441,8 +441,8 @@ function MetricTile({ label, value, sublabel, accent }: {
   label: string; value: string | number; sublabel: string; accent: string
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <p className="text-[11px] text-gray-500 font-medium">{label}</p>
+    <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
+      <p className="text-[11px] text-gray-500 font-medium dark:text-gray-400">{label}</p>
       <p className={clsx('text-2xl font-bold mt-0.5', accent)}>{value}</p>
       <p className="text-[10px] text-gray-400 mt-0.5">{sublabel}</p>
     </div>

@@ -226,7 +226,7 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
       case 'list_suggestion_rejected':
         return <XCircle className="h-5 w-5 text-error-600" />
       default:
-        return <Bell className="h-5 w-5 text-gray-600" />
+        return <Bell className="h-5 w-5 text-gray-600 dark:text-gray-400" />
     }
   }
 
@@ -244,12 +244,12 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
 
       {/* Panel */}
       <div className="flex min-h-full items-start justify-center p-4 pt-16">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-2">
-              <Bell className="h-5 w-5 text-gray-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+              <Bell className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h3>
               {unreadNotifications.length > 0 && (
                 <Badge variant="error" size="sm">
                   {unreadNotifications.length}
@@ -270,7 +270,7 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
               )}
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -294,7 +294,7 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
                 </div>
               </div>
             ) : notifications && notifications.length > 0 ? (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {notifications.map((notification) => (
                   <div
                     key={notification.id}
@@ -311,14 +311,14 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <p className={`text-sm font-medium ${
-                              !notification.is_read ? 'text-gray-900' : 'text-gray-700'
+                              !notification.is_read ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'
                             }`}>
                               {notification.title}
                             </p>
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">
                               {notification.message}
                             </p>
-                            <p className="text-xs text-gray-500 mt-2">
+                            <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                               {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
                             </p>
                           </div>
@@ -346,8 +346,8 @@ export function NotificationPanel({ isOpen, onClose, onNavigate }: NotificationP
             ) : (
               <div className="p-8 text-center">
                 <Bell className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No notifications</h3>
-                <p className="text-gray-500">You're all caught up!</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No notifications</h3>
+                <p className="text-gray-500 dark:text-gray-400">You're all caught up!</p>
               </div>
             )}
           </div>

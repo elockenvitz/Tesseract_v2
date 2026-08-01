@@ -430,7 +430,7 @@ export function AssetDetailCarousel({
               return (
                 <button
                   onClick={handleOpen}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:text-primary-300 dark:hover:bg-primary-900/20 rounded-md transition-colors"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-gray-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:text-primary-300 dark:hover:bg-primary-900/20 rounded-md transition-colors dark:text-gray-400"
                 >
                   {activePanel.openLabel}
                   <ArrowUpRight className="h-3 w-3" />

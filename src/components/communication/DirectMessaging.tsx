@@ -688,7 +688,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
           </div>
         )}
         {/* Action Buttons and Search */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           {/* Action Buttons */}
           <div className="flex space-x-2 mb-4">
             <Button
@@ -718,7 +718,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
         </div>
@@ -769,7 +769,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                   <div
                     key={conversation.id}
                     onClick={() => setSelectedConversationId(conversation.id)}
-                    className="px-3 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                    className="px-3 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
                   >
                     <div className="flex items-center space-x-3">
                       <div className="relative">
@@ -795,7 +795,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-medium text-sm text-gray-900 truncate">
+                          <h4 className="font-medium text-sm text-gray-900 truncate dark:text-white">
                             {getConversationTitle(conversation)}
                           </h4>
                           {conversation.last_message && (
@@ -804,7 +804,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 truncate">
+                        <p className="text-xs text-gray-500 truncate dark:text-gray-400">
                           {getConversationSubtitle(conversation)}
                         </p>
                       </div>
@@ -813,9 +813,9 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 ))}
             </div>
           ) : (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
               <MessageCircle className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No conversations yet</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No conversations yet</h3>
               <p className="text-sm mb-4">Start a conversation with your team members</p>
               <div className="space-y-2">
                 <Button size="sm" onClick={() => setShowNewConversation(true)} className="w-full">
@@ -838,15 +838,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   if (showNewConversation) {
     return (
       <div className="flex flex-col h-full">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowNewConversation(false)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h3 className="text-lg font-semibold text-gray-900">Start New Conversation</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Start New Conversation</h3>
           </div>
         </div>
         
@@ -856,7 +856,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
             <input
               type="text"
               placeholder="Search users..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
           
@@ -865,7 +865,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               <div
                 key={otherUser.id}
                 onClick={() => createDirectConversationMutation.mutate(otherUser.id)}
-                className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors dark:hover:bg-gray-800"
               >
                 <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
                   <span className="text-primary-600 font-semibold text-sm">
@@ -873,8 +873,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                   </span>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">{getUserDisplayName(otherUser)}</p>
-                  <p className="text-sm text-gray-500">{otherUser.email}</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{getUserDisplayName(otherUser)}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{otherUser.email}</p>
                 </div>
               </div>
             ))}
@@ -888,48 +888,48 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
   if (showGroupCreation) {
     return (
       <div className="flex flex-col h-full">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowGroupCreation(false)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h3 className="text-lg font-semibold text-gray-900">Create Group</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create Group</h3>
           </div>
         </div>
         
         <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
           <div className="flex-shrink-0">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Group Name</label>
             <input
               type="text"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="Enter group name..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
           <div className="flex-shrink-0">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Description (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Description (optional)</label>
             <textarea
               value={groupDescription}
               onChange={(e) => setGroupDescription(e.target.value)}
               placeholder="Describe the group purpose..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
               rows={2}
             />
           </div>
 
           <div className="flex-1 flex flex-col min-h-0">
-            <label className="block text-sm font-medium text-gray-700 mb-2 flex-shrink-0">Add Members</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 flex-shrink-0 dark:text-gray-300">Add Members</label>
             <div className="flex-1 overflow-y-auto space-y-1">
               {allUsers?.map((otherUser) => (
                 <div
                   key={otherUser.id}
-                  className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg"
+                  className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg dark:hover:bg-gray-800"
                 >
                   <input
                     type="checkbox"
@@ -941,7 +941,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                         setSelectedUsers(selectedUsers.filter(id => id !== otherUser.id))
                       }
                     }}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
                   />
                   <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                     <span className="text-primary-600 font-semibold text-xs">
@@ -949,8 +949,8 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                     </span>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{getUserDisplayName(otherUser)}</p>
-                    <p className="text-xs text-gray-500">{otherUser.email}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{getUserDisplayName(otherUser)}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{otherUser.email}</p>
                   </div>
                 </div>
               ))}
@@ -958,7 +958,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
           </div>
         </div>
         
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex space-x-3">
             <Button
               variant="outline"
@@ -991,14 +991,14 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
   // Show selected conversation chat
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white dark:bg-gray-800">
       {/* Chat Header - Pinned to top */}
-      <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0 z-10 relative shadow-sm">
+      <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0 z-10 relative shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setSelectedConversationId(null)}
-              className="text-gray-600 hover:text-gray-800 transition-colors p-1 rounded-lg hover:bg-gray-100"
+              className="text-gray-600 hover:text-gray-800 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400"
               title="Back to conversations"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -1015,10 +1015,10 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               </div>
             )}
             <div>
-              <h3 className="font-semibold text-gray-900">
+              <h3 className="font-semibold text-gray-900 dark:text-white">
                 {selectedConversation ? getConversationTitle(selectedConversation) : 'Loading...'}
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 {selectedConversation?.is_group
                   ? `${selectedConversation.participants?.length || 0} members`
                   : 'Direct message'
@@ -1030,24 +1030,24 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
             <div className="relative">
               <button
                 onClick={() => setShowGroupMenu(!showGroupMenu)}
-                className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100"
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <MoreVertical className="h-5 w-5" />
               </button>
               {showGroupMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]">
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] dark:border-gray-700 dark:bg-gray-800">
                     <button
                       onClick={() => { setShowAddMember(true); setShowGroupMenu(false) }}
-                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       <Plus className="h-4 w-4 text-gray-400" />
                       Add member
                     </button>
                     <button
                       onClick={() => { setShowGroupInfo(!showGroupInfo); setShowGroupMenu(false) }}
-                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       <Info className="h-4 w-4 text-gray-400" />
                       {showGroupInfo ? 'Hide group info' : 'Group info'}
@@ -1068,10 +1068,10 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
           (addMemberSearch.length < 2 || getUserDisplayName(u).toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email.toLowerCase().includes(addMemberSearch.toLowerCase()))
         )
         return (
-          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 space-y-2">
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 space-y-2 dark:border-gray-700 dark:bg-gray-900">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Add member</span>
-              <button onClick={() => { setShowAddMember(false); setAddMemberSearch('') }} className="text-gray-400 hover:text-gray-600">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add member</span>
+              <button onClick={() => { setShowAddMember(false); setAddMemberSearch('') }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1083,7 +1083,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 onChange={e => setAddMemberSearch(e.target.value)}
                 placeholder="Search users..."
                 autoFocus
-                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500"
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600"
               />
             </div>
             <div className="max-h-40 overflow-y-auto space-y-0.5">
@@ -1095,7 +1095,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                     key={u.id}
                     onClick={() => addMemberMutation.mutate({ conversationId: selectedConversationId!, userId: u.id })}
                     disabled={addMemberMutation.isPending}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-white rounded transition-colors"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-white rounded transition-colors dark:hover:bg-gray-800 dark:text-gray-300"
                   >
                     <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <span className="text-primary-600 text-[10px] font-semibold">{getUserInitials(u)}</span>
@@ -1112,15 +1112,15 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
       {/* Group Info Panel */}
       {showGroupInfo && selectedConversation?.is_group && (
-        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 space-y-2">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex-shrink-0 space-y-2 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Members ({selectedConversation.participants?.length || 0})</span>
-            <button onClick={() => setShowGroupInfo(false)} className="text-gray-400 hover:text-gray-600">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Members ({selectedConversation.participants?.length || 0})</span>
+            <button onClick={() => setShowGroupInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <X className="h-4 w-4" />
             </button>
           </div>
           {selectedConversation.description && (
-            <p className="text-xs text-gray-500">{selectedConversation.description}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{selectedConversation.description}</p>
           )}
           <div className="max-h-48 overflow-y-auto space-y-0.5">
             {selectedConversation.participants?.map(p => (
@@ -1128,7 +1128,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                 <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
                   <span className="text-primary-600 text-[10px] font-semibold">{getUserInitials(p.user)}</span>
                 </div>
-                <span className="text-sm text-gray-700 truncate">{getUserDisplayName(p.user)}</span>
+                <span className="text-sm text-gray-700 truncate dark:text-gray-300">{getUserDisplayName(p.user)}</span>
                 {p.is_admin && (
                   <span className="text-[10px] text-gray-400 font-medium ml-auto">Admin</span>
                 )}
@@ -1178,7 +1178,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                       <div
                         className={clsx(
                           "flex items-start space-x-3 mt-4 first:mt-0 cursor-pointer rounded-lg p-2 -mx-2 transition-colors",
-                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                          isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50"
                         )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
@@ -1188,7 +1188,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                         )}>
                           <span className={clsx(
                             "text-xs font-semibold",
-                            isOwnMessage ? "text-primary-600" : "text-gray-600"
+                            isOwnMessage ? "text-primary-600" : "text-gray-600 dark:text-gray-400"
                           )}>
                             {getUserInitials(message.user)}
                           </span>
@@ -1198,7 +1198,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                           <div className="flex items-center space-x-2 mb-1">
                             <span className={clsx(
                               "text-sm font-semibold",
-                              isOwnMessage ? "text-primary-700" : "text-gray-900"
+                              isOwnMessage ? "text-primary-700" : "text-gray-900 dark:text-white"
                             )}>
                               {getUserDisplayName(message.user)}
                             </span>
@@ -1215,30 +1215,30 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
 
                           {/* Reply indicator */}
                           {message.replied_message && (
-                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300 dark:text-gray-400 dark:bg-gray-800">
                               <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
-                              <span className="font-medium mr-1 text-gray-600">
+                              <span className="font-medium mr-1 text-gray-600 dark:text-gray-400">
                                 {getUserDisplayName(message.replied_message.user)}:
                               </span>
-                              <span className="truncate text-gray-500">
+                              <span className="truncate text-gray-500 dark:text-gray-400">
                                 {message.replied_message.content.substring(0, 50)}
                                 {message.replied_message.content.length > 50 ? '...' : ''}
                               </span>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed dark:text-gray-100">
                             <SmartInputRenderer content={message.content} />
                           </div>
 
                           {isSelected && (
-                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleReply(message)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 Reply
                               </button>
@@ -1247,7 +1247,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -1259,7 +1259,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                       <div
                         className={clsx(
                           "flex items-start rounded-lg px-2 -mx-2 -mt-0.5 cursor-pointer transition-colors",
-                          isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                          isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50"
                         )}
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
@@ -1267,24 +1267,24 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                         <div className="flex-1 min-w-0">
                           {/* Reply indicator */}
                           {message.replied_message && (
-                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300">
+                            <div className="text-xs text-gray-500 mb-2 flex items-center p-2 bg-gray-100 rounded-lg border-l-2 border-primary-300 dark:text-gray-400 dark:bg-gray-800">
                               <Reply className="h-3 w-3 mr-1.5 text-gray-400" />
-                              <span className="font-medium mr-1 text-gray-600">
+                              <span className="font-medium mr-1 text-gray-600 dark:text-gray-400">
                                 {getUserDisplayName(message.replied_message.user)}:
                               </span>
-                              <span className="truncate text-gray-500">
+                              <span className="truncate text-gray-500 dark:text-gray-400">
                                 {message.replied_message.content.substring(0, 50)}
                                 {message.replied_message.content.length > 50 ? '...' : ''}
                               </span>
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed dark:text-gray-100">
                             <SmartInputRenderer content={message.content} />
                           </div>
 
                           {isSelected && (
-                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100">
+                            <div className="flex items-center space-x-3 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                               <span className="text-xs text-gray-400">
                                 {formatMessageTime(message.created_at)}
                               </span>
@@ -1293,7 +1293,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                                   e.stopPropagation()
                                   handleReply(message)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 Reply
                               </button>
@@ -1302,7 +1302,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
                                   e.stopPropagation()
                                   handleTogglePin(message.id, message.is_pinned)
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors font-medium dark:text-gray-400"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -1317,7 +1317,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
               <div ref={messagesEndRef} className="h-4" />
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500 p-4">
+            <div className="text-center py-8 text-gray-500 p-4 dark:text-gray-400">
               <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm">No messages yet</p>
               <p className="text-xs">Start the conversation!</p>
@@ -1327,7 +1327,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
       </div>
 
       {/* Message Input - Pinned to bottom */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 z-10 relative">
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 z-10 relative dark:border-gray-700 dark:bg-gray-900">
         {/* Reply indicator */}
         {replyingTo && (
           <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1373,7 +1373,7 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
         </div>
 
         <div className="flex space-x-2">
-          <div className="flex-1 rounded-lg bg-white ring-1 ring-gray-300 focus-within:ring-2 focus-within:ring-primary-500 transition-all cursor-text">
+          <div className="flex-1 rounded-lg bg-white ring-1 ring-gray-300 focus-within:ring-2 focus-within:ring-primary-500 transition-all cursor-text dark:bg-gray-800">
             <UniversalSmartInput
               ref={smartInputRef}
               value={messageContent}

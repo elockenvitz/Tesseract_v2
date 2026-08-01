@@ -137,9 +137,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
   const renderHeader = () => (
     <button
       onClick={onToggleCollapsed}
-      className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+      className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
     >
-      <span className="font-medium text-gray-900">{section.section_name}</span>
+      <span className="font-medium text-gray-900 dark:text-white">{section.section_name}</span>
       {isCollapsed ? (
         <ChevronDown className="h-5 w-5 text-gray-400" />
       ) : (
@@ -149,7 +149,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
   )
 
   // Consistent field wrapper styling to match ContributionSection
-  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-3 space-y-2"
+  const fieldWrapperClass = "bg-white border border-gray-200 rounded-lg p-3 space-y-2 dark:border-gray-700 dark:bg-gray-800"
 
   // Render field based on type
   const renderField = (field: FieldWithPreference) => {
@@ -162,9 +162,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <ChecklistField
@@ -181,9 +181,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <MetricField
@@ -200,9 +200,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <TimelineField
@@ -219,9 +219,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <NumericField
@@ -238,9 +238,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <DateField
@@ -257,9 +257,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <AnalystRatingsSection
@@ -276,9 +276,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <AnalystEstimatesSection
@@ -295,9 +295,9 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       return (
         <div key={field.field_id} className={fieldWrapperClass}>
           <div className="flex items-baseline gap-3">
-            <h4 className="text-base font-semibold text-gray-900">{field.field_name}</h4>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-white">{field.field_name}</h4>
             {field.field_description && (
-              <p className="text-sm text-gray-500">{field.field_description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{field.field_description}</p>
             )}
           </div>
           <OutcomesContainer
@@ -335,13 +335,13 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       <Card padding="none">
         {renderHeader()}
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-5 py-1.5">
+          <div className="border-t border-gray-100 px-5 py-1.5 dark:border-gray-800">
             {isLayoutLoading ? (
               <div className="space-y-4">
                 {[1, 2, 3, 4].map(i => (
                   <div key={i} className="animate-pulse">
                     <div className="h-4 bg-gray-200 rounded w-1/4 mb-3" />
-                    <div className="h-24 bg-gray-100 rounded" />
+                    <div className="h-24 bg-gray-100 rounded dark:bg-gray-800" />
                   </div>
                 ))}
               </div>
@@ -372,7 +372,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
       <Card padding="none">
         {renderHeader()}
         {!isCollapsed && (
-          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
+          <div className="border-t border-gray-100 px-5 py-1.5 space-y-4 dark:border-gray-800">
             {section.fields
               .filter(f => f.is_visible)
               .map(renderField)}
@@ -392,7 +392,7 @@ export const ResearchSectionRenderer = memo(function ResearchSectionRenderer({
     <Card padding="none">
       {renderHeader()}
       {!isCollapsed && (
-        <div className="border-t border-gray-100 px-5 py-1.5 space-y-4">
+        <div className="border-t border-gray-100 px-5 py-1.5 space-y-4 dark:border-gray-800">
           {section.fields
             .filter(f => f.is_visible)
             .map(renderField)}

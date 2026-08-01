@@ -253,7 +253,7 @@ export function OverviewView({
                   <span className={`w-1.5 h-1.5 rounded-full ${healthCfg!.dot}`} />
                   {healthCfg!.label}
                 </span>
-                <h3 className="text-base font-semibold text-gray-900">Active Run</h3>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Active Run</h3>
               </div>
               <div className="flex items-center space-x-2">
                 {onEndRun && (
@@ -273,11 +273,11 @@ export function OverviewView({
 
             {/* Identity row */}
             <div className="flex items-center space-x-3 mb-3">
-              <span className="font-medium text-gray-900">
+              <span className="font-medium text-gray-900 dark:text-white">
                 {activeRun.branch_suffix || activeRun.branch_name || 'Current'}
               </span>
               <span
-                className="text-[10px] font-medium px-1.5 py-0 rounded bg-gray-100 text-gray-500 leading-4"
+                className="text-[10px] font-medium px-1.5 py-0 rounded bg-gray-100 text-gray-500 leading-4 dark:text-gray-400 dark:bg-gray-800"
                 title={activeRun.template_version_number ? `Process definition ${versionLabel}` : 'No definition version assigned'}
               >
                 {versionLabel}
@@ -290,8 +290,8 @@ export function OverviewView({
             {/* Progress + counts */}
             {workflow.scope_type === 'general' ? (
               stages && stages.length > 0 ? (
-                <div className="text-sm text-gray-600">
-                  <span className="font-semibold text-gray-900">{stages.length}</span> stages · In progress
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  <span className="font-semibold text-gray-900 dark:text-white">{stages.length}</span> stages · In progress
                 </div>
               ) : (
                 <p className="text-sm text-gray-400">No stages defined</p>
@@ -300,8 +300,8 @@ export function OverviewView({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center space-x-4">
-                    <span className="text-gray-600">
-                      <span className="font-semibold text-gray-900">{activeRun.completed_assets}</span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      <span className="font-semibold text-gray-900 dark:text-white">{activeRun.completed_assets}</span>
                       <span className="text-gray-400"> / {activeRun.total_assets} {itemLabel}</span>
                     </span>
                     <span className={`text-xs font-medium ${activeRun.active_assets > 0 ? 'text-amber-600' : 'text-green-600'}`}>
@@ -327,7 +327,7 @@ export function OverviewView({
 
             {/* End condition */}
             {getEndConditionText(endingRules) && (
-              <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
+              <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 dark:text-gray-400">
                 {getEndConditionText(endingRules, activeRun?.created_at)}
               </p>
             )}
@@ -335,15 +335,15 @@ export function OverviewView({
         </Card>
       ) : (
         /* ─── No active run banner ─── */
-        <Card className="bg-gray-50 border-gray-200">
+        <Card className="bg-gray-50 border-gray-200 dark:border-gray-700 dark:bg-gray-900">
           <div className="p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <Play className="w-5 h-5 text-gray-400" />
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700">No active run</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">No active run</h3>
                   {schedule?.next_run_at ? (
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                       Next scheduled: {safeFutureRelativeTime(schedule.next_run_at)}
                       {hasAutoEnd && ' · Auto-start enabled'}
                     </p>
@@ -366,7 +366,7 @@ export function OverviewView({
                   </Button>
                 )}
                 {lastCompletedRun && (
-                  <div className="flex items-center space-x-2 text-xs text-gray-500">
+                  <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
                     <History className="w-3.5 h-3.5" />
                     <span>
                       Last run: {lastCompletedDate}
@@ -384,7 +384,7 @@ export function OverviewView({
 
       {/* ═══ Quick Stats strip ═══════════════════════════════════ */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
           <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">{ItemsInScope}</p>
           {scopeCount !== undefined ? (
             onViewScope ? (
@@ -393,19 +393,19 @@ export function OverviewView({
                 <span className="text-xs font-medium ml-1">&rarr;</span>
               </button>
             ) : (
-              <span className="text-lg font-bold text-gray-900">{scopeCount}</span>
+              <span className="text-lg font-bold text-gray-900 dark:text-white">{scopeCount}</span>
             )
           ) : (
             <span className="text-lg font-bold text-gray-300">&mdash;</span>
           )}
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
           <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">Total Runs</p>
-          <span className="text-lg font-bold text-gray-900">{totalRuns}</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white">{totalRuns}</span>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
           <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">Last Completed</p>
-          <span className="text-lg font-bold text-gray-900">{lastCompletedDate || '\u2014'}</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white">{lastCompletedDate || '\u2014'}</span>
         </div>
       </div>
 
@@ -440,12 +440,12 @@ export function OverviewView({
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
                 <Calendar className="w-4 h-4 text-indigo-500" />
-                <h3 className="text-sm font-semibold text-gray-900">Schedule</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Schedule</h3>
               </div>
               {onConfigureSchedule && (
                 <button
                   onClick={onConfigureSchedule}
-                  className="flex items-center text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                  className="flex items-center text-xs text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 >
                   <Settings className="w-3.5 h-3.5 mr-1" />
                   Configure
@@ -456,14 +456,14 @@ export function OverviewView({
             {hasScheduleRules ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Cadence</span>
-                  <span className="text-gray-900 font-medium">{cadenceLabel || 'Not set'}</span>
+                  <span className="text-gray-600 dark:text-gray-400">Cadence</span>
+                  <span className="text-gray-900 font-medium dark:text-white">{cadenceLabel || 'Not set'}</span>
                 </div>
 
                 {schedule?.next_run_at && (
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Next scheduled run</span>
-                    <span className="text-gray-900 font-medium">
+                    <span className="text-gray-600 dark:text-gray-400">Next scheduled run</span>
+                    <span className="text-gray-900 font-medium dark:text-white">
                       {safeFutureRelativeTime(schedule.next_run_at)}
                     </span>
                   </div>
@@ -471,15 +471,15 @@ export function OverviewView({
 
                 {creationRules.length > 0 && (
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Creation rules</span>
-                    <span className="text-gray-500">
+                    <span className="text-gray-600 dark:text-gray-400">Creation rules</span>
+                    <span className="text-gray-500 dark:text-gray-400">
                       {creationRules.filter((r) => r.is_active).length} active
                     </span>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Auto-end previous runs</span>
+                  <span className="text-gray-600 dark:text-gray-400">Auto-end previous runs</span>
                   <span className={`font-medium ${hasAutoEnd ? 'text-green-600' : 'text-gray-400'}`}>
                     {hasAutoEnd ? 'Enabled' : 'Not configured'}
                   </span>
@@ -504,30 +504,30 @@ export function OverviewView({
           <div className="p-5 flex-1">
             <div className="flex items-center space-x-2 mb-4">
               <History className="w-4 h-4 text-purple-500" />
-              <h3 className="text-sm font-semibold text-gray-900">Run History</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Run History</h3>
             </div>
 
             {totalRuns > 0 ? (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">{totalRuns}</div>
-                  <div className="text-xs text-gray-500">Total runs</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalRuns}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Total runs</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">{completedRuns.length}</div>
-                  <div className="text-xs text-gray-500">Completed</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{completedRuns.length}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Completed</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
                     {realBranches.filter((b) => b.is_active).length}
                   </div>
-                  <div className="text-xs text-gray-500">Active now</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Active now</div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-gray-900">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
                     {lastCompletedDate || '—'}
                   </div>
-                  <div className="text-xs text-gray-500">Last completed</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Last completed</div>
                 </div>
               </div>
             ) : (
@@ -546,14 +546,14 @@ export function OverviewView({
       />
 
       {/* ═══ 5. Details (collapsible) ═════════════════════════════ */}
-      <div className="border border-gray-200 rounded-lg bg-white">
+      <div className="border border-gray-200 rounded-lg bg-white dark:border-gray-700 dark:bg-gray-800">
         <button
           onClick={() => setDetailsOpen(!detailsOpen)}
-          className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors rounded-lg"
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors rounded-lg dark:hover:bg-gray-800"
         >
           <div className="flex items-center space-x-2">
             <Info className="w-4 h-4 text-gray-400" />
-            <span className="text-sm font-semibold text-gray-700">Details</span>
+            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Details</span>
           </div>
           {detailsOpen
             ? <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -561,28 +561,28 @@ export function OverviewView({
           }
         </button>
         {detailsOpen && (
-          <div className="px-5 pb-4 border-t border-gray-100">
+          <div className="px-5 pb-4 border-t border-gray-100 dark:border-gray-800">
             <div className="space-y-3 pt-3">
               <div className="flex items-center space-x-3">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
                 <div className="flex-1">
-                  <div className="text-sm text-gray-700">Created</div>
-                  <div className="text-xs text-gray-500">{createdDate}</div>
+                  <div className="text-sm text-gray-700 dark:text-gray-300">Created</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{createdDate}</div>
                 </div>
               </div>
               <div className="flex items-center space-x-3">
                 <div className="w-2 h-2 bg-blue-500 rounded-full" />
                 <div className="flex-1">
-                  <div className="text-sm text-gray-700">Last updated</div>
-                  <div className="text-xs text-gray-500">{updatedDate}</div>
+                  <div className="text-sm text-gray-700 dark:text-gray-300">Last updated</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{updatedDate}</div>
                 </div>
               </div>
               {workflow.creator_name && (
                 <div className="flex items-center space-x-3">
                   <div className="w-2 h-2 bg-gray-300 rounded-full" />
                   <div className="flex-1">
-                    <div className="text-sm text-gray-700">Created by</div>
-                    <div className="text-xs text-gray-500">{workflow.creator_name}</div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">Created by</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{workflow.creator_name}</div>
                   </div>
                 </div>
               )}

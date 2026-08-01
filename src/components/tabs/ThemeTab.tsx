@@ -519,7 +519,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     { value: 'emerging',    label: 'Emerging',     pillClass: 'bg-sky-50 text-sky-700 border-sky-200',       dotClass: 'bg-sky-500' },
     { value: 'active',      label: 'Active',       pillClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', dotClass: 'bg-emerald-500' },
     { value: 'playing_out', label: 'Playing Out',  pillClass: 'bg-amber-50 text-amber-700 border-amber-200', dotClass: 'bg-amber-500' },
-    { value: 'played_out',  label: 'Played Out',   pillClass: 'bg-gray-100 text-gray-700 border-gray-200',   dotClass: 'bg-gray-500' },
+    { value: 'played_out',  label: 'Played Out',   pillClass: 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',   dotClass: 'bg-gray-500' },
     { value: 'invalidated', label: 'Invalidated',  pillClass: 'bg-rose-50 text-rose-700 border-rose-200',    dotClass: 'bg-rose-500' },
   ]
   const currentLifecycle = lifecycleOptions.find(o => o.value === (theme.lifecycle_status || 'active')) || lifecycleOptions[1]
@@ -576,11 +576,11 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                     if (e.key === 'Enter') { e.preventDefault(); commitName() }
                     if (e.key === 'Escape') { setNameDraft(theme.name || ''); setIsEditingName(false) }
                   }}
-                  className="text-2xl font-bold text-gray-900 bg-white border border-primary-400 rounded px-2 py-0.5 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  className="text-2xl font-bold text-gray-900 bg-white border border-primary-400 rounded px-2 py-0.5 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-white dark:bg-gray-800"
                 />
               ) : (
                 <h1
-                  className="text-2xl font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 truncate"
+                  className="text-2xl font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 truncate dark:hover:bg-gray-800 dark:text-white"
                   onClick={() => setIsEditingName(true)}
                   title="Click to rename"
                 >
@@ -590,7 +590,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
 
               {/* Theme type: read-only badge (set at creation) */}
               <span
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200"
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
                 title="Theme type (set at creation)"
               >
                 <span className={clsx('w-1.5 h-1.5 rounded-full', currentThemeType.dotColor)} />
@@ -610,14 +610,14 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   {currentLifecycle.label}
                 </button>
                 {showLifecycleDropdown && (
-                  <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                  <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
                     {lifecycleOptions.map(opt => (
                       <button
                         key={opt.value}
                         onClick={() => { handleLifecycleChange(opt.value); setShowLifecycleDropdown(false) }}
                         className={clsx(
                           'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
-                          opt.value === (theme.lifecycle_status || 'active') ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700 hover:bg-gray-50'
+                          opt.value === (theme.lifecycle_status || 'active') ? 'bg-gray-50 font-medium text-gray-900 dark:text-white dark:bg-gray-900' : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
                         )}
                       >
                         <span className={clsx('w-2 h-2 rounded-full', opt.dotClass)} />
@@ -629,7 +629,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
 
               {theme.is_archived && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700 dark:text-gray-300">
                   <Archive className="w-3 h-3" />
                   Archived
                 </span>
@@ -648,13 +648,13 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   if (e.key === 'Escape') { setDescriptionDraft(theme.description || ''); setIsEditingDescription(false) }
                 }}
                 placeholder="Add a short description..."
-                className="w-full text-base text-gray-700 bg-white border border-primary-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                className="w-full text-base text-gray-700 bg-white border border-primary-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-gray-300 dark:bg-gray-800"
               />
             ) : (
               <p
                 className={clsx(
-                  'text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1',
-                  theme.description ? 'text-gray-600' : 'text-gray-400 italic'
+                  'text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1 dark:hover:bg-gray-800',
+                  theme.description ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400 italic'
                 )}
                 onClick={() => setIsEditingDescription(true)}
                 title="Click to edit description"
@@ -684,16 +684,16 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           <div className="relative" ref={moreMenuRef}>
             <button
               onClick={() => setShowMoreMenu(s => !s)}
-              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
               title="More actions"
             >
-              <MoreVertical className="h-4 w-4 text-gray-600" />
+              <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400" />
             </button>
             {showMoreMenu && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
                 <button
                   onClick={handleToggleArchive}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
                 >
                   {theme.is_archived ? (
                     <>
@@ -723,14 +723,14 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       {/* Tabular System */}
       <Card padding="none">
         {/* Tab Navigation */}
-        <div className="border-b border-gray-200">
+        <div className="border-b border-gray-200 dark:border-gray-700">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
             <button
               onClick={() => setActiveTab('thesis')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'thesis'
                   ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               <div className="flex items-center space-x-2">
@@ -743,7 +743,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'chart'
                   ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               <div className="flex items-center space-x-2">
@@ -756,7 +756,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'related-assets'
                   ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               <div className="flex items-center space-x-2">
@@ -774,7 +774,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'notes'
                   ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               <div className="flex items-center space-x-2">
@@ -787,7 +787,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'discussion'
                   ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               <div className="flex items-center space-x-2">
@@ -800,7 +800,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'processes'
                   ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
               <div className="flex items-center space-x-2">
@@ -829,8 +829,8 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               {(!relatedAssets || themeAssets.length === 0) ? (
                 <div className="text-center py-12">
                   <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900">No related assets</h3>
-                  <p className="text-gray-500 mb-4">Assets related to this theme will appear here.</p>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">No related assets</h3>
+                  <p className="text-gray-500 mb-4 dark:text-gray-400">Assets related to this theme will appear here.</p>
                   <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add Related Asset
@@ -841,9 +841,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   {heldAssets.length > 0 && (
                     <section>
                       <div className="flex items-center gap-2 mb-3">
-                        <h3 className="text-sm font-semibold text-gray-900">Held</h3>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Held</h3>
                         <Badge variant="success" size="sm">{heldAssets.length}</Badge>
-                        <span className="text-xs text-gray-500">In at least one portfolio</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">In at least one portfolio</span>
                       </div>
                       <AssetTableView
                         assets={heldAssets}
@@ -860,9 +860,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   {watchlistAssets.length > 0 && (
                     <section>
                       <div className="flex items-center gap-2 mb-3">
-                        <h3 className="text-sm font-semibold text-gray-900">Watchlist</h3>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Watchlist</h3>
                         <Badge variant="default" size="sm">{watchlistAssets.length}</Badge>
-                        <span className="text-xs text-gray-500">Candidates to fish from</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Candidates to fish from</span>
                       </div>
                       <AssetTableView
                         assets={watchlistAssets}
@@ -925,7 +925,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center space-x-2 mb-2">
-                              <h4 className="font-semibold text-gray-900">{note.title}</h4>
+                              <h4 className="font-semibold text-gray-900 dark:text-white">{note.title}</h4>
                               {note.note_type && (
                                 <Badge variant="default" size="sm">
                                   {note.note_type}
@@ -937,10 +937,10 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+                            <p className="text-sm text-gray-600 line-clamp-2 mb-2 dark:text-gray-400">
                               {getContentPreview(note.content || '', 150)}
                             </p>
-                            <div className="flex items-center space-x-4 text-xs text-gray-500">
+                            <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
                               <div className="flex items-center">
                                 <Calendar className="h-3 w-3 mr-1" />
                                 {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
@@ -958,8 +958,8 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 ) : (
                   <div className="text-center py-12">
                     <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900">No related notes</h3>
-                    <p className="text-gray-500 mb-4">Create notes to document your research and thoughts about this theme.</p>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">No related notes</h3>
+                    <p className="text-gray-500 mb-4 dark:text-gray-400">Create notes to document your research and thoughts about this theme.</p>
                     <Button size="sm" onClick={() => {
                       handleCreateNote()
                     }}>
@@ -1002,16 +1002,16 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             onClick={() => setShowShareModal(false)}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all dark:bg-gray-800">
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Manage Collaborators</h3>
-                  <p className="text-sm text-gray-600 mt-1">Share "{theme.name}" with other users</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Manage Collaborators</h3>
+                  <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Share "{theme.name}" with other users</p>
                 </div>
                 <button
                   onClick={() => setShowShareModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -1020,7 +1020,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               <div className="p-6 space-y-6">
                 {/* Public/Private Toggle */}
                 <Card>
-                  <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="p-4 bg-gray-50 rounded-lg dark:bg-gray-900">
                     <label className="flex items-center">
                       <input
                         type="checkbox"
@@ -1030,11 +1030,11 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         }}
                         className="mr-2 rounded"
                       />
-                      <span className="text-sm text-gray-700 font-medium">
+                      <span className="text-sm text-gray-700 font-medium dark:text-gray-300">
                         Make public (visible to all users)
                       </span>
                     </label>
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                       {theme.is_public
                         ? 'This theme is visible to everyone.'
                         : 'This theme is private. Share with specific users below.'
@@ -1046,16 +1046,16 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 {/* Theme Owner */}
                 {ownerDetails && (
                   <Card>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-4">Theme Owner</h4>
-                    <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-4 dark:text-white">Theme Owner</h4>
+                    <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                       <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                         <Users className="h-4 w-4 text-primary-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {getUserDisplayName(ownerDetails)}
                         </p>
-                        <p className="text-xs text-gray-500">{ownerDetails.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{ownerDetails.email}</p>
                       </div>
                       <Badge variant="primary" size="sm" className="ml-auto">Owner</Badge>
                     </div>
@@ -1065,7 +1065,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 {/* Invite New User */}
                 {!theme.is_public && (
                   <Card>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-4">Invite New Collaborator</h4>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-4 dark:text-white">Invite New Collaborator</h4>
 
                     <div className="space-y-4">
                       <div className="relative">
@@ -1075,31 +1075,31 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                           placeholder="Search by email or name..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                         />
                       </div>
                       {searchQuery.length >= 2 && (
-                        <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                        <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto dark:border-gray-700">
                           {searchResults && searchResults.length > 0 ? (
                             searchResults.map((searchUser: any) => (
                               <div
                                 key={searchUser.id}
-                                className="flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                className="flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 dark:hover:bg-gray-800 dark:border-gray-800"
                               >
                                 <div>
-                                  <p className="text-sm font-medium text-gray-900">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white">
                                     {searchUser.first_name && searchUser.last_name
                                       ? `${searchUser.first_name} ${searchUser.last_name}`
                                       : getUserDisplayName(searchUser)
                                     }
                                   </p>
-                                  <p className="text-xs text-gray-500">{searchUser.email}</p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">{searchUser.email}</p>
                                 </div>
                                 <div className="flex items-center space-x-2">
                                   <select
                                     value={invitePermission}
                                     onChange={(e) => setInvitePermission(e.target.value as 'read' | 'write')}
-                                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-600"
                                   >
                                     <option value="read">Read Only</option>
                                     <option value="write">Read & Write</option>
@@ -1116,7 +1116,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                               </div>
                             ))
                           ) : (
-                            <div className="flex items-center justify-center py-8 text-center text-gray-500 text-sm">
+                            <div className="flex items-center justify-center py-8 text-center text-gray-500 text-sm dark:text-gray-400">
                               No users found matching "{searchQuery}"
                             </div>
                           )}
@@ -1130,7 +1130,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 {!theme.is_public && (
                   <Card>
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-semibold text-gray-900">Current Collaborators</h4>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Current Collaborators</h4>
                       {collaborations && (
                         <Badge variant="default" size="sm">
                           {collaborations.filter((c: any) => c.user_id !== theme.created_by).length} collaborator
@@ -1156,17 +1156,17 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         {collaborations.filter((c: any) => c.user_id !== theme.created_by).map((collaboration: any) => (
                           <div
                             key={collaboration.id}
-                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg dark:border-gray-700"
                           >
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                                 <Users className="h-4 w-4 text-primary-600" />
                               </div>
                               <div>
-                                <p className="text-sm font-medium text-gray-900">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
                                   {getUserDisplayName(collaboration.user)}
                                 </p>
-                                <p className="text-xs text-gray-500">{collaboration.user?.email}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">{collaboration.user?.email}</p>
                               </div>
                             </div>
 
@@ -1174,7 +1174,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                               <select
                                 value={collaboration.permission}
                                 onChange={(e) => handleUpdatePermission(collaboration.id, e.target.value as any)}
-                                className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-600"
                                 disabled={updatePermissionMutation.isPending}
                               >
                                 <option value="read">Read Only</option>
@@ -1197,7 +1197,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                         <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                         <p className="text-sm">No collaborators yet</p>
                         <p className="text-xs">Search for users above to start collaborating</p>
@@ -1208,7 +1208,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
 
               {/* Footer */}
-              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
                 <Button variant="outline" onClick={() => setShowShareModal(false)}>
                   Done
                 </Button>
@@ -1223,9 +1223,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Collaborator</h3>
-              <p className="text-gray-600 mb-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Remove Collaborator</h3>
+              <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to remove {deleteConfirm.userEmail} from this theme? They will no longer be able to access it.
               </p>
               <div className="flex space-x-3">
@@ -1255,9 +1255,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowDeleteConfirm(false)} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Theme</h3>
-              <p className="text-gray-600 mb-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Delete Theme</h3>
+              <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Delete "{theme.name}"? This removes the theme and its asset associations. Related notes and projects are kept.
               </p>
               <div className="flex space-x-3">
@@ -1287,9 +1287,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Assets from Theme</h3>
-              <p className="text-gray-600 mb-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Remove Assets from Theme</h3>
+              <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to remove {showBulkRemoveConfirm.assetIds.length} asset{showBulkRemoveConfirm.assetIds.length !== 1 ? 's' : ''} from this theme?
               </p>
               <div className="flex space-x-3">

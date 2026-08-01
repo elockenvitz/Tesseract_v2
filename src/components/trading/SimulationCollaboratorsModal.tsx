@@ -28,7 +28,7 @@ const PERMISSION_CONFIG: Record<SimulationPermission, {
     label: 'View',
     description: 'Can see the trade lab and results',
     icon: Eye,
-    color: 'text-gray-500'
+    color: 'text-gray-500 dark:text-gray-400'
   },
   comment: {
     label: 'Comment',
@@ -179,7 +179,7 @@ export function SimulationCollaboratorsModal({
             onClick={onClose}
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -255,7 +255,7 @@ export function SimulationCollaboratorsModal({
                       setShowAddForm(false)
                       setSearchEmail('')
                     }}
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
                   >
                     Cancel
                   </button>
@@ -317,7 +317,7 @@ export function SimulationCollaboratorsModal({
 
             {/* Collaborators */}
             {isLoading ? (
-              <div className="text-center py-4 text-gray-500">Loading...</div>
+              <div className="text-center py-4 text-gray-500 dark:text-gray-400">Loading...</div>
             ) : collaborators?.length === 0 ? (
               <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-sm">
                 No collaborators yet
@@ -346,7 +346,7 @@ export function SimulationCollaboratorsModal({
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white text-sm">
                           {collab.users.first_name} {collab.users.last_name}
-                          {isCurrentUser && <span className="text-gray-500 ml-1">(you)</span>}
+                          {isCurrentUser && <span className="text-gray-500 ml-1 dark:text-gray-400">(you)</span>}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {collab.users.email}

@@ -40,26 +40,26 @@ export function VersionCreatedModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md dark:bg-gray-800">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-3">
               <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Version Created Successfully
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
                   Your template version has been saved
                 </p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-5 h-5" />
             </button>
@@ -68,15 +68,15 @@ export function VersionCreatedModal({
 
         {/* Content */}
         <div className="p-6 space-y-4">
-          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3 dark:bg-gray-900">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Workflow</span>
-              <span className="text-sm font-medium text-gray-900">{workflowName}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Workflow</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{workflowName}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Version</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Version</span>
               <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
                   v{formattedVersion}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-xs ${
@@ -98,7 +98,7 @@ export function VersionCreatedModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end space-x-3">
+        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end space-x-3 dark:border-gray-700 dark:bg-gray-900">
           <Button onClick={onClose} variant="outline">
             Close
           </Button>

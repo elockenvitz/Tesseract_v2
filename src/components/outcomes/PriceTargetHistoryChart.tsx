@@ -45,8 +45,8 @@ function CustomTooltip({ active, payload, label, currentPrice }: any) {
   if (!active || !payload || payload.length === 0) return null
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-sm">
-      <p className="font-medium text-gray-900 mb-2">{label}</p>
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-sm dark:border-gray-700 dark:bg-gray-800">
+      <p className="font-medium text-gray-900 mb-2 dark:text-white">{label}</p>
       <div className="space-y-1">
         {payload.map((entry: any, index: number) => (
           <div key={index} className="flex items-center justify-between gap-4">
@@ -56,7 +56,7 @@ function CustomTooltip({ active, payload, label, currentPrice }: any) {
         ))}
       </div>
       {currentPrice && (
-        <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500">
+        <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
           Current: {formatPrice(currentPrice)}
         </div>
       )}
@@ -243,10 +243,10 @@ export function PriceTargetHistoryChart({
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="animate-pulse">
           <div className="h-4 bg-gray-200 rounded w-1/4 mb-4" />
-          <div className="h-64 bg-gray-100 rounded" />
+          <div className="h-64 bg-gray-100 rounded dark:bg-gray-800" />
         </div>
       </div>
     )
@@ -254,8 +254,8 @@ export function PriceTargetHistoryChart({
 
   if (chartData.length === 0) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
-        <div className="text-center py-8 text-gray-500">
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <Target className="w-8 h-8 mx-auto mb-2 text-gray-400" />
           <p className="text-sm">No price target history available</p>
           <p className="text-xs mt-1">Price targets will appear here as analysts add and revise them</p>
@@ -265,11 +265,11 @@ export function PriceTargetHistoryChart({
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-            <Target className="w-4 h-4 text-gray-500" />
+          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
+            <Target className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             Price Target History
           </h4>
 
@@ -280,7 +280,7 @@ export function PriceTargetHistoryChart({
                 <select
                   value={selectedScenario}
                   onChange={(e) => setSelectedScenario(e.target.value)}
-                  className="text-xs px-2 py-1 pr-6 border border-gray-300 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="text-xs px-2 py-1 pr-6 border border-gray-300 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800"
                 >
                   <option value="all">All Scenarios</option>
                   {scenarios.map(s => (
@@ -292,7 +292,7 @@ export function PriceTargetHistoryChart({
             )}
 
             {/* Time range */}
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
               {TIME_RANGES.map(range => (
                 <button
                   key={range.value}
@@ -300,8 +300,8 @@ export function PriceTargetHistoryChart({
                   className={clsx(
                     'px-2 py-0.5 text-xs font-medium rounded transition-colors',
                     timeRange === range.value
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
+                      ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
                   )}
                 >
                   {range.label}
@@ -313,7 +313,7 @@ export function PriceTargetHistoryChart({
 
         {/* Analyst count */}
         {analysts.length > 0 && (
-          <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
+          <div className="flex items-center gap-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
             <Users className="w-3 h-3" />
             <span>{analysts.length} analyst{analysts.length !== 1 ? 's' : ''}</span>
           </div>

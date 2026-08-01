@@ -87,15 +87,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (routeAction === 'blocked' && !hasOrg) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center">
+        <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center dark:bg-gray-800">
           <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-7 h-7 text-red-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Access Required</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Access Required</h2>
           {routeOrgName && (
-            <p className="text-sm text-gray-600 mb-1 font-medium">{routeOrgName}</p>
+            <p className="text-sm text-gray-600 mb-1 font-medium dark:text-gray-400">{routeOrgName}</p>
           )}
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">
             This organization requires an invitation to join. Contact your organization administrator to request access.
           </p>
           <Button variant="outline" onClick={() => signOut()} className="w-full">
@@ -110,15 +110,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (routeAction === 'request_created' && !hasOrg) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center">
+        <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center dark:bg-gray-800">
           <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
             <Clock className="w-7 h-7 text-amber-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Request Sent</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Request Sent</h2>
           {routeOrgName && (
-            <p className="text-sm text-gray-600 mb-1 font-medium">{routeOrgName}</p>
+            <p className="text-sm text-gray-600 mb-1 font-medium dark:text-gray-400">{routeOrgName}</p>
           )}
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">
             Your request to join has been submitted and is pending admin approval. You'll be able to access the organization once approved.
           </p>
           <Button variant="outline" onClick={() => signOut()} className="w-full">
@@ -151,12 +151,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center">
+        <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center dark:bg-gray-800">
           <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
             <Mail className="w-7 h-7 text-blue-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Invite Required</h2>
-          <p className="text-sm text-gray-500 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Invite Required</h2>
+          <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">
             You need an invitation to join an organization. Ask your admin to invite you, or paste your invite code below.
           </p>
           {inviteSuccess ? (
@@ -172,7 +172,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
                   onChange={(e) => { setInviteToken(e.target.value); setInviteError(null) }}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleAcceptInvite() }}
                   placeholder="Paste invite code"
-                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
                   disabled={inviteLoading}
                 />
                 <Button onClick={handleAcceptInvite} disabled={!inviteToken.trim() || inviteLoading} className="shrink-0">
@@ -182,7 +182,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
               {inviteError && <p className="text-xs text-red-600 mt-1.5 text-left">{inviteError}</p>}
             </div>
           )}
-          <Button variant="ghost" onClick={() => signOut()} className="w-full text-gray-500">
+          <Button variant="ghost" onClick={() => signOut()} className="w-full text-gray-500 dark:text-gray-400">
             <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>
         </div>

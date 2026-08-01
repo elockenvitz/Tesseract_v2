@@ -295,7 +295,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
     size?: 'small' | 'normal'
   }) => (
     <div className={clsx(
-      "inline-flex rounded-lg border border-gray-200 bg-gray-50",
+      "inline-flex rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900",
       size === 'small' ? 'p-0.5' : 'p-0.5'
     )}>
       <button
@@ -306,8 +306,8 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
           'flex items-center gap-1 rounded-md font-medium transition-all',
           size === 'small' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs',
           permission === 'read'
-            ? 'bg-white text-gray-900 shadow-sm'
-            : 'text-gray-500 hover:text-gray-700',
+            ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
       >
@@ -322,8 +322,8 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
           'flex items-center gap-1 rounded-md font-medium transition-all',
           size === 'small' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs',
           permission === 'write'
-            ? 'bg-white text-gray-900 shadow-sm'
-            : 'text-gray-500 hover:text-gray-700',
+            ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
       >
@@ -343,16 +343,16 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
 
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto transform transition-all">
+        <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto transform transition-all dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Share List</h3>
-              <p className="text-sm text-gray-500 mt-0.5">{list.name}</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Share List</h3>
+              <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{list.name}</p>
             </div>
             <button
               onClick={handleCancel}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <X className="h-5 w-5" />
             </button>
@@ -362,7 +362,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
           <div className="p-5 h-[420px] flex flex-col">
             {/* Search Section */}
             <div className="flex-shrink-0">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                 Add people
               </label>
               <div className="flex gap-2">
@@ -373,7 +373,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                     placeholder="Filter org members by name or email…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-700"
                   />
                 </div>
                 <PermissionToggle
@@ -386,13 +386,13 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                   available to invite (filtered by the search input
                   above). No server round-trip per keystroke; the
                   member set is loaded once when the dialog opens. */}
-              <div className="mt-2 h-28 border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50">
+              <div className="mt-2 h-28 border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50 dark:border-gray-700">
                 {filteredResults.length > 0 ? (
                   <div className="h-full overflow-y-auto">
                     {filteredResults.map((member) => (
                       <div
                         key={member.id}
-                        className="flex items-center justify-between px-3 py-2 hover:bg-white border-b border-gray-100 last:border-b-0"
+                        className="flex items-center justify-between px-3 py-2 hover:bg-white border-b border-gray-100 last:border-b-0 dark:border-gray-800 dark:hover:bg-gray-800"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
@@ -401,11 +401,11 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                             </span>
                           </div>
                           <div className="min-w-0">
-                            <div className="text-sm font-medium text-gray-900 truncate">
+                            <div className="text-sm font-medium text-gray-900 truncate dark:text-white">
                               {getUserDisplayName(member)}
                             </div>
                             {member.email && (
-                              <div className="text-[11px] text-gray-500 truncate">{member.email}</div>
+                              <div className="text-[11px] text-gray-500 truncate dark:text-gray-400">{member.email}</div>
                             )}
                           </div>
                         </div>
@@ -420,7 +420,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                     ))}
                   </div>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-sm text-gray-500 px-3 text-center">
+                  <div className="h-full flex items-center justify-center text-sm text-gray-500 px-3 text-center dark:text-gray-400">
                     {orgMembers.length === 0
                       ? 'No other members in this organization to invite.'
                       : searchQuery.trim()
@@ -434,7 +434,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
             {/* People with access - Scrollable */}
             <div className="flex-1 mt-5 min-h-0 flex flex-col">
               <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                <h4 className="text-sm font-medium text-gray-700">People with access</h4>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">People with access</h4>
                 <span className="text-xs text-gray-400">
                   {filteredCollaborators.filter(c => !pendingRemovals.has(c.id)).length + pendingAdditions.length + 1} people
                 </span>
@@ -442,7 +442,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
 
               <div className="flex-1 overflow-y-auto space-y-0.5 pr-1">
                 {/* Owner */}
-                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50">
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 bg-gradient-to-br from-amber-500 to-orange-500 rounded-full flex items-center justify-center">
                       <span className="text-white text-[10px] font-medium">
@@ -450,7 +450,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
                         {getUserDisplayName(ownerDetails)}
                       </span>
                       {ownerDetails?.id === user?.id && (
@@ -477,7 +477,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
                           {getUserDisplayName(pending)}
                         </span>
                         <span className="text-[10px] text-green-600 font-medium">New</span>
@@ -505,7 +505,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                   .map((collaboration) => (
                     <div
                       key={collaboration.id}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg transition-all hover:bg-gray-50 group"
+                      className="flex items-center justify-between px-3 py-2 rounded-lg transition-all hover:bg-gray-50 group dark:hover:bg-gray-800"
                     >
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-gray-400 to-gray-500">
@@ -513,7 +513,7 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
                             {getUserInitials(collaboration.user)}
                           </span>
                         </div>
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
                           {getUserDisplayName(collaboration.user)}
                         </span>
                       </div>
@@ -538,8 +538,8 @@ export function ShareListDialog({ isOpen, onClose, list }: ShareListDialogProps)
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
-            <div className="text-xs text-gray-500">
+          <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               {hasChanges && (
                 <span className="text-amber-600 font-medium">Unsaved changes</span>
               )}

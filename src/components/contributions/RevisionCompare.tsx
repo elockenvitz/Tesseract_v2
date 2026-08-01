@@ -301,7 +301,7 @@ function DeltaRow({ delta }: { delta: DeltaEntry }) {
 
   return (
     <div className="flex items-start gap-2 py-1 text-sm">
-      <span className="text-gray-500 text-xs mt-0.5 flex-shrink-0 min-w-[120px]">
+      <span className="text-gray-500 text-xs mt-0.5 flex-shrink-0 min-w-[120px] dark:text-gray-400">
         {formatted.label}:
       </span>
       {formatted.type === 'text' ? (
@@ -439,7 +439,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
     return (
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-6 text-center">
         <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No revision data available</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No revision data available</p>
         <p className="text-xs text-gray-400 mt-1">Revisions are created when you publish changes</p>
       </div>
     )
@@ -451,7 +451,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
       <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700 space-y-3">
         {/* Mode toggle */}
         <div className="flex items-center gap-2">
-          <GitCompare className="w-4 h-4 text-gray-500" />
+          <GitCompare className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
             <button
               onClick={() => { setCompareMode('revisions'); setBaselineScopeKey(''); setCompareScopeKey('') }}
@@ -459,7 +459,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
                 'px-2.5 py-1 text-xs font-medium rounded transition-colors',
                 compareMode === 'revisions'
                   ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               Revisions
@@ -471,7 +471,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
                 'px-2.5 py-1 text-xs font-medium rounded transition-colors',
                 compareMode === 'views'
                   ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700',
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
                 availableScopes.length < 2 && 'opacity-40 cursor-not-allowed'
               )}
               title={availableScopes.length < 2 ? 'Need revisions from at least 2 different view scopes' : undefined}
@@ -485,7 +485,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
         {compareMode === 'revisions' ? (
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-500">Baseline:</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Baseline:</span>
               <div className="relative">
                 <select
                   value={baselineId}
@@ -506,14 +506,14 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
             <button
               onClick={handleSwap}
               disabled={!baselineId || !compareId}
-              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors dark:hover:text-gray-300"
               title="Swap baseline and compare"
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
             </button>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-500">Compare to:</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Compare to:</span>
               <div className="relative">
                 <select
                   value={compareId}
@@ -534,7 +534,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
         ) : (
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-500">Baseline:</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Baseline:</span>
               <div className="relative">
                 <select
                   value={baselineScopeKey}
@@ -555,14 +555,14 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
             <button
               onClick={handleSwap}
               disabled={!baselineScopeKey || !compareScopeKey}
-              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors dark:hover:text-gray-300"
               title="Swap views"
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
             </button>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-500">Compare to:</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Compare to:</span>
               <div className="relative">
                 <select
                   value={compareScopeKey}
@@ -614,7 +614,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
         {!hasSelection ? (
           <div className="text-center py-8">
             <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {compareMode === 'revisions'
                 ? scopedRevisions.length < 2
                   ? `Only ${scopedRevisions.length} revision${scopedRevisions.length !== 1 ? 's' : ''} in this scope`
@@ -632,7 +632,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
         ) : grouped.length === 0 ? (
           <div className="text-center py-8">
             <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {significantOnly ? 'No significant differences' : 'No differences found'}
             </p>
             {significantOnly && deltas.length > 0 && (
@@ -644,7 +644,7 @@ export function RevisionCompare({ revisions, viewFilter, significantOnly }: Revi
         ) : (
           <div className="space-y-4">
             {/* Summary */}
-            <div className="flex items-center gap-3 pb-3 border-b border-gray-100 dark:border-gray-700 text-xs text-gray-500">
+            <div className="flex items-center gap-3 pb-3 border-b border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
               <span>{visibleDeltas.length} difference{visibleDeltas.length !== 1 ? 's' : ''}</span>
               {significantOnly && deltas.length > visibleDeltas.length && (
                 <span className="text-gray-400">

@@ -25,7 +25,7 @@ export function BadgeSelect({
   const baseClasses = 'inline-flex items-center font-medium rounded-full cursor-pointer transition-colors'
   
   const variants = {
-    default: 'bg-gray-100 text-gray-800 hover:bg-gray-200',
+    default: 'bg-gray-100 text-gray-800 hover:bg-gray-200 dark:text-gray-100 dark:bg-gray-800',
     primary: 'bg-primary-100 text-primary-800 hover:bg-primary-200',
     success: 'bg-success-100 text-success-800 hover:bg-success-200',
     warning: 'bg-warning-100 text-warning-800 hover:bg-warning-200',
@@ -71,14 +71,14 @@ export function BadgeSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]">
+        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px] dark:border-gray-700 dark:bg-gray-800">
           {options.map((option) => (
             <button
               key={option.value}
               onClick={() => handleSelect(option.value)}
               className={clsx(
-                'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors block',
-                option.value === value && 'bg-gray-100'
+                'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors block dark:hover:bg-gray-800',
+                option.value === value && 'bg-gray-100 dark:bg-gray-800'
               )}
             >
               {option.label}

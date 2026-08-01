@@ -100,8 +100,8 @@ export function InvestmentCaseTemplateManager() {
       <Card padding="sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-medium text-gray-900">PDF Templates</h3>
-            <p className="text-sm text-gray-500 mt-1">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">PDF Templates</h3>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
               Create templates for customizing PDF document output with branding, colors, and layout.
             </p>
           </div>
@@ -117,14 +117,14 @@ export function InvestmentCaseTemplateManager() {
 
         {/* My Templates */}
         <div className="space-y-3">
-          <h4 className="text-sm font-medium text-gray-700">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
             My Templates ({myTemplates.length})
           </h4>
 
           {myTemplates.length === 0 ? (
-            <div className="text-center py-8 border border-dashed border-gray-300 rounded-lg">
+            <div className="text-center py-8 border border-dashed border-gray-300 rounded-lg dark:border-gray-600">
               <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 No PDF templates yet. Create one to customize your investment case exports.
               </p>
               <Button onClick={handleCreate} variant="outline" size="sm" className="mt-3">
@@ -158,8 +158,8 @@ export function InvestmentCaseTemplateManager() {
 
         {/* Shared Templates */}
         {sharedTemplates.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
-            <h4 className="text-sm font-medium text-gray-700">
+          <div className="mt-6 pt-6 border-t border-gray-200 space-y-3 dark:border-gray-700">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Shared Templates ({sharedTemplates.length})
             </h4>
             <div className="space-y-2">
@@ -234,13 +234,13 @@ function TemplateCard({
       'p-3 border rounded-lg transition-colors',
       isDeleting
         ? 'border-red-300 bg-red-50'
-        : 'border-gray-200 hover:border-gray-300'
+        : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
     )}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="font-medium text-gray-900 truncate">{template.name}</span>
+            <span className="font-medium text-gray-900 truncate dark:text-white">{template.name}</span>
             {template.is_default && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">
                 <Star className="w-3 h-3" />
@@ -252,7 +252,7 @@ function TemplateCard({
             )}
           </div>
           {template.description && (
-            <p className="text-sm text-gray-500 mt-1 truncate">{template.description}</p>
+            <p className="text-sm text-gray-500 mt-1 truncate dark:text-gray-400">{template.description}</p>
           )}
           <div className="flex items-center gap-2 mt-2">
             {hasBranding && (
@@ -290,7 +290,7 @@ function TemplateCard({
               </button>
               <button
                 onClick={onCancelDelete}
-                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                 title="Cancel"
               >
                 <X className="w-4 h-4" />
@@ -301,7 +301,7 @@ function TemplateCard({
               {!isShared && onEdit && (
                 <button
                   onClick={onEdit}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                   title="Edit"
                 >
                   <Edit2 className="w-4 h-4" />
@@ -309,7 +309,7 @@ function TemplateCard({
               )}
               <button
                 onClick={onToggleMenu}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 title="More actions"
               >
                 <MoreVertical className="w-4 h-4" />
@@ -317,11 +317,11 @@ function TemplateCard({
 
               {/* Action Menu */}
               {actionMenuOpen && (
-                <div className="absolute right-0 top-8 z-10 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+                <div className="absolute right-0 top-8 z-10 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 dark:border-gray-700 dark:bg-gray-800">
                   {isShared && (
                     <button
                       onClick={onEdit}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       <Eye className="w-4 h-4" />
                       View
@@ -329,7 +329,7 @@ function TemplateCard({
                   )}
                   <button
                     onClick={onDuplicate}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                     disabled={isProcessing}
                   >
                     <Copy className="w-4 h-4" />
@@ -338,7 +338,7 @@ function TemplateCard({
                   {!isShared && onSetDefault && (
                     <button
                       onClick={onSetDefault}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                       <Star className="w-4 h-4" />
                       {template.is_default ? 'Remove Default' : 'Set as Default'}

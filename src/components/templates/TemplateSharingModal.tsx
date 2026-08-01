@@ -137,13 +137,13 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Share Template</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Share Template</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
@@ -151,15 +151,15 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {/* Organization Sharing */}
-          <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+          <div className="p-4 border border-gray-200 rounded-lg bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
                   <Building2 className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h4 className="font-medium text-gray-900">Organization</h4>
-                  <p className="text-sm text-gray-500">Share with everyone</p>
+                  <h4 className="font-medium text-gray-900 dark:text-white">Organization</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Share with everyone</p>
                 </div>
               </div>
 
@@ -178,7 +178,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
                 >
                   <span
                     className={clsx(
-                      'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow',
+                      'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow dark:bg-gray-800',
                       isSharedWithOrg ? 'translate-x-7' : 'translate-x-1'
                     )}
                   />
@@ -190,7 +190,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
           {/* Teams */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-300">
                 <Users className="w-4 h-4" />
                 Teams
               </h4>
@@ -207,7 +207,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
               <div className="mb-3 p-3 border border-primary-200 bg-primary-50 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <select
-                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                     onChange={(e) => {
                       if (e.target.value) handleAddTeam(e.target.value)
                     }}
@@ -227,7 +227,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
             )}
 
             {teamCollaborations.length === 0 ? (
-              <p className="text-sm text-gray-500 py-2">No teams added</p>
+              <p className="text-sm text-gray-500 py-2 dark:text-gray-400">No teams added</p>
             ) : (
               <div className="space-y-2">
                 {teamCollaborations.map(collab => (
@@ -247,7 +247,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
           {/* Users */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2 dark:text-gray-300">
                 <User className="w-4 h-4" />
                 People
               </h4>
@@ -269,7 +269,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search by name or email..."
-                      className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                      className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg dark:border-gray-600"
                       autoFocus
                     />
                   </div>
@@ -284,7 +284,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
                     <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                   </div>
                 ) : searchQuery.length >= 2 && availableUsers.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-2">No users found</p>
+                  <p className="text-sm text-gray-500 py-2 dark:text-gray-400">No users found</p>
                 ) : (
                   <div className="space-y-1 max-h-40 overflow-y-auto">
                     {availableUsers.map(user => (
@@ -294,17 +294,17 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
                         disabled={isAdding}
                         className="w-full flex items-center gap-3 p-2 text-left hover:bg-primary-100 rounded-lg transition-colors"
                       >
-                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600">
+                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
                           {user.first_name?.[0] || user.email[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                             {user.first_name && user.last_name
                               ? `${user.first_name} ${user.last_name}`
                               : user.email}
                           </p>
                           {user.first_name && (
-                            <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                            <p className="text-xs text-gray-500 truncate dark:text-gray-400">{user.email}</p>
                           )}
                         </div>
                       </button>
@@ -315,7 +315,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
             )}
 
             {userCollaborations.length === 0 ? (
-              <p className="text-sm text-gray-500 py-2">No people added</p>
+              <p className="text-sm text-gray-500 py-2 dark:text-gray-400">No people added</p>
             ) : (
               <div className="space-y-2">
                 {userCollaborations.map(collab => (
@@ -334,7 +334,7 @@ export function TemplateSharingModal({ template, onClose }: TemplateSharingModal
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
           <Button onClick={onClose} className="w-full">
             Done
           </Button>
@@ -362,8 +362,8 @@ function PermissionSelect({ value, onChange, disabled }: PermissionSelectProps) 
         className={clsx(
           'flex items-center gap-1 px-2 py-1 text-sm rounded border transition-colors',
           disabled
-            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
+            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800'
+            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800'
         )}
       >
         {PERMISSION_LABELS[value].label}
@@ -373,7 +373,7 @@ function PermissionSelect({ value, onChange, disabled }: PermissionSelectProps) 
       {isOpen && (
         <>
           <div className="fixed inset-0" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+          <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 dark:border-gray-700 dark:bg-gray-800">
             {(Object.entries(PERMISSION_LABELS) as [PermissionLevel, { label: string; description: string }][]).map(
               ([level, { label, description }]) => (
                 <button
@@ -383,13 +383,13 @@ function PermissionSelect({ value, onChange, disabled }: PermissionSelectProps) 
                     setIsOpen(false)
                   }}
                   className={clsx(
-                    'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50',
+                    'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800',
                     value === level && 'bg-primary-50'
                   )}
                 >
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{label}</p>
-                    <p className="text-xs text-gray-500">{description}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
                   </div>
                   {value === level && <Check className="w-4 h-4 text-primary-600" />}
                 </button>
@@ -430,18 +430,18 @@ function CollaboratorRow({
     : collaborator.team?.name[0] || '?'
 
   return (
-    <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg">
+    <div className="flex items-center justify-between p-2 border border-gray-200 rounded-lg dark:border-gray-700">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600">
+        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
           {collaborator.team ? (
-            <Users className="w-4 h-4 text-gray-500" />
+            <Users className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           ) : (
             initials
           )}
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-          {subtitle && <p className="text-xs text-gray-500 truncate">{subtitle}</p>}
+          <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{name}</p>
+          {subtitle && <p className="text-xs text-gray-500 truncate dark:text-gray-400">{subtitle}</p>}
         </div>
       </div>
 

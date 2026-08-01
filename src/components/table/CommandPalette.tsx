@@ -526,7 +526,7 @@ export function CommandPalette({
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800">
-            <Command className="w-4 h-4 text-gray-500" />
+            <Command className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </div>
           <input
             ref={inputRef}
@@ -544,7 +544,7 @@ export function CommandPalette({
         {/* Results */}
         <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-2">
           {groupedCommands.length === 0 ? (
-            <div className="px-4 py-8 text-center text-gray-500">
+            <div className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
               <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">No commands found</p>
               <p className="text-xs mt-1">Try a different search term</p>
@@ -607,7 +607,7 @@ export function CommandPalette({
                             {command.shortcut.map((key, idx) => (
                               <React.Fragment key={idx}>
                                 {idx > 0 && <span className="text-xs text-gray-300">+</span>}
-                                <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 rounded">
+                                <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 rounded dark:text-gray-400">
                                   {key}
                                 </kbd>
                               </React.Fragment>

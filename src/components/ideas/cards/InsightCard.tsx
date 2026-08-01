@@ -17,8 +17,8 @@ const insightTypeConfig = {
 
 const sourceConfig = {
   ai: { icon: Bot, label: 'AI Generated', color: 'text-cyan-600' },
-  user: { icon: UserIcon, label: 'User', color: 'text-gray-600' },
-  system: { icon: Cpu, label: 'System', color: 'text-gray-500' }
+  user: { icon: UserIcon, label: 'User', color: 'text-gray-600 dark:text-gray-400' },
+  system: { icon: Cpu, label: 'System', color: 'text-gray-500 dark:text-gray-400' }
 }
 
 interface InsightCardProps extends Omit<IdeaCardProps, 'item'> {
@@ -67,7 +67,7 @@ export function InsightCard({
             e.stopPropagation()
             onTagClick?.(tag)
           }}
-          className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full hover:bg-gray-200 transition-colors"
+          className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
         >
           #{tag}
         </button>

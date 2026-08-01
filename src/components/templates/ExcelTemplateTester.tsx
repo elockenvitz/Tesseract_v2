@@ -125,13 +125,13 @@ export function ExcelTemplateTester({
   const totalCount = preview?.length ?? 0
 
   return (
-    <div className={clsx('border border-gray-200 rounded-lg overflow-hidden', className)}>
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+    <div className={clsx('border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700', className)}>
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-amber-500" />
-          <span className="font-medium text-gray-900">Template Tester</span>
+          <span className="font-medium text-gray-900 dark:text-white">Template Tester</span>
         </div>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
           Upload a sample Excel file to test your mappings and auto-detect fields
         </p>
       </div>
@@ -143,18 +143,18 @@ export function ExcelTemplateTester({
           onDragOver={(e) => e.preventDefault()}
           className={clsx(
             'border-2 border-dashed rounded-lg p-4 text-center transition-colors',
-            isLoading ? 'border-gray-200 bg-gray-50' : 'border-gray-300 hover:border-primary-400 hover:bg-primary-50/50'
+            isLoading ? 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900' : 'border-gray-300 hover:border-primary-400 hover:bg-primary-50/50 dark:border-gray-600'
           )}
         >
           {isLoading ? (
-            <div className="flex items-center justify-center gap-2 text-gray-500">
+            <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
               <Loader2 className="w-5 h-5 animate-spin" />
               <span>Processing...</span>
             </div>
           ) : file ? (
             <div className="flex items-center justify-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-green-600" />
-              <span className="text-sm font-medium text-gray-900">{file.name}</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{file.name}</span>
               <button
                 onClick={() => {
                   setFile(null)
@@ -162,7 +162,7 @@ export function ExcelTemplateTester({
                   setPreview(null)
                   setDetectedFields([])
                 }}
-                className="text-xs text-gray-500 hover:text-gray-700 underline ml-2"
+                className="text-xs text-gray-500 hover:text-gray-700 underline ml-2 dark:hover:text-gray-200 dark:text-gray-400"
               >
                 Change
               </button>
@@ -170,7 +170,7 @@ export function ExcelTemplateTester({
           ) : (
             <>
               <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Drop an Excel file here or{' '}
                 <label className="text-primary-600 hover:underline cursor-pointer">
                   browse
@@ -197,7 +197,7 @@ export function ExcelTemplateTester({
         {preview && preview.length > 0 && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-gray-700">Extraction Preview</h4>
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Extraction Preview</h4>
               <span className={clsx(
                 'text-xs font-medium px-2 py-0.5 rounded-full',
                 foundCount === totalCount
@@ -225,14 +225,14 @@ export function ExcelTemplateTester({
                     ) : (
                       <XCircle className="w-4 h-4 text-red-500" />
                     )}
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-gray-900 dark:text-white">
                       {item.label || item.field}
                     </span>
-                    <span className="text-gray-500 text-xs">{item.cell}</span>
+                    <span className="text-gray-500 text-xs dark:text-gray-400">{item.cell}</span>
                   </div>
                   <div className="text-right">
                     {item.found ? (
-                      <span className="font-mono text-gray-900">
+                      <span className="font-mono text-gray-900 dark:text-white">
                         {typeof item.formattedValue === 'number'
                           ? item.formattedValue.toLocaleString()
                           : item.formattedValue ?? '—'}
@@ -256,7 +256,7 @@ export function ExcelTemplateTester({
             >
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-500" />
-                <h4 className="text-sm font-medium text-gray-700">Auto-Detected Fields</h4>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-Detected Fields</h4>
                 <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
                   {detectedFields.length}
                 </span>
@@ -281,10 +281,10 @@ export function ExcelTemplateTester({
                       className={clsx(
                         'flex items-center justify-between p-2 rounded text-sm cursor-pointer transition-colors',
                         alreadyMapped
-                          ? 'bg-gray-100 opacity-50 cursor-not-allowed'
+                          ? 'bg-gray-100 opacity-50 cursor-not-allowed dark:bg-gray-800'
                           : isSelected
                           ? 'bg-primary-50 border border-primary-200'
-                          : 'bg-gray-50 hover:bg-gray-100'
+                          : 'bg-gray-50 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                       )}
                     >
                       <div className="flex items-center gap-2">
@@ -293,20 +293,20 @@ export function ExcelTemplateTester({
                           checked={isSelected}
                           disabled={alreadyMapped}
                           onChange={() => {}}
-                          className="h-4 w-4 text-primary-600 rounded border-gray-300"
+                          className="h-4 w-4 text-primary-600 rounded border-gray-300 dark:border-gray-600"
                         />
                         <div>
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-gray-900 dark:text-white">
                             {field.label}
                           </span>
-                          <span className="text-gray-500 text-xs ml-2">
+                          <span className="text-gray-500 text-xs ml-2 dark:text-gray-400">
                             → {field.suggestedField}
                           </span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 text-right">
-                        <span className="text-xs text-gray-500">{field.cell}</span>
-                        <span className="font-mono text-gray-900">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{field.cell}</span>
+                        <span className="font-mono text-gray-900 dark:text-white">
                           {typeof field.value === 'number'
                             ? field.value.toLocaleString()
                             : field.value}
@@ -341,7 +341,7 @@ export function ExcelTemplateTester({
 
         {/* Sheet Info */}
         {workbook && (
-          <div className="mt-4 text-xs text-gray-500">
+          <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
             <span className="font-medium">Sheets:</span>{' '}
             {workbook.SheetNames.join(', ')}
           </div>

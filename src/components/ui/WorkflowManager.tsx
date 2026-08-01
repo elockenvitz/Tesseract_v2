@@ -654,14 +654,14 @@ export function WorkflowManager({
         mode === 'selection' ? 'max-w-5xl' : 'max-w-6xl'
       }`}>
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <Settings2 className="w-6 h-6 text-blue-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {mode === 'selection' ? 'Select Workflow' : 'Workflow Management'}
               </h2>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 {mode === 'selection'
                   ? 'Choose a workflow for your asset or create a new one'
                   : 'Create and customize workflows for your team'
@@ -671,9 +671,9 @@ export function WorkflowManager({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -681,7 +681,7 @@ export function WorkflowManager({
           /* Enhanced Selection Mode */
           <div className="h-[calc(90vh-120px)]">
             {/* Search and Filter Bar */}
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
+            <div className="p-4 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center space-x-4">
                 <div className="flex-1 relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -692,13 +692,13 @@ export function WorkflowManager({
                     placeholder="Search workflows..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                   />
                 </div>
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as any)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                 >
                   <option value="all">All Workflows</option>
                   <option value="my">My Workflows</option>
@@ -730,7 +730,7 @@ export function WorkflowManager({
                         className={`relative p-4 border-2 rounded-xl cursor-pointer transition-all hover:shadow-md ${
                           isSelected
                             ? 'border-blue-500 bg-blue-50 shadow-md'
-                            : 'border-gray-200 hover:border-gray-300'
+                            : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                         }`}
                         onClick={() => handleWorkflowSelectClick(workflow.id)}
                       >
@@ -748,27 +748,27 @@ export function WorkflowManager({
                             <Workflow className="w-5 h-5" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-gray-900 truncate">{workflow.name}</h4>
-                            <p className="text-sm text-gray-600 line-clamp-2">{workflow.description}</p>
+                            <h4 className="font-semibold text-gray-900 truncate dark:text-white">{workflow.name}</h4>
+                            <p className="text-sm text-gray-600 line-clamp-2 dark:text-gray-400">{workflow.description}</p>
                           </div>
                         </div>
 
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-500">Active</span>
+                            <span className="text-gray-500 dark:text-gray-400">Active</span>
                             <span className="font-medium">{stats.activeAssets}</span>
                           </div>
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-500">Completed</span>
+                            <span className="text-gray-500 dark:text-gray-400">Completed</span>
                             <span className="font-medium">{stats.completedAssets}</span>
                           </div>
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-500">Avg. Time</span>
+                            <span className="text-gray-500 dark:text-gray-400">Avg. Time</span>
                             <span className="font-medium">{stats.averageCompletionTime}</span>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex items-center space-x-2">
                             {workflow.is_public && (
                               <Badge variant="success" size="xs">Public</Badge>
@@ -793,7 +793,7 @@ export function WorkflowManager({
                     <div className="col-span-full text-center py-12">
                       <div className="animate-pulse">
                         <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                        <p className="text-gray-500">Loading workflows...</p>
+                        <p className="text-gray-500 dark:text-gray-400">Loading workflows...</p>
                       </div>
                     </div>
                   )}
@@ -801,7 +801,7 @@ export function WorkflowManager({
                   {!isLoading && (!filteredWorkflows || filteredWorkflows.length === 0) && (
                     <div className="col-span-full text-center py-12">
                       <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                      <p className="text-gray-500">No workflows found</p>
+                      <p className="text-gray-500 dark:text-gray-400">No workflows found</p>
                       <Button
                         size="sm"
                         onClick={() => setViewMode('create')}
@@ -822,18 +822,18 @@ export function WorkflowManager({
                   <div className="flex items-center space-x-3 mb-6">
                     <button
                       onClick={() => setViewMode('list')}
-                      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg dark:hover:text-gray-300"
                     >
                       ← Back to List
                     </button>
-                    <h3 className="text-lg font-semibold text-gray-900">Workflow Details</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow Details</h3>
                   </div>
 
                   {/* Enhanced workflow details would go here */}
                   <div className="space-y-6">
                     {/* Workflow info, stages, collaboration, etc. */}
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600">
+                    <div className="bg-gray-50 rounded-lg p-4 dark:bg-gray-900">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
                         Detailed workflow view with stages, permissions, usage analytics, etc.
                       </p>
                     </div>
@@ -849,17 +849,17 @@ export function WorkflowManager({
                   <div className="flex items-center space-x-3 mb-6">
                     <button
                       onClick={() => setViewMode('list')}
-                      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                      className="p-2 text-gray-400 hover:text-gray-600 rounded-lg dark:hover:text-gray-300"
                     >
                       ← Back to List
                     </button>
-                    <h3 className="text-lg font-semibold text-gray-900">Create New Workflow</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Workflow</h3>
                   </div>
 
                   {/* Inline creation form would go here */}
                   <div className="space-y-6">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600">
+                    <div className="bg-gray-50 rounded-lg p-4 dark:bg-gray-900">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
                         Inline workflow creation form with all the necessary fields.
                       </p>
                     </div>
@@ -872,9 +872,9 @@ export function WorkflowManager({
           /* Full Management Mode - Original Content */
           <div className="flex h-[calc(90vh-120px)]">
             {/* Workflow List */}
-          <div className="w-1/3 border-r border-gray-200 p-4 overflow-y-auto">
+          <div className="w-1/3 border-r border-gray-200 p-4 overflow-y-auto dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium text-gray-900">Workflows</h3>
+              <h3 className="font-medium text-gray-900 dark:text-white">Workflows</h3>
               <Button
                 size="sm"
                 onClick={handleCreateNew}
@@ -892,7 +892,7 @@ export function WorkflowManager({
                   className={`p-3 rounded-lg border transition-colors ${
                     selectedWorkflow === workflow.id
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                   }`}
                 >
                   <div
@@ -914,14 +914,14 @@ export function WorkflowManager({
                       </div>
                     </div>
                     {workflow.description && (
-                      <p className="text-xs text-gray-500 mt-1">{workflow.description}</p>
+                      <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{workflow.description}</p>
                     )}
                   </div>
                   {(() => {
                     const isAdmin = (user as any)?.coverage_admin
                     const isCreator = workflow.created_by === user?.id
                     return (isAdmin || isCreator) && (
-                      <div className="mt-2 pt-2 border-t border-gray-200">
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -948,26 +948,26 @@ export function WorkflowManager({
               <div className="space-y-6">
                 {/* Workflow Details */}
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-4">
+                  <h4 className="font-medium text-gray-900 mb-4 dark:text-white">
                     {isCreatingNew ? 'Create New Workflow' : 'Edit Workflow'}
                   </h4>
 
                   <div className="grid grid-cols-3 gap-4 mb-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                         Workflow Name
                       </label>
                       <input
                         type="text"
                         value={editingWorkflow.name || ''}
                         onChange={(e) => setEditingWorkflow({ ...editingWorkflow, name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                         placeholder="Enter workflow name"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                         Color
                       </label>
                       <div className="flex items-center space-x-2">
@@ -975,19 +975,19 @@ export function WorkflowManager({
                           type="color"
                           value={editingWorkflow.color || '#3b82f6'}
                           onChange={(e) => setEditingWorkflow({ ...editingWorkflow, color: e.target.value })}
-                          className="w-10 h-10 rounded-lg border border-gray-300"
+                          className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600"
                         />
                         <input
                           type="text"
                           value={editingWorkflow.color || '#3b82f6'}
                           onChange={(e) => setEditingWorkflow({ ...editingWorkflow, color: e.target.value })}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                         Cadence Timeframe
                       </label>
                       <select
@@ -1008,7 +1008,7 @@ export function WorkflowManager({
                             cadence_days: daysMap[timeframe]
                           })
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                       >
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
@@ -1021,17 +1021,17 @@ export function WorkflowManager({
                   </div>
 
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                       Kickoff Cadence
                     </label>
-                    <p className="text-xs text-gray-500 mb-2">When should this workflow start for each asset?</p>
+                    <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">When should this workflow start for each asset?</p>
                     <select
                       value={editingWorkflow.kickoff_cadence || 'immediate'}
                       onChange={(e) => setEditingWorkflow({
                         ...editingWorkflow,
                         kickoff_cadence: e.target.value as 'immediate' | 'month-start' | 'quarter-start' | 'year-start' | 'custom-date'
                       })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                     >
                       <option value="immediate">Immediate (when asset is added)</option>
                       <option value="month-start">Start of Month</option>
@@ -1045,19 +1045,19 @@ export function WorkflowManager({
                         type="date"
                         value={editingWorkflow.kickoff_custom_date || ''}
                         onChange={(e) => setEditingWorkflow({ ...editingWorkflow, kickoff_custom_date: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mt-2"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mt-2 dark:border-gray-600"
                       />
                     )}
                   </div>
 
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                       Description
                     </label>
                     <textarea
                       value={editingWorkflow.description || ''}
                       onChange={(e) => setEditingWorkflow({ ...editingWorkflow, description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                       rows={3}
                       placeholder="Describe this workflow..."
                     />
@@ -1067,14 +1067,14 @@ export function WorkflowManager({
 
                 {/* Tabs */}
                 <div>
-                  <div className="border-b border-gray-200 mb-6">
+                  <div className="border-b border-gray-200 mb-6 dark:border-gray-700">
                     <nav className="-mb-px flex space-x-8">
                       <button
                         onClick={() => setShowCollaborators(false)}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                           !showCollaborators
                             ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                         }`}
                       >
                         <Settings2 className="w-4 h-4 mr-1 inline" />
@@ -1085,7 +1085,7 @@ export function WorkflowManager({
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                           showCollaborators
                             ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                         }`}
                       >
                         <Users className="w-4 h-4 mr-1 inline" />
@@ -1097,7 +1097,7 @@ export function WorkflowManager({
                   {!showCollaborators ? (
                     <div>
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-medium text-gray-900">Workflow Stages</h4>
+                        <h4 className="font-medium text-gray-900 dark:text-white">Workflow Stages</h4>
                         <Button size="sm" onClick={addStage}>
                           <Plus className="w-4 h-4 mr-1" />
                           Add Stage
@@ -1106,21 +1106,21 @@ export function WorkflowManager({
 
                   <div className="space-y-4">
                     {editingStages.map((stage, index) => (
-                      <div key={stage.id} className="border border-gray-200 rounded-lg p-4">
+                      <div key={stage.id} className="border border-gray-200 rounded-lg p-4 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-3">
-                          <span className="font-medium text-sm text-gray-700">Stage {index + 1}</span>
+                          <span className="font-medium text-sm text-gray-700 dark:text-gray-300">Stage {index + 1}</span>
                           <div className="flex items-center space-x-2">
                             <button
                               onClick={() => moveStage(index, 'up')}
                               disabled={index === 0}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
                             >
                               <ArrowUp className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => moveStage(index, 'down')}
                               disabled={index === editingStages.length - 1}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
                             >
                               <ArrowDown className="w-4 h-4" />
                             </button>
@@ -1135,7 +1135,7 @@ export function WorkflowManager({
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                            <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                               Stage Name
                             </label>
                             <input
@@ -1153,13 +1153,13 @@ export function WorkflowManager({
                                   stage_key: stage_key || `stage_${index + 1}`
                                 })
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                               placeholder="e.g., Planning & Research"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                            <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                               Standard Deadline (Days)
                             </label>
                             <input
@@ -1168,34 +1168,34 @@ export function WorkflowManager({
                               max="365"
                               value={stage.standard_deadline_days}
                               onChange={(e) => updateStage(index, { standard_deadline_days: parseInt(e.target.value) || 7 })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                               placeholder="Days to complete this stage"
                             />
                           </div>
                         </div>
 
                         <div className="mt-3">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                             Description
                           </label>
                           <input
                             type="text"
                             value={stage.stage_description}
                             onChange={(e) => updateStage(index, { stage_description: e.target.value })}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                             placeholder="Brief description of this stage..."
                           />
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mt-3">
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                            <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                               Color
                             </label>
                             <select
                               value={stage.stage_color}
                               onChange={(e) => updateStage(index, { stage_color: e.target.value })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                             >
                               {COLOR_OPTIONS.map(color => (
                                 <option key={color} value={color}>{color}</option>
@@ -1204,13 +1204,13 @@ export function WorkflowManager({
                           </div>
 
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                            <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">
                               Icon
                             </label>
                             <select
                               value={stage.stage_icon}
                               onChange={(e) => updateStage(index, { stage_icon: e.target.value })}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                             >
                               {ICON_OPTIONS.map(icon => (
                                 <option key={icon} value={icon}>{icon}</option>
@@ -1239,7 +1239,7 @@ export function WorkflowManager({
                           </div>
                         </div>
                       ) : (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-900">
                           <div className="flex items-start space-x-3">
                             <div className="flex-shrink-0">
                               <Badge variant={getPermissionColor(currentUserPermission || 'read')} size="sm">
@@ -1247,7 +1247,7 @@ export function WorkflowManager({
                               </Badge>
                             </div>
                             <div className="flex-1">
-                              <p className="text-sm text-gray-700">
+                              <p className="text-sm text-gray-700 dark:text-gray-300">
                                 You have {currentUserPermission || 'view-only'} access to this workflow. Contact the workflow owner for permission changes.
                               </p>
                             </div>
@@ -1259,16 +1259,16 @@ export function WorkflowManager({
                       {workflowOwner && (
                         <Card>
                           <div className="p-4">
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">Workflow Owner</h4>
+                            <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Workflow Owner</h4>
                             <div className="flex items-center space-x-3">
                               <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
                                 <Users className="w-5 h-5 text-primary-600" />
                               </div>
                               <div className="flex-1">
-                                <p className="text-sm font-medium text-gray-900">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
                                   {getUserDisplayName(workflowOwner)}
                                 </p>
-                                <p className="text-xs text-gray-500">{workflowOwner.email}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">{workflowOwner.email}</p>
                               </div>
                               <Badge variant="error" size="sm">Owner</Badge>
                             </div>
@@ -1279,7 +1279,7 @@ export function WorkflowManager({
                       {/* Public/Private Toggle */}
                       <Card>
                         <div className="p-4">
-                          <h4 className="text-sm font-medium text-gray-700 mb-3">Visibility</h4>
+                          <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Visibility</h4>
                           <label className={`flex items-center ${currentUserPermission === 'admin' ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
                             <input
                               type="checkbox"
@@ -1310,8 +1310,8 @@ export function WorkflowManager({
                               className="mr-3 rounded"
                             />
                             <div className="flex-1">
-                              <span className="text-sm font-medium text-gray-900">Public Workflow</span>
-                              <p className="text-xs text-gray-500 mt-0.5">
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">Public Workflow</span>
+                              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                                 {currentUserPermission === 'admin'
                                   ? 'When enabled, all users can view and use this workflow. Changes save automatically.'
                                   : 'Only workflow admins can change visibility settings'
@@ -1326,7 +1326,7 @@ export function WorkflowManager({
                       {!editingWorkflow.is_public && currentUserPermission === 'admin' && (
                         <Card>
                           <div className="p-4">
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">Invite Collaborator</h4>
+                            <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Invite Collaborator</h4>
                             <div className="flex items-center space-x-2">
                               <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1341,22 +1341,22 @@ export function WorkflowManager({
                                   onBlur={() => {
                                     setTimeout(() => setShowUserDropdown(false), 200)
                                   }}
-                                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                                 />
                                 {showUserDropdown && filteredUsers.length > 0 && (
-                                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                                     {filteredUsers.map((user) => (
                                       <button
                                         key={user.id}
                                         onClick={() => handleUserSelect(user)}
-                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 dark:hover:bg-gray-800 dark:border-gray-800"
                                       >
-                                        <div className="text-sm font-medium text-gray-900">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-white">
                                           {user.first_name && user.last_name
                                             ? `${user.first_name} ${user.last_name}`
                                             : user.email}
                                         </div>
-                                        <div className="text-xs text-gray-500">{user.email}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
                                       </button>
                                     ))}
                                   </div>
@@ -1365,7 +1365,7 @@ export function WorkflowManager({
                               <select
                                 value={newCollaboratorPermission}
                                 onChange={(e) => setNewCollaboratorPermission(e.target.value as 'read' | 'write' | 'admin')}
-                                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                               >
                                 <option value="read">Read</option>
                                 <option value="write">Write</option>
@@ -1396,24 +1396,24 @@ export function WorkflowManager({
                       {!editingWorkflow.is_public && (
                         <Card>
                           <div className="p-4">
-                            <h4 className="text-sm font-medium text-gray-700 mb-3">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">
                               Team Members ({collaborations?.length || 0})
                             </h4>
                             <div className="space-y-2">
                               {collaborations?.map((collab) => (
                                 <div
                                   key={collab.id}
-                                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
                                 >
                                   <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0">
-                                      <Users className="w-4 h-4 text-gray-600" />
+                                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0 dark:bg-gray-800">
+                                      <Users className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-medium text-gray-900 truncate">
+                                      <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                                         {getUserDisplayName(collab.user)}
                                       </p>
-                                      <p className="text-xs text-gray-500 truncate">{collab.user?.email}</p>
+                                      <p className="text-xs text-gray-500 truncate dark:text-gray-400">{collab.user?.email}</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
@@ -1425,7 +1425,7 @@ export function WorkflowManager({
                                             collaborationId: collab.id,
                                             permission: e.target.value
                                           })}
-                                          className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                          className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-600"
                                         >
                                           <option value="read">Read</option>
                                           <option value="write">Write</option>
@@ -1449,7 +1449,7 @@ export function WorkflowManager({
                               ))}
 
                               {(!collaborations || collaborations.length === 0) && (
-                                <div className="text-center py-8 text-gray-500">
+                                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                   <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                                   <p className="text-sm font-medium">No team members yet</p>
                                   <p className="text-xs mt-1">Invite users above to collaborate on this workflow</p>
@@ -1464,8 +1464,8 @@ export function WorkflowManager({
                         <Card>
                           <div className="p-4 text-center">
                             <Eye className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                            <p className="text-sm font-medium text-gray-700">Public Workflow</p>
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Public Workflow</p>
+                            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                               This workflow is visible to all users. Disable public access to manage team members.
                             </p>
                           </div>
@@ -1476,7 +1476,7 @@ export function WorkflowManager({
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+                <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
                   <div>
                     {!isCreatingNew &&
                      ((user as any)?.coverage_admin || editingWorkflow.created_by === user?.id) && (
@@ -1519,7 +1519,7 @@ export function WorkflowManager({
             ) : selectedWorkflow && workflowStages ? (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-gray-900">Workflow Details</h4>
+                  <h4 className="font-medium text-gray-900 dark:text-white">Workflow Details</h4>
                   <Button
                     size="sm"
                     onClick={() => {
@@ -1534,14 +1534,14 @@ export function WorkflowManager({
 
                 {/* Tabs for view mode */}
                 <div>
-                  <div className="border-b border-gray-200 mb-6">
+                  <div className="border-b border-gray-200 mb-6 dark:border-gray-700">
                     <nav className="-mb-px flex space-x-8">
                       <button
                         onClick={() => setShowCollaborators(false)}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                           !showCollaborators
                             ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                         }`}
                       >
                         <Settings2 className="w-4 h-4 mr-1 inline" />
@@ -1552,7 +1552,7 @@ export function WorkflowManager({
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                           showCollaborators
                             ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
                         }`}
                       >
                         <Users className="w-4 h-4 mr-1 inline" />
@@ -1565,28 +1565,28 @@ export function WorkflowManager({
                     // Overview Tab
                     <div className="space-y-6">
 
-                <div className="bg-gray-50 rounded-lg p-4">
+                <div className="bg-gray-50 rounded-lg p-4 dark:bg-gray-900">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <span className="text-sm font-medium text-gray-700">Name:</span>
-                      <p className="text-sm text-gray-900">{workflows?.find(w => w.id === selectedWorkflow)?.name}</p>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Name:</span>
+                      <p className="text-sm text-gray-900 dark:text-white">{workflows?.find(w => w.id === selectedWorkflow)?.name}</p>
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-gray-700">Stages:</span>
-                      <p className="text-sm text-gray-900">{workflowStages.length} stages</p>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stages:</span>
+                      <p className="text-sm text-gray-900 dark:text-white">{workflowStages.length} stages</p>
                     </div>
                   </div>
                   {workflows?.find(w => w.id === selectedWorkflow)?.description && (
                     <div className="mt-3">
-                      <span className="text-sm font-medium text-gray-700">Description:</span>
-                      <p className="text-sm text-gray-900">{workflows?.find(w => w.id === selectedWorkflow)?.description}</p>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Description:</span>
+                      <p className="text-sm text-gray-900 dark:text-white">{workflows?.find(w => w.id === selectedWorkflow)?.description}</p>
                     </div>
                   )}
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h5 className="font-medium text-gray-900">Stages</h5>
+                    <h5 className="font-medium text-gray-900 dark:text-white">Stages</h5>
                     <Button
                       size="sm"
                       onClick={() => {
@@ -1600,18 +1600,18 @@ export function WorkflowManager({
                   </div>
                   <div className="space-y-3">
                     {workflowStages.map((stage, index) => (
-                      <div key={stage.id} className="flex items-center space-x-4 p-3 border border-gray-200 rounded-lg">
-                        <div className="flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full text-sm font-medium text-gray-600">
+                      <div key={stage.id} className="flex items-center space-x-4 p-3 border border-gray-200 rounded-lg dark:border-gray-700">
+                        <div className="flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full text-sm font-medium text-gray-600 dark:text-gray-400 dark:bg-gray-800">
                           {index + 1}
                         </div>
                         <div className={`w-4 h-4 rounded-full bg-${stage.stage_color}`}></div>
                         <div className="flex-1">
-                          <div className="font-medium text-sm text-gray-900">{stage.stage_label}</div>
+                          <div className="font-medium text-sm text-gray-900 dark:text-white">{stage.stage_label}</div>
                           {stage.stage_description && (
-                            <div className="text-xs text-gray-500">{stage.stage_description}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{stage.stage_description}</div>
                           )}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
                           Deadline: {stage.standard_deadline_days} days
                         </div>
                       </div>
@@ -1647,7 +1647,7 @@ export function WorkflowManager({
                                 </div>
                               </div>
                             ) : (
-                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-900">
                                 <div className="flex items-start space-x-3">
                                   <div className="flex-shrink-0">
                                     <Badge variant={getPermissionColor(viewPermission || 'read')} size="sm">
@@ -1655,7 +1655,7 @@ export function WorkflowManager({
                                     </Badge>
                                   </div>
                                   <div className="flex-1">
-                                    <p className="text-sm text-gray-700">
+                                    <p className="text-sm text-gray-700 dark:text-gray-300">
                                       You have {viewPermission || 'view-only'} access to this workflow. Contact the workflow owner for permission changes.
                                     </p>
                                   </div>
@@ -1667,16 +1667,16 @@ export function WorkflowManager({
                             {workflowOwner && (
                               <Card>
                                 <div className="p-4">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-3">Workflow Owner</h4>
+                                  <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Workflow Owner</h4>
                                   <div className="flex items-center space-x-3">
                                     <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
                                       <Users className="w-5 h-5 text-primary-600" />
                                     </div>
                                     <div className="flex-1">
-                                      <p className="text-sm font-medium text-gray-900">
+                                      <p className="text-sm font-medium text-gray-900 dark:text-white">
                                         {getUserDisplayName(workflowOwner)}
                                       </p>
-                                      <p className="text-xs text-gray-500">{workflowOwner.email}</p>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">{workflowOwner.email}</p>
                                     </div>
                                     <Badge variant="error" size="sm">Owner</Badge>
                                   </div>
@@ -1687,7 +1687,7 @@ export function WorkflowManager({
                             {/* Public/Private Toggle */}
                             <Card>
                               <div className="p-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-3">Visibility</h4>
+                                <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Visibility</h4>
                                 <label className={`flex items-center ${viewPermission === 'admin' ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
                                   <input
                                     type="checkbox"
@@ -1714,8 +1714,8 @@ export function WorkflowManager({
                                     className="mr-3 rounded"
                                   />
                                   <div className="flex-1">
-                                    <span className="text-sm font-medium text-gray-900">Public Workflow</span>
-                                    <p className="text-xs text-gray-500 mt-0.5">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">Public Workflow</span>
+                                    <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                                       {viewPermission === 'admin'
                                         ? 'When enabled, all users can view and use this workflow. Changes save automatically.'
                                         : 'Only workflow admins can change visibility settings'
@@ -1730,7 +1730,7 @@ export function WorkflowManager({
                             {!workflow.is_public && viewPermission === 'admin' && (
                               <Card>
                                 <div className="p-4">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-3">Invite Collaborator</h4>
+                                  <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Invite Collaborator</h4>
                                   <div className="flex items-center space-x-2">
                                     <div className="relative flex-1">
                                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1745,22 +1745,22 @@ export function WorkflowManager({
                                         onBlur={() => {
                                           setTimeout(() => setShowUserDropdown(false), 200)
                                         }}
-                                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                                       />
                                       {showUserDropdown && filteredUsers.length > 0 && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                                           {filteredUsers.map((user) => (
                                             <button
                                               key={user.id}
                                               onClick={() => handleUserSelect(user)}
-                                              className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                              className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 dark:hover:bg-gray-800 dark:border-gray-800"
                                             >
-                                              <div className="text-sm font-medium text-gray-900">
+                                              <div className="text-sm font-medium text-gray-900 dark:text-white">
                                                 {user.first_name && user.last_name
                                                   ? `${user.first_name} ${user.last_name}`
                                                   : user.email}
                                               </div>
-                                              <div className="text-xs text-gray-500">{user.email}</div>
+                                              <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
                                             </button>
                                           ))}
                                         </div>
@@ -1769,7 +1769,7 @@ export function WorkflowManager({
                                     <select
                                       value={newCollaboratorPermission}
                                       onChange={(e) => setNewCollaboratorPermission(e.target.value as 'read' | 'write' | 'admin')}
-                                      className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                      className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                                     >
                                       <option value="read">Read</option>
                                       <option value="write">Write</option>
@@ -1800,24 +1800,24 @@ export function WorkflowManager({
                             {!workflow.is_public && (
                               <Card>
                                 <div className="p-4">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-3">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">
                                     Team Members ({collaborations?.length || 0})
                                   </h4>
                                   <div className="space-y-2">
                                     {collaborations?.map((collab) => (
                                       <div
                                         key={collab.id}
-                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
                                       >
                                         <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                          <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0">
-                                            <Users className="w-4 h-4 text-gray-600" />
+                                          <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0 dark:bg-gray-800">
+                                            <Users className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                                           </div>
                                           <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                            <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                                               {getUserDisplayName(collab.user)}
                                             </p>
-                                            <p className="text-xs text-gray-500 truncate">{collab.user?.email}</p>
+                                            <p className="text-xs text-gray-500 truncate dark:text-gray-400">{collab.user?.email}</p>
                                           </div>
                                         </div>
                                         <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
@@ -1829,7 +1829,7 @@ export function WorkflowManager({
                                                   collaborationId: collab.id,
                                                   permission: e.target.value
                                                 })}
-                                                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                                                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 dark:border-gray-600"
                                               >
                                                 <option value="read">Read</option>
                                                 <option value="write">Write</option>
@@ -1853,7 +1853,7 @@ export function WorkflowManager({
                                     ))}
 
                                     {(!collaborations || collaborations.length === 0) && (
-                                      <div className="text-center py-8 text-gray-500">
+                                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                         <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                                         <p className="text-sm font-medium">No team members yet</p>
                                         <p className="text-xs mt-1">Invite users above to collaborate on this workflow</p>
@@ -1868,8 +1868,8 @@ export function WorkflowManager({
                               <Card>
                                 <div className="p-4 text-center">
                                   <Eye className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                                  <p className="text-sm font-medium text-gray-700">Public Workflow</p>
-                                  <p className="text-xs text-gray-500 mt-1">
+                                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Public Workflow</p>
+                                  <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                                     This workflow is visible to all users. Disable public access to manage team members.
                                   </p>
                                 </div>
@@ -1883,7 +1883,7 @@ export function WorkflowManager({
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
                 <div className="text-center">
                   <Workflow className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                   <p>Select a workflow to view details or create a new one</p>
@@ -1900,8 +1900,8 @@ export function WorkflowManager({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card>
             <div className="p-6 max-w-md">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove Collaborator</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Remove Collaborator</h3>
+              <p className="text-sm text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to remove <strong>{deleteConfirm.userEmail}</strong> from this workflow?
                 They will no longer have access.
               </p>

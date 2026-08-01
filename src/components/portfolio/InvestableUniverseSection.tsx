@@ -179,21 +179,21 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
       {collapsible ? (
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors dark:hover:bg-gray-700 dark:bg-gray-900"
         >
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-indigo-500" />
-            <span className="text-sm font-semibold text-gray-900">Investable Universe</span>
-            <span className="text-xs text-gray-500">{combined.total} assets · {(universeFilters?.length || 0)} filters</span>
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">Investable Universe</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{combined.total} assets · {(universeFilters?.length || 0)} filters</span>
           </div>
           <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
         </button>
       ) : (
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900">
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-indigo-500" />
-            <span className="text-sm font-semibold text-gray-900">Investable Universe</span>
-            <span className="text-xs text-gray-500">{combined.total} assets · {(universeFilters?.length || 0)} filters</span>
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">Investable Universe</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{combined.total} assets · {(universeFilters?.length || 0)} filters</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)}>
@@ -222,7 +222,7 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
 
           {/* Asset Search */}
           {showSearch && (
-            <div className="mb-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="mb-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2">
                 <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                 <input
@@ -230,7 +230,7 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
                   placeholder="Search assets by symbol or name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                  className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm dark:border-gray-600"
                 />
                 <Button variant="ghost" size="sm" onClick={() => { setShowSearch(false); setSearchQuery('') }}>
                   <X className="h-3.5 w-3.5" />
@@ -243,16 +243,16 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
                     .filter(a => !universeAssets?.some((ua: any) => ua.asset_id === a.id))
                     .slice(0, 10)
                     .map(a => (
-                      <div key={a.id} className="flex items-center justify-between px-2 py-1.5 hover:bg-white rounded cursor-pointer" onClick={() => { addAssetM.mutate(a.id); setSearchQuery('') }}>
+                      <div key={a.id} className="flex items-center justify-between px-2 py-1.5 hover:bg-white rounded cursor-pointer dark:hover:bg-gray-800" onClick={() => { addAssetM.mutate(a.id); setSearchQuery('') }}>
                         <div>
-                          <span className="font-medium text-sm text-gray-900">{a.symbol}</span>
-                          <span className="text-gray-500 ml-2 text-xs">{a.company_name}</span>
+                          <span className="font-medium text-sm text-gray-900 dark:text-white">{a.symbol}</span>
+                          <span className="text-gray-500 ml-2 text-xs dark:text-gray-400">{a.company_name}</span>
                         </div>
                         <Plus className="h-3.5 w-3.5 text-indigo-600" />
                       </div>
                     ))}
                   {allAssets?.filter(a => a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) || a.company_name?.toLowerCase().includes(searchQuery.toLowerCase())).filter(a => !universeAssets?.some((ua: any) => ua.asset_id === a.id)).length === 0 && (
-                    <p className="text-xs text-gray-500 px-2 py-1.5">No matching assets found</p>
+                    <p className="text-xs text-gray-500 px-2 py-1.5 dark:text-gray-400">No matching assets found</p>
                   )}
                 </div>
               )}
@@ -269,7 +269,7 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
                 </Button>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <select value={filterType} onChange={(e) => { setFilterType(e.target.value); setFilterValue(''); setMarketCapMin(''); setMarketCapMax('') }} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500">
+                <select value={filterType} onChange={(e) => { setFilterType(e.target.value); setFilterValue(''); setMarketCapMin(''); setMarketCapMax('') }} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 dark:border-gray-600">
                   <option value="sector">Sector</option>
                   <option value="industry">Industry</option>
                   <option value="market_cap">Market Cap</option>
@@ -279,26 +279,26 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
                 </select>
                 {filterType === 'market_cap' ? (
                   <>
-                    <select value={marketCapOperator} onChange={(e) => setMarketCapOperator(e.target.value as any)} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500">
+                    <select value={marketCapOperator} onChange={(e) => setMarketCapOperator(e.target.value as any)} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 dark:border-gray-600">
                       <option value="gt">Greater than</option>
                       <option value="lt">Less than</option>
                       <option value="between">Between</option>
                     </select>
-                    <input type="number" value={marketCapMin} onChange={(e) => setMarketCapMin(e.target.value)} placeholder={marketCapOperator === 'between' ? 'Min ($M)' : 'Value ($M)'} className="w-28 px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500" />
+                    <input type="number" value={marketCapMin} onChange={(e) => setMarketCapMin(e.target.value)} placeholder={marketCapOperator === 'between' ? 'Min ($M)' : 'Value ($M)'} className="w-28 px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 dark:border-gray-600" />
                     {marketCapOperator === 'between' && (
                       <>
-                        <span className="text-gray-500 text-xs">and</span>
-                        <input type="number" value={marketCapMax} onChange={(e) => setMarketCapMax(e.target.value)} placeholder="Max ($M)" className="w-28 px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500" />
+                        <span className="text-gray-500 text-xs dark:text-gray-400">and</span>
+                        <input type="number" value={marketCapMax} onChange={(e) => setMarketCapMax(e.target.value)} placeholder="Max ($M)" className="w-28 px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 dark:border-gray-600" />
                       </>
                     )}
                   </>
                 ) : (
                   <>
-                    <select value={filterOperator} onChange={(e) => setFilterOperator(e.target.value)} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500">
+                    <select value={filterOperator} onChange={(e) => setFilterOperator(e.target.value)} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 dark:border-gray-600">
                       <option value="include">Include</option>
                       <option value="exclude">Exclude</option>
                     </select>
-                    <select value={filterValue} onChange={(e) => setFilterValue(e.target.value)} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 min-w-[150px]">
+                    <select value={filterValue} onChange={(e) => setFilterValue(e.target.value)} className="px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 min-w-[150px] dark:border-gray-600">
                       <option value="">Select...</option>
                       {filterType === 'sector' && filterOptions.sectors.map(s => <option key={s} value={s}>{s}</option>)}
                       {filterType === 'industry' && filterOptions.industries.map(i => <option key={i} value={i}>{i}</option>)}
@@ -318,7 +318,7 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
           {/* Active Filters */}
           {universeFilters && universeFilters.length > 0 && (
             <div className="mb-2">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Active Filters</h4>
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">Active Filters</h4>
               <div className="flex flex-wrap gap-1.5">
                 {universeFilters.map((f: any) => {
                   const isExclude = f.filter_operator === 'exclude'
@@ -351,38 +351,38 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
           {/* Assets Table */}
           {combined.total > 0 ? (
             <div className={!collapsible ? 'flex-1 flex flex-col min-h-0' : ''}>
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 shrink-0">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 shrink-0 dark:text-gray-400">
                 Included Assets ({combined.total})
                 {combined.manual.length > 0 && combined.filtered.length > 0 && (
                   <span className="font-normal text-gray-400 normal-case tracking-normal ml-2">({combined.manual.length} manual + {combined.filtered.length} from filters)</span>
                 )}
               </h4>
               <div className={`overflow-y-auto border border-gray-200 rounded-md ${collapsible ? 'max-h-64' : 'flex-1 min-h-0'}`}>
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 sticky top-0">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 sticky top-0 dark:bg-gray-900">
                     <tr>
-                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase">Symbol</th>
-                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase">Company</th>
-                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase">Sector</th>
-                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase">Source</th>
-                      <th className="px-3 py-1.5 text-right text-[11px] font-medium text-gray-500 uppercase"></th>
+                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Symbol</th>
+                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Company</th>
+                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Sector</th>
+                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Source</th>
+                      <th className="px-3 py-1.5 text-right text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400"></th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-gray-200 dark:divide-gray-700 dark:bg-gray-800">
                     {combined.manual.map((ua: any) => (
                       <tr key={`m-${ua.id}`} className="hover:bg-gray-50">
-                        <td className="px-3 py-1.5 text-sm font-medium text-gray-900">{ua.asset?.symbol}</td>
-                        <td className="px-3 py-1.5 text-sm text-gray-500">{ua.asset?.company_name}</td>
-                        <td className="px-3 py-1.5 text-sm text-gray-500">{ua.asset?.sector || '-'}</td>
+                        <td className="px-3 py-1.5 text-sm font-medium text-gray-900 dark:text-white">{ua.asset?.symbol}</td>
+                        <td className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">{ua.asset?.company_name}</td>
+                        <td className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">{ua.asset?.sector || '-'}</td>
                         <td className="px-3 py-1.5"><span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-blue-100 text-blue-800">Manual</span></td>
                         <td className="px-3 py-1.5 text-right"><button onClick={() => removeAssetM.mutate(ua.id)} className="text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button></td>
                       </tr>
                     ))}
                     {combined.filtered.map((a: any) => (
-                      <tr key={`f-${a.id}`} className="hover:bg-gray-50 bg-indigo-50/30">
-                        <td className="px-3 py-1.5 text-sm font-medium text-gray-900">{a.symbol}</td>
-                        <td className="px-3 py-1.5 text-sm text-gray-500">{a.company_name}</td>
-                        <td className="px-3 py-1.5 text-sm text-gray-500">{a.sector || '-'}</td>
+                      <tr key={`f-${a.id}`} className="hover:bg-gray-50 bg-indigo-50/30 dark:hover:bg-gray-800">
+                        <td className="px-3 py-1.5 text-sm font-medium text-gray-900 dark:text-white">{a.symbol}</td>
+                        <td className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">{a.company_name}</td>
+                        <td className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">{a.sector || '-'}</td>
                         <td className="px-3 py-1.5"><span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-indigo-100 text-indigo-800">Filter</span></td>
                         <td className="px-3 py-1.5 text-right text-gray-400">-</td>
                       </tr>
@@ -392,7 +392,7 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
               </div>
             </div>
           ) : (
-            <div className="text-center py-4 text-gray-500">
+            <div className="text-center py-4 text-gray-500 dark:text-gray-400">
               <Globe className="h-8 w-8 mx-auto mb-1.5 text-gray-300" />
               <p className="font-medium text-sm">No assets in universe</p>
               <p className="text-xs">Add assets manually or create filter rules</p>

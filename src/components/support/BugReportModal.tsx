@@ -15,7 +15,7 @@ interface BugReportModalProps {
 }
 
 const SEVERITY_OPTIONS: { value: BugReport['severity']; label: string; icon: typeof Info; cls: string }[] = [
-  { value: 'low', label: 'Low', icon: Info, cls: 'text-gray-500 border-gray-300 hover:border-gray-400' },
+  { value: 'low', label: 'Low', icon: Info, cls: 'text-gray-500 border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:text-gray-400' },
   { value: 'medium', label: 'Medium', icon: AlertCircle, cls: 'text-amber-600 border-amber-300 hover:border-amber-400' },
   { value: 'high', label: 'High', icon: AlertTriangle, cls: 'text-orange-600 border-orange-300 hover:border-orange-400' },
   { value: 'critical', label: 'Critical', icon: AlertTriangle, cls: 'text-red-600 border-red-300 hover:border-red-400' },
@@ -91,14 +91,14 @@ export function BugReportModal({ onClose }: BugReportModalProps) {
       <div className="fixed inset-0 z-50 bg-black/30" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed bottom-20 right-5 z-50 w-[420px] max-h-[80vh] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+      <div className="fixed bottom-20 right-5 z-50 w-[420px] max-h-[80vh] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden dark:border-gray-700 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-2">
-            <Bug className="w-4 h-4 text-gray-600" />
-            <h2 className="text-sm font-semibold text-gray-800">Report an Issue</h2>
+            <Bug className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+            <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Report an Issue</h2>
           </div>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors dark:hover:text-gray-300">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -107,32 +107,32 @@ export function BugReportModal({ onClose }: BugReportModalProps) {
         <div className="p-4 space-y-4 overflow-y-auto">
           {/* Title */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">What went wrong?</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">What went wrong?</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Brief description of the issue"
               autoFocus
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Details (optional)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Details (optional)</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Steps to reproduce, expected vs. actual behavior..."
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none dark:border-gray-600"
             />
           </div>
 
           {/* Severity */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Severity</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Severity</label>
             <div className="flex gap-2">
               {SEVERITY_OPTIONS.map((opt) => {
                 const Icon = opt.icon
@@ -144,7 +144,7 @@ export function BugReportModal({ onClose }: BugReportModalProps) {
                     className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs font-medium transition-all ${
                       isSelected
                         ? `${opt.cls} bg-gray-50 border-2`
-                        : 'text-gray-400 border-gray-200 hover:border-gray-300'
+                        : 'text-gray-400 border-gray-200 hover:border-gray-300 dark:border-gray-700'
                     }`}
                   >
                     <Icon className="w-3.5 h-3.5" />
@@ -156,36 +156,36 @@ export function BugReportModal({ onClose }: BugReportModalProps) {
           </div>
 
           {/* Context (auto-captured) */}
-          <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
+          <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5 dark:bg-gray-900">
             <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-1">Auto-captured</p>
             {pageContext ? (
               <>
-                <p className="text-xs text-gray-500 truncate">
-                  View: <span className="font-medium text-gray-600">{pageContext.tabTitle}</span>
+                <p className="text-xs text-gray-500 truncate dark:text-gray-400">
+                  View: <span className="font-medium text-gray-600 dark:text-gray-400">{pageContext.tabTitle}</span>
                   <span className="text-gray-400"> ({pageContext.tabType})</span>
                 </p>
                 {pageContext.assetSymbol && (
-                  <p className="text-xs text-gray-500 truncate">Asset: <span className="font-medium text-gray-600">{pageContext.assetSymbol}</span></p>
+                  <p className="text-xs text-gray-500 truncate dark:text-gray-400">Asset: <span className="font-medium text-gray-600 dark:text-gray-400">{pageContext.assetSymbol}</span></p>
                 )}
                 {pageContext.portfolioName && (
-                  <p className="text-xs text-gray-500 truncate">Portfolio: <span className="font-medium text-gray-600">{pageContext.portfolioName}</span></p>
+                  <p className="text-xs text-gray-500 truncate dark:text-gray-400">Portfolio: <span className="font-medium text-gray-600 dark:text-gray-400">{pageContext.portfolioName}</span></p>
                 )}
                 {pageContext.subPage && (
-                  <p className="text-xs text-gray-500 truncate">Section: <span className="font-medium text-gray-600">{pageContext.subPage}</span></p>
+                  <p className="text-xs text-gray-500 truncate dark:text-gray-400">Section: <span className="font-medium text-gray-600 dark:text-gray-400">{pageContext.subPage}</span></p>
                 )}
               </>
             ) : (
-              <p className="text-xs text-gray-500 truncate">Page: {window.location.pathname}</p>
+              <p className="text-xs text-gray-500 truncate dark:text-gray-400">Page: {window.location.pathname}</p>
             )}
-            <p className="text-xs text-gray-500 truncate">Browser: {navigator.userAgent.split(' ').slice(-2).join(' ')}</p>
+            <p className="text-xs text-gray-500 truncate dark:text-gray-400">Browser: {navigator.userAgent.split(' ').slice(-2).join(' ')}</p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-end gap-2 dark:border-gray-800">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
           >
             Cancel
           </button>

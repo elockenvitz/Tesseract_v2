@@ -34,8 +34,8 @@ function TimelineItem({ label, value, color }: TimelineItemProps) {
     <div className="flex items-center space-x-3">
       <div className={`w-2 h-2 ${COLOR_CLASSES[color]} rounded-full`}></div>
       <div className="flex-1">
-        <div className="text-sm font-medium text-gray-900">{label}</div>
-        <div className="text-xs text-gray-500">{value}</div>
+        <div className="text-sm font-medium text-gray-900 dark:text-white">{label}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">{value}</div>
       </div>
     </div>
   )
@@ -50,7 +50,7 @@ export function WorkflowTimelineCard({ workflow }: WorkflowTimelineCardProps) {
     <Card>
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Workflow Timeline</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow Timeline</h3>
           <Calendar className="w-5 h-5 text-gray-400" />
         </div>
         <div className="space-y-3">

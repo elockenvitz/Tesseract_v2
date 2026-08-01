@@ -46,7 +46,7 @@ const STATUS_PILL: Record<ExportJob['status'], string> = {
   running: 'bg-indigo-100 text-indigo-700',
   succeeded: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
-  cancelled: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800',
 }
 
 function formatBytes(bytes: number): string {
@@ -195,18 +195,18 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
     <Card className="p-4">
       <div className="mb-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-900">Data Governance</h3>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white">Data Governance</h3>
           {governance && (
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
               governance.legal_hold
                 ? 'bg-red-100 text-red-700'
-                : 'bg-gray-100 text-gray-600'
+                : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
             }`}>
               {governance.legal_hold ? 'Legal Hold: Active' : 'Legal Hold: Inactive'}
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
           Audit log retention, legal hold status, and data export
         </p>
       </div>
@@ -214,7 +214,7 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
       <div className="space-y-4">
         {/* Audit Log Retention */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">
             Audit Log Retention (days)
           </label>
           <div className="flex items-center gap-3">
@@ -230,9 +230,9 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
               }}
               min={30}
               max={3650}
-              className="w-32 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-32 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:border-gray-600"
             />
-            <span className="text-xs text-gray-500">30–3650 days</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">30–3650 days</span>
             {hasRetentionChange && (
               <Button
                 size="sm"
@@ -249,24 +249,24 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
         <div className={`rounded-lg border-2 p-3 ${
           governance?.legal_hold
             ? 'border-red-300 bg-red-50/60'
-            : 'border-gray-200 bg-gray-50/50'
+            : 'border-gray-200 bg-gray-50/50 dark:border-gray-700'
         }`}>
           <div className="flex items-start gap-2.5">
             <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${governance?.legal_hold ? 'text-red-600' : 'text-gray-400'}`} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between">
-                <span className={`text-sm font-semibold ${governance?.legal_hold ? 'text-red-900' : 'text-gray-800'}`}>
+                <span className={`text-sm font-semibold ${governance?.legal_hold ? 'text-red-900' : 'text-gray-800 dark:text-gray-100'}`}>
                   Legal Hold
                 </span>
                 <span className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${
                   governance?.legal_hold
                     ? 'bg-red-200 text-red-800'
-                    : 'bg-gray-200 text-gray-600'
+                    : 'bg-gray-200 text-gray-600 dark:text-gray-400'
                 }`}>
                   {governance?.legal_hold ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <p className={`text-xs mt-1 ${governance?.legal_hold ? 'text-red-800' : 'text-gray-500'}`}>
+              <p className={`text-xs mt-1 ${governance?.legal_hold ? 'text-red-800' : 'text-gray-500 dark:text-gray-400'}`}>
                 {governance?.legal_hold
                   ? 'Audit logs cannot be deleted and organization deletion is blocked. Contact your platform administrator to lift the hold.'
                   : 'No hold in effect. Audit logs follow the retention policy above.'}
@@ -301,11 +301,11 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
         )}
 
         {/* Exports */}
-        <div className="pt-3 border-t border-gray-200">
+        <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <div className="text-sm font-medium text-gray-900">Data Exports</div>
-              <p className="text-xs text-gray-500">Export requests are logged. Exports may take time to prepare.</p>
+              <div className="text-sm font-medium text-gray-900 dark:text-white">Data Exports</div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Export requests are logged. Exports may take time to prepare.</p>
             </div>
             <Button
               size="sm"
@@ -319,10 +319,10 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
           </div>
 
           {exportJobs.length > 0 && (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-500 text-left">
+                  <tr className="bg-gray-50 text-gray-500 text-left dark:text-gray-400 dark:bg-gray-900">
                     <th className="px-3 py-2 font-medium">Status</th>
                     <th className="px-3 py-2 font-medium">Requested</th>
                     <th className="px-3 py-2 font-medium">Completed</th>
@@ -330,7 +330,7 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
                     <th className="px-3 py-2 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {exportJobs.map((job) => (
                     <tr key={job.id} className="hover:bg-gray-50/50">
                       <td className="px-3 py-2">
@@ -349,13 +349,13 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {format(new Date(job.created_at), 'MMM d, h:mm a')}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {job.finished_at ? format(new Date(job.finished_at), 'MMM d, h:mm a') : '—'}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
                         {job.result_bytes != null ? formatBytes(job.result_bytes) : '—'}
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -377,7 +377,7 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
                             <button
                               onClick={() => cancelJobMutation.mutate(job.id)}
                               disabled={cancelJobMutation.isPending}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-red-600 border border-gray-200 rounded hover:bg-red-50 transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-red-600 border border-gray-200 rounded hover:bg-red-50 transition-colors dark:border-gray-700 dark:text-gray-400"
                               title="Cancel export"
                             >
                               <XCircle className="w-3 h-3" />
@@ -388,7 +388,7 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
                             <button
                               onClick={() => exportMutation.mutate()}
                               disabled={exportMutation.isPending}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-indigo-600 border border-gray-200 rounded hover:bg-indigo-50 transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-indigo-600 border border-gray-200 rounded hover:bg-indigo-50 transition-colors dark:border-gray-700 dark:text-gray-400"
                               title="Re-request export"
                             >
                               <RefreshCw className="w-3 h-3" />
@@ -410,14 +410,14 @@ export function OrgGovernanceSection({ organizationId }: OrgGovernanceSectionPro
       {showExportConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="export-confirm-title">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowExportConfirm(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4 dark:bg-gray-800">
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
                 <Download className="w-5 h-5 text-indigo-600" />
               </div>
               <div>
-                <h3 id="export-confirm-title" className="text-base font-semibold text-gray-900">Request organization export?</h3>
-                <p className="text-sm text-gray-500">
+                <h3 id="export-confirm-title" className="text-base font-semibold text-gray-900 dark:text-white">Request organization export?</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Exports may take time to prepare. This action will be logged.
                 </p>
               </div>

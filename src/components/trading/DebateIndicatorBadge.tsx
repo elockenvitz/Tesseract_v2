@@ -126,7 +126,7 @@ export function DebateIndicatorBadge({ tradeIdeaId, onClick, className }: Debate
                 'text-[10px] font-medium',
                 direction === 'bull' ? 'text-green-600 dark:text-green-400' :
                 direction === 'bear' ? 'text-red-600 dark:text-red-400' :
-                'text-gray-500'
+                'text-gray-500 dark:text-gray-400'
               )}>
                 {tiltLabel}
               </div>

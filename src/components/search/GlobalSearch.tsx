@@ -102,8 +102,8 @@ const ResultItem = React.memo(({
       case 'project': return 'bg-violet-50 text-violet-600'
       case 'theme': return 'bg-indigo-50 text-indigo-600'
       case 'notebook': return 'bg-amber-50 text-amber-600'
-      case 'user': return 'bg-gray-100 text-gray-600'
-      default: return 'bg-gray-100 text-gray-500'
+      case 'user': return 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
+      default: return 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
     }
   }
 
@@ -120,7 +120,7 @@ const ResultItem = React.memo(({
     >
       <div className={clsx(
         'flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-100',
-        isSelected ? 'bg-primary-100 scale-105' : 'bg-gray-50'
+        isSelected ? 'bg-primary-100 scale-105' : 'bg-gray-50 dark:bg-gray-900'
       )}>
         {getResultIcon(result.type)}
       </div>
@@ -128,7 +128,7 @@ const ResultItem = React.memo(({
         <div className="flex items-center gap-2">
           <span className={clsx(
             'text-sm font-medium truncate transition-colors duration-100',
-            isSelected ? 'text-primary-900' : 'text-gray-900'
+            isSelected ? 'text-primary-900' : 'text-gray-900 dark:text-white'
           )}>
             {result.title}
           </span>
@@ -149,7 +149,7 @@ const ResultItem = React.memo(({
         'flex-shrink-0 transition-all duration-100',
         isSelected ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'
       )}>
-        <kbd className="hidden sm:flex text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+        <kbd className="hidden sm:flex text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-800">
           ↵
         </kbd>
       </div>
@@ -469,14 +469,14 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="block w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-gray-50 hover:bg-white transition-all duration-200 cursor-text"
+          className="block w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-gray-50 hover:bg-white transition-all duration-200 cursor-text dark:border-gray-600 dark:hover:bg-gray-800 dark:bg-gray-900"
         />
       </div>
 
       {/* Always mounted dropdown with CSS transitions */}
       <div
         className={clsx(
-          "absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl shadow-xl border border-gray-200/80 z-50 overflow-hidden",
+          "absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl shadow-xl border border-gray-200/80 z-50 overflow-hidden dark:bg-gray-800",
           "transition-all duration-200 ease-out origin-top",
           showDropdown
             ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
@@ -526,7 +526,7 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
             contentState === 'empty' ? "opacity-100" : "opacity-0 absolute inset-0 pointer-events-none"
           )}>
             <Search className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">No results for "<span className="font-medium text-gray-700">{query}</span>"</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No results for "<span className="font-medium text-gray-700">{query}</span>"</p>
             <p className="text-xs text-gray-400 mt-1">Try a different search term</p>
           </div>
         </div>

@@ -72,21 +72,21 @@ export function KeyboardHelpModal({ isOpen, onClose }: KeyboardHelpModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Keyboard className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Keyboard Shortcuts</h2>
-              <p className="text-sm text-gray-500">Navigate and interact with the table faster</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Keyboard Shortcuts</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Navigate and interact with the table faster</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -97,12 +97,12 @@ export function KeyboardHelpModal({ isOpen, onClose }: KeyboardHelpModalProps) {
           <div className="grid grid-cols-2 gap-6">
             {SHORTCUT_GROUPS.map(group => (
               <div key={group.title}>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">{group.title}</h3>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">{group.title}</h3>
                 <div className="space-y-2">
                   {group.shortcuts.map(shortcut => (
                     <div key={shortcut.key} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">{shortcut.description}</span>
-                      <kbd className="px-2 py-1 text-xs font-mono font-medium bg-gray-100 text-gray-700 rounded border border-gray-200 shadow-sm">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{shortcut.description}</span>
+                      <kbd className="px-2 py-1 text-xs font-mono font-medium bg-gray-100 text-gray-700 rounded border border-gray-200 shadow-sm dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800">
                         {shortcut.key}
                       </kbd>
                     </div>
@@ -114,8 +114,8 @@ export function KeyboardHelpModal({ isOpen, onClose }: KeyboardHelpModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200">
-          <p className="text-xs text-gray-500 text-center">
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+          <p className="text-xs text-gray-500 text-center dark:text-gray-400">
             Press <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-200 rounded">?</kbd> anytime to show this help
           </p>
         </div>

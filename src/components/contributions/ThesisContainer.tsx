@@ -238,7 +238,7 @@ export function ThesisContainer({
       {!isExternallyControlled && (
         <div className="flex items-center gap-3 pb-4">
           <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">View</span>
-          <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm border border-gray-200">
+          <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
             {/* Our View tab */}
             <button
               onClick={() => setActiveTab('aggregated')}
@@ -246,7 +246,7 @@ export function ThesisContainer({
                 'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                 activeTab === 'aggregated'
                   ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400'
               )}
             >
               <Users className="w-3.5 h-3.5" />
@@ -263,7 +263,7 @@ export function ThesisContainer({
                   'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                   activeTab === contributor.userId
                     ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:hover:text-white dark:hover:bg-gray-700 dark:text-gray-400'
                 )}
               >
                 {contributor.isCovering && (
@@ -309,12 +309,12 @@ export function ThesisContainer({
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center">
               <Target className="w-10 h-10 text-primary-400" />
             </div>
-            <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center">
+            <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center dark:bg-gray-800">
               <Users className="w-4 h-4 text-gray-400" />
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No team research yet</h3>
-          <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No team research yet</h3>
+          <p className="text-sm text-gray-500 text-center max-w-sm mb-6 dark:text-gray-400">
             No one has shared their investment thesis on this asset yet. Switch to your personal view to start documenting your research.
           </p>
           {user && (

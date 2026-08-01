@@ -183,7 +183,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
       case 'coverage_request':
         return <Users className="h-4 w-4 text-indigo-600" />
       default:
-        return <AlertCircle className="h-4 w-4 text-gray-600" />
+        return <AlertCircle className="h-4 w-4 text-gray-600 dark:text-gray-400" />
     }
   }
 
@@ -326,12 +326,12 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
       
       {/* Dialog */}
       <div className="flex min-h-full items-start justify-center p-4 pt-16">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all max-h-[80vh] overflow-hidden">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all max-h-[80vh] overflow-hidden dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-3">
-              <Bell className="h-5 w-5 text-gray-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+              <Bell className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h3>
               {unreadCount > 0 && (
                 <Badge variant="error" size="sm">
                   {unreadCount} unread
@@ -352,7 +352,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
               )}
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -360,14 +360,14 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
           </div>
 
           {/* Filter Tabs */}
-          <div className="flex border-b border-gray-200">
+          <div className="flex border-b border-gray-200 dark:border-gray-700">
             <button
               onClick={() => setFilter('all')}
               className={clsx(
                 'flex-1 px-4 py-3 text-sm font-medium transition-colors',
                 filter === 'all'
                   ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               All ({notifications?.length || 0})
@@ -378,7 +378,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                 'flex-1 px-4 py-3 text-sm font-medium transition-colors',
                 filter === 'unread'
                   ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               Unread ({unreadCount})
@@ -402,7 +402,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                 ))}
               </div>
             ) : filteredNotifications.length > 0 ? (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredNotifications.map((notification) => (
                   <div
                     key={notification.id}
@@ -415,14 +415,14 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                   >
                     <div className="flex items-start space-x-3">
                       <div className="flex-shrink-0 mt-1">
-                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center dark:bg-gray-800">
                           {getNotificationIcon(notification.type)}
                         </div>
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-1">
-                          <h4 className="text-sm font-semibold text-gray-900 truncate">
+                          <h4 className="text-sm font-semibold text-gray-900 truncate dark:text-white">
                             {notification.title}
                           </h4>
                           <Badge variant={getNotificationColor(notification.type)} size="sm">
@@ -433,14 +433,14 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                           )}
                         </div>
 
-                        <p className="text-sm text-gray-600 mb-2">
+                        <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">
                           {notification.message}
                         </p>
 
                         {/* Show reason for workflow access requests */}
                         {notification.type === 'workflow_access_request' && notification.context_data?.reason && (
-                          <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
-                            <p className="text-xs text-gray-700">
+                          <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                            <p className="text-xs text-gray-700 dark:text-gray-300">
                               <span className="font-medium">Reason:</span> {notification.context_data.reason}
                             </p>
                           </div>
@@ -482,7 +482,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
                           </div>
                         )}
 
-                        <div className="flex items-center space-x-4 text-xs text-gray-500 mt-2">
+                        <div className="flex items-center space-x-4 text-xs text-gray-500 mt-2 dark:text-gray-400">
                           <div className="flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
                             {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
@@ -514,13 +514,13 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
               </div>
             ) : (
               <div className="p-12 text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
                   <Bell className="h-8 w-8 text-gray-400" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                   {filter === 'unread' ? 'No unread notifications' : 'No notifications yet'}
                 </h3>
-                <p className="text-gray-500">
+                <p className="text-gray-500 dark:text-gray-400">
                   {filter === 'unread' 
                     ? 'All caught up! Check back later for updates.'
                     : 'You\'ll receive notifications about asset changes, shared notes, and more.'
@@ -532,8 +532,8 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
 
           {/* Footer */}
           {filteredNotifications.length > 0 && (
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-between text-sm text-gray-600">
+            <div className="p-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
                 <span>
                   Showing {filteredNotifications.length} of {notifications?.length || 0} notifications
                 </span>

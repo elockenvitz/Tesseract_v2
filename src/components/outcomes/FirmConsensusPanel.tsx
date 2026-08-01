@@ -89,7 +89,7 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
 
   if (isLoading) {
     return (
-      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4', className)}>
+      <div className={clsx('bg-white rounded-lg border border-gray-200 p-4 dark:border-gray-700 dark:bg-gray-800', className)}>
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
@@ -102,10 +102,10 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-gray-500" />
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
+          <BarChart3 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           Firm Consensus
         </h4>
       </div>
@@ -114,8 +114,8 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* Rating Consensus */}
           {dominantRating && defaultScale && (
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+            <div className="text-center p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                 Rating
               </div>
               <div
@@ -127,7 +127,7 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
               >
                 {getRatingLabel(defaultScale.id, dominantRating.value)}
               </div>
-              <div className="flex items-center justify-center gap-1 mt-2 text-xs text-gray-500">
+              <div className="flex items-center justify-center gap-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
                 <Users className="w-3 h-3" />
                 <span>
                   {dominantRating.count}/{ratings.length} analysts
@@ -146,30 +146,30 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
             const nfyData = data.periods[`FY${nextFY}`]
 
             return (
-              <div key={metricKey} className="text-center p-3 bg-gray-50 rounded-lg">
-                <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+              <div key={metricKey} className="text-center p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                   {data.label}
                 </div>
                 <div className="space-y-1">
                   {fyData && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">FY{String(currentFY).slice(-2)}</span>
-                      <span className="font-semibold text-gray-900">
+                      <span className="text-gray-500 dark:text-gray-400">FY{String(currentFY).slice(-2)}</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">
                         {formatValue(fyData.mean, data.format)}
                       </span>
                     </div>
                   )}
                   {nfyData && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">FY{String(nextFY).slice(-2)}</span>
-                      <span className="font-semibold text-gray-900">
+                      <span className="text-gray-500 dark:text-gray-400">FY{String(nextFY).slice(-2)}</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">
                         {formatValue(nfyData.mean, data.format)}
                       </span>
                     </div>
                   )}
                 </div>
                 {(fyData || nfyData) && (
-                  <div className="flex items-center justify-center gap-1 mt-2 text-xs text-gray-500">
+                  <div className="flex items-center justify-center gap-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
                     <Users className="w-3 h-3" />
                     <span>
                       {Math.max(fyData?.count || 0, nfyData?.count || 0)} analysts
@@ -182,7 +182,7 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
 
           {/* Show placeholder if only rating but no estimates */}
           {dominantRating && keyMetrics.length === 0 && (
-            <div className="col-span-2 text-center p-3 bg-gray-50 rounded-lg text-sm text-gray-500">
+            <div className="col-span-2 text-center p-3 bg-gray-50 rounded-lg text-sm text-gray-500 dark:text-gray-400 dark:bg-gray-900">
               No estimate data yet
             </div>
           )}
@@ -190,7 +190,7 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
 
         {/* Additional metrics if available */}
         {Object.keys(estimateConsensus).length > 2 && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {Object.entries(estimateConsensus)
                 .filter(([key]) => !['eps', 'revenue'].includes(key))
@@ -201,8 +201,8 @@ export function FirmConsensusPanel({ assetId, className }: FirmConsensusPanelPro
 
                   return (
                     <div key={key} className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">{data.label}</div>
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className="text-xs text-gray-500 mb-1 dark:text-gray-400">{data.label}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
                         {formatValue(fyData.mean, data.format)}
                       </div>
                     </div>

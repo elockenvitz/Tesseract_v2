@@ -250,16 +250,16 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
   }
 
   return (
-    <div className={clsx('bg-white rounded-lg border border-gray-200', className)}>
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+    <div className={clsx('bg-white rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-800', className)}>
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between dark:border-gray-800">
+        <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 dark:text-white">
           <FileSpreadsheet className="w-4 h-4 text-green-600" />
           Excel Model Sync
         </h4>
         {step !== 'select' && step !== 'syncing' && (
           <button
             onClick={handleReset}
-            className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+            className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 dark:hover:text-gray-200 dark:text-gray-400"
           >
             <RefreshCw className="w-3 h-3" />
             Start Over
@@ -278,21 +278,21 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
               'border-2 border-dashed rounded-lg p-6 text-center transition-colors',
               dragOver
                 ? 'border-primary-400 bg-primary-50'
-                : 'border-gray-300 hover:border-gray-400'
+                : 'border-gray-300 hover:border-gray-400 dark:border-gray-600'
             )}
           >
             {isLoading ? (
               <div className="flex flex-col items-center gap-2">
                 <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
-                <p className="text-sm text-gray-500">Reading file...</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Reading file...</p>
               </div>
             ) : (
               <>
                 <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600 mb-1">
+                <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">
                   Drag and drop your Excel model here
                 </p>
-                <p className="text-xs text-gray-500 mb-3">
+                <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                   or click to browse
                 </p>
                 <input
@@ -317,18 +317,18 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
         {step === 'preview' && file && (
           <div className="space-y-4">
             {/* File info */}
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
               <FileSpreadsheet className="w-8 h-8 text-green-600" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-sm font-medium text-gray-900 truncate dark:text-white">{file.name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {(file.size / 1024).toFixed(1)} KB
                   {workbook && ` · ${workbook.SheetNames.length} sheet${workbook.SheetNames.length !== 1 ? 's' : ''}`}
                 </p>
               </div>
               <button
                 onClick={handleReset}
-                className="p-1 text-gray-400 hover:text-gray-600"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -336,14 +336,14 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
 
             {/* Template selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 Template
               </label>
               <div className="relative">
                 <select
                   value={selectedTemplateId}
                   onChange={(e) => handleTemplateChange(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none bg-white"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none bg-white dark:border-gray-600 dark:bg-gray-800"
                   disabled={templatesLoading}
                 >
                   <option value="">Select a template...</option>
@@ -390,10 +390,10 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
             {/* Extracted values preview */}
             {parseResult && parseResult.values.length > 0 && (
               <div>
-                <h5 className="text-sm font-medium text-gray-700 mb-2">
+                <h5 className="text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   Extracted Data ({parseResult.values.length} fields)
                 </h5>
-                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto dark:border-gray-700 dark:divide-gray-800">
                   {parseResult.values.map((val, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
                       <div className="flex items-center gap-2">
@@ -402,12 +402,12 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
                         ) : (
                           <XCircle className="w-4 h-4 text-gray-300" />
                         )}
-                        <span className="text-gray-700">{val.label || val.field}</span>
+                        <span className="text-gray-700 dark:text-gray-300">{val.label || val.field}</span>
                         <span className="text-xs text-gray-400">{val.cell}</span>
                       </div>
                       <span className={clsx(
                         'font-medium',
-                        val.formattedValue !== null ? 'text-gray-900' : 'text-gray-400'
+                        val.formattedValue !== null ? 'text-gray-900 dark:text-white' : 'text-gray-400'
                       )}>
                         {formatDisplayValue(val)}
                       </span>
@@ -419,7 +419,7 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
 
             {/* No values extracted */}
             {parseResult && parseResult.values.length === 0 && selectedTemplate && (
-              <div className="text-center py-6 text-gray-500">
+              <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                 <p className="text-sm">No data could be extracted with this template.</p>
                 <p className="text-xs mt-1">Check that the cell references match your Excel file.</p>
               </div>
@@ -429,7 +429,7 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={handleReset}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -449,7 +449,7 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
         {step === 'syncing' && (
           <div className="text-center py-8">
             <Loader2 className="w-8 h-8 text-primary-600 animate-spin mx-auto mb-3" />
-            <p className="text-sm text-gray-600">Syncing data...</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Syncing data...</p>
           </div>
         )}
 
@@ -457,8 +457,8 @@ export function ExcelModelUploader({ assetId, className, onSyncComplete }: Excel
         {step === 'complete' && (
           <div className="text-center py-8">
             <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-900 mb-1">Sync Complete!</p>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-sm font-medium text-gray-900 mb-1 dark:text-white">Sync Complete!</p>
+            <p className="text-xs text-gray-500 mb-4 dark:text-gray-400">
               Your Excel data has been synced to Tesseract.
             </p>
             <button

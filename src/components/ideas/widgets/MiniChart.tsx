@@ -51,7 +51,7 @@ export function MiniChart({
   if (isLoading) {
     return (
       <div className={clsx('animate-pulse', className)}>
-        <div className="h-[60px] bg-gray-100 rounded" />
+        <div className="h-[60px] bg-gray-100 rounded dark:bg-gray-800" />
       </div>
     )
   }
@@ -59,7 +59,7 @@ export function MiniChart({
   if (!quote || chartData.length === 0) {
     return (
       <div className={clsx(
-        'flex items-center justify-center h-[60px] bg-gray-50 rounded text-gray-400',
+        'flex items-center justify-center h-[60px] bg-gray-50 rounded text-gray-400 dark:bg-gray-900',
         className
       )}>
         <BarChart3 className="h-5 w-5 mr-2" />
@@ -77,7 +77,7 @@ export function MiniChart({
       {(showPrice || showChange) && (
         <div className="flex items-center justify-between text-sm flex-shrink-0 mb-1">
           {showPrice && (
-            <span className="font-semibold text-gray-900">
+            <span className="font-semibold text-gray-900 dark:text-white">
               ${quote.price.toFixed(2)}
             </span>
           )}

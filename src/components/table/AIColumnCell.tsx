@@ -118,7 +118,7 @@ export function AIColumnCell({
       >
         <div className="flex items-center gap-1">
           <span className={clsx(
-            'text-gray-600 truncate flex-1',
+            'text-gray-600 truncate flex-1 dark:text-gray-400',
             density === 'ultra' ? 'text-xs' : 'text-sm'
           )}>
             {truncatedContent}
@@ -131,7 +131,7 @@ export function AIColumnCell({
         {/* Refresh button on hover */}
         <button
           onClick={(e) => { e.stopPropagation(); onRefresh() }}
-          className="absolute right-0 top-1/2 -translate-y-1/2 p-1 bg-white border border-gray-200 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute right-0 top-1/2 -translate-y-1/2 p-1 bg-white border border-gray-200 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity dark:border-gray-700 dark:bg-gray-800"
           title="Refresh"
         >
           <RefreshCw className="h-3 w-3 text-gray-400" />
@@ -195,30 +195,30 @@ function AIContentPopover({
   return createPortal(
     <div
       ref={popoverRef}
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-80 max-h-80 animate-in fade-in slide-in-from-top-2 duration-150"
+      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-gray-200 w-80 max-h-80 animate-in fade-in slide-in-from-top-2 duration-150 dark:border-gray-700 dark:bg-gray-800"
       style={{ left: position.x, top: position.y }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-purple-500" />
           <div>
             <span className="text-xs text-gray-400 font-medium">{assetSymbol}</span>
             <span className="mx-1.5 text-gray-300">·</span>
-            <span className="text-sm font-medium text-gray-900">{columnName}</span>
+            <span className="text-sm font-medium text-gray-900 dark:text-white">{columnName}</span>
           </div>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={onRefresh}
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
             title="Refresh"
           >
             <RefreshCw className="h-4 w-4 text-gray-400" />
           </button>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
           >
             <X className="h-4 w-4 text-gray-400" />
           </button>
@@ -227,13 +227,13 @@ function AIContentPopover({
 
       {/* Content */}
       <div className="p-4 overflow-y-auto max-h-60">
-        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed dark:text-gray-300">
           {content}
         </p>
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 rounded-b-lg">
+      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 rounded-b-lg dark:border-gray-800 dark:bg-gray-900">
         <p className="text-xs text-gray-400 flex items-center gap-1">
           <Sparkles className="h-3 w-3" />
           AI-generated content

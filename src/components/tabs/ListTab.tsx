@@ -655,11 +655,11 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             {incomingSuggestions.map(s => (
               <div key={s.id} className="flex items-center justify-between px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-800">
+                  <p className="text-xs font-medium text-gray-800 dark:text-gray-100">
                     {s.suggestion_type === 'add' ? 'Add' : 'Remove'}{' '}
                     <span className="font-semibold">{s.asset?.symbol || 'Unknown'}</span>
                   </p>
-                  <p className="text-[10px] text-gray-500">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">
                     from {s.suggester?.first_name || s.suggester?.email || 'Someone'}
                     {s.notes && ` — "${s.notes}"`}
                     {' · '}{s.created_at ? formatDistanceToNow(new Date(s.created_at), { addSuffix: true }) : ''}
@@ -688,7 +688,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             {outgoingSuggestions.map(s => (
               <div key={s.id} className="flex items-center justify-between px-3 py-2 opacity-70">
                 <div className="min-w-0">
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
                     You suggested to {s.suggestion_type}{' '}
                     <span className="font-medium">{s.asset?.symbol || 'Unknown'}</span>
                   </p>
@@ -699,7 +699,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
                 <button
                   onClick={() => cancelSuggestion(s.id)}
                   disabled={isCanceling}
-                  className="px-2 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                  className="px-2 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -919,7 +919,7 @@ function InlineAssetAdder({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Type to add asset..."
-            className="w-56 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-56 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setIsExpanded(false)
@@ -933,14 +933,14 @@ function InlineAssetAdder({
         </div>
         <button
           onClick={() => { setIsExpanded(false); setSearchQuery('') }}
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {searchQuery.length >= 1 && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
           {isSearching && debouncedQuery !== searchQuery ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
@@ -961,8 +961,8 @@ function InlineAssetAdder({
                     )}
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-gray-900 truncate">{asset.symbol}</p>
-                      <p className="text-xs text-gray-500 truncate">{asset.company_name}</p>
+                      <p className="font-medium text-gray-900 truncate dark:text-white">{asset.symbol}</p>
+                      <p className="text-xs text-gray-500 truncate dark:text-gray-400">{asset.company_name}</p>
                     </div>
                     <div className="ml-2 flex-shrink-0">
                       {justAdded ? (
@@ -981,7 +981,7 @@ function InlineAssetAdder({
               })}
             </div>
           ) : debouncedQuery.length >= 1 && !isSearching ? (
-            <div className="px-3 py-6 text-center text-sm text-gray-500">
+            <div className="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
               No assets found
             </div>
           ) : null}

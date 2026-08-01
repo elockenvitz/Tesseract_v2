@@ -95,13 +95,13 @@ export interface CoverageListViewProps {
 
 function targetColorClasses(target: CoverageTarget): string {
   if (target.kind === 'unknown') return 'bg-amber-50 text-amber-700'
-  if (target.kind === 'firm') return 'bg-gray-100 text-gray-600'
+  if (target.kind === 'firm') return 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
   switch (target.nodeType) {
     case 'division':   return 'bg-blue-50 text-blue-700'
     case 'department': return 'bg-teal-50 text-teal-700'
     case 'team':       return 'bg-emerald-50 text-emerald-700'
     case 'portfolio':  return 'bg-amber-50 text-amber-700'
-    default:           return 'bg-gray-100 text-gray-600'
+    default:           return 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
   }
 }
 
@@ -200,7 +200,7 @@ function GroupNamePills({ targets, assignments, orgNodeMap }: {
   return (
     <span
       title={allNames}
-      className="px-1.5 py-px text-[10px] font-medium rounded-full leading-tight bg-gray-100 text-gray-600"
+      className="px-1.5 py-px text-[10px] font-medium rounded-full leading-tight bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800"
     >
       {real.length} scopes
     </span>
@@ -214,7 +214,7 @@ function RolePill({ role }: { role?: string | null }) {
   switch (role) {
     case 'primary':   return <span className="px-1.5 py-px text-[10px] font-medium rounded-full border bg-yellow-50 text-yellow-700 border-yellow-200 leading-tight">Primary</span>
     case 'secondary': return <span className="px-1.5 py-px text-[10px] font-medium rounded-full border bg-blue-50 text-blue-600 border-blue-200 leading-tight">Secondary</span>
-    case 'tertiary':  return <span className="px-1.5 py-px text-[10px] font-medium rounded-full border bg-gray-50 text-gray-500 border-gray-200 leading-tight">Tertiary</span>
+    case 'tertiary':  return <span className="px-1.5 py-px text-[10px] font-medium rounded-full border bg-gray-50 text-gray-500 border-gray-200 leading-tight dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900">Tertiary</span>
     default:          return null
   }
 }
@@ -506,7 +506,7 @@ export function CoverageListView(props: CoverageListViewProps) {
     const n = group.assignments.length
 
     return (
-      <div key={group.assetId} className="border-b border-gray-100">
+      <div key={group.assetId} className="border-b border-gray-100 dark:border-gray-800">
         {/* ── Parent row ──────────────────────────────── */}
         <div
           role="button"
@@ -532,14 +532,14 @@ export function CoverageListView(props: CoverageListViewProps) {
             {/* Asset */}
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-[13px] font-semibold text-gray-900 truncate">{group.symbol}</span>
+                <span className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">{group.symbol}</span>
                 {hasConflict && (
                   <span className="flex-shrink-0 px-1 py-px text-[9px] font-semibold rounded bg-red-100 text-red-700">
                     {group.conflicts.length > 1 ? `${group.conflicts.length} conflicts` : 'Conflict'}
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-gray-500 truncate leading-tight">{group.companyName}</p>
+              <p className="text-[11px] text-gray-500 truncate leading-tight dark:text-gray-400">{group.companyName}</p>
             </div>
 
             {/* Covers For — scope targets with counts */}
@@ -579,25 +579,25 @@ export function CoverageListView(props: CoverageListViewProps) {
             </div>
 
             {/* Analysts count (unique people, not assignments) */}
-            <div className="text-[12px] text-gray-700 tabular-nums text-center">
+            <div className="text-[12px] text-gray-700 tabular-nums text-center dark:text-gray-300">
               {new Set(group.assignments.map(a => a.user_id)).size}
             </div>
 
             {/* Sector */}
-            <div className="text-[11px] text-gray-500 truncate">{group.sector || '—'}</div>
+            <div className="text-[11px] text-gray-500 truncate dark:text-gray-400">{group.sector || '—'}</div>
 
             {/* Industry */}
-            <div className="text-[11px] text-gray-500 truncate">{(group.assignments[0]?.assets as any)?.industry || '—'}</div>
+            <div className="text-[11px] text-gray-500 truncate dark:text-gray-400">{(group.assignments[0]?.assets as any)?.industry || '—'}</div>
 
             {/* Mkt Cap */}
-            <div className="text-[11px] text-gray-500 truncate">{formatMarketCap((group.assignments[0]?.assets as any)?.market_cap)}</div>
+            <div className="text-[11px] text-gray-500 truncate dark:text-gray-400">{formatMarketCap((group.assignments[0]?.assets as any)?.market_cap)}</div>
 
             {/* Actions — parent kebab */}
             <div className="flex justify-end" onClick={e => e.stopPropagation()}>
               <div className="relative">
                 <button
                   onClick={() => setKebabOpen(kebabOpen === `parent-${group.assetId}` ? null : `parent-${group.assetId}`)}
-                  className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                   aria-label="Asset actions"
                 >
                   <MoreVertical className="h-3.5 w-3.5" />
@@ -605,18 +605,18 @@ export function CoverageListView(props: CoverageListViewProps) {
                 {kebabOpen === `parent-${group.assetId}` && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={closeKebab} />
-                    <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px]">
+                    <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] dark:border-gray-700 dark:bg-gray-800">
                       {hasAnyCoverageAdminRights && (
                         <button
                           onClick={() => { openAddCoverage(group.assetId, group.symbol, group.companyName); closeKebab() }}
-                          className="w-full px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                          className="w-full px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                         >
                           <Plus className="h-3.5 w-3.5 text-gray-400" /> Add assignment
                         </button>
                       )}
                       <button
                         onClick={() => { setViewHistoryAssetId(group.assetId); closeKebab() }}
-                        className="w-full px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                        className="w-full px-3 py-1.5 text-left text-[12px] text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
                       >
                         <History className="h-3.5 w-3.5 text-gray-400" /> View history
                       </button>
@@ -663,7 +663,7 @@ export function CoverageListView(props: CoverageListViewProps) {
           const multipleScopes = sortedScopes.length > 1
 
           return (
-            <div className="border-t border-gray-100 bg-gray-50/40 pb-1">
+            <div className="border-t border-gray-100 bg-gray-50/40 pb-1 dark:border-gray-800">
               {sortedScopes.map(([scopeKey, scopeGroup], scopeIdx) => {
                 const target = scopeGroup.target
                 const isMissingScopeGroup = target.kind === 'unknown'
@@ -677,7 +677,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                       )}>
                         <span className={clsx(
                           'inline-flex items-center gap-1 text-[11px] font-semibold',
-                          isMissingScopeGroup ? 'text-amber-600' : 'text-gray-600',
+                          isMissingScopeGroup ? 'text-amber-600' : 'text-gray-600 dark:text-gray-400',
                         )}>
                           {targetIcon(target)}
                           {target.name}
@@ -716,7 +716,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                             {/* Analyst + role + scope */}
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
                               <span
-                                className="text-[12px] text-gray-700 truncate"
+                                className="text-[12px] text-gray-700 truncate dark:text-gray-300"
                                 title={tenureTooltip}
                               >
                                 {assignment.analyst_name}
@@ -732,7 +732,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                               <div className="relative flex-shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => setKebabOpen(kebabOpen === assignment.id ? null : assignment.id)}
-                                  className="p-0.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+                                  className="p-0.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                                   aria-label="Assignment actions"
                                 >
                                   <MoreVertical className="h-3.5 w-3.5" />
@@ -740,19 +740,19 @@ export function CoverageListView(props: CoverageListViewProps) {
                                 {kebabOpen === assignment.id && (
                                   <>
                                     <div className="fixed inset-0 z-30" onClick={closeKebab} />
-                                    <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[190px]">
+                                    <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[190px] dark:border-gray-700 dark:bg-gray-800">
                                       <button
                                         onClick={() => { openEditAssignment(assignment); closeKebab() }}
                                         className={clsx(
-                                          'w-full px-3 py-1.5 text-left text-[12px] hover:bg-gray-50 flex items-center gap-2',
-                                          isMissingGroup ? 'text-amber-700 hover:bg-amber-50' : 'text-gray-700',
+                                          'w-full px-3 py-1.5 text-left text-[12px] hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800',
+                                          isMissingGroup ? 'text-amber-700 hover:bg-amber-50' : 'text-gray-700 dark:text-gray-300',
                                         )}
                                       >
                                         {isMissingGroup
                                           ? <><AlertCircle className="h-3.5 w-3.5" /> Edit assignment</>
                                           : <><Pencil className="h-3.5 w-3.5 text-gray-400" /> Edit assignment</>}
                                       </button>
-                                      <div className="border-t border-gray-100 my-1" />
+                                      <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
                                       <button
                                         onClick={() => {
                                           setDeleteConfirm({
@@ -796,9 +796,9 @@ export function CoverageListView(props: CoverageListViewProps) {
               <div className="w-8 h-8 bg-gray-200 rounded" />
               <div className="flex-1 space-y-1.5">
                 <div className="h-3.5 bg-gray-200 rounded w-1/4" />
-                <div className="h-3 bg-gray-100 rounded w-1/3" />
+                <div className="h-3 bg-gray-100 rounded w-1/3 dark:bg-gray-800" />
               </div>
-              <div className="w-20 h-6 bg-gray-100 rounded" />
+              <div className="w-20 h-6 bg-gray-100 rounded dark:bg-gray-800" />
             </div>
           ))}
         </div>
@@ -826,10 +826,10 @@ export function CoverageListView(props: CoverageListViewProps) {
                     <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
                       <AlertCircle className="h-6 w-6 text-amber-600" />
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-1">
+                    <h3 className="text-lg font-medium text-gray-900 mb-1 dark:text-white">
                       No coverage found for &ldquo;{searchQuery}&rdquo;
                     </h3>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       The following assets match your search but have no coverage assigned
                     </p>
                   </div>
@@ -837,8 +837,8 @@ export function CoverageListView(props: CoverageListViewProps) {
                     {matchingUncoveredAssets.slice(0, 5).map(asset => (
                       <div key={asset.id} className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg">
                         <div>
-                          <span className="font-medium text-gray-900">{asset.symbol}</span>
-                          <span className="text-gray-500 ml-2 text-sm">{asset.company_name}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
+                          <span className="text-gray-500 ml-2 text-sm dark:text-gray-400">{asset.company_name}</span>
                         </div>
                         {hasAnyCoverageAdminRights ? (
                           <button
@@ -862,7 +862,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                       </div>
                     ))}
                     {matchingUncoveredAssets.length > 5 && (
-                      <p className="text-xs text-gray-500 text-center mt-2">
+                      <p className="text-xs text-gray-500 text-center mt-2 dark:text-gray-400">
                         And {matchingUncoveredAssets.length - 5} more matching assets...
                       </p>
                     )}
@@ -879,13 +879,13 @@ export function CoverageListView(props: CoverageListViewProps) {
             return isMatch && !hasCoverage
           }))) && (
             <div className="text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
                 <Users className="h-8 w-8 text-gray-400" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                 {coverageRecords?.length === 0 ? 'No coverage assignments yet' : 'No coverage assignments match the current filters.'}
               </h3>
-              <p className="text-gray-500 mb-4">
+              <p className="text-gray-500 mb-4 dark:text-gray-400">
                 {coverageRecords?.length === 0
                   ? 'Start by assigning analysts to cover specific assets.'
                   : 'Try adjusting your search criteria.'}
@@ -901,7 +901,7 @@ export function CoverageListView(props: CoverageListViewProps) {
   return (
     <Card padding="none" className="h-[calc(90vh-280px)] flex flex-col overflow-hidden">
       {/* ─── Toolbar ─────────────────────────────────────────────── */}
-      <div className="px-4 py-1.5 bg-gray-50/80 border-b border-gray-200">
+      <div className="px-4 py-1.5 bg-gray-50/80 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* Conflicts filter */}
@@ -912,7 +912,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                   'px-2 py-0.5 text-[11px] font-medium rounded-md border transition-colors',
                   showConflictsOnly
                     ? 'bg-red-50 text-red-700 border-red-300'
-                    : 'text-red-600 border-gray-200 hover:border-red-200 hover:bg-red-50/50',
+                    : 'text-red-600 border-gray-200 hover:border-red-200 hover:bg-red-50/50 dark:border-gray-700',
                 )}
               >
                 <span className="flex items-center gap-1">
@@ -930,7 +930,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                   'px-2 py-0.5 text-[11px] font-medium rounded-md border transition-colors',
                   showMissingGroupsOnly
                     ? 'bg-amber-50 text-amber-700 border-amber-300'
-                    : 'text-amber-600 border-gray-200 hover:border-amber-200 hover:bg-amber-50/50',
+                    : 'text-amber-600 border-gray-200 hover:border-amber-200 hover:bg-amber-50/50 dark:border-gray-700',
                 )}
               >
                 <span className="flex items-center gap-1">
@@ -941,7 +941,7 @@ export function CoverageListView(props: CoverageListViewProps) {
             )}
 
             {Object.keys(listColumnFilters).length > 0 && (
-              <button onClick={() => setListColumnFilters({})} className="text-[11px] text-gray-500 hover:text-red-600 flex items-center gap-1">
+              <button onClick={() => setListColumnFilters({})} className="text-[11px] text-gray-500 hover:text-red-600 flex items-center gap-1 dark:text-gray-400">
                 <X className="w-3 h-3" /> Clear filters
               </button>
             )}
@@ -952,12 +952,12 @@ export function CoverageListView(props: CoverageListViewProps) {
               </button>
             )}
             {listGroupByLevels.length > 0 && listGroupBy === 'none' && (
-              <label className="flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer">
+              <label className="flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer dark:text-gray-400">
                 <input
                   type="checkbox"
                   checked={hideEmptyGroups}
                   onChange={(e) => setHideEmptyGroups(e.target.checked)}
-                  className="w-3 h-3 rounded border-gray-300 text-primary-600"
+                  className="w-3 h-3 rounded border-gray-300 text-primary-600 dark:border-gray-600"
                 />
                 Hide empty
               </label>
@@ -972,17 +972,17 @@ export function CoverageListView(props: CoverageListViewProps) {
           {/* Column manager — only in flat mode (grouped mode has fixed columns) */}
           {listGroupBy !== 'asset' && (
             <div className="relative">
-              <button onClick={() => setShowColumnManager(!showColumnManager)} className="text-[11px] text-gray-500 hover:text-primary-600 flex items-center gap-1">
+              <button onClick={() => setShowColumnManager(!showColumnManager)} className="text-[11px] text-gray-500 hover:text-primary-600 flex items-center gap-1 dark:text-gray-400">
                 <Grid3X3 className="w-3 h-3" /> Columns
               </button>
               {showColumnManager && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowColumnManager(false)} />
-                  <div ref={columnManagerRef} className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 p-3 min-w-[200px]">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">Visible Columns</p>
+                  <div ref={columnManagerRef} className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 p-3 min-w-[200px] dark:border-gray-700 dark:bg-gray-800">
+                    <p className="text-xs font-semibold text-gray-700 mb-2 dark:text-gray-300">Visible Columns</p>
                     <div className="space-y-1 max-h-64 overflow-y-auto">
                       {(Object.keys(colDefs) as ListColumnId[]).filter(c => c !== 'coveredBy').map(colId => (
-                        <label key={colId} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer">
+                        <label key={colId} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer dark:hover:bg-gray-800">
                           <input
                             type="checkbox"
                             checked={listVisibleColumns.includes(colId)}
@@ -993,7 +993,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                             disabled={colId === 'asset'}
                             className="rounded text-primary-600 focus:ring-primary-500"
                           />
-                          <span className="text-sm text-gray-700">{colDefs[colId].label}</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{colDefs[colId].label}</span>
                         </label>
                       ))}
                     </div>
@@ -1007,8 +1007,8 @@ export function CoverageListView(props: CoverageListViewProps) {
 
       {/* ─── Column Headers ─────────────────────────────────────── */}
       {listGroupBy === 'asset' ? (
-        <div className="px-4 py-1.5 border-b border-gray-200 bg-white">
-          <div className="grid items-center gap-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider"
+        <div className="px-4 py-1.5 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          <div className="grid items-center gap-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400"
             style={{ gridTemplateColumns: gridCols }}
           >
             <div />
@@ -1022,7 +1022,7 @@ export function CoverageListView(props: CoverageListViewProps) {
             ] as const).map(col => (
               <div
                 key={col.id}
-                className={clsx('flex items-center gap-1 cursor-pointer select-none hover:text-gray-700', col.id === 'coveredBy' && 'justify-center', listSortColumn === col.id && 'text-primary-600')}
+                className={clsx('flex items-center gap-1 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200', col.id === 'coveredBy' && 'justify-center', listSortColumn === col.id && 'text-primary-600')}
                 onDoubleClick={() => handleColumnSort(col.id)}
                 title="Double-click to sort"
               >
@@ -1039,8 +1039,8 @@ export function CoverageListView(props: CoverageListViewProps) {
           </div>
         </div>
       ) : (
-        <div className="px-4 py-1.5 border-b border-gray-200 bg-white">
-          <div className="grid gap-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider"
+        <div className="px-4 py-1.5 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          <div className="grid gap-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400"
             style={{ gridTemplateColumns: `repeat(${totalColumnWidth}, minmax(0, 1fr))` }}
           >
             {effectiveColumns.map(colId => {
@@ -1050,7 +1050,7 @@ export function CoverageListView(props: CoverageListViewProps) {
               return (
                 <div key={colId} className="relative" style={{ gridColumn: `span ${col.width}` }}>
                   <div
-                    className={clsx('flex items-center gap-1 cursor-pointer hover:text-gray-700 select-none', isSorted && 'text-primary-600')}
+                    className={clsx('flex items-center gap-1 cursor-pointer hover:text-gray-700 select-none dark:hover:text-gray-200', isSorted && 'text-primary-600')}
                     onClick={() => handleColumnSort(colId)}
                   >
                     <span className="truncate">{col.label}</span>
@@ -1072,13 +1072,13 @@ export function CoverageListView(props: CoverageListViewProps) {
                   {activeFilterColumn === colId && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setActiveFilterColumn(null)} />
-                      <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 p-2 min-w-[180px]">
+                      <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 p-2 min-w-[180px] dark:border-gray-700 dark:bg-gray-800">
                         <input
                           type="text"
                           placeholder={`Filter ${col.label}...`}
                           value={listColumnFilters[colId] || ''}
                           onChange={(e) => setListColumnFilters(prev => ({ ...prev, [colId]: e.target.value }))}
-                          className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700"
                           autoFocus
                         />
                         {getUniqueFilterValues(colId, coverageRecords || []).length > 0 && (
@@ -1087,7 +1087,7 @@ export function CoverageListView(props: CoverageListViewProps) {
                               <button
                                 key={val}
                                 onClick={() => { setListColumnFilters(prev => ({ ...prev, [colId]: val })); setActiveFilterColumn(null) }}
-                                className="block w-full text-left px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 rounded truncate"
+                                className="block w-full text-left px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 rounded truncate dark:hover:bg-gray-700 dark:text-gray-300"
                               >
                                 {val}
                               </button>
@@ -1121,7 +1121,7 @@ export function CoverageListView(props: CoverageListViewProps) {
              ════════════════════════════════════════════════════════ */
           <>
             {groupsWithSearchMatch.length === 0 && (
-              <div className="p-8 text-center text-sm text-gray-500">
+              <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
                 {showConflictsOnly ? 'No coverage conflicts found.' : 'No coverage assignments match the current filters.'}
               </div>
             )}
@@ -1141,10 +1141,10 @@ export function CoverageListView(props: CoverageListViewProps) {
                         return next
                       })}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(sectionKey)) next.delete(sectionKey); else next.add(sectionKey); return next }) } }}
-                      className="sticky top-0 z-10 px-4 py-2 bg-gray-100/95 border-b border-gray-200 flex items-center gap-2 cursor-pointer select-none hover:bg-gray-150/95"
+                      className="sticky top-0 z-10 px-4 py-2 bg-gray-100/95 border-b border-gray-200 flex items-center gap-2 cursor-pointer select-none hover:bg-gray-150/95 dark:border-gray-700"
                     >
-                      <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-500 transition-transform duration-150', !sectionCollapsed && 'rotate-90')} />
-                      <span className="text-[12px] font-semibold text-gray-700">{sectionKey}</span>
+                      <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-500 transition-transform duration-150 dark:text-gray-400', !sectionCollapsed && 'rotate-90')} />
+                      <span className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">{sectionKey}</span>
                       <span className="text-[11px] text-gray-400">{sectionGroups.length} asset{sectionGroups.length !== 1 ? 's' : ''}</span>
                     </div>
                     {!sectionCollapsed && sectionGroups.map(group => renderAssetGroupRow(group))}
@@ -1166,7 +1166,7 @@ export function CoverageListView(props: CoverageListViewProps) {
             ) : (
               filteredCoverage.map((coverage) => {
                 return (
-                  <div key={coverage.id} className="px-4 py-1.5 hover:bg-gray-50 transition-colors border-b border-gray-50">
+                  <div key={coverage.id} className="px-4 py-1.5 hover:bg-gray-50 transition-colors border-b border-gray-50 dark:hover:bg-gray-800">
                     <div className="grid gap-2 items-center" style={{ gridTemplateColumns: `repeat(${totalColumnWidth}, minmax(0, 1fr))` }}>
                       {effectiveColumns.map(colId => {
                         const col = colDefs[colId]
@@ -1174,12 +1174,12 @@ export function CoverageListView(props: CoverageListViewProps) {
                           <div key={colId} style={{ gridColumn: `span ${col.width}` }} className="min-w-0">
                             {colId === 'asset' && (
                               <div className="min-w-0">
-                                <p className="text-[13px] font-semibold text-gray-900 truncate">{coverage.assets?.symbol || 'Unknown'}</p>
-                                <p className="text-[11px] text-gray-500 truncate leading-tight" title={coverage.assets?.company_name}>{coverage.assets?.company_name || 'Unknown'}</p>
+                                <p className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">{coverage.assets?.symbol || 'Unknown'}</p>
+                                <p className="text-[11px] text-gray-500 truncate leading-tight dark:text-gray-400" title={coverage.assets?.company_name}>{coverage.assets?.company_name || 'Unknown'}</p>
                               </div>
                             )}
                             {colId === 'analyst' && (
-                              <span className="text-[12px] text-gray-700 truncate">{coverage.analyst_name}</span>
+                              <span className="text-[12px] text-gray-700 truncate dark:text-gray-300">{coverage.analyst_name}</span>
                             )}
                             {colId === 'coversFor' && (() => {
                               const target = deriveCoverageTarget(coverage, orgNodeMap)
@@ -1207,20 +1207,20 @@ export function CoverageListView(props: CoverageListViewProps) {
                                 {editingVisibility?.coverageId === coverage.id && (
                                   <>
                                     <div className="fixed inset-0 z-30" onClick={() => setEditingVisibility(null)} />
-                                    <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px]">
+                                    <div className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] dark:border-gray-700 dark:bg-gray-800">
                                       <div className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Covers For:</div>
                                       {[
                                         { value: 'team' as const, label: 'Team Only', icon: Users, color: 'text-emerald-600 bg-emerald-50' },
                                         { value: 'division' as const, label: 'Division', icon: FolderOpen, color: 'text-blue-600 bg-blue-50' },
-                                        { value: 'firm' as const, label: 'Firm-wide', icon: Building2, color: 'text-gray-600 bg-gray-100' },
+                                        { value: 'firm' as const, label: 'Firm-wide', icon: Building2, color: 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800' },
                                       ].map(option => (
                                         <button
                                           key={option.value}
                                           onClick={() => updateVisibilityMutation.mutate({ coverageId: coverage.id, visibility: option.value })}
-                                          className={clsx('w-full px-3 py-1.5 text-left hover:bg-gray-50 flex items-center gap-3', coverage.visibility === option.value && 'bg-gray-50')}
+                                          className={clsx('w-full px-3 py-1.5 text-left hover:bg-gray-50 flex items-center gap-3 dark:hover:bg-gray-800', coverage.visibility === option.value && 'bg-gray-50 dark:bg-gray-900')}
                                         >
                                           <div className={clsx('p-1 rounded-md', option.color)}><option.icon className="h-3 w-3" /></div>
-                                          <span className="text-[12px] font-medium text-gray-900">{option.label}</span>
+                                          <span className="text-[12px] font-medium text-gray-900 dark:text-white">{option.label}</span>
                                           {coverage.visibility === option.value && <Check className="h-3.5 w-3.5 text-primary-600 ml-auto" />}
                                         </button>
                                       ))}
@@ -1230,8 +1230,8 @@ export function CoverageListView(props: CoverageListViewProps) {
                               </div>
                               )
                             })()}
-                            {colId === 'sector' && <span className="text-[11px] text-gray-500 truncate block">{coverage.assets?.sector || '—'}</span>}
-                            {colId === 'startDate' && <span className="text-[11px] text-gray-500">{coverage.start_date ? new Date(coverage.start_date).toLocaleDateString() : '—'}</span>}
+                            {colId === 'sector' && <span className="text-[11px] text-gray-500 truncate block dark:text-gray-400">{coverage.assets?.sector || '—'}</span>}
+                            {colId === 'startDate' && <span className="text-[11px] text-gray-500 dark:text-gray-400">{coverage.start_date ? new Date(coverage.start_date).toLocaleDateString() : '—'}</span>}
                             {colId === 'tenure' && (
                               <span className={clsx(
                                 'text-[10px] px-1 py-px rounded',
@@ -1242,8 +1242,8 @@ export function CoverageListView(props: CoverageListViewProps) {
                                 {calculateTenure(coverage.start_date).label}
                               </span>
                             )}
-                            {colId === 'industry' && <span className="text-[11px] text-gray-500 truncate block">{(coverage.assets as any)?.industry || '—'}</span>}
-                            {colId === 'marketCap' && <span className="text-[11px] text-gray-500">{formatMarketCap((coverage.assets as any)?.market_cap)}</span>}
+                            {colId === 'industry' && <span className="text-[11px] text-gray-500 truncate block dark:text-gray-400">{(coverage.assets as any)?.industry || '—'}</span>}
+                            {colId === 'marketCap' && <span className="text-[11px] text-gray-500 dark:text-gray-400">{formatMarketCap((coverage.assets as any)?.market_cap)}</span>}
                           </div>
                         )
                       })}
@@ -1278,19 +1278,19 @@ export function CoverageListView(props: CoverageListViewProps) {
                           <div key={colId} style={{ gridColumn: `span ${col.width}` }} className="min-w-0">
                             {colId === 'asset' && (
                               <div className="min-w-0">
-                                <p className="text-[13px] font-semibold text-gray-900 truncate">{asset.symbol}</p>
-                                <p className="text-[11px] text-gray-500 truncate leading-tight" title={asset.company_name}>{asset.company_name}</p>
+                                <p className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">{asset.symbol}</p>
+                                <p className="text-[11px] text-gray-500 truncate leading-tight dark:text-gray-400" title={asset.company_name}>{asset.company_name}</p>
                               </div>
                             )}
                             {colId === 'analyst' && (
                               <span className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">No Coverage</span>
                             )}
                             {colId === 'coversFor' && <span className="text-[11px] text-gray-400">—</span>}
-                            {colId === 'sector' && <span className="text-[11px] text-gray-500 truncate block">{asset.sector || '—'}</span>}
+                            {colId === 'sector' && <span className="text-[11px] text-gray-500 truncate block dark:text-gray-400">{asset.sector || '—'}</span>}
                             {colId === 'startDate' && <span className="text-[11px] text-gray-400">—</span>}
                             {colId === 'tenure' && <span className="text-[11px] text-gray-400">—</span>}
-                            {colId === 'industry' && <span className="text-[11px] text-gray-500 truncate block">{(asset as any)?.industry || '—'}</span>}
-                            {colId === 'marketCap' && <span className="text-[11px] text-gray-500">{formatMarketCap((asset as any)?.market_cap)}</span>}
+                            {colId === 'industry' && <span className="text-[11px] text-gray-500 truncate block dark:text-gray-400">{(asset as any)?.industry || '—'}</span>}
+                            {colId === 'marketCap' && <span className="text-[11px] text-gray-500 dark:text-gray-400">{formatMarketCap((asset as any)?.market_cap)}</span>}
                           </div>
                         )
                       })}

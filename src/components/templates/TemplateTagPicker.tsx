@@ -64,13 +64,13 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Select Tags</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Select Tags</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
           >
             <X className="w-5 h-5" />
           </button>
@@ -80,7 +80,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
         <div className="p-4 max-h-80 overflow-y-auto">
           {tags.length === 0 && !showNewTag ? (
             <div className="text-center py-8">
-              <p className="text-sm text-gray-500 mb-4">No tags yet. Create your first tag!</p>
+              <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">No tags yet. Create your first tag!</p>
               <Button size="sm" onClick={() => setShowNewTag(true)}>
                 <Plus className="w-4 h-4 mr-1" />
                 Create Tag
@@ -95,7 +95,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
                     'flex items-center justify-between p-2 rounded-lg border transition-colors',
                     selected.has(tag.id)
                       ? 'border-primary-300 bg-primary-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                   )}
                 >
                   <button
@@ -107,7 +107,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
                       className="w-4 h-4 rounded-full"
                       style={{ backgroundColor: tag.color }}
                     />
-                    <span className="text-sm font-medium text-gray-900">{tag.name}</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{tag.name}</span>
                     {selected.has(tag.id) && (
                       <Check className="w-4 h-4 text-primary-600 ml-auto" />
                     )}
@@ -128,7 +128,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
                       </button>
                       <button
                         onClick={() => setDeleteConfirm(null)}
-                        className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                        className="p-1 text-gray-400 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -153,7 +153,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
                       value={newTagName}
                       onChange={(e) => setNewTagName(e.target.value)}
                       placeholder="Tag name"
-                      className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -177,7 +177,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
                     </button>
                     <button
                       onClick={() => setShowNewTag(false)}
-                      className="p-1.5 text-gray-500 hover:bg-gray-200 rounded-lg"
+                      className="p-1.5 text-gray-500 hover:bg-gray-200 rounded-lg dark:text-gray-400"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -206,7 +206,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
                 <button
                   type="button"
                   onClick={() => setShowNewTag(true)}
-                  className="w-full flex items-center gap-2 p-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-gray-50 rounded-lg border border-dashed border-gray-300"
+                  className="w-full flex items-center gap-2 p-2 text-sm text-gray-500 hover:text-primary-600 hover:bg-gray-50 rounded-lg border border-dashed border-gray-300 dark:hover:bg-gray-800 dark:border-gray-600 dark:text-gray-400"
                 >
                   <Plus className="w-4 h-4" />
                   Create new tag
@@ -217,7 +217,7 @@ export function TemplateTagPicker({ selectedTagIds, onSave, onClose }: TemplateT
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl dark:border-gray-700 dark:bg-gray-900">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>

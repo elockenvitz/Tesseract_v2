@@ -20,37 +20,37 @@ const reactionConfig: Record<ReactionType, { icon: typeof ThumbsUp; label: strin
   like: {
     icon: ThumbsUp,
     label: 'Like',
-    color: 'text-gray-400 hover:text-blue-600 hover:bg-gray-100',
+    color: 'text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700',
     activeColor: 'text-blue-600'
   },
   love: {
     icon: Heart,
     label: 'Love',
-    color: 'text-gray-400 hover:text-red-500 hover:bg-gray-100',
+    color: 'text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700',
     activeColor: 'text-red-500'
   },
   insightful: {
     icon: Sparkles,
     label: 'Insightful',
-    color: 'text-gray-400 hover:text-amber-500 hover:bg-gray-100',
+    color: 'text-gray-400 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-gray-700',
     activeColor: 'text-amber-500'
   },
   bullish: {
     icon: TrendingUp,
     label: 'Bullish',
-    color: 'text-gray-400 hover:text-green-600 hover:bg-gray-100',
+    color: 'text-gray-400 hover:text-green-600 hover:bg-gray-100 dark:hover:bg-gray-700',
     activeColor: 'text-green-600'
   },
   bearish: {
     icon: TrendingDown,
     label: 'Bearish',
-    color: 'text-gray-400 hover:text-red-600 hover:bg-gray-100',
+    color: 'text-gray-400 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700',
     activeColor: 'text-red-600'
   },
   question: {
     icon: HelpCircle,
     label: 'Question',
-    color: 'text-gray-400 hover:text-purple-600 hover:bg-gray-100',
+    color: 'text-gray-400 hover:text-purple-600 hover:bg-gray-100 dark:hover:bg-gray-700',
     activeColor: 'text-purple-600'
   }
 }
@@ -162,7 +162,7 @@ export function IdeaReactions({
       {effectiveVariant !== 'compact' && !showAll && (
         <button
           onClick={() => setShowAll(true)}
-          className="text-xs text-gray-400 hover:text-gray-600 px-2"
+          className="text-xs text-gray-400 hover:text-gray-600 px-2 dark:hover:text-gray-300"
         >
           +{Object.keys(reactionConfig).length - visibleReactions.length}
         </button>

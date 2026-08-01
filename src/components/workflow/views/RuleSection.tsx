@@ -53,12 +53,12 @@ export function RuleSection({
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
           {/* Step badge — w-5 anchors the left grid */}
-          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 text-[10px] font-semibold text-gray-500 flex items-center justify-center">
+          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 text-[10px] font-semibold text-gray-500 flex items-center justify-center dark:text-gray-400 dark:bg-gray-800">
             {step}
           </span>
           <div className="flex items-center gap-1.5">
             {icon}
-            <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h4>
           </div>
         </div>
         {summaryText && (
@@ -67,28 +67,28 @@ export function RuleSection({
       </div>
 
       {/* Section container — bordered card holding subtitle + rules + add button */}
-      <div className="ml-7 border border-gray-200 rounded-lg bg-white overflow-hidden">
+      <div className="ml-7 border border-gray-200 rounded-lg bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-800">
         {/* Subtitle */}
-        <p className="text-[11px] text-gray-500 px-3 py-2">{subtitle}</p>
+        <p className="text-[11px] text-gray-500 px-3 py-2 dark:text-gray-400">{subtitle}</p>
 
         {/* Rule list */}
         {isLoading ? (
-          <div className="border-t border-gray-100 text-center py-4">
+          <div className="border-t border-gray-100 text-center py-4 dark:border-gray-800">
             <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
           </div>
         ) : ruleCount > 0 ? (
-          <div className="border-t border-gray-100 divide-y divide-gray-100" role="list">
+          <div className="border-t border-gray-100 divide-y divide-gray-100 dark:border-gray-800 dark:divide-gray-800" role="list">
             {children}
           </div>
         ) : (
-          <div className="border-t border-gray-100 px-3 py-2.5">
+          <div className="border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
             <p className="text-[11px] text-gray-400 italic">No rules configured</p>
           </div>
         )}
 
         {/* Add button — inside container, separated by border */}
         {canEdit && onAdd && (
-          <div className="border-t border-gray-100 px-3 py-2">
+          <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
             <button
               onClick={onAdd}
               className="flex items-center gap-1.5 text-[12px] font-medium text-blue-600 hover:text-blue-700 transition-colors py-1 px-2.5 rounded border border-dashed border-blue-200 hover:border-blue-400 hover:bg-blue-50/50 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"

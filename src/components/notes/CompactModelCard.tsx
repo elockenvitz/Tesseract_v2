@@ -47,7 +47,7 @@ export function CompactModelCard({ model, currentUserId, showAuthor = true, onCl
     <div
       onClick={handleClick}
       className={clsx(
-        'group p-2.5 rounded-lg border border-gray-200 bg-white',
+        'group p-2.5 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
         'hover:border-primary-300 hover:bg-primary-50/30 transition-all cursor-pointer',
         'shadow-sm hover:shadow'
       )}
@@ -60,7 +60,7 @@ export function CompactModelCard({ model, currentUserId, showAuthor = true, onCl
           <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-green-600" />
         )}
 
-        <span className="flex-1 font-medium text-sm text-gray-900 truncate" title={model.name}>
+        <span className="flex-1 font-medium text-sm text-gray-900 truncate dark:text-white" title={model.name}>
           {model.name}
         </span>
 
@@ -86,10 +86,10 @@ export function CompactModelCard({ model, currentUserId, showAuthor = true, onCl
         {!isExternal && model.file_path && (
           <button
             onClick={handleDownload}
-            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-100 rounded transition-opacity"
+            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-100 rounded transition-opacity dark:hover:bg-gray-700"
             title="Download"
           >
-            <Download className="h-3.5 w-3.5 text-gray-500" />
+            <Download className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
           </button>
         )}
       </div>
@@ -99,7 +99,7 @@ export function CompactModelCard({ model, currentUserId, showAuthor = true, onCl
         {showAuthor && (
           <span className={clsx(
             'text-xs',
-            isOwn ? 'text-primary-600 font-medium' : 'text-gray-500'
+            isOwn ? 'text-primary-600 font-medium' : 'text-gray-500 dark:text-gray-400'
           )}>
             {isOwn ? 'You' : authorName}
           </span>

@@ -85,7 +85,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
       case 'archive':
         return <FileArchive className="w-5 h-5 text-yellow-500" />
       default:
-        return <File className="w-5 h-5 text-gray-500" />
+        return <File className="w-5 h-5 text-gray-500 dark:text-gray-400" />
     }
   }
 
@@ -104,7 +104,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
       case 'data':
         return 'bg-cyan-100 text-cyan-700'
       default:
-        return 'bg-gray-100 text-gray-700'
+        return 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800'
     }
   }
 
@@ -125,17 +125,17 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
   ]
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-violet-100 rounded-lg">
               <FolderOpen className="w-5 h-5 text-violet-600" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-gray-900">Files</h1>
-              <p className="text-sm text-gray-500">Central repository for models, documents, and resources</p>
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Files</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Central repository for models, documents, and resources</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -161,13 +161,13 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg border transition-colors flex-shrink-0 ${
                   categoryFilter === cat.id
                     ? `bg-${cat.color}-50 border-${cat.color}-200 text-${cat.color}-700`
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 }`}
               >
                 <Icon className={`w-4 h-4 text-${cat.color}-500`} />
                 <span className="text-sm font-medium">{cat.label}</span>
                 <span className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${
-                  categoryFilter === cat.id ? `bg-${cat.color}-100` : 'bg-gray-100'
+                  categoryFilter === cat.id ? `bg-${cat.color}-100` : 'bg-gray-100 dark:bg-gray-800'
                 }`}>
                   {cat.count}
                 </span>
@@ -183,7 +183,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700"
             >
               <option value="all">All Categories</option>
               <option value="models">Models</option>
@@ -196,18 +196,18 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
             </select>
 
             {/* View Mode Toggle */}
-            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'}`}
+                className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm dark:bg-gray-800' : 'hover:bg-gray-200'}`}
               >
-                <Grid className="w-4 h-4 text-gray-600" />
+                <Grid className="w-4 h-4 text-gray-600 dark:text-gray-400" />
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'}`}
+                className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow-sm dark:bg-gray-800' : 'hover:bg-gray-200'}`}
               >
-                <List className="w-4 h-4 text-gray-600" />
+                <List className="w-4 h-4 text-gray-600 dark:text-gray-400" />
               </button>
             </div>
           </div>
@@ -220,7 +220,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
               placeholder="Search files..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-violet-500"
+              className="pl-10 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700"
             />
           </div>
         </div>
@@ -234,11 +234,11 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
           </div>
         ) : filteredFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center">
-            <div className="p-4 bg-gray-100 rounded-full mb-4">
+            <div className="p-4 bg-gray-100 rounded-full mb-4 dark:bg-gray-800">
               <HardDrive className="w-8 h-8 text-gray-400" />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">No files yet</h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-1 dark:text-white">No files yet</h3>
+            <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
               Upload files or create folders to organize your resources
             </p>
             <div className="flex items-center space-x-3">
@@ -261,7 +261,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                 onClick={() => onItemSelect?.(file)}
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-gray-100 rounded-lg">
+                  <div className="p-3 bg-gray-100 rounded-lg dark:bg-gray-800">
                     {getFileIcon(file.file_type)}
                   </div>
                   <button
@@ -269,7 +269,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                       e.stopPropagation()
                       // Toggle star
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-100 rounded transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-100 rounded transition-opacity dark:hover:bg-gray-700"
                   >
                     {file.is_starred ? (
                       <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
@@ -279,11 +279,11 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                   </button>
                 </div>
 
-                <h3 className="font-medium text-gray-900 text-sm truncate mb-1" title={file.name}>
+                <h3 className="font-medium text-gray-900 text-sm truncate mb-1 dark:text-white" title={file.name}>
                   {file.name}
                 </h3>
 
-                <div className="flex items-center justify-between text-xs text-gray-500">
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                   <span>{formatFileSize(file.file_size)}</span>
                   <span className={`px-1.5 py-0.5 rounded ${getCategoryColor(file.category)}`}>
                     {file.category}
@@ -300,16 +300,16 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
         ) : (
           <Card className="overflow-hidden">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Modified</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Category</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Size</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Modified</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredFiles.map(file => (
                   <tr
                     key={file.id}
@@ -320,9 +320,9 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                       <div className="flex items-center space-x-3">
                         {getFileIcon(file.file_type)}
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{file.name}</p>
                           {file.description && (
-                            <p className="text-xs text-gray-500 truncate max-w-xs">{file.description}</p>
+                            <p className="text-xs text-gray-500 truncate max-w-xs dark:text-gray-400">{file.description}</p>
                           )}
                         </div>
                       </div>
@@ -332,10 +332,10 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                         {file.category}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
+                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                       {formatFileSize(file.file_size)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
+                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                       {formatDistanceToNow(new Date(file.updated_at), { addSuffix: true })}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -345,7 +345,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                             e.stopPropagation()
                             // Download file
                           }}
-                          className="p-1 hover:bg-gray-100 rounded"
+                          className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                         >
                           <Download className="w-4 h-4 text-gray-400" />
                         </button>
@@ -354,7 +354,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                             e.stopPropagation()
                             // Share file
                           }}
-                          className="p-1 hover:bg-gray-100 rounded"
+                          className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                         >
                           <Share2 className="w-4 h-4 text-gray-400" />
                         </button>
@@ -363,7 +363,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                             e.stopPropagation()
                             // More options
                           }}
-                          className="p-1 hover:bg-gray-100 rounded"
+                          className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700"
                         >
                           <MoreHorizontal className="w-4 h-4 text-gray-400" />
                         </button>
@@ -382,21 +382,21 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowUploadModal(false)} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload Files</h2>
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6 dark:bg-gray-800">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Upload Files</h2>
 
               {/* Drop Zone */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-violet-400 transition-colors cursor-pointer">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-violet-400 transition-colors cursor-pointer dark:border-gray-600">
                 <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-sm font-medium text-gray-700 mb-1">
+                <p className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Drag and drop files here, or click to browse
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Supports: Excel, PDF, Word, Images, and more
                 </p>
               </div>
 
-              <p className="text-sm text-gray-500 mt-4">
+              <p className="text-sm text-gray-500 mt-4 dark:text-gray-400">
                 This feature is coming soon. You'll be able to upload and manage files here.
               </p>
 

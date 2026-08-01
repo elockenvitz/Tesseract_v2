@@ -134,13 +134,13 @@ function CommandInput({
           setTimeout(() => setShowDropdown(false), 150)
         }}
         onKeyDown={handleKeyDown}
-        className="w-full text-sm font-mono bg-gray-50 border-0 border-b border-gray-200 px-3 py-1.5 focus:outline-none focus:bg-gray-100 text-gray-700 rounded-t-xl"
+        className="w-full text-sm font-mono bg-gray-50 border-0 border-b border-gray-200 px-3 py-1.5 focus:outline-none focus:bg-gray-100 text-gray-700 rounded-t-xl dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900"
         placeholder=".command"
         spellCheck={false}
         autoComplete="off"
       />
       {showDropdown && filtered.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-200 rounded-b-lg shadow-lg max-h-[200px] overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-200 rounded-b-lg shadow-lg max-h-[200px] overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
           {filtered.map((item, idx) => (
             <button
               key={item.cmd}
@@ -149,7 +149,7 @@ function CommandInput({
                 selectCommand(item.cmd)
               }}
               className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition-colors ${
-                idx === highlightIdx ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
+                idx === highlightIdx ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
               }`}
             >
               <span className="font-mono text-xs">{item.cmd}</span>
@@ -168,10 +168,10 @@ function QuoteHeader({ quote, symbol }: { quote: Quote | null | undefined; symbo
   const isPositive = (quote?.changePercent ?? 0) >= 0
   return (
     <div className="flex items-center gap-2 px-3 pt-2 pb-1">
-      <span className="font-semibold text-gray-900 text-sm">{symbol}</span>
+      <span className="font-semibold text-gray-900 text-sm dark:text-white">{symbol}</span>
       {quote && (
         <>
-          <span className="text-sm font-medium text-gray-800">{formatPrice(quote.price)}</span>
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{formatPrice(quote.price)}</span>
           <span className={`text-xs font-medium ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
             {isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%
           </span>
@@ -257,7 +257,7 @@ function ChartView({ symbol, quote }: { symbol: string; quote: Quote | null | un
             className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
               days === tf.days
                 ? 'bg-gray-800 text-white'
-                : 'text-gray-500 hover:bg-gray-100'
+                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
             }`}
           >
             {tf.label}
@@ -276,16 +276,16 @@ function PriceView({ quote }: { quote: Quote | null | undefined }) {
   return (
     <div className="px-3 py-2 space-y-2 text-sm">
       <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-semibold text-gray-900">{formatPrice(quote.price)}</span>
+        <span className="text-2xl font-semibold text-gray-900 dark:text-white">{formatPrice(quote.price)}</span>
         <span className={`text-sm font-medium ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
           {isPositive ? '+' : ''}{quote.change.toFixed(2)} ({isPositive ? '+' : ''}{quote.changePercent.toFixed(2)}%)
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
-        <div>Open <span className="text-gray-700 float-right">{formatPrice(quote.open)}</span></div>
-        <div>Prev Close <span className="text-gray-700 float-right">{formatPrice(quote.previousClose)}</span></div>
-        <div>Day High <span className="text-gray-700 float-right">{formatPrice(quote.dayHigh)}</span></div>
-        <div>Day Low <span className="text-gray-700 float-right">{formatPrice(quote.dayLow)}</span></div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+        <div>Open <span className="text-gray-700 float-right dark:text-gray-300">{formatPrice(quote.open)}</span></div>
+        <div>Prev Close <span className="text-gray-700 float-right dark:text-gray-300">{formatPrice(quote.previousClose)}</span></div>
+        <div>Day High <span className="text-gray-700 float-right dark:text-gray-300">{formatPrice(quote.dayHigh)}</span></div>
+        <div>Day Low <span className="text-gray-700 float-right dark:text-gray-300">{formatPrice(quote.dayLow)}</span></div>
       </div>
     </div>
   )
@@ -298,7 +298,7 @@ function VolumeView({ quote }: { quote: Quote | null | undefined }) {
   return (
     <div className="px-3 py-3 text-center">
       <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Volume</div>
-      <div className="text-2xl font-semibold text-gray-900">{formatVolume(quote.volume)}</div>
+      <div className="text-2xl font-semibold text-gray-900 dark:text-white">{formatVolume(quote.volume)}</div>
     </div>
   )
 }
@@ -310,7 +310,7 @@ function MarketCapView({ quote }: { quote: Quote | null | undefined }) {
   return (
     <div className="px-3 py-3 text-center">
       <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Market Cap</div>
-      <div className="text-2xl font-semibold text-gray-900">{formatMarketCap(quote.marketCap)}</div>
+      <div className="text-2xl font-semibold text-gray-900 dark:text-white">{formatMarketCap(quote.marketCap)}</div>
     </div>
   )
 }
@@ -368,7 +368,7 @@ function ThesisView({ assetId }: { assetId: string }) {
       {fields.map((f) => (
         <div key={f.label}>
           <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">{f.label}</div>
-          <div className="text-xs text-gray-700 leading-relaxed">{f.value}</div>
+          <div className="text-xs text-gray-700 leading-relaxed dark:text-gray-300">{f.value}</div>
         </div>
       ))}
     </div>
@@ -384,8 +384,8 @@ function OverviewView({
 }) {
   return (
     <div className="px-3 py-2 space-y-1">
-      <div className="font-semibold text-gray-900">{asset.symbol}</div>
-      <div className="text-sm text-gray-600">{asset.company_name}</div>
+      <div className="font-semibold text-gray-900 dark:text-white">{asset.symbol}</div>
+      <div className="text-sm text-gray-600 dark:text-gray-400">{asset.company_name}</div>
       {(asset.sector || asset.market_cap) && (
         <div className="text-xs text-gray-400">
           {[asset.sector, formatMarketCap(asset.market_cap)].filter(Boolean).join(' · ')}
@@ -444,7 +444,7 @@ function AssetContent({
   })
 
   if (assetLoading) return <LoadingSpinner />
-  if (!asset) return <div className="p-3 text-sm text-gray-500">Asset not found</div>
+  if (!asset) return <div className="p-3 text-sm text-gray-500 dark:text-gray-400">Asset not found</div>
 
   return (
     <>
@@ -455,7 +455,7 @@ function AssetContent({
         </div>
         <button
           onClick={onClose}
-          className="px-2 py-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-tr-xl"
+          className="px-2 py-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-tr-xl dark:hover:text-gray-300"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -513,13 +513,13 @@ function MentionContent({ attrs }: { attrs: Record<string, string> }) {
   })
 
   if (isLoading) return <LoadingSpinner />
-  if (!user) return <div className="p-3 text-sm text-gray-500">User not found</div>
+  if (!user) return <div className="p-3 text-sm text-gray-500 dark:text-gray-400">User not found</div>
 
   return (
     <div className="p-3">
-      <div className="font-semibold text-gray-900">{user.full_name}</div>
+      <div className="font-semibold text-gray-900 dark:text-white">{user.full_name}</div>
       {user.email && (
-        <div className="text-sm text-gray-500 mt-0.5">{user.email}</div>
+        <div className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{user.email}</div>
       )}
     </div>
   )
@@ -559,18 +559,18 @@ function HashtagContent({ attrs, onNavigate }: { attrs: Record<string, string>; 
   })
 
   if (isLoading) return <LoadingSpinner />
-  if (!data) return <div className="p-3 text-sm text-gray-500">Not found</div>
+  if (!data) return <div className="p-3 text-sm text-gray-500 dark:text-gray-400">Not found</div>
 
   const typeLabel = data.entityType === 'theme' ? 'Theme' : 'Portfolio'
 
   return (
     <div className="p-3">
       <div className="flex items-center justify-between">
-        <div className="font-semibold text-gray-900">{data.name}</div>
+        <div className="font-semibold text-gray-900 dark:text-white">{data.name}</div>
         <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{typeLabel}</span>
       </div>
       {data.description && (
-        <div className="text-sm text-gray-500 mt-1 line-clamp-2">{data.description}</div>
+        <div className="text-sm text-gray-500 mt-1 line-clamp-2 dark:text-gray-400">{data.description}</div>
       )}
       <button
         onClick={() => onNavigate(data.entityType, data.id)}

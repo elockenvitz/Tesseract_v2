@@ -29,7 +29,7 @@ interface TaskModalProps {
 }
 
 const PRIORITY_OPTIONS = [
-  { value: 'low', label: 'Low', color: 'text-gray-500 bg-gray-100' },
+  { value: 'low', label: 'Low', color: 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800' },
   { value: 'medium', label: 'Medium', color: 'text-blue-600 bg-blue-100' },
   { value: 'high', label: 'High', color: 'text-orange-600 bg-orange-100' },
   { value: 'urgent', label: 'Urgent', color: 'text-red-600 bg-red-100' }
@@ -167,23 +167,23 @@ export function TaskModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleClose}>
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 dark:bg-gray-800"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900">Create Task</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create Task</h3>
           <button
             onClick={handleClose}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            className="p-1 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Task Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               Task Name *
             </label>
             <input
@@ -191,7 +191,7 @@ export function TaskModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What needs to be done?"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               autoFocus
               required
             />
@@ -199,7 +199,7 @@ export function TaskModal({
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               <AlignLeft className="w-4 h-4 inline mr-1" />
               Description
             </label>
@@ -208,14 +208,14 @@ export function TaskModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Add more details..."
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none dark:border-gray-600"
             />
           </div>
 
           {/* Due Date and Time */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 <Calendar className="w-4 h-4 inline mr-1" />
                 Due Date
               </label>
@@ -223,11 +223,11 @@ export function TaskModal({
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 <Clock className="w-4 h-4 inline mr-1" />
                 Time
               </label>
@@ -235,7 +235,7 @@ export function TaskModal({
                 type="time"
                 value={dueTime}
                 onChange={(e) => setDueTime(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
               />
             </div>
           </div>
@@ -243,7 +243,7 @@ export function TaskModal({
           {/* Priority and Reminder */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 <Flag className="w-4 h-4 inline mr-1" />
                 Priority
               </label>
@@ -257,7 +257,7 @@ export function TaskModal({
                       'flex-1 px-2 py-1.5 text-xs font-medium rounded-lg transition-all',
                       priority === opt.value
                         ? opt.color + ' ring-2 ring-offset-1 ring-current'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400 dark:bg-gray-900'
                     )}
                   >
                     {opt.label}
@@ -266,14 +266,14 @@ export function TaskModal({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                 <Bell className="w-4 h-4 inline mr-1" />
                 Reminder
               </label>
               <select
                 value={reminder}
                 onChange={(e) => setReminder(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm dark:border-gray-600"
               >
                 {REMINDER_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -286,14 +286,14 @@ export function TaskModal({
 
           {/* Assign To */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
               <User className="w-4 h-4 inline mr-1" />
               Assign To
             </label>
             <select
               value={assignedTo}
               onChange={(e) => setAssignedTo(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
             >
               <option value="">Unassigned</option>
               {user && (
@@ -313,7 +313,7 @@ export function TaskModal({
 
           {/* Context info */}
           {contextTitle && (
-            <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+            <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2 dark:text-gray-400 dark:bg-gray-900">
               This task will be linked to: <span className="font-medium">{contextTitle}</span>
             </div>
           )}
@@ -323,7 +323,7 @@ export function TaskModal({
             <button
               type="button"
               onClick={handleClose}
-              className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-700 dark:text-gray-400"
             >
               Cancel
             </button>

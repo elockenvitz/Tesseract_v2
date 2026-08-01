@@ -118,17 +118,17 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed z-50 w-[296px] bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+            className="fixed z-50 w-[296px] bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800"
             style={{ left: position.x, top: position.y }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
               <div className="flex items-center gap-2">
                 {hasActions ? <Zap className="w-3.5 h-3.5 text-red-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
                   Attention
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {actionCount > 0 && `${actionCount} action${actionCount !== 1 ? 's' : ''}`}
                   {actionCount > 0 && (warnCount > 0 || infoCount > 0) && ', '}
                   {warnCount > 0 && `${warnCount} warning${warnCount !== 1 ? 's' : ''}`}
@@ -138,7 +138,7 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                className="p-0.5 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -154,7 +154,7 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
                   {group.items.map(item => (
                     <div
                       key={item.id}
-                      className="px-3 py-2 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
+                      className="px-3 py-2 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 dark:hover:bg-gray-800"
                     >
                       <div
                         className="flex items-start gap-2 cursor-pointer"
@@ -168,10 +168,10 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
                           <Info className="w-3.5 h-3.5 mt-0.5 text-blue-400 shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 leading-tight">
+                          <p className="text-sm font-medium text-gray-800 leading-tight dark:text-gray-100">
                             {item.title}
                           </p>
-                          <p className="text-xs text-gray-500 leading-snug mt-0.5 line-clamp-2">
+                          <p className="text-xs text-gray-500 leading-snug mt-0.5 line-clamp-2 dark:text-gray-400">
                             {item.message}
                           </p>
                           {/* Action buttons */}
@@ -184,7 +184,7 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
                                   className={`text-[11px] font-medium px-2 py-0.5 rounded transition-colors ${
                                     idx === 0
                                       ? 'bg-gray-900 text-white hover:bg-gray-800'
-                                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
                                   }`}
                                 >
                                   {action.label}

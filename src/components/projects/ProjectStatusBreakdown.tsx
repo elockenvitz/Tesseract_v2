@@ -77,8 +77,8 @@ export function ProjectStatusBreakdown() {
     return (
       <Card>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Project Breakdown</h2>
-          <p className="text-sm text-gray-500">Status and priority distribution</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Project Breakdown</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Status and priority distribution</p>
         </div>
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-gray-200 rounded"></div>
@@ -92,20 +92,20 @@ export function ProjectStatusBreakdown() {
   return (
     <Card>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Project Breakdown</h2>
-        <p className="text-sm text-gray-500">Status and priority distribution</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Project Breakdown</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Status and priority distribution</p>
       </div>
 
       {/* Status Breakdown */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-gray-700">By Status</h3>
-          <span className="text-xs text-gray-500">{total} total</span>
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">By Status</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{total} total</span>
         </div>
 
         {/* Visual bar */}
         {total > 0 && (
-          <div className="flex h-3 rounded-full overflow-hidden mb-3 bg-gray-100">
+          <div className="flex h-3 rounded-full overflow-hidden mb-3 bg-gray-100 dark:bg-gray-800">
             {statusItems.map(item => {
               const percentage = (item.count / total) * 100
               if (percentage === 0) return null
@@ -131,12 +131,12 @@ export function ProjectStatusBreakdown() {
               <div key={item.status} className="flex items-center justify-between text-sm">
                 <div className="flex items-center space-x-2">
                   <div className={`w-3 h-3 rounded ${item.color}`} />
-                  <Icon className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-700">{item.label}</span>
+                  <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                  <span className="text-gray-700 dark:text-gray-300">{item.label}</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-gray-500 text-xs">{percentage}%</span>
-                  <span className="font-semibold text-gray-900 w-8 text-right">{item.count}</span>
+                  <span className="text-gray-500 text-xs dark:text-gray-400">{percentage}%</span>
+                  <span className="font-semibold text-gray-900 w-8 text-right dark:text-white">{item.count}</span>
                 </div>
               </div>
             )
@@ -147,13 +147,13 @@ export function ProjectStatusBreakdown() {
       {/* Priority Breakdown (Active Projects Only) */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-gray-700">By Priority (Active)</h3>
-          <span className="text-xs text-gray-500">{activeTotal} active</span>
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">By Priority (Active)</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{activeTotal} active</span>
         </div>
 
         {/* Visual bar */}
         {activeTotal > 0 && (
-          <div className="flex h-3 rounded-full overflow-hidden mb-3 bg-gray-100">
+          <div className="flex h-3 rounded-full overflow-hidden mb-3 bg-gray-100 dark:bg-gray-800">
             {priorityItems.map(item => {
               const percentage = (item.count / activeTotal) * 100
               if (percentage === 0) return null
@@ -178,11 +178,11 @@ export function ProjectStatusBreakdown() {
               <div key={item.priority} className="flex items-center justify-between text-sm">
                 <div className="flex items-center space-x-2">
                   <div className={`w-3 h-3 rounded ${item.color}`} />
-                  <span className="text-gray-700">{item.label}</span>
+                  <span className="text-gray-700 dark:text-gray-300">{item.label}</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-gray-500 text-xs">{percentage}%</span>
-                  <span className="font-semibold text-gray-900 w-8 text-right">{item.count}</span>
+                  <span className="text-gray-500 text-xs dark:text-gray-400">{percentage}%</span>
+                  <span className="font-semibold text-gray-900 w-8 text-right dark:text-white">{item.count}</span>
                 </div>
               </div>
             )

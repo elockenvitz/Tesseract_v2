@@ -176,14 +176,14 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
   return (
     <div className="space-y-5">
       {/* Org pilot mode toggle */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Sparkles className="w-4 h-4 text-primary-500" />
-              <h3 className="text-sm font-semibold text-gray-900">Pilot mode (org-wide)</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Pilot mode (org-wide)</h3>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               When on, every active member of {org?.name || 'this org'} sees the focused pilot experience.
               Switching this off instantly restores the full app for everyone in the org.
             </p>
@@ -199,11 +199,11 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
       </div>
 
       {/* Feature access matrix */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Pilot feature access</h3>
-            <p className="text-xs text-gray-500">Flip these to roll out new pilot stages without code changes.</p>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Pilot feature access</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Flip these to roll out new pilot stages without code changes.</p>
           </div>
           <Button
             size="sm"
@@ -233,17 +233,17 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
       </div>
 
       {/* Per-member scenario state + seeding actions */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Pilot members</h3>
-            <p className="text-xs text-gray-500">Staged scenario and seeding actions for each member. Pilot mode applies org-wide when the toggle above is on.</p>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Pilot members</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Staged scenario and seeding actions for each member. Pilot mode applies org-wide when the toggle above is on.</p>
           </div>
         </div>
         {members.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-400">No members yet.</div>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {members.map(m => {
               const name = [m.first_name, m.last_name].filter(Boolean).join(' ').trim() || m.email?.split('@')[0] || 'Unknown'
               const scenario = userScenarioMap[m.user_id]
@@ -258,8 +258,8 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
               return (
                 <li key={m.user_id} className="px-4 py-3 space-y-2">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{name}</div>
-                    {m.email && <div className="text-xs text-gray-500 truncate">{m.email}</div>}
+                    <div className="text-sm font-medium text-gray-900 truncate dark:text-white">{name}</div>
+                    {m.email && <div className="text-xs text-gray-500 truncate dark:text-gray-400">{m.email}</div>}
                   </div>
 
                   <div className="flex items-center gap-3 flex-wrap text-[11px]">
@@ -354,11 +354,11 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
       </div>
 
       {/* Pilot scenarios */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Staged pilot scenarios</h3>
-            <p className="text-xs text-gray-500">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Staged pilot scenarios</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               <b>Templates</b> (org-wide) are cloned into each pilot user's first-login scenario.
               <b> User-assigned</b> rows are live instantiations that appear in that user's Trade Lab.
             </p>
@@ -374,7 +374,7 @@ export function OpsPilotPanel({ orgId, members }: OpsPilotPanelProps) {
         ) : scenarios.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-400">No scenarios staged yet.</div>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {scenarios.map(s => (
               <ScenarioRow
                 key={s.id}
@@ -425,7 +425,7 @@ function AccessPicker({ label, value, defaultValue, onChange }: {
   }
   const color = value === 'full' ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
     : value === 'preview' ? 'bg-amber-50 border-amber-200 text-amber-700'
-    : 'bg-gray-50 border-gray-200 text-gray-500'
+    : 'bg-gray-50 border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900'
   return (
     <button
       onClick={() => onChange(NEXT[value])}
@@ -463,19 +463,19 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
           scenario.is_template ? 'bg-amber-50 text-amber-600' :
           scenario.status === 'active' ? 'bg-primary-50 text-primary-600' :
           scenario.status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
-          'bg-gray-100 text-gray-400'
+          'bg-gray-100 text-gray-400 dark:bg-gray-800'
         )}>
           <Sparkles className="w-4 h-4" />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-900 truncate">{scenario.title}</span>
+            <span className="text-sm font-medium text-gray-900 truncate dark:text-white">{scenario.title}</span>
             {scenario.is_template && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wide">
                 Template
               </span>
             )}
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800">
               {scenario.asset?.symbol || scenario.symbol || '—'}
             </span>
             {scenario.direction && (
@@ -487,12 +487,12 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
               'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium capitalize',
               scenario.status === 'active' ? 'bg-emerald-50 text-emerald-700' :
               scenario.status === 'completed' ? 'bg-indigo-50 text-indigo-700' :
-              'bg-gray-100 text-gray-600'
+              'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
             )}>
               {scenario.status}
             </span>
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">
+          <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
             {scenario.is_template ? 'Org-wide template' : assignedName ? `Assigned to ${assignedName}` : 'Org-wide'}
             {scenario.portfolio?.name && ` · ${scenario.portfolio.name}`}
           </div>
@@ -501,7 +501,7 @@ function ScenarioRow({ scenario, members, onUpdate, onRemove }: {
       <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={() => onUpdate({ status: scenario.status === 'archived' ? 'active' : 'archived' })}
-          className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+          className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded dark:hover:text-gray-200 dark:hover:bg-gray-700"
           title={scenario.status === 'archived' ? 'Restore' : 'Archive'}
         >
           {scenario.status === 'archived' ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
@@ -558,26 +558,26 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
     <div className="fixed inset-0 z-[60]">
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-900">Stage pilot scenario</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden dark:bg-gray-800">
+          <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Stage pilot scenario</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="px-5 py-4 space-y-3 overflow-y-auto">
             <Field label="Title (required)">
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. NVDA — add on weakness"
-                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white" autoFocus />
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800" autoFocus />
             </Field>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Symbol">
                 <input value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} placeholder="NVDA"
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white uppercase" />
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white uppercase dark:border-gray-700 dark:bg-gray-800" />
               </Field>
               <Field label="Direction">
                 <select value={direction} onChange={e => setDirection(e.target.value)}
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white">
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800">
                   <option value="buy">Buy</option>
                   <option value="sell">Sell</option>
                   <option value="add">Add</option>
@@ -589,32 +589,32 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
               </Field>
               <Field label="Sizing input">
                 <input value={proposedSizing} onChange={e => setProposedSizing(e.target.value)} placeholder="2.5 or +0.5"
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white" />
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800" />
               </Field>
             </div>
             <Field label="Thesis">
               <textarea value={thesis} onChange={e => setThesis(e.target.value)} rows={2}
-                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none" />
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none dark:border-gray-700 dark:bg-gray-800" />
             </Field>
             <Field label="Why now">
               <textarea value={whyNow} onChange={e => setWhyNow(e.target.value)} rows={2}
-                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none" />
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none dark:border-gray-700 dark:bg-gray-800" />
             </Field>
             <Field label="Proposed action">
               <textarea value={proposedAction} onChange={e => setProposedAction(e.target.value)} rows={2}
-                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none" />
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white resize-none dark:border-gray-700 dark:bg-gray-800" />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Portfolio">
                 <select value={portfolioId} onChange={e => setPortfolioId(e.target.value)}
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white">
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800">
                   <option value="">(first available)</option>
                   {portfolios.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </Field>
               <Field label="Assigned to">
                 <select value={userId} onChange={e => setUserId(e.target.value)}
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white">
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800">
                   <option value="">(all pilot users in org)</option>
                   {members.map(m => (
                     <option key={m.user_id} value={m.user_id}>
@@ -631,11 +631,11 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
                 onChange={e => setTargetWeight(e.target.value)}
                 placeholder="2"
                 step="0.25"
-                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white"
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800"
               />
             </Field>
 
-            <label className="flex items-start gap-2 text-xs text-gray-700 bg-amber-50/60 border border-amber-200 rounded px-2 py-2">
+            <label className="flex items-start gap-2 text-xs text-gray-700 bg-amber-50/60 border border-amber-200 rounded px-2 py-2 dark:text-gray-300">
               <input
                 type="checkbox"
                 checked={isTemplate}
@@ -659,7 +659,7 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
               </div>
             )}
           </div>
-          <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2">
+          <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2 dark:border-gray-700">
             <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               size="sm"
@@ -692,7 +692,7 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-[11px] font-medium text-gray-600 uppercase tracking-wide mb-1">{label}</label>
+      <label className="block text-[11px] font-medium text-gray-600 uppercase tracking-wide mb-1 dark:text-gray-400">{label}</label>
       {children}
     </div>
   )
@@ -705,7 +705,7 @@ function StatusChip({ label, ok, detail }: { label: string; ok: boolean; detail?
         'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium',
         ok
           ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-          : 'bg-gray-50 border-gray-200 text-gray-500'
+          : 'bg-gray-50 border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900'
       )}
       title={detail}
     >

@@ -108,7 +108,7 @@ const getEventColor = (eventType: string) => {
     case 'file_uploaded': return 'text-green-600 bg-green-50'
     case 'stage_change': return 'text-orange-600 bg-orange-50'
     case 'priority_change': return 'text-yellow-600 bg-yellow-50'
-    default: return 'text-gray-600 bg-gray-50'
+    default: return 'text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-900'
   }
 }
 
@@ -574,9 +574,9 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
           <div className={`w-6 h-6 rounded flex items-center justify-center ${getEventColor(event.event_type)}`}>
             <Icon className="w-3 h-3" />
           </div>
-          <span className="flex-1 text-gray-700 truncate">{event.description}</span>
+          <span className="flex-1 text-gray-700 truncate dark:text-gray-300">{event.description}</span>
           {event.user_name && (
-            <span className="text-gray-500">{event.user_name}</span>
+            <span className="text-gray-500 dark:text-gray-400">{event.user_name}</span>
           )}
           <span className="text-gray-400">{format(eventDate, 'h:mm a')}</span>
         </div>
@@ -584,19 +584,19 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
     }
 
     return (
-      <div key={event.id} className="flex items-start space-x-3 py-2 hover:bg-gray-50 rounded px-2 -mx-2">
+      <div key={event.id} className="flex items-start space-x-3 py-2 hover:bg-gray-50 rounded px-2 -mx-2 dark:hover:bg-gray-800">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${getEventColor(event.event_type)} flex-shrink-0`}>
           <Icon className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center space-x-2 mb-1">
-            <span className="text-sm font-medium text-gray-900">{event.description}</span>
+            <span className="text-sm font-medium text-gray-900 dark:text-white">{event.description}</span>
             {event.user_name && (
-              <span className="text-xs text-gray-500">by {event.user_name}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">by {event.user_name}</span>
             )}
           </div>
           {event.details && (
-            <p className="text-xs text-gray-600">{event.details}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">{event.details}</p>
           )}
           <span className="text-xs text-gray-400">{format(eventDate, 'MMM d, h:mm a')}</span>
         </div>
@@ -613,7 +613,7 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
     })
 
     return (
-      <div key={period.id} className="border-2 border-blue-200 rounded-xl overflow-hidden bg-white">
+      <div key={period.id} className="border-2 border-blue-200 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
         {/* Period Header */}
         <div
           className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 cursor-pointer hover:from-blue-100 hover:to-blue-150"
@@ -629,15 +629,15 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
               </div>
               <div className="flex-1">
                 <div className="flex items-center space-x-3">
-                  <h3 className="text-lg font-semibold text-gray-900">{period.workflow_name}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{period.workflow_name}</h3>
                   {period.is_active && <Badge variant="success">Active</Badge>}
                   {period.duration_days !== undefined && (
-                    <span className="text-xs text-gray-600 bg-white px-2 py-1 rounded">
+                    <span className="text-xs text-gray-600 bg-white px-2 py-1 rounded dark:text-gray-400 dark:bg-gray-800">
                       {period.duration_days} days
                     </span>
                   )}
                 </div>
-                <div className="flex items-center space-x-4 text-xs text-gray-600 mt-1">
+                <div className="flex items-center space-x-4 text-xs text-gray-600 mt-1 dark:text-gray-400">
                   <span>{format(new Date(period.started_at), 'MMM d, yyyy h:mm a')}</span>
                   {period.completed_at && (
                     <span>→ {format(new Date(period.completed_at), 'MMM d, yyyy h:mm a')}</span>
@@ -649,20 +649,20 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
             {/* Summary Stats */}
             <div className="flex items-center space-x-4 text-sm">
               <div className="text-center">
-                <div className="font-semibold text-gray-900">{stageKeys.length}</div>
-                <div className="text-xs text-gray-600">Stages</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{stageKeys.length}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Stages</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-blue-600">{period.completed_tasks}</div>
-                <div className="text-xs text-gray-600">Tasks</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Tasks</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-green-600">{period.files_uploaded}</div>
-                <div className="text-xs text-gray-600">Files</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Files</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-indigo-600">{period.comments_count}</div>
-                <div className="text-xs text-gray-600">Comments</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Comments</div>
               </div>
             </div>
           </div>
@@ -676,7 +676,7 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                 {stageKeys.map(stageKey => {
                   const stage = period.stages[stageKey]
                   return (
-                    <div key={stageKey} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div key={stageKey} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-2">
                           <div className={`w-8 h-8 rounded-lg ${getStageColor(stageKey)} flex items-center justify-center`}>
@@ -686,9 +686,9 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                             })()}
                           </div>
                           <div>
-                            <h4 className="font-semibold text-gray-900">{stage.stage_label}</h4>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">{stage.stage_label}</h4>
                             {stage.duration && (
-                              <span className="text-xs text-gray-500">{stage.duration}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{stage.duration}</span>
                             )}
                           </div>
                         </div>
@@ -696,15 +696,15 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         <div className="text-center p-2 bg-blue-50 rounded">
                           <div className="font-semibold text-blue-600">{stage.tasks_completed}</div>
-                          <div className="text-gray-600">Tasks</div>
+                          <div className="text-gray-600 dark:text-gray-400">Tasks</div>
                         </div>
                         <div className="text-center p-2 bg-green-50 rounded">
                           <div className="font-semibold text-green-600">{stage.files}</div>
-                          <div className="text-gray-600">Files</div>
+                          <div className="text-gray-600 dark:text-gray-400">Files</div>
                         </div>
                         <div className="text-center p-2 bg-indigo-50 rounded">
                           <div className="font-semibold text-indigo-600">{stage.comments}</div>
-                          <div className="text-gray-600">Comments</div>
+                          <div className="text-gray-600 dark:text-gray-400">Comments</div>
                         </div>
                       </div>
                     </div>
@@ -720,14 +720,14 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                   const stageExpanded = expandedStages.has(`${period.id}-${stageKey}`)
 
                   return (
-                    <div key={stageKey} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div key={stageKey} className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700">
                       <div
-                        className="bg-gray-50 p-3 cursor-pointer hover:bg-gray-100"
+                        className="bg-gray-50 p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900"
                         onClick={() => toggleStage(`${period.id}-${stageKey}`)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
-                            <button className="text-gray-600">
+                            <button className="text-gray-600 dark:text-gray-400">
                               {stageExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                             </button>
                             <div className={`w-8 h-8 rounded-lg ${getStageColor(stageKey)} flex items-center justify-center`}>
@@ -737,9 +737,9 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                               })()}
                             </div>
                             <div>
-                              <h4 className="font-semibold text-gray-900">{stage.stage_label}</h4>
+                              <h4 className="font-semibold text-gray-900 dark:text-white">{stage.stage_label}</h4>
                               {stage.entered_at && (
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
                                   {format(new Date(stage.entered_at), 'MMM d, h:mm a')}
                                   {stage.duration && ` • ${stage.duration}`}
                                 </span>
@@ -755,7 +755,7 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                       </div>
 
                       {stageExpanded && (
-                        <div className="p-4 space-y-1 bg-white">
+                        <div className="p-4 space-y-1 bg-white dark:bg-gray-800">
                           {stage.events.map(event => renderEvent(event))}
                         </div>
                       )}
@@ -779,17 +779,17 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
       ) : (
         <div className="space-y-6">
           {/* Controls */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4 dark:border-gray-700 dark:bg-gray-800">
             {/* View Mode */}
             <div className="flex items-center space-x-4">
-              <span className="text-sm font-medium text-gray-700">View:</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">View:</span>
               <div className="flex space-x-2">
                 <button
                   onClick={() => setViewMode('summary')}
                   className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                     viewMode === 'summary'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                   }`}
                 >
                   <BarChart3 className="w-4 h-4 inline mr-1" />
@@ -800,7 +800,7 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                   className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                     viewMode === 'detailed'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                   }`}
                 >
                   <Calendar className="w-4 h-4 inline mr-1" />
@@ -813,7 +813,7 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
             <div className="flex items-start space-x-6">
               {/* Event Type Filter */}
               <div className="flex-1">
-                <span className="text-sm font-medium text-gray-700 mb-2 block">Event Types:</span>
+                <span className="text-sm font-medium text-gray-700 mb-2 block dark:text-gray-300">Event Types:</span>
                 <div className="flex flex-wrap gap-2">
                   {['all', 'task_completed', 'stage_change', 'file_uploaded', 'comment_added', 'note_added'].map(type => (
                     <button
@@ -822,7 +822,7 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
                       className={`px-3 py-1 text-xs rounded-full transition-colors ${
                         selectedEventTypes.has(type)
                           ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800'
                       }`}
                     >
                       {type.replace('_', ' ')}
@@ -834,11 +834,11 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
               {/* User Filter */}
               {users.length > 0 && (
                 <div>
-                  <span className="text-sm font-medium text-gray-700 mb-2 block">User:</span>
+                  <span className="text-sm font-medium text-gray-700 mb-2 block dark:text-gray-300">User:</span>
                   <select
                     value={selectedUser}
                     onChange={(e) => setSelectedUser(e.target.value)}
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                   >
                     <option value="all">All Users</option>
                     {users.map(user => (
@@ -857,8 +857,8 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
 
           {/* Events Outside Workflow */}
           {eventsOutsideWorkflow.length > 0 && (
-            <div className="border-2 border-gray-200 rounded-xl p-6 bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Outside Workflow</h3>
+            <div className="border-2 border-gray-200 rounded-xl p-6 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Activity Outside Workflow</h3>
               <div className="space-y-1">
                 {eventsOutsideWorkflow
                   .filter(event => {
@@ -874,8 +874,8 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
           {filteredPeriods.length === 0 && eventsOutsideWorkflow.length === 0 && (
             <div className="text-center py-12">
               <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Timeline Events</h3>
-              <p className="text-gray-500">
+              <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No Timeline Events</h3>
+              <p className="text-gray-500 dark:text-gray-400">
                 No events match the current filters. Try adjusting your selection.
               </p>
             </div>
@@ -895,16 +895,16 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
 
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100 dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <Clock className="w-6 h-6 text-blue-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Workflow Timeline
               </h2>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 {assetSymbol} - Process history and outcomes
               </p>
             </div>
@@ -913,12 +913,12 @@ export function AssetTimelineView({ assetId, assetSymbol, workflowId, isOpen, on
             onClick={onClose}
             className="p-2 hover:bg-white/50 rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)] bg-gray-50">
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)] bg-gray-50 dark:bg-gray-900">
           {content}
         </div>
       </div>

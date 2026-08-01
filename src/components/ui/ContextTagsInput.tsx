@@ -400,7 +400,7 @@ export function ContextTagsInput({
           setTimeout(() => inputRef.current?.focus(), 0)
         }}
         className={clsx(
-          "flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md px-2 py-1 transition-colors",
+          "flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md px-2 py-1 transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400",
           className
         )}
       >
@@ -422,7 +422,7 @@ export function ContextTagsInput({
             return (
               <span
                 key={`${tag.entity_type}-${tag.entity_id}-${idx}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-600 border-gray-200"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-900"
               >
                 <span>{tag.display_name}</span>
                 <button
@@ -475,7 +475,7 @@ export function ContextTagsInput({
             placeholder={value.length === 0 ? placeholder : 'Add...'}
             className={clsx(
               "flex-1 min-w-[80px] text-xs bg-transparent border-none outline-none",
-              "placeholder:text-gray-400 text-gray-700",
+              "placeholder:text-gray-400 text-gray-700 dark:text-gray-300",
               compact ? "py-0.5" : "py-1"
             )}
           />
@@ -491,7 +491,7 @@ export function ContextTagsInput({
 
       {/* Search results dropdown */}
       {isDropdownOpen && searchQuery.length >= 1 && (
-        <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+        <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
           {isLoading ? (
             <div className="flex items-center justify-center p-4 text-gray-400">
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -507,7 +507,7 @@ export function ContextTagsInput({
                   <div key={entityType}>
                     {/* Group header */}
                     <div className={clsx(
-                      "px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide border-b border-gray-100",
+                      "px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide border-b border-gray-100 dark:border-gray-800",
                       config.color,
                       config.bgColor
                     )}>
@@ -522,13 +522,13 @@ export function ContextTagsInput({
                         key={`${result.entity_type}-${result.entity_id}`}
                         type="button"
                         onClick={() => addTag(result)}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800"
                       >
-                        <span className="font-medium text-gray-900 text-sm">
+                        <span className="font-medium text-gray-900 text-sm dark:text-white">
                           {result.display_name}
                         </span>
                         {result.secondary && (
-                          <span className="text-xs text-gray-500 truncate">
+                          <span className="text-xs text-gray-500 truncate dark:text-gray-400">
                             {result.secondary}
                           </span>
                         )}
@@ -540,7 +540,7 @@ export function ContextTagsInput({
 
               {/* No results message (only if not showing create option) */}
               {filteredResults.length === 0 && !showCreateOption && (
-                <div className="p-3 text-sm text-gray-500 text-center">
+                <div className="p-3 text-sm text-gray-500 text-center dark:text-gray-400">
                   No matches found
                 </div>
               )}
@@ -552,7 +552,7 @@ export function ContextTagsInput({
                   onClick={handleCreateTopic}
                   disabled={isCreating}
                   className={clsx(
-                    "w-full text-left px-3 py-2.5 hover:bg-cyan-50 flex items-center gap-2 border-t border-gray-100",
+                    "w-full text-left px-3 py-2.5 hover:bg-cyan-50 flex items-center gap-2 border-t border-gray-100 dark:border-gray-800",
                     isCreating && "opacity-50 cursor-not-allowed"
                   )}
                 >
@@ -562,7 +562,7 @@ export function ContextTagsInput({
                     <Plus className="h-4 w-4 text-cyan-600" />
                   )}
                   <span className="text-sm">
-                    <span className="text-gray-600">Create topic </span>
+                    <span className="text-gray-600 dark:text-gray-400">Create topic </span>
                     <span className="font-medium text-cyan-700">"{searchQuery.trim()}"</span>
                   </span>
                 </button>

@@ -220,16 +220,16 @@ export function AddToProjectButton({
             onClick={() => { setShowDialog(false); setSearchQuery('') }}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all max-h-[70vh] overflow-hidden flex flex-col">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all max-h-[70vh] overflow-hidden flex flex-col dark:bg-gray-800">
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-gray-900">Add to Project</h3>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Select a project to link this asset to</p>
+                  <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Add to Project</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">Select a project to link this asset to</p>
                 </div>
                 <button
                   onClick={() => { setShowDialog(false); setSearchQuery('') }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -244,7 +244,7 @@ export function AddToProjectButton({
                     placeholder="Search projects\u2026"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full pl-10 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                     autoFocus
                   />
                 </div>
@@ -255,7 +255,7 @@ export function AddToProjectButton({
                 {isLoading ? (
                   <div className="space-y-1 px-2 py-1">
                     {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse" />
+                      <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse dark:bg-gray-900" />
                     ))}
                   </div>
                 ) : (
@@ -275,15 +275,15 @@ export function AddToProjectButton({
                           >
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="text-[13px] font-semibold text-gray-900 truncate leading-tight">
+                                <span className="text-[13px] font-semibold text-gray-900 truncate leading-tight dark:text-white">
                                   {project.title}
                                 </span>
                                 <span className={`inline-flex items-center px-1.5 py-px rounded-full text-[9px] font-medium flex-shrink-0 ${
                                   project.status === 'completed' ? 'bg-green-100 text-green-700' :
                                   project.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
                                   project.status === 'blocked' ? 'bg-red-100 text-red-700' :
-                                  project.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
-                                  'bg-gray-100 text-gray-600'
+                                  project.status === 'cancelled' ? 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800' :
+                                  'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                                 }`}>
                                   {statusLabel(project.status)}
                                 </span>
@@ -302,7 +302,7 @@ export function AddToProjectButton({
 
                     {/* Already linked */}
                     {linked.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-gray-100">
+                      <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                         <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest mb-1 px-2">Already linked</p>
                         {linked.map((project) => (
                           <div
@@ -332,7 +332,7 @@ export function AddToProjectButton({
               </div>
 
               {/* Create new — visually secondary footer */}
-              <div className="border-t border-gray-200 px-5 py-2.5 flex-shrink-0 bg-gray-50/50">
+              <div className="border-t border-gray-200 px-5 py-2.5 flex-shrink-0 bg-gray-50/50 dark:border-gray-700">
                 {showCreateForm ? (
                   <div className="flex items-center gap-2">
                     <input
@@ -347,7 +347,7 @@ export function AddToProjectButton({
                           setNewTitle('')
                         }
                       }}
-                      className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                       autoFocus
                     />
                     <Button
@@ -359,7 +359,7 @@ export function AddToProjectButton({
                     </Button>
                     <button
                       onClick={() => { setShowCreateForm(false); setNewTitle('') }}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -367,7 +367,7 @@ export function AddToProjectButton({
                 ) : (
                   <button
                     onClick={() => setShowCreateForm(true)}
-                    className="flex items-center gap-1.5 text-[11px] font-normal text-gray-400 hover:text-gray-600 transition-colors"
+                    className="flex items-center gap-1.5 text-[11px] font-normal text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                   >
                     <Plus className="w-3 h-3" />
                     Create new project

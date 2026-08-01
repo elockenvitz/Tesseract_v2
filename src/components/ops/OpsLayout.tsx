@@ -18,7 +18,7 @@ import { OpsAIUsagePage } from '../../pages/ops/OpsAIUsagePage'
 
 export function OpsLayout() {
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <OpsHeader />
       <div className="flex-1 flex overflow-hidden">
         <OpsSidebar />

@@ -67,11 +67,11 @@ export function ConfirmDialog({
       
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all dark:bg-gray-800">
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             disabled={isLoading}
           >
             <X className="h-5 w-5" />
@@ -87,10 +87,10 @@ export function ConfirmDialog({
 
             {/* Content */}
             <div className="text-center mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">
                 {title}
               </h3>
-              <p className="text-gray-600 text-sm leading-relaxed">
+              <p className="text-gray-600 text-sm leading-relaxed dark:text-gray-400">
                 {message}
               </p>
             </div>

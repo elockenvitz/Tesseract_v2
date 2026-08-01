@@ -243,7 +243,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
     }
   }
 
-  const handleStyle = "absolute bg-white border border-primary-500 rounded-sm z-10 hover:bg-primary-100 transition-colors shadow-sm"
+  const handleStyle = "absolute bg-white border border-primary-500 rounded-sm z-10 hover:bg-primary-100 transition-colors shadow-sm dark:bg-gray-800"
 
   return (
     <NodeViewWrapper
@@ -300,7 +300,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
         {/* Toolbar - positioned above, stays within note content area */}
         {selected && !isResizing && (
           <div
-            className="fixed flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-1.5 py-1 z-[9999]"
+            className="fixed flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-1.5 py-1 z-[9999] dark:border-gray-700 dark:bg-gray-800"
             style={{
               left: (() => {
                 if (!containerRef.current) return '50%'
@@ -321,7 +321,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
             {/* Alignment buttons */}
             <button
               onClick={() => updateAttributes({ alignment: 'left' })}
-              className={clsx('p-1.5 rounded hover:bg-gray-100', alignment === 'left' && 'bg-primary-100 text-primary-600')}
+              className={clsx('p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700', alignment === 'left' && 'bg-primary-100 text-primary-600')}
               title="Align left"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -330,7 +330,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
             </button>
             <button
               onClick={() => updateAttributes({ alignment: 'center' })}
-              className={clsx('p-1.5 rounded hover:bg-gray-100', alignment === 'center' && 'bg-primary-100 text-primary-600')}
+              className={clsx('p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700', alignment === 'center' && 'bg-primary-100 text-primary-600')}
               title="Align center"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -339,7 +339,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
             </button>
             <button
               onClick={() => updateAttributes({ alignment: 'right' })}
-              className={clsx('p-1.5 rounded hover:bg-gray-100', alignment === 'right' && 'bg-primary-100 text-primary-600')}
+              className={clsx('p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700', alignment === 'right' && 'bg-primary-100 text-primary-600')}
               title="Align right"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -353,19 +353,19 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
             <div className="relative">
               <button
                 onClick={() => { setShowAspectMenu(!showAspectMenu); setShowSizeInputs(false); }}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
               >
                 {getCurrentAspectLabel()}
                 <ChevronDown className="w-3 h-3" />
               </button>
               {showAspectMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 min-w-[80px] z-50">
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 min-w-[80px] z-50 dark:border-gray-700 dark:bg-gray-800">
                   {ASPECT_RATIOS.map((ratio) => (
                     <button
                       key={ratio.label}
                       onClick={() => applyAspectRatio(ratio.value)}
                       className={clsx(
-                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
+                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
                         lockedAspectRatio === ratio.value && 'bg-primary-50 text-primary-600'
                       )}
                     >
@@ -381,7 +381,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
             {/* Size display / input toggle */}
             <button
               onClick={openSizeInputs}
-              className="text-xs text-gray-600 px-2 py-1 hover:bg-gray-100 rounded whitespace-nowrap font-mono"
+              className="text-xs text-gray-600 px-2 py-1 hover:bg-gray-100 rounded whitespace-nowrap font-mono dark:hover:bg-gray-700 dark:text-gray-400"
               title="Click to set exact dimensions"
             >
               {displayWidth ? `${Math.round(displayWidth)}×${Math.round(displayHeight || 0)}` : 'auto'}
@@ -392,7 +392,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
         {/* Size input popup - fixed positioning to stay visible */}
         {selected && showSizeInputs && !isResizing && (
           <div
-            className="fixed bg-white border border-gray-200 rounded-lg shadow-xl p-3 z-[10000]"
+            className="fixed bg-white border border-gray-200 rounded-lg shadow-xl p-3 z-[10000] dark:border-gray-700 dark:bg-gray-800"
             style={{
               left: (() => {
                 if (!containerRef.current) return '50%'
@@ -410,13 +410,13 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
           >
             <div className="flex items-center gap-2">
               <div className="flex flex-col">
-                <label className="text-[10px] text-gray-500 mb-0.5">Width (px)</label>
+                <label className="text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Width (px)</label>
                 <input
                   type="number"
                   value={inputWidth}
                   onChange={(e) => handleWidthChange(e.target.value)}
                   onKeyDown={handleSizeKeyDown}
-                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono"
+                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono dark:border-gray-600"
                   min="1"
                   autoFocus
                 />
@@ -426,7 +426,7 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
                 onClick={() => setLockDimensions(!lockDimensions)}
                 className={clsx(
                   'p-1.5 rounded mt-4 transition-colors',
-                  lockDimensions ? 'text-primary-600 bg-primary-100' : 'text-gray-400 hover:bg-gray-100'
+                  lockDimensions ? 'text-primary-600 bg-primary-100' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                 )}
                 title={lockDimensions ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
               >
@@ -434,13 +434,13 @@ function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps)
               </button>
 
               <div className="flex flex-col">
-                <label className="text-[10px] text-gray-500 mb-0.5">Height (px)</label>
+                <label className="text-[10px] text-gray-500 mb-0.5 dark:text-gray-400">Height (px)</label>
                 <input
                   type="number"
                   value={inputHeight}
                   onChange={(e) => handleHeightChange(e.target.value)}
                   onKeyDown={handleSizeKeyDown}
-                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono"
+                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono dark:border-gray-600"
                   min="1"
                 />
               </div>

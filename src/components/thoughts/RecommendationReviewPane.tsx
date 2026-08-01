@@ -77,12 +77,12 @@ export function RecommendationReviewPane({ tradeIdea, onBack, onClose }: Recomme
           className="p-1 -ml-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           title="Back to ideas"
         >
-          <ArrowLeft className="h-4 w-4 text-gray-500" />
+          <ArrowLeft className="h-4 w-4 text-gray-500 dark:text-gray-400" />
         </button>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', ACTION_COLORS[tradeIdea.action] || 'text-gray-500 bg-gray-100')}>
+            <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', ACTION_COLORS[tradeIdea.action] || 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800')}>
               {tradeIdea.action}
             </span>
             <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">

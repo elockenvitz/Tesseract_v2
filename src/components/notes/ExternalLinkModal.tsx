@@ -109,11 +109,11 @@ export function ExternalLinkModal({
 
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all dark:bg-gray-800">
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             disabled={isLoading}
           >
             <X className="h-5 w-5" />
@@ -126,10 +126,10 @@ export function ExternalLinkModal({
                 <Link2 className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Link External {typeLabel}
                 </h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Add a link to an external {typeDescription}
                 </p>
               </div>
@@ -138,7 +138,7 @@ export function ExternalLinkModal({
             {/* Form Fields */}
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Name <span className="text-error-500">*</span>
                 </label>
                 <Input
@@ -150,7 +150,7 @@ export function ExternalLinkModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   URL <span className="text-error-500">*</span>
                 </label>
                 <Input
@@ -168,7 +168,7 @@ export function ExternalLinkModal({
               {/* Auto-detected provider */}
               {url && isValidUrl(url) && (
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-500">Detected:</span>
+                  <span className="text-gray-500 dark:text-gray-400">Detected:</span>
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
                     <Icon className="h-3 w-3" />
                     {providers.find(p => p.value === detectedProvider)?.label || 'External Link'}
@@ -177,7 +177,7 @@ export function ExternalLinkModal({
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Description <span className="text-gray-400">(optional)</span>
                 </label>
                 <Input

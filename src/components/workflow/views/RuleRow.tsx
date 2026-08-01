@@ -83,7 +83,7 @@ export function RuleRow({
           )}
         </div>
         <div className="min-w-0">
-          <div className="text-[13px] font-semibold text-gray-900 truncate">{name}</div>
+          <div className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">{name}</div>
           <div className="text-[11px] text-gray-400 truncate leading-tight">{summary}</div>
         </div>
       </div>
@@ -116,7 +116,7 @@ export function RuleRow({
           {onEdit && (
             <button
               onClick={onEdit}
-              className="p-1 hover:bg-gray-100 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="p-1 hover:bg-gray-100 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-blue-400 dark:hover:bg-gray-700"
               title="Edit rule"
               aria-label="Edit rule"
             >
@@ -138,7 +138,7 @@ export function RuleRow({
           <div className="relative">
             <button
               onClick={() => setShowMenu(!showMenu)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="p-1 hover:bg-gray-100 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-blue-400 dark:hover:bg-gray-700"
               title="More actions"
               aria-label="More actions"
             >
@@ -147,7 +147,7 @@ export function RuleRow({
             {showMenu && (
               <>
                 <div className="fixed inset-0 z-20" onClick={() => setShowMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30">
+                <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30 dark:border-gray-700 dark:bg-gray-800">
                   <button className="w-full text-left px-3 py-1.5 text-xs text-gray-400 cursor-not-allowed" disabled>
                     Duplicate
                   </button>

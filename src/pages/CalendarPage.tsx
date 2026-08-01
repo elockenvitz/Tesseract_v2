@@ -57,7 +57,7 @@ const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; bgColor:
   deliverable: { label: 'Deliverable', color: 'text-amber-700', bgColor: 'bg-amber-100 border-amber-300', icon: <FolderKanban className="h-3 w-3" /> },
   task: { label: 'Task', color: 'text-slate-700', bgColor: 'bg-slate-100 border-slate-300', icon: <List className="h-3 w-3" /> },
   reminder: { label: 'Reminder', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-300', icon: <Bell className="h-3 w-3" /> },
-  other: { label: 'Other', color: 'text-gray-700', bgColor: 'bg-gray-100 border-gray-300', icon: <Calendar className="h-3 w-3" /> },
+  other: { label: 'Other', color: 'text-gray-700 dark:text-gray-300', bgColor: 'bg-gray-100 border-gray-300 dark:border-gray-600 dark:bg-gray-800', icon: <Calendar className="h-3 w-3" /> },
 }
 
 const CONTEXT_ICONS: Record<string, React.ReactNode> = {
@@ -508,7 +508,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                   setFilterEventType('all')
                   setFilterPriority('all')
                 }}
-                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
               >
                 Clear
               </button>
@@ -525,7 +525,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                 'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
                 viewMode === 'month'
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               )}
             >
               <Grid3X3 className="h-4 w-4" />
@@ -536,7 +536,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                 'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
                 viewMode === 'week'
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               )}
             >
               <CalendarDays className="h-4 w-4" />
@@ -547,7 +547,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                 'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
                 viewMode === 'agenda'
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               )}
             >
               <List className="h-4 w-4" />
@@ -593,7 +593,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
           /* Agenda View */
           <div className="h-full overflow-y-auto p-4">
             {agendaEvents.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No upcoming events</p>
               </div>
@@ -648,13 +648,13 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                               </span>
                             </div>
                             {!event.all_day && (
-                              <div className="text-sm text-gray-500 mt-1">
+                              <div className="text-sm text-gray-500 mt-1 dark:text-gray-400">
                                 {format(parseISO(event.start_date), 'h:mm a')}
                                 {event.end_date && ` - ${format(parseISO(event.end_date), 'h:mm a')}`}
                               </div>
                             )}
                             {event.context_title && (
-                              <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                              <div className="flex items-center gap-1 text-xs text-gray-500 mt-1 dark:text-gray-400">
                                 {CONTEXT_ICONS[event.context_type || '']}
                                 <span>{event.context_title}</span>
                               </div>
@@ -717,7 +717,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                     <div className="flex-1 space-y-0.5 overflow-y-auto min-h-0">
                       {dayEvents.slice(0, viewMode === 'week' ? 10 : 4).map(event => renderEventChip(event, true))}
                       {dayEvents.length > (viewMode === 'week' ? 10 : 4) && (
-                        <div className="text-xs text-gray-500 px-1">
+                        <div className="text-xs text-gray-500 px-1 dark:text-gray-400">
                           +{dayEvents.length - (viewMode === 'week' ? 10 : 4)} more
                         </div>
                       )}
@@ -790,7 +790,7 @@ interface EventModalProps {
 }
 
 const PRIORITY_CONFIG = [
-  { value: 'low', label: 'Low', color: 'bg-gray-100 text-gray-600 border-gray-200', activeColor: 'bg-gray-500 text-white border-gray-500' },
+  { value: 'low', label: 'Low', color: 'bg-gray-100 text-gray-600 border-gray-200 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800', activeColor: 'bg-gray-500 text-white border-gray-500' },
   { value: 'medium', label: 'Medium', color: 'bg-blue-50 text-blue-600 border-blue-200', activeColor: 'bg-blue-500 text-white border-blue-500' },
   { value: 'high', label: 'High', color: 'bg-orange-50 text-orange-600 border-orange-200', activeColor: 'bg-orange-500 text-white border-orange-500' },
   { value: 'urgent', label: 'Urgent', color: 'bg-red-50 text-red-600 border-red-200', activeColor: 'bg-red-500 text-white border-red-500' },
@@ -1139,7 +1139,7 @@ function EventModal({
             </h2>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors dark:hover:text-gray-300"
             >
               <X className="h-5 w-5" />
             </button>
@@ -1196,7 +1196,7 @@ function EventModal({
                     {attendeeSearch && (
                       <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
                         {filteredUsers.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-gray-500">No users found</div>
+                          <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No users found</div>
                         ) : (
                           filteredUsers.filter(u => !eventForm.attendees?.includes(u.id)).slice(0, 8).map(user => (
                             <button
@@ -1213,7 +1213,7 @@ function EventModal({
                               </div>
                               <div>
                                 <div className="font-medium">{getUserDisplay(user)}</div>
-                                {user.first_name && <div className="text-xs text-gray-500">{user.email}</div>}
+                                {user.first_name && <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>}
                               </div>
                             </button>
                           ))
@@ -1249,7 +1249,7 @@ function EventModal({
                         'p-2 rounded-lg',
                         isSelected ? config.bgColor : 'bg-gray-100 dark:bg-gray-800'
                       )}>
-                        <span className={isSelected ? config.color : 'text-gray-500'}>
+                        <span className={isSelected ? config.color : 'text-gray-500 dark:text-gray-400'}>
                           {config.icon}
                         </span>
                       </div>
@@ -1269,7 +1269,7 @@ function EventModal({
             <div className="space-y-3">
               {/* Start */}
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-500 w-10">Start</span>
+                <span className="text-sm text-gray-500 w-10 dark:text-gray-400">Start</span>
                 <input
                   type="date"
                   value={eventForm.start_date}
@@ -1287,15 +1287,15 @@ function EventModal({
                     type="checkbox"
                     checked={eventForm.all_day}
                     onChange={(e) => setEventForm(prev => ({ ...prev, all_day: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
                   />
-                  <span className="text-xs text-gray-500">All day</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">All day</span>
                 </label>
               </div>
 
               {/* End */}
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-500 w-10">End</span>
+                <span className="text-sm text-gray-500 w-10 dark:text-gray-400">End</span>
                 <input
                   type="date"
                   value={eventForm.end_date}

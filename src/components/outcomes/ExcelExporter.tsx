@@ -104,7 +104,7 @@ export function ExcelExporter({
         disabled={isExporting}
         className={clsx(
           'flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors',
-          'border border-gray-300 bg-white text-gray-700',
+          'border border-gray-300 bg-white text-gray-700 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800',
           'hover:bg-gray-50 hover:border-gray-400',
           'disabled:opacity-50 disabled:cursor-not-allowed'
         )}
@@ -126,7 +126,7 @@ export function ExcelExporter({
           />
 
           {/* Dropdown */}
-          <div className="absolute right-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+          <div className="absolute right-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20 dark:border-gray-700 dark:bg-gray-800">
             <div className="p-2">
               <button
                 onClick={handleExportData}
@@ -140,8 +140,8 @@ export function ExcelExporter({
               >
                 <FileDown className="w-5 h-5 text-blue-600" />
                 <div>
-                  <div className="text-sm font-medium text-gray-900">Export Data</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">Export Data</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
                     {totalItems} items ({priceTargets.length} PT, {estimates.length} Est, {ratings.length} Rtg)
                   </div>
                 </div>
@@ -149,12 +149,12 @@ export function ExcelExporter({
 
               <button
                 onClick={handleDownloadTemplate}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-gray-50 transition-colors"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
               >
                 <FilePlus className="w-5 h-5 text-green-600" />
                 <div>
-                  <div className="text-sm font-medium text-gray-900">Download Template</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">Download Template</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
                     Blank template for {assetSymbol}
                   </div>
                 </div>

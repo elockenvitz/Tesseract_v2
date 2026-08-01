@@ -134,14 +134,14 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
   }
 
   return (
-    <div className="border-l border-gray-200 bg-white flex flex-col h-full">
+    <div className="border-l border-gray-200 bg-white flex flex-col h-full dark:border-gray-700 dark:bg-gray-800">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/50 shrink-0 dark:border-gray-700">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${actionCfg.color} ${actionCfg.bgColor}`}>
             {actionCfg.label}
           </span>
-          <span className="text-[13px] font-semibold text-gray-900 truncate">
+          <span className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">
             {event.asset?.symbol || 'Unknown'}
           </span>
           <span className="text-[11px] text-gray-400">
@@ -154,11 +154,11 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
       </div>
 
       {/* Trade Facts Summary */}
-      <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/30 shrink-0">
+      <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/30 shrink-0 dark:border-gray-800">
         <div className="grid grid-cols-3 gap-3 text-[10px]">
           <div>
             <span className="text-gray-400 uppercase font-medium">Shares</span>
-            <p className="text-gray-700 font-semibold tabular-nums mt-px">
+            <p className="text-gray-700 font-semibold tabular-nums mt-px dark:text-gray-300">
               {fmtDelta(event.quantity_delta)}
               {event.quantity_before != null && (
                 <span className="text-gray-400 font-normal ml-1">
@@ -169,11 +169,11 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
           </div>
           <div>
             <span className="text-gray-400 uppercase font-medium">Weight</span>
-            <p className="text-gray-700 font-semibold tabular-nums mt-px">{fmtDelta(event.weight_delta, '%')}</p>
+            <p className="text-gray-700 font-semibold tabular-nums mt-px dark:text-gray-300">{fmtDelta(event.weight_delta, '%')}</p>
           </div>
           <div>
             <span className="text-gray-400 uppercase font-medium">Source</span>
-            <p className="text-gray-700 font-medium mt-px capitalize">{event.source_type.replace('_', ' ')}</p>
+            <p className="text-gray-700 font-medium mt-px capitalize dark:text-gray-300">{event.source_type.replace('_', ' ')}</p>
           </div>
         </div>
       </div>
@@ -196,12 +196,12 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
 
         {/* Rationale Type */}
         <div>
-          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Trade Type</label>
+          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">Trade Type</label>
           <div className="relative mt-1">
             <select
               value={rationaleType}
               onChange={e => setRationaleType(e.target.value as RationaleType)}
-              className="w-full text-[12px] border border-gray-200 rounded px-2.5 py-1.5 bg-white text-gray-900 appearance-none pr-7 focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
+              className="w-full text-[12px] border border-gray-200 rounded px-2.5 py-1.5 bg-white text-gray-900 appearance-none pr-7 focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 dark:border-gray-700 dark:text-white dark:bg-gray-800"
             >
               {RATIONALE_TYPES.map(t => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -214,7 +214,7 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
         {/* Structured Fields */}
         {RATIONALE_FIELDS.map(field => (
           <div key={field.key}>
-            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
               {field.label}
             </label>
             <textarea
@@ -222,21 +222,21 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
               onChange={e => updateField(field.key as string, e.target.value)}
               placeholder={field.placeholder}
               rows={field.rows || 2}
-              className="w-full mt-1 text-[12px] border border-gray-200 rounded px-2.5 py-1.5 bg-white text-gray-900 placeholder:text-gray-300 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
+              className="w-full mt-1 text-[12px] border border-gray-200 rounded px-2.5 py-1.5 bg-white text-gray-900 placeholder:text-gray-300 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 dark:border-gray-700 dark:text-white dark:bg-gray-800"
             />
           </div>
         ))}
 
         {/* Plan Divergence */}
-        <div className="border border-gray-200 rounded p-2.5">
+        <div className="border border-gray-200 rounded p-2.5 dark:border-gray-700">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={divergenceFromPlan}
               onChange={e => setDivergenceFromPlan(e.target.checked)}
-              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-3.5 w-3.5 dark:border-gray-600"
             />
-            <span className="text-[11px] font-medium text-gray-700">This trade diverged from prior plan</span>
+            <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300">This trade diverged from prior plan</span>
           </label>
           {divergenceFromPlan && (
             <textarea
@@ -244,14 +244,14 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
               onChange={e => setDivergenceExplanation(e.target.value)}
               placeholder="What diverged and why?"
               rows={2}
-              className="w-full mt-2 text-[12px] border border-gray-200 rounded px-2.5 py-1.5 bg-white text-gray-900 placeholder:text-gray-300 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
+              className="w-full mt-2 text-[12px] border border-gray-200 rounded px-2.5 py-1.5 bg-white text-gray-900 placeholder:text-gray-300 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 dark:border-gray-700 dark:text-white dark:bg-gray-800"
             />
           )}
         </div>
       </div>
 
       {/* Footer Actions */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-200 bg-gray-50/50 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-200 bg-gray-50/50 shrink-0 dark:border-gray-700">
         <div className="text-[9px] text-gray-400">
           {existing && (
             <span>
@@ -264,7 +264,7 @@ export function RationaleEditor({ event, onSave, onClose, isSaving }: RationaleE
           <button
             onClick={() => handleSave('draft')}
             disabled={isSaving || !hasContent}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
           >
             <Save className="w-3 h-3" />
             Save Draft

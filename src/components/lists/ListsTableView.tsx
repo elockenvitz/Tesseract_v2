@@ -211,7 +211,7 @@ export function ListsTableView({
                 <input type="checkbox" checked={allVisibleSelected}
                   ref={(el) => { if (el) el.indeterminate = someSelected && !allVisibleSelected }}
                   onChange={toggleSelectAll}
-                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600" />
               </th>
               <SortTh col="name" label="Name" active={activeSortCol} dir={sortDir} onClick={handleHeaderClick} className="w-auto" />
               <SortTh col="access" label="Access" active={activeSortCol} dir={sortDir} onClick={handleHeaderClick} className={clsx(rAccess, 'w-28')} />
@@ -359,7 +359,7 @@ function ListRow({
       <td className="w-9 px-2 py-2 align-middle">
         <input type="checkbox" checked={isSelected}
           onChange={() => {}} onClick={(e) => toggleSelect(list.id, e)}
-          className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+          className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600" />
       </td>
       <td className="px-3 py-2 align-middle">
         <div className="flex items-center gap-2 min-w-0">

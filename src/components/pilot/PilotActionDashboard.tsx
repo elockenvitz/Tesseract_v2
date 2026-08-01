@@ -784,7 +784,7 @@ function SystemLoopCard({
                 ? `ring-2 ring-offset-1 ${ACCENT_RING[s.accent]} animate-pulse hover:animate-none`
                 : done
                   ? 'border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800/60'
-                  : 'border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700'
+                  : 'border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-800'
             return (
               <button
                 key={s.key}
@@ -1073,12 +1073,12 @@ function CaptureAttention({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[13px] font-semibold text-gray-900 dark:text-white">{sym}</span>
-                  {name && <span className="text-[11px] text-gray-500 truncate">{name}</span>}
+                  {name && <span className="text-[11px] text-gray-500 truncate dark:text-gray-400">{name}</span>}
                   <span className="text-[10px] text-gray-400 ml-auto">
                     {fmtRelative(i.created_at)}
                   </span>
                 </div>
-                <div className="text-[10px] text-gray-500">
+                <div className="text-[10px] text-gray-500 dark:text-gray-400">
                   In pipeline · {PIPELINE_STAGE_LABEL[i.stage || 'aware'] || i.stage}
                 </div>
               </div>
@@ -1296,7 +1296,7 @@ function DecideAttention({
                     {r.asset?.symbol || '—'}
                   </span>
                   {r.asset?.company_name && (
-                    <span className="text-[11px] text-gray-500 truncate">{r.asset.company_name}</span>
+                    <span className="text-[11px] text-gray-500 truncate dark:text-gray-400">{r.asset.company_name}</span>
                   )}
                   {isPilotRec && (
                     <span className="text-[9px] uppercase font-bold tracking-wider text-primary-700 bg-primary-50 border border-primary-200 px-1.5 py-[1px] rounded">
@@ -1363,7 +1363,7 @@ function ReviewAttention({
                   {(t.action || 'TRADE').toUpperCase()} {t.asset?.symbol || '—'}
                 </span>
                 {t.target_weight != null && (
-                  <span className="text-[11px] text-gray-500 tabular-nums">
+                  <span className="text-[11px] text-gray-500 tabular-nums dark:text-gray-400">
                     {Number(t.target_weight).toFixed(2)}% target
                   </span>
                 )}
@@ -1494,7 +1494,7 @@ function AttentionHeader({ title, count, helper }: { title: string; count: numbe
           </span>
         )}
       </div>
-      <p className="text-[11px] text-gray-500 leading-snug">{helper}</p>
+      <p className="text-[11px] text-gray-500 leading-snug dark:text-gray-400">{helper}</p>
     </div>
   )
 }
@@ -1517,7 +1517,7 @@ function EmptyAttention({
       <div className="text-[13px] font-semibold text-gray-700 dark:text-gray-200 mb-0.5">
         {title}
       </div>
-      <p className="text-[11px] text-gray-500 leading-snug max-w-md mx-auto">{body}</p>
+      <p className="text-[11px] text-gray-500 leading-snug max-w-md mx-auto dark:text-gray-400">{body}</p>
     </div>
   )
 }

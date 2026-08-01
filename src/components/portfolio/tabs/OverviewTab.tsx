@@ -45,7 +45,7 @@ function fmtPct(value: number, opts?: { sign?: boolean }) {
 function clr(v: number) {
   if (v > 0) return 'text-emerald-600'
   if (v < 0) return 'text-red-600'
-  return 'text-gray-500'
+  return 'text-gray-500 dark:text-gray-400'
 }
 
 // ---------------------------------------------------------------------------
@@ -325,22 +325,22 @@ export function OverviewTab({
     <div className="space-y-2.5">
 
       {/* ─── KPI STRIP ─────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+      <div className="grid grid-cols-5 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
 
         {/* NAV */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">NAV</p>
-          <p className="text-[17px] font-semibold text-gray-900 mt-1 tabular-nums leading-none">
+          <p className="text-[17px] font-semibold text-gray-900 mt-1 tabular-nums leading-none dark:text-white">
             {fmtCcy(totalValue, { compact: true })}
           </p>
         </div>
 
         {/* TODAY */}
-        <div className={`px-3.5 py-2 ${isLive ? 'bg-gray-50/80' : 'bg-white'}`}>
+        <div className={`px-3.5 py-2 ${isLive ? 'bg-gray-50/80' : 'bg-white dark:bg-gray-800'}`}>
           <div className="flex items-center gap-1">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Today</p>
             <span className={`text-[7px] font-bold uppercase tracking-wide px-[5px] py-px rounded leading-none ${
-              isLive ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400'
+              isLive ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
             }`}>{mktLabel}</span>
           </div>
           {hasQuotes ? (
@@ -358,7 +358,7 @@ export function OverviewTab({
         </div>
 
         {/* YTD P&L */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">YTD P&L</p>
           <p className={`text-[17px] font-semibold mt-1 tabular-nums leading-none ${clr(ytdPnl)}`}>
             {fmtCcy(ytdPnl, { sign: true, compact: true })}
@@ -366,7 +366,7 @@ export function OverviewTab({
         </div>
 
         {/* YTD Return */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">YTD Return</p>
           <p className={`text-[17px] font-semibold mt-1 tabular-nums leading-none ${clr(ytdReturnPct)}`}>
             {fmtPct(ytdReturnPct, { sign: true })}
@@ -374,10 +374,10 @@ export function OverviewTab({
         </div>
 
         {/* Positions */}
-        <div className="bg-white px-3.5 py-2">
+        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Positions</p>
           <div className="flex items-baseline gap-1.5 mt-1">
-            <p className="text-[17px] font-semibold text-gray-900 tabular-nums leading-none">{posCount}</p>
+            <p className="text-[17px] font-semibold text-gray-900 tabular-nums leading-none dark:text-white">{posCount}</p>
             {portfolio.benchmark && (
               <p className="text-[9px] text-gray-400 truncate leading-none">vs {portfolio.benchmark}</p>
             )}
@@ -391,17 +391,17 @@ export function OverviewTab({
         {/* Portfolio Signals — single unified system, 3 cols */}
         <div className="lg:col-span-3">
           {signals.length > 0 ? (
-            <div className="border border-gray-200 rounded overflow-hidden">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 border-b border-gray-200">
+            <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                 <AlertTriangle className="w-3 h-3 text-amber-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Portfolio Signals</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Portfolio Signals</span>
                 <span className="text-[9px] font-bold px-1.5 py-px rounded-full tabular-nums bg-amber-100 text-amber-700">
                   {signals.length}
                 </span>
               </div>
 
               {/* Signal rows */}
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {signals.map(s => (
                   <div
                     key={s.id}
@@ -413,12 +413,12 @@ export function OverviewTab({
                     onClick={s.id === 'pending-rationale' ? () => onNavigateToTab('journal') : undefined}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className={`text-[11px] font-semibold leading-tight ${s.severity === 'high' ? 'text-red-800' : 'text-gray-800'}`}>
+                      <p className={`text-[11px] font-semibold leading-tight ${s.severity === 'high' ? 'text-red-800' : 'text-gray-800 dark:text-gray-100'}`}>
                         {s.title}
                       </p>
-                      <p className="text-[10px] text-gray-500 leading-snug">{s.detail}</p>
+                      <p className="text-[10px] text-gray-500 leading-snug dark:text-gray-400">{s.detail}</p>
                     </div>
-                    <span className="shrink-0 text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 mt-px">
+                    <span className="shrink-0 text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 mt-px dark:bg-gray-800">
                       {s.tag}
                     </span>
                   </div>
@@ -427,7 +427,7 @@ export function OverviewTab({
 
               {/* Concentration detail — compact supporting row */}
               {concentratedNames.length > 1 && (
-                <div className="px-2.5 py-0.5 border-t border-gray-100">
+                <div className="px-2.5 py-0.5 border-t border-gray-100 dark:border-gray-800">
                   <p className="text-[8px] text-gray-400/80 leading-snug">
                     <span className="font-medium">Largest weights:</span>
                     {' '}{concentratedNames.map(h => `${h.symbol} ${h.weight.toFixed(1)}%`).join(' · ')}
@@ -436,21 +436,21 @@ export function OverviewTab({
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-200 rounded h-full">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-200 rounded h-full dark:border-gray-700">
               <Activity className="w-3 h-3 text-emerald-500" />
-              <span className="text-[10px] text-gray-500">No signals — portfolio looks healthy</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400">No signals — portfolio looks healthy</span>
             </div>
           )}
         </div>
 
         {/* Today's Movers — 2 cols */}
         <div className="lg:col-span-2">
-          <div className="border border-gray-200 rounded overflow-hidden h-full flex flex-col">
-            <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Today's Movers</span>
+          <div className="border border-gray-200 rounded overflow-hidden h-full flex flex-col dark:border-gray-700">
+            <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Today's Movers</span>
             </div>
             {hasQuotes && enriched.length > 0 ? (
-              <div className="flex-1 grid grid-cols-2 divide-x divide-gray-100">
+              <div className="flex-1 grid grid-cols-2 divide-x divide-gray-100 dark:divide-gray-800">
                 <div className="px-2.5 py-1.5">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-500 mb-0.5">Contributors</p>
                   {contributors.length > 0 && (
@@ -462,7 +462,7 @@ export function OverviewTab({
                   )}
                   {contributors.length > 0 ? contributors.map(h => (
                     <div key={h.symbol} className="flex items-center py-px">
-                      <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums">{h.symbol}</span>
+                      <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums dark:text-white">{h.symbol}</span>
                       <span className="text-[10px] text-emerald-600 tabular-nums ml-auto">{fmtPct(h.dayChangePct, { sign: true })}</span>
                       <span className="text-[10px] font-semibold text-emerald-600 tabular-nums w-16 text-right">{fmtCcy(h.dayPnl, { sign: true, compact: true })}</span>
                     </div>
@@ -481,7 +481,7 @@ export function OverviewTab({
                   )}
                   {detractors.length > 0 ? detractors.map(h => (
                     <div key={h.symbol} className="flex items-center py-px">
-                      <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums">{h.symbol}</span>
+                      <span className="text-[11px] font-semibold text-gray-900 w-12 tabular-nums dark:text-white">{h.symbol}</span>
                       <span className="text-[10px] text-red-500 tabular-nums ml-auto">{fmtPct(h.dayChangePct, { sign: true })}</span>
                       <span className="text-[10px] font-semibold text-red-500 tabular-nums w-16 text-right">{fmtCcy(h.dayPnl, { sign: true, compact: true })}</span>
                     </div>
@@ -505,9 +505,9 @@ export function OverviewTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
 
         {/* Largest Positions */}
-        <div className="border border-gray-200 rounded overflow-hidden">
-          <div className="flex items-center justify-between px-2.5 py-1 bg-gray-50 border-b border-gray-200">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Largest Positions</span>
+        <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+          <div className="flex items-center justify-between px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Largest Positions</span>
             <button
               onClick={() => onNavigateToTab('positions')}
               className="text-[10px] font-medium text-primary-600 hover:text-primary-700 flex items-center gap-0.5"
@@ -519,14 +519,14 @@ export function OverviewTab({
             <div>
               {enriched.slice(0, 5).map(h => (
                 <div key={h.symbol} className="flex items-center gap-2 px-2.5 py-[5px]">
-                  <span className="text-[11px] font-semibold text-gray-900 w-12">{h.symbol}</span>
-                  <div className="flex-1 h-[3px] bg-gray-100 rounded-full overflow-hidden">
+                  <span className="text-[11px] font-semibold text-gray-900 w-12 dark:text-white">{h.symbol}</span>
+                  <div className="flex-1 h-[3px] bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
                     <div
                       className="h-full bg-primary-500/70 rounded-full"
                       style={{ width: `${Math.min(h.weight * 2, 100)}%` }}
                     />
                   </div>
-                  <span className="text-[11px] font-medium text-gray-700 w-10 text-right tabular-nums shrink-0">
+                  <span className="text-[11px] font-medium text-gray-700 w-10 text-right tabular-nums shrink-0 dark:text-gray-300">
                     {h.weight.toFixed(1)}%
                   </span>
                 </div>
@@ -538,23 +538,23 @@ export function OverviewTab({
         </div>
 
         {/* Sector Allocation */}
-        <div className="border border-gray-200 rounded overflow-hidden">
-          <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Sector Allocation</span>
+        <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+          <div className="px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sector Allocation</span>
           </div>
           {sectors.length > 0 ? (
             <div>
               {sectors.map((s, i) => (
                 <div key={s.sector} className="flex items-center gap-1.5 px-2.5 py-[5px]">
                   <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${SEC_CLR[i % SEC_CLR.length]}`} />
-                  <span className="text-[11px] text-gray-700 truncate flex-1 min-w-0">{s.sector}</span>
-                  <div className="w-14 h-[3px] bg-gray-100 rounded-full overflow-hidden shrink-0">
+                  <span className="text-[11px] text-gray-700 truncate flex-1 min-w-0 dark:text-gray-300">{s.sector}</span>
+                  <div className="w-14 h-[3px] bg-gray-100 rounded-full overflow-hidden shrink-0 dark:bg-gray-800">
                     <div
                       className={`h-full rounded-full ${SEC_CLR[i % SEC_CLR.length]}`}
                       style={{ width: `${Math.min(s.weight, 100)}%` }}
                     />
                   </div>
-                  <span className="text-[11px] font-medium text-gray-700 w-10 text-right tabular-nums shrink-0">
+                  <span className="text-[11px] font-medium text-gray-700 w-10 text-right tabular-nums shrink-0 dark:text-gray-300">
                     {s.weight.toFixed(1)}%
                   </span>
                 </div>
@@ -568,9 +568,9 @@ export function OverviewTab({
 
       {/* ─── ACTIVE WORK ───────────────────────────────────── */}
       {(recentNotes.length > 0 || activeWorkflows.length > 0) && (
-        <div className="border border-gray-200 rounded overflow-hidden">
-          <div className="flex items-center justify-between px-2.5 py-1 bg-gray-50 border-b border-gray-200">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Active Work</span>
+        <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
+          <div className="flex items-center justify-between px-2.5 py-1 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Active Work</span>
             <div className="flex items-center gap-1.5">
               {recentNotes.length > 0 && (
                 <button onClick={() => onNavigateToTab('log')} className="text-[9px] font-medium text-primary-600 hover:text-primary-700">
@@ -585,7 +585,7 @@ export function OverviewTab({
             </div>
           </div>
 
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {activeWorkflows.map((proj: any) => {
               const dels = proj.project_deliverables || []
               const done = dels.filter((d: any) => d.completed).length
@@ -602,16 +602,16 @@ export function OverviewTab({
                   <FolderKanban className="w-3.5 h-3.5 text-violet-500 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="text-[11px] font-semibold text-gray-900 truncate">{proj.title}</p>
+                      <p className="text-[11px] font-semibold text-gray-900 truncate dark:text-white">{proj.title}</p>
                       <span className={`text-[8px] font-bold uppercase px-1 py-px rounded leading-none ${
                         proj.status === 'in_progress' ? 'bg-blue-50 text-blue-600' :
                         proj.status === 'review' ? 'bg-amber-50 text-amber-600' :
-                        'bg-gray-100 text-gray-500'
+                        'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                       }`}>{(proj.status || '').replace('_', ' ')}</span>
                     </div>
                     {total > 0 && (
                       <div className="flex items-center gap-1.5 mt-px">
-                        <div className="w-14 h-[2px] bg-gray-100 rounded-full overflow-hidden">
+                        <div className="w-14 h-[2px] bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
                           <div className="h-full bg-violet-400 rounded-full" style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-[9px] text-gray-400 tabular-nums">{done}/{total}</span>
@@ -637,8 +637,8 @@ export function OverviewTab({
                 <FileText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-[11px] font-semibold text-gray-900 truncate">{note.title}</p>
-                    <span className="text-[8px] font-bold uppercase px-1 py-px rounded bg-gray-100 text-gray-500 leading-none">
+                    <p className="text-[11px] font-semibold text-gray-900 truncate dark:text-white">{note.title}</p>
+                    <span className="text-[8px] font-bold uppercase px-1 py-px rounded bg-gray-100 text-gray-500 leading-none dark:text-gray-400 dark:bg-gray-800">
                       {workLabel(note.note_type)}
                     </span>
                   </div>
@@ -654,7 +654,7 @@ export function OverviewTab({
 
       {/* Empty state */}
       {recentNotes.length === 0 && activeWorkflows.length === 0 && (
-        <div className="flex items-center justify-between px-2.5 py-1.5 border border-dashed border-gray-200 rounded">
+        <div className="flex items-center justify-between px-2.5 py-1.5 border border-dashed border-gray-200 rounded dark:border-gray-700">
           <span className="text-[10px] text-gray-400">No recent log entries or processes</span>
           <div className="flex items-center gap-1.5">
             <button onClick={() => onNavigateToTab('log')} className="text-[10px] font-medium text-primary-600 hover:text-primary-700">New Entry</button>
@@ -668,13 +668,13 @@ export function OverviewTab({
       {combinedUniverseAssets.total > 0 && (
         <button
           onClick={() => onNavigateToTab('universe')}
-          className="flex items-center gap-1 w-full px-2.5 py-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+          className="flex items-center gap-1 w-full px-2.5 py-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
         >
           <span>Investable Universe</span>
           <span className="text-gray-300">&middot;</span>
           <span className="tabular-nums">{combinedUniverseAssets.total} assets</span>
           <span className="text-gray-300">&middot;</span>
-          <span className="font-medium text-gray-500">Manage</span>
+          <span className="font-medium text-gray-500 dark:text-gray-400">Manage</span>
           <ChevronRight className="w-2.5 h-2.5 ml-auto" />
         </button>
       )}

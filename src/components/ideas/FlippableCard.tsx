@@ -102,7 +102,7 @@ export function FlippableCard({
         {/* Back side - Chart */}
         <div
           className={clsx(
-            'absolute inset-0 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col',
+            'absolute inset-0 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col dark:border-gray-700 dark:bg-gray-800',
             size === 'small' ? 'p-2' : size === 'medium' ? 'p-3' : 'p-4'
           )}
           style={{
@@ -114,9 +114,9 @@ export function FlippableCard({
         {/* Header */}
         <div className="flex items-center justify-between mb-2 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-900">${symbol}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">${symbol}</span>
             {quote && (
-              <span className="text-sm text-gray-600">${quote.price.toFixed(2)}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">${quote.price.toFixed(2)}</span>
             )}
             {stats && (
               <span className={clsx(
@@ -133,7 +133,7 @@ export function FlippableCard({
               e.stopPropagation()
               onFlip()
             }}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
             title="Flip back"
           >
             <RotateCcw className="h-4 w-4" />
@@ -153,7 +153,7 @@ export function FlippableCard({
                 'px-2 py-0.5 rounded text-xs font-medium transition-colors',
                 selectedTimeframe === tf.value
                   ? 'bg-gray-900 text-white'
-                  : 'text-gray-500 hover:bg-gray-100'
+                  : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-400'
               )}
             >
               {tf.label}
@@ -236,7 +236,7 @@ export function FlippableCard({
 
         {/* Stats footer */}
         {stats && size !== 'small' && (
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500">
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
             <span>
               {selectedTimeframe}:
               <span className={clsx('ml-1 font-medium', stats.isPositive ? 'text-green-600' : 'text-red-600')}>

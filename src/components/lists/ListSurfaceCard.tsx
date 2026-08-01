@@ -79,8 +79,8 @@ export function ListSurfaceCard({
     <div
       onClick={onClick}
       className={clsx(
-        'group relative cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200 h-full',
-        'border-gray-200 hover:border-gray-300 hover:shadow-lg hover:-translate-y-0.5',
+        'group relative cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200 h-full dark:bg-gray-800',
+        'border-gray-200 hover:border-gray-300 hover:shadow-lg hover:-translate-y-0.5 dark:border-gray-700',
         'dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700'
       )}
       style={{

@@ -232,7 +232,7 @@ export function MultiTickerInput({ listId, existingAssetIds, onComplete }: Multi
             onPaste={handlePaste}
             onKeyDown={handleKeyDown}
             placeholder="Type or paste tickers (AAPL, MSFT, GOOGL)"
-            className="w-72 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-72 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
           />
           {isValidating && (
             <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin" />
@@ -240,7 +240,7 @@ export function MultiTickerInput({ listId, existingAssetIds, onComplete }: Multi
         </div>
         <button
           onClick={handleClose}
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
         >
           <X className="h-4 w-4" />
         </button>
@@ -248,9 +248,9 @@ export function MultiTickerInput({ listId, existingAssetIds, onComplete }: Multi
 
       {/* Preview dropdown */}
       {showResults && parsedTickers.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
           {/* Summary header */}
-          <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-3 text-xs">
+          <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-3 text-xs dark:border-gray-800 dark:bg-gray-900">
             {validCount > 0 && (
               <span className="flex items-center gap-1 text-green-600">
                 <Check className="h-3.5 w-3.5" />
@@ -296,8 +296,8 @@ export function MultiTickerInput({ listId, existingAssetIds, onComplete }: Multi
           </div>
 
           {/* Actions */}
-          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-            <span className="text-xs text-gray-500">
+          <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between dark:border-gray-800 dark:bg-gray-900">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               Press Enter to add or click button
             </span>
             <Button
@@ -321,7 +321,7 @@ export function MultiTickerInput({ listId, existingAssetIds, onComplete }: Multi
 
       {/* Help text when typing */}
       {!showResults && inputValue.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 px-3 py-2 bg-white border border-gray-200 rounded-lg shadow-md text-xs text-gray-500">
+        <div className="absolute top-full left-0 mt-1 px-3 py-2 bg-white border border-gray-200 rounded-lg shadow-md text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800">
           Press Enter to validate tickers
         </div>
       )}

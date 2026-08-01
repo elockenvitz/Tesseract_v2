@@ -77,7 +77,7 @@ const KANBAN_ORGANIZATION_OPTIONS: { value: KanbanOrganization; label: string; i
 ]
 
 const PROCESS_STAGES: Record<string, { label: string; color: string }> = {
-  outdated: { label: 'Outdated', color: 'bg-gray-100 text-gray-700' },
+  outdated: { label: 'Outdated', color: 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800' },
   prioritized: { label: 'Prioritized', color: 'bg-purple-100 text-purple-700' },
   in_progress: { label: 'In Progress', color: 'bg-blue-100 text-blue-700' },
   recommend: { label: 'Recommend', color: 'bg-green-100 text-green-700' },
@@ -2103,7 +2103,7 @@ export function AssetTableView({
 
   // Quick action buttons rendered at the bottom of expanded rows
   const renderExpandedActions = useCallback((asset: any) => (
-    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
+    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end gap-3 dark:border-gray-800">
       <button
         onClick={() => handleAssetClick(asset)}
         className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
@@ -2114,7 +2114,7 @@ export function AssetTableView({
       {onCreateTradeIdea && (
         <button
           onClick={() => onCreateTradeIdea(asset.id)}
-          className="text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+          className="text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors dark:text-gray-400 dark:bg-gray-800"
         >
           <Tag className="w-3 h-3" />
           Create Trade Idea
@@ -2173,7 +2173,7 @@ export function AssetTableView({
         {
           key: 'unassigned',
           label: 'Unassigned',
-          color: 'bg-gray-100 text-gray-600',
+          color: 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
           assets: filteredAssets.filter(a => !laneItemMap.has(a._rowId))
         },
         ...kanbanBoardLanes
@@ -2181,7 +2181,7 @@ export function AssetTableView({
           .map(lane => ({
             key: lane.id,
             label: lane.name,
-            color: 'bg-opacity-20 text-gray-800',
+            color: 'bg-opacity-20 text-gray-800 dark:text-gray-100',
             bgColor: lane.color,
             assets: filteredAssets.filter(a => laneItemMap.get(a._rowId) === lane.id)
           }))
@@ -2203,7 +2203,7 @@ export function AssetTableView({
           key, label: stage.label, color: stage.color,
           assets: filteredAssets.filter(a => a.process_stage === key)
         })).concat([{
-          key: 'unassigned', label: 'No Stage', color: 'bg-gray-100 text-gray-600',
+          key: 'unassigned', label: 'No Stage', color: 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
           assets: filteredAssets.filter(a => !a.process_stage)
         }])
       default:
@@ -2231,10 +2231,10 @@ export function AssetTableView({
             placeholder="Search... (press /)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
+            className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50 dark:border-gray-700"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               <X className="w-3.5 h-3.5" />
             </button>
           )}
@@ -2247,12 +2247,12 @@ export function AssetTableView({
               <div className="relative flex-shrink-0">
                 <button
                   onClick={() => setShowInlineColorPicker(!showInlineColorPicker)}
-                  className="w-4 h-4 rounded-full border border-gray-300 hover:border-gray-400 transition-colors"
+                  className="w-4 h-4 rounded-full border border-gray-300 hover:border-gray-400 transition-colors dark:border-gray-600"
                   style={{ backgroundColor: inlineNewGroupColor }}
                   title="Pick color"
                 />
                 {showInlineColorPicker && (
-                  <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 z-50 flex gap-1 flex-wrap w-[120px]">
+                  <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 z-50 flex gap-1 flex-wrap w-[120px] dark:border-gray-700 dark:bg-gray-800">
                     {['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280'].map(color => (
                       <button
                         key={color}
@@ -2270,7 +2270,7 @@ export function AssetTableView({
                 value={inlineNewGroupName}
                 onChange={(e) => setInlineNewGroupName(e.target.value)}
                 placeholder="Group name..."
-                className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600"
                 onKeyDown={(e) => {
                   e.stopPropagation()
                   if (e.key === 'Enter' && inlineNewGroupName.trim()) {
@@ -2305,7 +2305,7 @@ export function AssetTableView({
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setInlineNewGroupName(''); setShowInlineNewGroup(false); setShowInlineColorPicker(false) }}
-                className="p-0.5 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                className="p-0.5 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -2319,7 +2319,7 @@ export function AssetTableView({
                 setInlineNewGroupColor('#6366f1')
                 setTimeout(() => inlineNewGroupInputRef.current?.focus(), 50)
               }}
-              className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
             >
               <FolderPlus className="h-3.5 w-3.5" />
               Add Group
@@ -2345,7 +2345,7 @@ export function AssetTableView({
                 onClick={() => setShowGroupByMenu(!showGroupByMenu)}
                 className={clsx(
                   'flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors text-xs font-medium',
-                  groupBy !== 'none' ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  groupBy !== 'none' ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                 )}
                 title="Group by"
               >
@@ -2362,7 +2362,7 @@ export function AssetTableView({
                 )}
               </button>
               {showGroupByMenu && (
-                <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
+                <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1 dark:border-gray-700 dark:bg-gray-800">
                   {[
                     ...GROUP_BY_OPTIONS,
                     ...(listGroupData ? [{ value: 'listGroup' as GroupByOption, label: 'By Custom', icon: FolderTree }] : []),
@@ -2370,7 +2370,7 @@ export function AssetTableView({
                   ].map(option => (
                     <button key={option.value}
                       onClick={() => { setGroupBy(option.value); setShowGroupByMenu(false); setCollapsedGroups(new Set()) }}
-                      className={clsx('w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 hover:bg-gray-50',
+                      className={clsx('w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800',
                         groupBy === option.value && 'bg-purple-50 text-purple-700'
                       )}
                     >
@@ -2398,7 +2398,7 @@ export function AssetTableView({
             ) : (
               <button
                 onClick={() => setSortBy(null)}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
                 title="Clear sort to enable drag reorder"
               >
                 <GripVertical className="w-3.5 h-3.5" />
@@ -2413,7 +2413,7 @@ export function AssetTableView({
               onClick={() => { setDraftColumns(columns.map(c => ({ ...c }))); setShowColumnSettings(true) }}
               className={clsx(
                 'p-1.5 rounded-md transition-colors',
-                'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
               )}
               title="Column settings"
             >
@@ -2426,7 +2426,7 @@ export function AssetTableView({
             onClick={() => selectionMode ? clearSelection() : setSelectionMode(true)}
             className={clsx(
               'p-1.5 rounded-md transition-colors',
-              selectionMode ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              selectionMode ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700'
             )}
             title={selectionMode ? 'Cancel selection' : 'Select assets'}
           >
@@ -2438,11 +2438,11 @@ export function AssetTableView({
 
           {/* View mode toggle */}
           {!hideViewModes && (
-            <div className="flex items-center bg-gray-100 rounded-md p-0.5">
-              <button onClick={() => setViewMode('table')} className={clsx('p-1 rounded', viewMode === 'table' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500')} title="Table view">
+            <div className="flex items-center bg-gray-100 rounded-md p-0.5 dark:bg-gray-800">
+              <button onClick={() => setViewMode('table')} className={clsx('p-1 rounded', viewMode === 'table' ? 'bg-white shadow-sm text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-500 dark:text-gray-400')} title="Table view">
                 <Table2 className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => setViewMode('kanban')} className={clsx('p-1 rounded', viewMode === 'kanban' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500')} title="Kanban view">
+              <button onClick={() => setViewMode('kanban')} className={clsx('p-1 rounded', viewMode === 'kanban' ? 'bg-white shadow-sm text-gray-900 dark:text-white dark:bg-gray-800' : 'text-gray-500 dark:text-gray-400')} title="Kanban view">
                 <Columns3 className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -2460,7 +2460,7 @@ export function AssetTableView({
               <button onClick={() => removeFilter(filter.type, filter.value)} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
             </span>
           ))}
-          <button onClick={clearAllFilters} className="text-xs text-gray-500 hover:text-gray-700 ml-1">Clear</button>
+          <button onClick={clearAllFilters} className="text-xs text-gray-500 hover:text-gray-700 ml-1 dark:hover:text-gray-200 dark:text-gray-400">Clear</button>
         </div>
       )}
 
@@ -2513,10 +2513,10 @@ export function AssetTableView({
                   <FolderOpen className="w-3.5 h-3.5" />
                   Move to Group
                 </button>
-                <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 hidden group-hover/bulkmove:block z-50">
+                <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 hidden group-hover/bulkmove:block z-50 dark:border-gray-700 dark:bg-gray-800">
                   <button
                     onClick={() => { selectedArr.forEach(id => onMoveItemToGroup(id, null)); clearSelection() }}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 text-gray-600"
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 text-gray-600 dark:hover:bg-gray-700 dark:text-gray-400"
                   >
                     No Group
                   </button>
@@ -2524,7 +2524,7 @@ export function AssetTableView({
                     <button
                       key={g.id}
                       onClick={() => { selectedArr.forEach(id => onMoveItemToGroup(id, g.id)); clearSelection() }}
-                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
                     >
                       {g.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: g.color }} />}
                       <span className="truncate">{g.name}</span>
@@ -2647,7 +2647,7 @@ export function AssetTableView({
                           {col.id === 'select' ? (
                             <button
                               onClick={() => isAllSelected ? clearSelection() : selectAllFiltered()}
-                              className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                              className="p-0.5 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700"
                               title={isAllSelected ? 'Deselect all' : 'Select all'}
                             >
                               {isAllSelected ? (
@@ -2718,19 +2718,19 @@ export function AssetTableView({
                 {/* Add Column Dropdown - rendered via portal */}
                 {addColumnDropdown && createPortal(
                   <div
-                    className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 add-column-dropdown"
+                    className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 add-column-dropdown dark:border-gray-700 dark:bg-gray-800"
                     style={{ left: addColumnDropdown.x, top: addColumnDropdown.y }}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* Search Input */}
-                    <div className="p-2 border-b border-gray-100">
+                    <div className="p-2 border-b border-gray-100 dark:border-gray-800">
                       <input
                         type="text"
                         autoFocus
                         value={addColumnSearch}
                         onChange={(e) => setAddColumnSearch(e.target.value)}
                         placeholder="Search columns..."
-                        className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                        className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 dark:border-gray-700"
                       />
                     </div>
 
@@ -2749,7 +2749,7 @@ export function AssetTableView({
                               setAddColumnDropdown(null)
                               setAddColumnSearch('')
                             }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 rounded-md flex items-center gap-2 text-gray-700"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 rounded-md flex items-center gap-2 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
                           >
                             <Plus className="w-3.5 h-3.5 text-gray-400" />
                             {col.label}
@@ -2760,13 +2760,13 @@ export function AssetTableView({
                         !addColumnSearch ||
                         col.label.toLowerCase().includes(addColumnSearch.toLowerCase())
                       ).length === 0 && (
-                        <div className="px-3 py-4 text-center text-sm text-gray-500">
+                        <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                           {addColumnSearch ? 'No matching columns' : 'All columns visible'}
                         </div>
                       )}
                     </div>
                     {/* Special Column Buttons - at bottom */}
-                    <div className="p-2 border-t border-gray-100 space-y-2">
+                    <div className="p-2 border-t border-gray-100 space-y-2 dark:border-gray-800">
                       {/* Add Priority Column Button */}
                       <button
                         onClick={(e) => {
@@ -2814,7 +2814,7 @@ export function AssetTableView({
                 {/* Column Context Menu - rendered via portal */}
                 {columnContextMenu && createPortal(
                   <div
-                    className="fixed w-52 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 column-context-menu"
+                    className="fixed w-52 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 column-context-menu dark:border-gray-700 dark:bg-gray-800"
                     style={{ left: columnContextMenu.x, top: columnContextMenu.y }}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -2838,7 +2838,7 @@ export function AssetTableView({
                                   setColumnContextMenu(null)
                                 }}
                                 className={clsx(
-                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2",
+                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700",
                                   isSorted && sortOrder === 'asc' && "bg-blue-50 text-blue-700"
                                 )}
                               >
@@ -2852,14 +2852,14 @@ export function AssetTableView({
                                   setColumnContextMenu(null)
                                 }}
                                 className={clsx(
-                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2",
+                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700",
                                   isSorted && sortOrder === 'desc' && "bg-blue-50 text-blue-700"
                                 )}
                               >
                                 <ChevronDown className="w-4 h-4" />
                                 Sort Descending
                               </button>
-                              <div className="h-px bg-gray-100 my-1" />
+                              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                             </>
                           )}
 
@@ -2871,12 +2871,12 @@ export function AssetTableView({
                                   setActiveTableFilter(col.id)
                                   setColumnContextMenu(null)
                                 }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
                               >
                                 <Filter className="w-4 h-4" />
                                 Filter by {col.label}
                               </button>
-                              <div className="h-px bg-gray-100 my-1" />
+                              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                             </>
                           )}
 
@@ -2894,7 +2894,7 @@ export function AssetTableView({
                                   setColumnContextMenu(null)
                                 }}
                                 className={clsx(
-                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2",
+                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700",
                                   hasCustomSource(col.id) && "text-purple-600"
                                 )}
                               >
@@ -2912,7 +2912,7 @@ export function AssetTableView({
                                   setColumnContextMenu(null)
                                 }}
                                 className={clsx(
-                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2",
+                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700",
                                   col.wrapText && "text-blue-600"
                                 )}
                               >
@@ -2922,7 +2922,7 @@ export function AssetTableView({
                                   <Check className="w-4 h-4 ml-auto" />
                                 )}
                               </button>
-                              <div className="h-px bg-gray-100 my-1" />
+                              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                             </>
                           )}
 
@@ -2943,7 +2943,7 @@ export function AssetTableView({
                                   setColumnContextMenu(null)
                                 }}
                                 className={clsx(
-                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2",
+                                  "w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700",
                                   col.prioritySource && col.prioritySource !== 'my' && "text-purple-600"
                                 )}
                               >
@@ -2955,7 +2955,7 @@ export function AssetTableView({
                                   </span>
                                 )}
                               </button>
-                              <div className="h-px bg-gray-100 my-1" />
+                              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                             </>
                           )}
 
@@ -2967,12 +2967,12 @@ export function AssetTableView({
                                   // TODO: Refresh all AI content for this column
                                   setColumnContextMenu(null)
                                 }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
                               >
                                 <RefreshCw className="w-4 h-4" />
                                 Refresh All
                               </button>
-                              <div className="h-px bg-gray-100 my-1" />
+                              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
                             </>
                           )}
 
@@ -2983,7 +2983,7 @@ export function AssetTableView({
                                 toggleColumnPin(col.id)
                                 setColumnContextMenu(null)
                               }}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
                             >
                               {col.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
                               {col.pinned ? 'Unpin Column' : 'Pin Column'}
@@ -2996,7 +2996,7 @@ export function AssetTableView({
                               toggleColumnVisibility(col.id)
                               setColumnContextMenu(null)
                             }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 text-red-600"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 text-red-600 dark:hover:bg-gray-700"
                           >
                             <X className="w-4 h-4" />
                             Remove Column
@@ -3012,12 +3012,12 @@ export function AssetTableView({
                 {/* Filter Dropdown (for column context menu filter action) */}
                 {activeTableFilter && createPortal(
                   <div
-                    className="fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 table-filter-dropdown"
+                    className="fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 table-filter-dropdown dark:border-gray-700 dark:bg-gray-800"
                     style={{ left: columnContextMenu?.x || 100, top: (columnContextMenu?.y || 100) + 30 }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                      <p className="text-xs font-semibold text-gray-700">Filter by {columns.find(c => c.id === activeTableFilter)?.label}</p>
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between dark:border-gray-800 dark:bg-gray-900">
+                      <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">Filter by {columns.find(c => c.id === activeTableFilter)?.label}</p>
                       {((activeTableFilter === 'priority' && selectedPriorities.length > 0) ||
                         (activeTableFilter === 'sector' && selectedSectors.length > 0) ||
                         (activeTableFilter === 'coverage' && selectedStages.length > 0)) && (
@@ -3034,8 +3034,8 @@ export function AssetTableView({
                         const IconComponent = config.icon
                         return (
                           <button key={priority} onClick={() => togglePriority(priority)}
-                            className={clsx("w-full px-3 py-2 text-left text-sm rounded-md transition-colors flex items-center gap-2", selectedPriorities.includes(priority) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100 text-gray-700")}>
-                            <div className={clsx("w-4 h-4 rounded border-2 flex items-center justify-center transition-colors", selectedPriorities.includes(priority) ? "bg-blue-600 border-blue-600" : "border-gray-300")}>
+                            className={clsx("w-full px-3 py-2 text-left text-sm rounded-md transition-colors flex items-center gap-2", selectedPriorities.includes(priority) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300")}>
+                            <div className={clsx("w-4 h-4 rounded border-2 flex items-center justify-center transition-colors", selectedPriorities.includes(priority) ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-600")}>
                               {selectedPriorities.includes(priority) && <Check className="w-2.5 h-2.5 text-white" />}
                             </div>
                             <span className={clsx("w-3 h-3 rounded-full flex items-center justify-center text-white", config.bg)}>
@@ -3047,8 +3047,8 @@ export function AssetTableView({
                       })}
                       {activeTableFilter === 'sector' && sectors.map(sector => (
                         <button key={sector} onClick={() => toggleSector(sector)}
-                          className={clsx("w-full px-3 py-2 text-left text-sm rounded-md transition-colors flex items-center gap-2", selectedSectors.includes(sector) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100 text-gray-700")}>
-                          <div className={clsx("w-4 h-4 rounded border-2 flex items-center justify-center transition-colors", selectedSectors.includes(sector) ? "bg-blue-600 border-blue-600" : "border-gray-300")}>
+                          className={clsx("w-full px-3 py-2 text-left text-sm rounded-md transition-colors flex items-center gap-2", selectedSectors.includes(sector) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300")}>
+                          <div className={clsx("w-4 h-4 rounded border-2 flex items-center justify-center transition-colors", selectedSectors.includes(sector) ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-600")}>
                             {selectedSectors.includes(sector) && <Check className="w-2.5 h-2.5 text-white" />}
                           </div>
                           {sector}
@@ -3056,8 +3056,8 @@ export function AssetTableView({
                       ))}
                       {activeTableFilter === 'coverage' && Object.entries(PROCESS_STAGES).map(([key, stage]) => (
                         <button key={key} onClick={() => toggleStage(key)}
-                          className={clsx("w-full px-3 py-2 text-left text-sm rounded-md transition-colors flex items-center gap-2", selectedStages.includes(key) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100 text-gray-700")}>
-                          <div className={clsx("w-4 h-4 rounded border-2 flex items-center justify-center transition-colors", selectedStages.includes(key) ? "bg-blue-600 border-blue-600" : "border-gray-300")}>
+                          className={clsx("w-full px-3 py-2 text-left text-sm rounded-md transition-colors flex items-center gap-2", selectedStages.includes(key) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300")}>
+                          <div className={clsx("w-4 h-4 rounded border-2 flex items-center justify-center transition-colors", selectedStages.includes(key) ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-600")}>
                             {selectedStages.includes(key) && <Check className="w-2.5 h-2.5 text-white" />}
                           </div>
                           <span className={clsx("px-1.5 py-0.5 text-xs rounded", stage.color)}>{stage.label}</span>
@@ -3212,7 +3212,7 @@ export function AssetTableView({
                                         <button
                                           onMouseDown={(e) => e.preventDefault()}
                                           onClick={(e) => { e.stopPropagation(); toggleRowExpansion(asset.id) }}
-                                          className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                          className="p-1 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700"
                                         >
                                           <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
                                         </button>
@@ -3336,7 +3336,7 @@ export function AssetTableView({
                                   if (isEditable) {
                                     return (
                                       <button
-                                        className="w-full h-full flex items-center justify-start cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1 transition-colors"
+                                        className="w-full h-full flex items-center justify-start cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800"
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           const rect = e.currentTarget.getBoundingClientRect()
@@ -3355,37 +3355,37 @@ export function AssetTableView({
                                   )
                                 })()}
                                 {col.id === 'sector' && (
-                                  <span className="text-gray-600 truncate">
+                                  <span className="text-gray-600 truncate dark:text-gray-400">
                                     {asset.sector || '—'}
                                   </span>
                                 )}
                                 {col.id === 'thesis' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.thesis || 'No thesis'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.thesis || 'No thesis'}>
                                     {asset.thesis || <span className="text-gray-400 italic">No thesis</span>}
                                   </span>
                                 )}
                                 {col.id === 'bull_case' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bull_case || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bull_case || 'Not specified'}>
                                     {asset.bull_case || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'bear_case' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bear_case || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bear_case || 'Not specified'}>
                                     {asset.bear_case || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'base_case' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.base_case || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.base_case || 'Not specified'}>
                                     {asset.base_case || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'where_different' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.where_different || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.where_different || 'Not specified'}>
                                     {asset.where_different || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
                                 {col.id === 'risks_to_thesis' && (
-                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.risks_to_thesis || 'Not specified'}>
+                                  <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.risks_to_thesis || 'Not specified'}>
                                     {asset.risks_to_thesis || <span className="text-gray-400 italic">—</span>}
                                   </span>
                                 )}
@@ -3412,7 +3412,7 @@ export function AssetTableView({
                                           onBlur={() => saveNote(asset.id)}
                                           placeholder="Add a quick note..."
                                           rows={2}
-                                          className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                          className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all dark:bg-gray-800"
                                         />
                                         <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
                                           Enter to save · Esc to cancel
@@ -3429,11 +3429,11 @@ export function AssetTableView({
                                         e.stopPropagation()
                                         startEditingNote(asset.id, quickNote)
                                       }}
-                                      className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                      className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800', !col.wrapText && 'h-full')}
                                       title={quickNote || 'Click to add quick note'}
                                     >
                                       {quickNote ? (
-                                        <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{quickNote}</span>
+                                        <span className={clsx('text-gray-700 flex-1 min-w-0 dark:text-gray-300', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{quickNote}</span>
                                       ) : (
                                         <span className="text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity">
                                           {isMicro ? '+' : 'Add note...'}
@@ -3466,7 +3466,7 @@ export function AssetTableView({
                                           onBlur={() => saveListNote(rowId)}
                                           placeholder="Add list note..."
                                           rows={2}
-                                          className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                          className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all dark:bg-gray-800"
                                         />
                                         <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
                                           Enter to save · Esc to cancel
@@ -3483,11 +3483,11 @@ export function AssetTableView({
                                         e.stopPropagation()
                                         startEditingListNote(rowId, listNote)
                                       }}
-                                      className={clsx('group/listnote w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                      className={clsx('group/listnote w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800', !col.wrapText && 'h-full')}
                                       title={listNote || 'Click to add list note'}
                                     >
                                       {listNote ? (
-                                        <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{listNote}</span>
+                                        <span className={clsx('text-gray-700 flex-1 min-w-0 dark:text-gray-300', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{listNote}</span>
                                       ) : (
                                         <span className="text-gray-400 italic opacity-0 group-hover/listnote:opacity-100 transition-opacity">
                                           {isMicro ? '+' : 'Add note...'}
@@ -3594,12 +3594,12 @@ export function AssetTableView({
 
                 return (
                   <div
-                    className="workflow-popover fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[240px] max-w-[320px]"
+                    className="workflow-popover fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[240px] max-w-[320px] dark:border-gray-700 dark:bg-gray-800"
                     style={{ left: workflowPopover.x, top: workflowPopover.y }}
                   >
-                    <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
-                      <span className="text-sm font-medium text-gray-900">{asset?.symbol} Processes</span>
-                      <button onClick={() => setWorkflowPopover(null)} className="p-1 hover:bg-gray-100 rounded">
+                    <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100 dark:border-gray-800">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{asset?.symbol} Processes</span>
+                      <button onClick={() => setWorkflowPopover(null)} className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
                         <X className="w-3 h-3 text-gray-400" />
                       </button>
                     </div>
@@ -3607,13 +3607,13 @@ export function AssetTableView({
                     {/* Active Workflows */}
                     {currentWorkflows.length > 0 && (
                       <div className="mb-3">
-                        <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 px-1">Active</div>
+                        <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 px-1 dark:text-gray-400">Active</div>
                         <div className="space-y-1">
                           {currentWorkflows.map((wf, idx) => (
-                            <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50">
+                            <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 dark:bg-gray-900">
                               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: wf.color }} />
                               <button
-                                className="text-sm text-gray-700 hover:text-primary-600 hover:underline text-left truncate"
+                                className="text-sm text-gray-700 hover:text-primary-600 hover:underline text-left truncate dark:text-gray-300"
                                 onClick={() => {
                                   setWorkflowPopover(null)
                                   window.dispatchEvent(new CustomEvent('decision-engine-action', {
@@ -3632,8 +3632,8 @@ export function AssetTableView({
                     {/* Available Workflows to Add */}
                     {addableWorkflows.length > 0 && (
                       <div>
-                        {currentWorkflows.length > 0 && <div className="border-t border-gray-100 my-2" />}
-                        <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 px-1">
+                        {currentWorkflows.length > 0 && <div className="border-t border-gray-100 my-2 dark:border-gray-800" />}
+                        <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 px-1 dark:text-gray-400">
                           Add to Process
                         </div>
                         <div className="space-y-1 max-h-[200px] overflow-y-auto">
@@ -3644,7 +3644,7 @@ export function AssetTableView({
                             >
                               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: wf.color || '#6366f1' }} />
                               <button
-                                className="text-sm text-gray-700 hover:text-primary-600 hover:underline flex-1 truncate text-left"
+                                className="text-sm text-gray-700 hover:text-primary-600 hover:underline flex-1 truncate text-left dark:text-gray-300"
                                 onClick={() => {
                                   setWorkflowPopover(null)
                                   window.dispatchEvent(new CustomEvent('decision-engine-action', {
@@ -3671,7 +3671,7 @@ export function AssetTableView({
 
                     {/* Empty state */}
                     {currentWorkflows.length === 0 && addableWorkflows.length === 0 && (
-                      <div className="text-sm text-gray-500 text-center py-2">
+                      <div className="text-sm text-gray-500 text-center py-2 dark:text-gray-400">
                         No processes available
                       </div>
                     )}
@@ -3685,9 +3685,9 @@ export function AssetTableView({
                   className="fixed z-[100] animate-in fade-in zoom-in-95 duration-100"
                   style={{ left: editingCell.x, top: editingCell.y }}
                 >
-                  <div className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden min-w-[140px]">
-                    <div className="px-3 py-1.5 border-b border-gray-100">
-                      <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Your Priority</span>
+                  <div className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden min-w-[140px] dark:border-gray-700 dark:bg-gray-800">
+                    <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+                      <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">Your Priority</span>
                     </div>
                     <div className="p-1.5">
                       {PRIORITY_OPTIONS.map(priority => {
@@ -3819,7 +3819,7 @@ export function AssetTableView({
                           {col.id === 'select' ? (
                             <button
                               onClick={() => isAllSelected ? clearSelection() : selectAllFiltered()}
-                              className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                              className="p-0.5 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700"
                               title={isAllSelected ? 'Deselect all' : 'Select all'}
                             >
                               {isAllSelected ? (
@@ -3928,7 +3928,7 @@ export function AssetTableView({
                         {groupBy === 'listGroup' && group.key !== '__ungrouped__' && editingGroupId === group.key ? (
                           <input
                             autoFocus
-                            className="text-sm font-medium text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px]"
+                            className="text-sm font-medium text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] dark:text-gray-300 dark:bg-gray-800"
                             value={editingGroupName}
                             onChange={(e) => setEditingGroupName(e.target.value)}
                             onClick={(e) => e.stopPropagation()}
@@ -3958,11 +3958,11 @@ export function AssetTableView({
                                 {group.label}
                               </span>
                             ) : (
-                              <span className="text-sm font-medium text-gray-700">{group.label}</span>
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{group.label}</span>
                             )}
                           </>
                         )}
-                        <span className="text-xs text-gray-500 flex-shrink-0">({group.assets.length})</span>
+                        <span className="text-xs text-gray-500 flex-shrink-0 dark:text-gray-400">({group.assets.length})</span>
                       </button>
 
                       {groupBy === 'listGroup' && group.key !== '__ungrouped__' && onRenameGroup && (
@@ -3973,7 +3973,7 @@ export function AssetTableView({
                               const rect = (e.target as HTMLElement).getBoundingClientRect()
                               setGroupKebabMenu(groupKebabMenu?.groupId === group.key ? null : { groupId: group.key, x: rect.right - 140, y: rect.bottom + 4 })
                             }}
-                            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+                            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
@@ -4081,7 +4081,7 @@ export function AssetTableView({
                                               <button
                                                 onMouseDown={(e) => e.preventDefault()}
                                                 onClick={(e) => { e.stopPropagation(); toggleRowExpansion(asset.id) }}
-                                                className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                                className="p-1 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700"
                                               >
                                                 <ChevronRight className={clsx('h-3.5 w-3.5 text-gray-400 transition-transform duration-150', isExpanded && 'rotate-90')} />
                                               </button>
@@ -4193,7 +4193,7 @@ export function AssetTableView({
                                         if (isEditable) {
                                           return (
                                             <button
-                                              className="w-full h-full flex items-center justify-start cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1 transition-colors"
+                                              className="w-full h-full flex items-center justify-start cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800"
                                               onClick={(e) => {
                                                 e.stopPropagation()
                                                 const rect = e.currentTarget.getBoundingClientRect()
@@ -4212,37 +4212,37 @@ export function AssetTableView({
                                         )
                                       })()}
                                       {col.id === 'sector' && (
-                                        <span className={clsx('truncate text-gray-600', density === 'micro' && 'text-[9px]')}>
+                                        <span className={clsx('truncate text-gray-600 dark:text-gray-400', density === 'micro' && 'text-[9px]')}>
                                           {asset.sector || '\u2014'}
                                         </span>
                                       )}
                                       {col.id === 'thesis' && (
-                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.thesis || 'No thesis'}>
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.thesis || 'No thesis'}>
                                           {asset.thesis || <span className="text-gray-400 italic">No thesis</span>}
                                         </span>
                                       )}
                                       {col.id === 'bull_case' && (
-                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bull_case || 'Not specified'}>
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bull_case || 'Not specified'}>
                                           {asset.bull_case || <span className="text-gray-400 italic">{'\u2014'}</span>}
                                         </span>
                                       )}
                                       {col.id === 'bear_case' && (
-                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bear_case || 'Not specified'}>
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.bear_case || 'Not specified'}>
                                           {asset.bear_case || <span className="text-gray-400 italic">{'\u2014'}</span>}
                                         </span>
                                       )}
                                       {col.id === 'base_case' && (
-                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.base_case || 'Not specified'}>
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.base_case || 'Not specified'}>
                                           {asset.base_case || <span className="text-gray-400 italic">{'\u2014'}</span>}
                                         </span>
                                       )}
                                       {col.id === 'where_different' && (
-                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.where_different || 'Not specified'}>
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.where_different || 'Not specified'}>
                                           {asset.where_different || <span className="text-gray-400 italic">{'\u2014'}</span>}
                                         </span>
                                       )}
                                       {col.id === 'risks_to_thesis' && (
-                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.risks_to_thesis || 'Not specified'}>
+                                        <span className={clsx('flex-1 min-w-0 text-gray-600 cursor-help dark:text-gray-400', col.wrapText ? 'whitespace-normal break-words' : 'truncate')} title={asset.risks_to_thesis || 'Not specified'}>
                                           {asset.risks_to_thesis || <span className="text-gray-400 italic">{'\u2014'}</span>}
                                         </span>
                                       )}
@@ -4270,7 +4270,7 @@ export function AssetTableView({
                                                 onBlur={() => saveNote(asset.id)}
                                                 placeholder="Add a quick note..."
                                                 rows={2}
-                                                className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                                className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all dark:bg-gray-800"
                                               />
                                               <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
                                                 Enter to save · Esc to cancel
@@ -4285,11 +4285,11 @@ export function AssetTableView({
                                               e.stopPropagation()
                                               startEditingNote(asset.id, quickNote)
                                             }}
-                                            className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                            className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800', !col.wrapText && 'h-full')}
                                             title={quickNote || 'Click to add quick note'}
                                           >
                                             {quickNote ? (
-                                              <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{quickNote}</span>
+                                              <span className={clsx('text-gray-700 flex-1 min-w-0 dark:text-gray-300', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{quickNote}</span>
                                             ) : (
                                               <span className="text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity">
                                                 {isMicro ? '+' : 'Add note...'}
@@ -4323,7 +4323,7 @@ export function AssetTableView({
                                                 onBlur={() => saveListNote(rowId)}
                                                 placeholder="Add a list note..."
                                                 rows={2}
-                                                className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all"
+                                                className="w-full text-sm px-2 py-1.5 bg-white border border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none transition-all dark:bg-gray-800"
                                               />
                                               <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400">
                                                 Enter to save · Esc to cancel
@@ -4338,11 +4338,11 @@ export function AssetTableView({
                                               e.stopPropagation()
                                               startEditingListNote(rowId, listNote)
                                             }}
-                                            className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors', !col.wrapText && 'h-full')}
+                                            className={clsx('group/note w-full flex items-center cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors dark:hover:bg-gray-800', !col.wrapText && 'h-full')}
                                             title={listNote || 'Click to add list note'}
                                           >
                                             {listNote ? (
-                                              <span className={clsx('text-gray-700 flex-1 min-w-0', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{listNote}</span>
+                                              <span className={clsx('text-gray-700 flex-1 min-w-0 dark:text-gray-300', col.wrapText ? 'whitespace-normal break-words' : 'truncate')}>{listNote}</span>
                                             ) : (
                                               <span className="text-gray-400 italic opacity-0 group-hover/note:opacity-100 transition-opacity">
                                                 {isMicro ? '+' : 'Add note...'}
@@ -4458,15 +4458,15 @@ export function AssetTableView({
             return (
               <div className="space-y-3">
                 {/* Kanban Controls */}
-                <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2">
+                <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2 dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-gray-500">Organize by:</span>
-                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Organize by:</span>
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
                       {KANBAN_ORGANIZATION_OPTIONS.map(option => (
                         <button key={option.value}
                           onClick={() => { onSelectKanbanBoard?.(null); setKanbanOrganization(option.value); setKanbanColumnSearch({}); setHiddenKanbanColumns(new Set()); setFullscreenKanbanColumn(null); setBoardKebabMenu(null) }}
                           className={clsx('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                            !activeKanbanBoardId && kanbanOrganization === option.value ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                            !activeKanbanBoardId && kanbanOrganization === option.value ? 'bg-white text-blue-600 shadow-sm dark:bg-gray-800' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                           )}>
                           <option.icon className="w-3.5 h-3.5" />{option.label}
                         </button>
@@ -4485,22 +4485,22 @@ export function AssetTableView({
                                 if (e.key === 'Escape') setEditingBoardId(null)
                               }}
                               onBlur={() => { if (editingBoardName.trim()) onRenameKanbanBoard?.(board.id, editingBoardName.trim()); setEditingBoardId(null) }}
-                              className="px-2 py-1 text-xs font-medium bg-white border border-blue-300 rounded-md w-24 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              className="px-2 py-1 text-xs font-medium bg-white border border-blue-300 rounded-md w-24 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:bg-gray-800"
                             />
                           ) : (
                             <button
                               onClick={() => { onSelectKanbanBoard?.(board.id); setKanbanColumnSearch({}); setHiddenKanbanColumns(new Set()); setFullscreenKanbanColumn(null); setBoardKebabMenu(null) }}
                               onContextMenu={(e) => { e.preventDefault(); setBoardKebabMenu(boardKebabMenu === board.id ? null : board.id) }}
                               className={clsx('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                                activeKanbanBoardId === board.id ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                                activeKanbanBoardId === board.id ? 'bg-white text-blue-600 shadow-sm dark:bg-gray-800' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                               )}>
                               <Columns3 className="w-3.5 h-3.5" />{board.name}
                             </button>
                           )}
                           {boardKebabMenu === board.id && (
-                            <div className="absolute left-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                            <div className="absolute left-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
                               <button onClick={() => { setEditingBoardId(board.id); setEditingBoardName(board.name); setBoardKebabMenu(null) }}
-                                className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                                className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800">
                                 <FileEdit className="w-3.5 h-3.5 text-gray-400" /> Rename
                               </button>
                               <button onClick={() => { onDeleteKanbanBoard?.(board.id); setBoardKebabMenu(null); if (activeKanbanBoardId === board.id) onSelectKanbanBoard?.(null) }}
@@ -4520,7 +4520,7 @@ export function AssetTableView({
                             value={newBoardName}
                             onChange={(e) => setNewBoardName(e.target.value)}
                             placeholder="Board name..."
-                            className="px-2 py-1 text-xs border border-gray-300 rounded-md w-28 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            className="px-2 py-1 text-xs border border-gray-300 rounded-md w-28 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-gray-600"
                             onKeyDown={async (e) => {
                               if (e.key === 'Enter' && newBoardName.trim() && onCreateKanbanBoard) {
                                 const board = await onCreateKanbanBoard(newBoardName.trim())
@@ -4531,12 +4531,12 @@ export function AssetTableView({
                               if (e.key === 'Escape') { setShowNewBoardInput(false); setNewBoardName('') }
                             }}
                           />
-                          <button onClick={() => { setShowNewBoardInput(false); setNewBoardName('') }} className="p-1 text-gray-400 hover:text-gray-600"><X className="w-3 h-3" /></button>
+                          <button onClick={() => { setShowNewBoardInput(false); setNewBoardName('') }} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-3 h-3" /></button>
                         </div>
                       ) : onCreateKanbanBoard && (
                         <button
                           onClick={() => { setShowNewBoardInput(true); setTimeout(() => newBoardInputRef.current?.focus(), 50) }}
-                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 rounded-md transition-colors"
+                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 rounded-md transition-colors dark:hover:text-gray-300"
                           title="Create a new board"
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -4551,8 +4551,8 @@ export function AssetTableView({
                         <span className="text-xs text-gray-400">Hidden:</span>
                         {hiddenColumnsInfo.map(col => (
                           <button key={col.key} onClick={() => { const newHidden = new Set(hiddenKanbanColumns); newHidden.delete(col.key); setHiddenKanbanColumns(newHidden) }}
-                            className="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-gray-100 hover:bg-gray-200 rounded">
-                            <Eye className="w-3 h-3 text-gray-400" /><span className="text-gray-600">{col.label}</span>
+                            className="flex items-center gap-1 px-1.5 py-0.5 text-xs bg-gray-100 hover:bg-gray-200 rounded dark:bg-gray-800">
+                            <Eye className="w-3 h-3 text-gray-400" /><span className="text-gray-600 dark:text-gray-400">{col.label}</span>
                           </button>
                         ))}
                       </div>
@@ -4572,10 +4572,10 @@ export function AssetTableView({
                     const isEditingThisLane = editingLaneId === column.key
 
                     return (
-                      <div key={column.key} className={clsx('flex flex-col rounded-lg border border-gray-200 overflow-hidden', isFullscreen ? 'min-h-[600px] flex-1' : 'min-h-[400px]', !isFullscreen && visibleKanbanColumns.length >= 3 ? 'flex-1 min-w-[200px]' : !isFullscreen ? 'w-72 flex-shrink-0' : '')}
+                      <div key={column.key} className={clsx('flex flex-col rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700', isFullscreen ? 'min-h-[600px] flex-1' : 'min-h-[400px]', !isFullscreen && visibleKanbanColumns.length >= 3 ? 'flex-1 min-w-[200px]' : !isFullscreen ? 'w-72 flex-shrink-0' : '')}
                         onDragOver={handleKanbanDragOver} onDrop={() => canDragKanban && handleKanbanDrop(column.key)}>
                         {/* Column Header */}
-                        <div className={clsx('px-3 py-2 border-b border-gray-200', column.color)} style={(column as any).bgColor ? { backgroundColor: (column as any).bgColor + '33' } : undefined}>
+                        <div className={clsx('px-3 py-2 border-b border-gray-200 dark:border-gray-700', column.color)} style={(column as any).bgColor ? { backgroundColor: (column as any).bgColor + '33' } : undefined}>
                           <div className="flex items-center gap-2">
                             {isEditingThisLane ? (
                               <input
@@ -4588,7 +4588,7 @@ export function AssetTableView({
                                   if (e.key === 'Escape') setEditingLaneId(null)
                                 }}
                                 onBlur={() => { if (editingLaneName.trim()) onRenameKanbanLane?.(column.key, editingLaneName.trim()); setEditingLaneId(null) }}
-                                className="font-semibold text-sm bg-white/80 border border-gray-300 rounded px-1.5 py-0.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                className="font-semibold text-sm bg-white/80 border border-gray-300 rounded px-1.5 py-0.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-gray-600"
                               />
                             ) : (
                               <h3 className="font-semibold text-sm truncate flex-1">{column.label}</h3>
@@ -4596,21 +4596,21 @@ export function AssetTableView({
                             <span className="text-xs bg-white/60 px-1.5 py-0.5 rounded flex-shrink-0">{filteredColumnAssets.length}</span>
                             <div className="flex items-center gap-0.5 flex-shrink-0">
                               {isFullscreen ? (
-                                <button onClick={() => setFullscreenKanbanColumn(null)} className="p-1 rounded hover:bg-white/40 text-gray-600"><Minimize2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setFullscreenKanbanColumn(null)} className="p-1 rounded hover:bg-white/40 text-gray-600 dark:text-gray-400"><Minimize2 className="w-3.5 h-3.5" /></button>
                               ) : (
                                 <>
-                                  <button onClick={() => setFullscreenKanbanColumn(column.key)} className="p-1 rounded hover:bg-white/40 text-gray-600"><Maximize2 className="w-3.5 h-3.5" /></button>
-                                  <button onClick={() => { const newHidden = new Set(hiddenKanbanColumns); newHidden.add(column.key); setHiddenKanbanColumns(newHidden) }} className="p-1 rounded hover:bg-white/40 text-gray-600"><EyeOff className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => setFullscreenKanbanColumn(column.key)} className="p-1 rounded hover:bg-white/40 text-gray-600 dark:text-gray-400"><Maximize2 className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => { const newHidden = new Set(hiddenKanbanColumns); newHidden.add(column.key); setHiddenKanbanColumns(newHidden) }} className="p-1 rounded hover:bg-white/40 text-gray-600 dark:text-gray-400"><EyeOff className="w-3.5 h-3.5" /></button>
                                 </>
                               )}
                               {/* Lane kebab menu for custom lanes */}
                               {isCustomLane && (
                                 <div className="relative">
-                                  <button onClick={() => setLaneKebabMenu(laneKebabMenu === column.key ? null : column.key)} className="p-1 rounded hover:bg-white/40 text-gray-600"><MoreHorizontal className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => setLaneKebabMenu(laneKebabMenu === column.key ? null : column.key)} className="p-1 rounded hover:bg-white/40 text-gray-600 dark:text-gray-400"><MoreHorizontal className="w-3.5 h-3.5" /></button>
                                   {laneKebabMenu === column.key && (
-                                    <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                                    <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
                                       <button onClick={() => { setEditingLaneId(column.key); setEditingLaneName(column.label); setLaneKebabMenu(null) }}
-                                        className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                                        className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800">
                                         <FileEdit className="w-3.5 h-3.5 text-gray-400" /> Rename
                                       </button>
                                       {onDeleteKanbanLane && (
@@ -4633,35 +4633,35 @@ export function AssetTableView({
                               placeholder="Filter..."
                               value={columnSearchQuery}
                               onChange={(e) => setKanbanColumnSearch(prev => ({ ...prev, [column.key]: e.target.value }))}
-                              className="w-full pl-6 pr-2 py-1 text-xs border border-gray-200 rounded bg-white/80 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              className="w-full pl-6 pr-2 py-1 text-xs border border-gray-200 rounded bg-white/80 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-gray-700"
                             />
                           </div>
                         </div>
 
                         {/* Column Content */}
-                        <div className="flex-1 p-2 space-y-1.5 overflow-y-auto max-h-[500px] bg-gray-50">
+                        <div className="flex-1 p-2 space-y-1.5 overflow-y-auto max-h-[500px] bg-gray-50 dark:bg-gray-900">
                           {filteredColumnAssets.map((asset: any) => {
                             const isSelected = selectedAssetIds.has(asset.id)
                             return (
                               <div key={asset.id} draggable={canDragKanban} onDragStart={() => canDragKanban && handleKanbanDragStart(asset.id)}
                                 onClick={() => selectionMode ? toggleAssetSelection(asset.id) : handleAssetClick(asset)}
-                                className={clsx('bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow',
+                                className={clsx('bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow dark:bg-gray-800',
                                   canDragKanban ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
                                   draggedAsset === asset.id && 'opacity-50',
-                                  isSelected ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
+                                  isSelected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 dark:border-gray-700'
                                 )}>
                                 <div className="flex items-start justify-between mb-1">
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
                                       {selectionMode && (isSelected ? <CheckSquare className="h-4 w-4 text-blue-600 flex-shrink-0" /> : <Square className="h-4 w-4 text-gray-400 flex-shrink-0" />)}
-                                      <p className="font-semibold text-gray-900 text-sm">{asset.symbol}</p>
+                                      <p className="font-semibold text-gray-900 text-sm dark:text-white">{asset.symbol}</p>
                                     </div>
-                                    <p className="text-xs text-gray-600 truncate">{asset.company_name}</p>
+                                    <p className="text-xs text-gray-600 truncate dark:text-gray-400">{asset.company_name}</p>
                                   </div>
                                   {canDragKanban && <GripHorizontal className="w-4 h-4 text-gray-300 flex-shrink-0" />}
                                 </div>
                                 <div className="flex items-center justify-between gap-2">
-                                  {(() => { const quote = getQuote(asset.symbol); const displayPrice = (showLivePrices && quote?.price) || asset.current_price; return displayPrice ? <span className="text-xs font-medium text-gray-900">${Number(displayPrice).toFixed(2)}</span> : <span /> })()}
+                                  {(() => { const quote = getQuote(asset.symbol); const displayPrice = (showLivePrices && quote?.price) || asset.current_price; return displayPrice ? <span className="text-xs font-medium text-gray-900 dark:text-white">${Number(displayPrice).toFixed(2)}</span> : <span /> })()}
                                   {!activeKanbanBoardId && kanbanOrganization === 'priority' && asset.process_stage && PROCESS_STAGES[asset.process_stage] && (
                                     <span className={clsx('px-1.5 py-0.5 text-[10px] font-medium rounded-full', PROCESS_STAGES[asset.process_stage].color)}>{PROCESS_STAGES[asset.process_stage].label}</span>
                                   )}
@@ -4679,7 +4679,7 @@ export function AssetTableView({
                                 </div>
                                 {asset.sector && (
                                   <div className="mt-1.5">
-                                    <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{asset.sector}</span>
+                                    <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 dark:bg-gray-800">{asset.sector}</span>
                                   </div>
                                 )}
                               </div>
@@ -4699,7 +4699,7 @@ export function AssetTableView({
                   {activeKanbanBoardId && onCreateKanbanLane && !fullscreenKanbanColumn && (
                     <div className="flex-shrink-0" style={{ width: 200, minWidth: 200 }}>
                       {showNewLaneInput ? (
-                        <div className="rounded-lg border-2 border-dashed border-gray-300 p-3 space-y-2">
+                        <div className="rounded-lg border-2 border-dashed border-gray-300 p-3 space-y-2 dark:border-gray-600">
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => {
@@ -4717,7 +4717,7 @@ export function AssetTableView({
                               value={newLaneName}
                               onChange={(e) => setNewLaneName(e.target.value)}
                               placeholder="Lane name..."
-                              className="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' && newLaneName.trim()) {
                                   onCreateKanbanLane(newLaneName.trim(), newLaneColor)
@@ -4746,7 +4746,7 @@ export function AssetTableView({
                             </button>
                             <button
                               onClick={() => { setShowNewLaneInput(false); setNewLaneName('') }}
-                              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400"
                             >
                               Cancel
                             </button>
@@ -4755,7 +4755,7 @@ export function AssetTableView({
                       ) : (
                         <button
                           onClick={() => { setShowNewLaneInput(true); setTimeout(() => newLaneInputRef.current?.focus(), 50) }}
-                          className="w-full h-full min-h-[120px] rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-gray-600 transition-colors"
+                          className="w-full h-full min-h-[120px] rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300 dark:border-gray-600"
                         >
                           <Plus className="w-5 h-5" />
                           <span className="text-xs font-medium">Add Lane</span>
@@ -4792,7 +4792,7 @@ export function AssetTableView({
       {/* Row Context Menu */}
       {rowContextMenu && (
         <div
-          className="row-context-menu fixed z-[100] w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 animate-in fade-in slide-in-from-top-2 duration-100"
+          className="row-context-menu fixed z-[100] w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 animate-in fade-in slide-in-from-top-2 duration-100 dark:border-gray-700 dark:bg-gray-800"
           style={{ left: rowContextMenu.x, top: rowContextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -4801,9 +4801,9 @@ export function AssetTableView({
               const asset = assets.find(a => a.id === rowContextMenu.assetId)
               if (asset) cycleFlag(asset.id)
             }}
-            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
           >
-            <Flag className="w-4 h-4 text-gray-500" />
+            <Flag className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             Toggle Flag
           </button>
           <button
@@ -4811,26 +4811,26 @@ export function AssetTableView({
               toggleRowExpansion(rowContextMenu.assetId)
               setRowContextMenu(null)
             }}
-            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
           >
-            <ChevronRight className="w-4 h-4 text-gray-500" />
+            <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             {expandedRows.has(rowContextMenu.assetId) ? 'Collapse' : 'Expand'} Row
           </button>
 
           {/* Move to Group submenu */}
           {listGroupData && onMoveItemToGroup && (
             <>
-              <div className="h-px bg-gray-100 my-1" />
+              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
               <div className="relative group/move">
-                <div className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 cursor-default">
-                  <FolderOpen className="w-4 h-4 text-gray-500" />
+                <div className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 cursor-default dark:hover:bg-gray-700">
+                  <FolderOpen className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                   Move to Group
                   <ChevronRight className="w-3 h-3 text-gray-400 ml-auto" />
                 </div>
-                <div className="absolute left-full top-0 ml-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 hidden group-hover/move:block z-[101]">
+                <div className="absolute left-full top-0 ml-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 hidden group-hover/move:block z-[101] dark:border-gray-700 dark:bg-gray-800">
                   <button
                     onClick={() => { onMoveItemToGroup(rowContextMenu.assetId, null); setRowContextMenu(null) }}
-                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 text-gray-600"
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 text-gray-600 dark:hover:bg-gray-700 dark:text-gray-400"
                   >
                     No Group
                   </button>
@@ -4838,7 +4838,7 @@ export function AssetTableView({
                     <button
                       key={g.id}
                       onClick={() => { onMoveItemToGroup(rowContextMenu.assetId, g.id); setRowContextMenu(null) }}
-                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
                     >
                       {g.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: g.color }} />}
                       <span className="truncate">{g.name}</span>
@@ -4852,21 +4852,21 @@ export function AssetTableView({
           {/* Create Trade Idea */}
           {onCreateTradeIdea && (
             <>
-              <div className="h-px bg-gray-100 my-1" />
+              <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
               <button
                 onClick={() => {
                   onCreateTradeIdea(rowContextMenu.assetId)
                   setRowContextMenu(null)
                 }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
               >
-                <Tag className="w-4 h-4 text-gray-500" />
+                <Tag className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 Create Trade Idea
               </button>
             </>
           )}
 
-          <div className="h-px bg-gray-100 my-1" />
+          <div className="h-px bg-gray-100 my-1 dark:bg-gray-800" />
           {onRemoveFromList ? (() => {
             const isRemovable = !canRemoveRow || canRemoveRow(rowContextMenu.rowId)
             return isRemovable ? (
@@ -4915,7 +4915,7 @@ export function AssetTableView({
       {/* Group Kebab Menu */}
       {groupKebabMenu && (
         <div
-          className="group-kebab-menu fixed z-[100] w-36 bg-white rounded-lg shadow-xl border border-gray-200 py-1 animate-in fade-in duration-100"
+          className="group-kebab-menu fixed z-[100] w-36 bg-white rounded-lg shadow-xl border border-gray-200 py-1 animate-in fade-in duration-100 dark:border-gray-700 dark:bg-gray-800"
           style={{ left: groupKebabMenu.x, top: groupKebabMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -4928,9 +4928,9 @@ export function AssetTableView({
               }
               setGroupKebabMenu(null)
             }}
-            className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 flex items-center gap-2 dark:hover:bg-gray-700"
           >
-            <FileEdit className="w-3.5 h-3.5 text-gray-500" />
+            <FileEdit className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
             Rename
           </button>
           {onDeleteGroup && (
@@ -4952,7 +4952,7 @@ export function AssetTableView({
       {viewMode === 'table' && (
         <button
           onClick={() => setShowKeyboardHelp(true)}
-          className="fixed bottom-4 right-4 p-2 bg-white rounded-full shadow-lg border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors z-40"
+          className="fixed bottom-4 right-4 p-2 bg-white rounded-full shadow-lg border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors z-40 dark:hover:text-gray-300 dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
           title="Keyboard shortcuts (?)"
         >
           <Keyboard className="w-4 h-4" />
@@ -5020,30 +5020,30 @@ export function AssetTableView({
       {/* Priority Column Picker */}
       {priorityColumnPicker && createPortal(
         <div
-          className="fixed w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 priority-column-picker"
+          className="fixed w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 priority-column-picker dark:border-gray-700 dark:bg-gray-800"
           style={{
             left: Math.min(priorityColumnPicker.x, window.innerWidth - 300),
             top: Math.min(priorityColumnPicker.y, window.innerHeight - 400)
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-2 border-b border-gray-100 bg-gradient-to-r from-orange-50 to-amber-50">
-            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <div className="px-3 py-2 border-b border-gray-100 bg-gradient-to-r from-orange-50 to-amber-50 dark:border-gray-800">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 dark:text-white">
               <Flag className="w-4 h-4 text-orange-500" />
               Add Priority Column
             </h3>
-            <p className="text-xs text-gray-500 mt-0.5">Choose whose priority to display</p>
+            <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Choose whose priority to display</p>
           </div>
 
           {/* Quick Options */}
-          <div className="p-2 border-b border-gray-100 space-y-1">
+          <div className="p-2 border-b border-gray-100 space-y-1 dark:border-gray-800">
             <button
               onClick={() => {
                 addPriorityColumn('my')
                 setPriorityColumnPicker(null)
                 setPriorityColumnPickerSearch('')
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 rounded-md flex items-center gap-2 text-gray-700"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 rounded-md flex items-center gap-2 text-gray-700 dark:text-gray-300"
             >
               <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700">
                 {user?.first_name?.[0] || user?.email?.[0]?.toUpperCase() || 'M'}
@@ -5057,7 +5057,7 @@ export function AssetTableView({
                 setPriorityColumnPicker(null)
                 setPriorityColumnPickerSearch('')
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 rounded-md flex items-center gap-2 text-gray-700"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 rounded-md flex items-center gap-2 text-gray-700 dark:text-gray-300"
             >
               <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
                 <Users className="w-3.5 h-3.5 text-purple-600" />
@@ -5068,14 +5068,14 @@ export function AssetTableView({
           </div>
 
           {/* Search Team Members */}
-          <div className="p-2 border-b border-gray-100">
+          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
             <input
               type="text"
               autoFocus
               value={priorityColumnPickerSearch}
               onChange={(e) => setPriorityColumnPickerSearch(e.target.value)}
               placeholder="Search team members..."
-              className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400"
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400 dark:border-gray-700"
             />
           </div>
 
@@ -5098,9 +5098,9 @@ export function AssetTableView({
                       setPriorityColumnPicker(null)
                       setPriorityColumnPickerSearch('')
                     }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 rounded-md flex items-center gap-2 text-gray-700"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 rounded-md flex items-center gap-2 text-gray-700 dark:text-gray-300"
                   >
-                    <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-700">
+                    <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-700 dark:text-gray-300 dark:bg-gray-800">
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -5117,20 +5117,20 @@ export function AssetTableView({
               (!priorityColumnPickerSearch ||
                 `${m.first_name || ''} ${m.last_name || ''} ${m.email}`.toLowerCase().includes(priorityColumnPickerSearch.toLowerCase()))
             ).length === 0 && (
-              <div className="px-3 py-4 text-center text-sm text-gray-500">
+              <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                 {priorityColumnPickerSearch ? 'No matching team members' : 'No other team members'}
               </div>
             )}
           </div>
 
           {/* Close Button */}
-          <div className="p-2 border-t border-gray-100">
+          <div className="p-2 border-t border-gray-100 dark:border-gray-800">
             <button
               onClick={() => {
                 setPriorityColumnPicker(null)
                 setPriorityColumnPickerSearch('')
               }}
-              className="w-full px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md"
+              className="w-full px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400"
             >
               Cancel
             </button>
@@ -5142,23 +5142,23 @@ export function AssetTableView({
       {/* Priority Source Selector (for changing existing column's source) */}
       {prioritySourceSelector && createPortal(
         <div
-          className="fixed w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 priority-source-selector"
+          className="fixed w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-100 priority-source-selector dark:border-gray-700 dark:bg-gray-800"
           style={{
             left: Math.min(prioritySourceSelector.position.x, window.innerWidth - 300),
             top: Math.min(prioritySourceSelector.position.y, window.innerHeight - 400)
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-2 border-b border-gray-100 bg-gradient-to-r from-purple-50 to-indigo-50">
-            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <div className="px-3 py-2 border-b border-gray-100 bg-gradient-to-r from-purple-50 to-indigo-50 dark:border-gray-800">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 dark:text-white">
               <Users className="w-4 h-4 text-purple-500" />
               Change Priority Source
             </h3>
-            <p className="text-xs text-gray-500 mt-0.5">{prioritySourceSelector.columnLabel} column</p>
+            <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{prioritySourceSelector.columnLabel} column</p>
           </div>
 
           {/* Source Options */}
-          <div className="p-2 border-b border-gray-100 space-y-1">
+          <div className="p-2 border-b border-gray-100 space-y-1 dark:border-gray-800">
             <button
               onClick={() => {
                 changePriorityColumnSource(prioritySourceSelector.columnId, 'my')
@@ -5169,7 +5169,7 @@ export function AssetTableView({
                 "w-full px-3 py-2 text-left text-sm rounded-md flex items-center gap-2",
                 prioritySourceSelector.currentSource === 'my'
                   ? "bg-purple-50 text-purple-700 border border-purple-200"
-                  : "hover:bg-purple-50 text-gray-700"
+                  : "hover:bg-purple-50 text-gray-700 dark:text-gray-300"
               )}
             >
               <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700">
@@ -5190,7 +5190,7 @@ export function AssetTableView({
                 "w-full px-3 py-2 text-left text-sm rounded-md flex items-center gap-2",
                 prioritySourceSelector.currentSource === 'firm'
                   ? "bg-purple-50 text-purple-700 border border-purple-200"
-                  : "hover:bg-purple-50 text-gray-700"
+                  : "hover:bg-purple-50 text-gray-700 dark:text-gray-300"
               )}
             >
               <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
@@ -5205,14 +5205,14 @@ export function AssetTableView({
           </div>
 
           {/* Search Team Members */}
-          <div className="p-2 border-b border-gray-100">
+          <div className="p-2 border-b border-gray-100 dark:border-gray-800">
             <input
               type="text"
               autoFocus
               value={prioritySourceSearch}
               onChange={(e) => setPrioritySourceSearch(e.target.value)}
               placeholder="Search team members..."
-              className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400"
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 dark:border-gray-700"
             />
           </div>
 
@@ -5240,12 +5240,12 @@ export function AssetTableView({
                       "w-full px-3 py-2 text-left text-sm rounded-md flex items-center gap-2",
                       isSelected
                         ? "bg-purple-50 text-purple-700 border border-purple-200"
-                        : "hover:bg-purple-50 text-gray-700"
+                        : "hover:bg-purple-50 text-gray-700 dark:text-gray-300"
                     )}
                   >
                     <div className={clsx(
                       "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-                      isSelected ? "bg-purple-200 text-purple-700" : "bg-gray-100 text-gray-700"
+                      isSelected ? "bg-purple-200 text-purple-700" : "bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800"
                     )}>
                       {initials}
                     </div>
@@ -5266,20 +5266,20 @@ export function AssetTableView({
               (!prioritySourceSearch ||
                 `${m.first_name || ''} ${m.last_name || ''} ${m.email}`.toLowerCase().includes(prioritySourceSearch.toLowerCase()))
             ).length === 0 && (
-              <div className="px-3 py-4 text-center text-sm text-gray-500">
+              <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                 {prioritySourceSearch ? 'No matching team members' : 'No other team members'}
               </div>
             )}
           </div>
 
           {/* Close Button */}
-          <div className="p-2 border-t border-gray-100">
+          <div className="p-2 border-t border-gray-100 dark:border-gray-800">
             <button
               onClick={() => {
                 setPrioritySourceSelector(null)
                 setPrioritySourceSearch('')
               }}
-              className="w-full px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md"
+              className="w-full px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400"
             >
               Cancel
             </button>
@@ -5293,14 +5293,14 @@ export function AssetTableView({
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowColumnSettings(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-[680px] max-h-[520px] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+            className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-[680px] max-h-[520px] flex flex-col animate-in fade-in zoom-in-95 duration-150 dark:border-gray-700 dark:bg-gray-800"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4 text-gray-500" />
-                <h3 className="text-sm font-semibold text-gray-900">Manage Columns</h3>
+                <SlidersHorizontal className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Manage Columns</h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -5309,18 +5309,18 @@ export function AssetTableView({
                 >
                   Reset to Default
                 </button>
-                <button onClick={() => setShowColumnSettings(false)} className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                <button onClick={() => setShowColumnSettings(false)} className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Body — two-panel layout */}
-            <div className="flex flex-1 min-h-0 divide-x divide-gray-200">
+            <div className="flex flex-1 min-h-0 divide-x divide-gray-200 dark:divide-gray-700">
               {/* Left: Available columns */}
               <div className="w-1/2 flex flex-col">
-                <div className="px-4 py-2.5 border-b border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Available</p>
+                <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide dark:text-gray-400">Available</p>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   {(() => {
@@ -5357,7 +5357,7 @@ export function AssetTableView({
                             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-blue-50 text-left transition-colors group/avail"
                           >
                             <Plus className="w-3.5 h-3.5 text-gray-300 group-hover/avail:text-blue-500 transition-colors" />
-                            <span className="text-xs text-gray-600 group-hover/avail:text-gray-900 flex-1">{col.label}</span>
+                            <span className="text-xs text-gray-600 group-hover/avail:text-gray-900 flex-1 dark:text-gray-400">{col.label}</span>
                             <ChevronRight className="w-3 h-3 text-gray-300 group-hover/avail:text-blue-500 transition-colors" />
                           </button>
                         ))}
@@ -5369,8 +5369,8 @@ export function AssetTableView({
 
               {/* Right: Selected columns (drag to reorder) */}
               <div className="w-1/2 flex flex-col">
-                <div className="px-4 py-2.5 border-b border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide dark:text-gray-400">
                     Selected
                     <span className="ml-1.5 text-gray-400 font-normal normal-case">
                       ({draftColumns.filter(c => c.visible && c.id !== 'select').length})
@@ -5383,7 +5383,7 @@ export function AssetTableView({
                       key={col.id}
                       className={clsx(
                         'flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors',
-                        draggedColumn === col.id ? 'opacity-30 bg-gray-100' : 'hover:bg-gray-50'
+                        draggedColumn === col.id ? 'opacity-30 bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50'
                       )}
                       draggable
                       onDragStart={() => setDraggedColumn(col.id)}
@@ -5405,7 +5405,7 @@ export function AssetTableView({
                       onDragEnd={() => setDraggedColumn(null)}
                     >
                       <GripVertical className="w-3 h-3 text-gray-300 cursor-grab flex-shrink-0" />
-                      <span className="text-xs text-gray-700 flex-1 truncate">{col.label}</span>
+                      <span className="text-xs text-gray-700 flex-1 truncate dark:text-gray-300">{col.label}</span>
                       {(col.canUnpin !== false || !col.pinned) ? (
                         <button
                           onClick={() => {
@@ -5442,10 +5442,10 @@ export function AssetTableView({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setShowColumnSettings(false)}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors dark:hover:bg-gray-700 dark:text-gray-400"
               >
                 Cancel
               </button>
@@ -5653,7 +5653,7 @@ function InlineInsertRow({
                     onChange={(e) => setInputValue(e.target.value.toUpperCase())}
                     onKeyDown={handleKeyDown}
                     placeholder="Type ticker..."
-                    className="flex-1 bg-transparent border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-gray-900 placeholder:text-gray-400 dark:text-white"
                     disabled={isInserting}
                   />
                   {isSearching && (
@@ -5673,7 +5673,7 @@ function InlineInsertRow({
       {searchResults.length > 0 && dropdownPosition && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed z-[9999] w-80 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+          className="fixed z-[9999] w-80 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800"
           style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
         >
           {searchResults.map((asset, idx) => (
@@ -5682,14 +5682,14 @@ function InlineInsertRow({
               onClick={() => handleInsert(asset.id, asset.symbol)}
               onMouseEnter={() => setSelectedIndex(idx)}
               className={clsx(
-                'w-full px-3 py-2 text-left flex items-center justify-between hover:bg-gray-50 transition-colors',
+                'w-full px-3 py-2 text-left flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                 idx === selectedIndex && 'bg-blue-50'
               )}
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900">{asset.symbol}</span>
-                  <span className="text-xs text-gray-500 truncate">{asset.company_name}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{asset.symbol}</span>
+                  <span className="text-xs text-gray-500 truncate dark:text-gray-400">{asset.company_name}</span>
                 </div>
                 {asset.sector && (
                   <span className="text-xs text-gray-400">{asset.sector}</span>
@@ -5698,7 +5698,7 @@ function InlineInsertRow({
               <Plus className="h-4 w-4 text-gray-400 flex-shrink-0" />
             </button>
           ))}
-          <div className="px-3 py-1.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
+          <div className="px-3 py-1.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
             ↑↓ navigate · Enter add · Esc exit
           </div>
         </div>,
@@ -5993,7 +5993,7 @@ function InlineAddRow({
           'flex items-center gap-2 px-3 border-t cursor-text transition-colors',
           isFocused
             ? 'border-blue-200 bg-blue-50/30'
-            : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'
+            : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
         )}
         style={{ minWidth: totalTableWidth, height: densityRowHeight }}
         onClick={() => inputRef.current?.focus()}
@@ -6009,7 +6009,7 @@ function InlineAddRow({
           onFocus={() => setIsFocused(true)}
           onBlur={() => { setIsFocused(false); handleBlur() }}
           placeholder={isFocused ? 'Search by ticker or name...' : 'Add ticker...'}
-          className="flex-1 bg-transparent border-none outline-none text-xs text-gray-700 placeholder:text-gray-400"
+          className="flex-1 bg-transparent border-none outline-none text-xs text-gray-700 placeholder:text-gray-400 dark:text-gray-300"
         />
         {isSearching && (
           <Loader2 className="h-3 w-3 text-blue-400 animate-spin flex-shrink-0" />
@@ -6028,10 +6028,10 @@ function InlineAddRow({
       {searchResults.length > 0 && dropdownPosition && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed z-[9999] w-80 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+          className="fixed z-[9999] w-80 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden dark:border-gray-700 dark:bg-gray-800"
           style={{ bottom: window.innerHeight - dropdownPosition.top + 4, left: dropdownPosition.left }}
         >
-          <div className="px-3 py-1.5 text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
+          <div className="px-3 py-1.5 text-xs text-gray-400 border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
             ↑↓ navigate · Enter add · Esc clear
           </div>
           {searchResults.map((asset, idx) => (
@@ -6040,12 +6040,12 @@ function InlineAddRow({
               onClick={() => addAsset(asset.id, asset.symbol)}
               onMouseEnter={() => setSelectedIndex(idx)}
               className={clsx(
-                'w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 transition-colors',
+                'w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800',
                 idx === selectedIndex && 'bg-blue-50'
               )}
             >
-              <span className="font-semibold text-gray-900 flex-shrink-0">{asset.symbol}</span>
-              <span className="text-xs text-gray-500 truncate flex-1 min-w-0">{asset.company_name}</span>
+              <span className="font-semibold text-gray-900 flex-shrink-0 dark:text-white">{asset.symbol}</span>
+              <span className="text-xs text-gray-500 truncate flex-1 min-w-0 dark:text-gray-400">{asset.company_name}</span>
               {asset.sector && (
                 <span className="text-[10px] text-gray-400 flex-shrink-0">{asset.sector}</span>
               )}

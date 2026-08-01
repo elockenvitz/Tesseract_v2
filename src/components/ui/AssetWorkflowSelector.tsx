@@ -107,7 +107,7 @@ export function AssetWorkflowSelector({
         {/* Workflows Selector */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center space-x-4 px-6 py-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 hover:shadow-md transition-all duration-200 min-w-[200px]"
+          className="flex items-center space-x-4 px-6 py-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 hover:shadow-md transition-all duration-200 min-w-[200px] dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
         >
           {/* Workflow Indicator */}
           <div className="flex items-center space-x-3">
@@ -115,10 +115,10 @@ export function AssetWorkflowSelector({
               <Workflow className="w-3 h-3 text-white" />
             </div>
             <div className="text-left">
-              <div className="text-sm font-semibold text-gray-800">
+              <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                 Workflows in Progress
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 {workflowCount} active workflow{workflowCount !== 1 ? 's' : ''}
               </div>
             </div>
@@ -138,9 +138,9 @@ export function AssetWorkflowSelector({
           />
 
           {/* Dropdown Content */}
-          <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden">
+          <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden dark:border-gray-700 dark:bg-gray-800">
             <div className="p-4">
-              <div className="text-sm font-medium text-gray-700 mb-3">Active Workflows:</div>
+              <div className="text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">Active Workflows:</div>
 
               <div className="space-y-1">
                 {workflows?.map((workflow) => (
@@ -166,7 +166,7 @@ export function AssetWorkflowSelector({
                       )}
                     </div>
                     {workflow.description && (
-                      <p className="text-xs text-gray-500 mt-1 ml-5">
+                      <p className="text-xs text-gray-500 mt-1 ml-5 dark:text-gray-400">
                         {workflow.description}
                       </p>
                     )}
@@ -176,7 +176,7 @@ export function AssetWorkflowSelector({
 
               {(!workflows || workflows.length === 0) && (
                 <div className="text-center py-4">
-                  <div className="text-sm text-gray-500">No workflows in progress</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">No workflows in progress</div>
                   <div className="text-xs text-gray-400 mt-1">Start working on this asset to see workflows here</div>
                 </div>
               )}

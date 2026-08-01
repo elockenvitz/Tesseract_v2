@@ -9,7 +9,7 @@ import { useOrgMembers } from '../../../hooks/useOrgMembers'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 const PRIORITY_OPTIONS = [
-  { value: 'low', label: 'Low', color: 'bg-gray-100 text-gray-600 hover:bg-gray-200', dot: 'bg-gray-400' },
+  { value: 'low', label: 'Low', color: 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800', dot: 'bg-gray-400' },
   { value: 'medium', label: 'Med', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200', dot: 'bg-blue-500' },
   { value: 'high', label: 'High', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200', dot: 'bg-orange-500' },
   { value: 'urgent', label: 'Urgent', color: 'bg-red-100 text-red-700 hover:bg-red-200', dot: 'bg-red-500' }
@@ -254,8 +254,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
         ref={containerRef}
         className={clsx(
           'rounded-lg border text-sm transition-all',
-          selected ? 'ring-1 ring-primary-500 border-primary-300' : 'border-gray-200',
-          node.attrs.completed ? 'bg-gray-50' : 'bg-white',
+          selected ? 'ring-1 ring-primary-500 border-primary-300' : 'border-gray-200 dark:border-gray-700',
+          node.attrs.completed ? 'bg-gray-50 dark:bg-gray-900' : 'bg-white dark:bg-gray-800',
           isExpanded ? 'max-w-2xl' : 'max-w-lg'
         )}
       >
@@ -268,7 +268,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
               'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
               node.attrs.completed
                 ? 'bg-green-500 border-green-500 text-white'
-                : 'border-gray-300 hover:border-primary-500'
+                : 'border-gray-300 hover:border-primary-500 dark:border-gray-600'
             )}
             contentEditable={false}
           >
@@ -295,7 +295,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
             placeholder="Task name..."
             className={clsx(
               'flex-1 text-sm font-medium bg-transparent border-none outline-none min-w-0',
-              node.attrs.completed ? 'line-through text-gray-400' : 'text-gray-900'
+              node.attrs.completed ? 'line-through text-gray-400' : 'text-gray-900 dark:text-white'
             )}
             contentEditable={false}
           />
@@ -314,7 +314,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   }}
                   className={clsx(
                     'p-1 rounded transition-colors',
-                    node.attrs.dueDate ? 'text-primary-600 hover:bg-primary-50' : 'text-gray-400 hover:bg-gray-100'
+                    node.attrs.dueDate ? 'text-primary-600 hover:bg-primary-50' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   )}
                   contentEditable={false}
                   title={node.attrs.dueDate ? formatDueDate(node.attrs.dueDate) : 'Set due date'}
@@ -322,7 +322,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   <Calendar className="w-3.5 h-3.5" />
                 </button>
                 {showQuickDueMenu && (
-                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px] dark:border-gray-700 dark:bg-gray-800">
                     {QUICK_DUE_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
@@ -334,7 +334,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                             setQuickDueDate(opt.value)
                           }
                         }}
-                        className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                        className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800"
                       >
                         {opt.label}
                       </button>
@@ -354,7 +354,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   }}
                   className={clsx(
                     'p-1 rounded transition-colors',
-                    node.attrs.reminder ? 'text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:bg-gray-100'
+                    node.attrs.reminder ? 'text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   )}
                   contentEditable={false}
                   title={reminderInfo?.value ? reminderInfo.label : 'Set reminder'}
@@ -362,7 +362,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   <Bell className="w-3.5 h-3.5" />
                 </button>
                 {showQuickReminderMenu && (
-                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px] dark:border-gray-700 dark:bg-gray-800">
                     {REMINDER_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
@@ -372,8 +372,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.reminder === opt.value && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.reminder === opt.value && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         {opt.label}
@@ -394,7 +394,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   }}
                   className={clsx(
                     'p-1 rounded transition-colors',
-                    node.attrs.assignedTo ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:bg-gray-100'
+                    node.attrs.assignedTo ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   )}
                   contentEditable={false}
                   title={assignedName || 'Assign'}
@@ -402,7 +402,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   <User className="w-3.5 h-3.5" />
                 </button>
                 {showQuickAssignMenu && (
-                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px] max-h-48 overflow-y-auto">
+                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px] max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                     <button
                       onClick={() => {
                         updateAttributes({ assignedTo: '' })
@@ -410,8 +410,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                         if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                       }}
                       className={clsx(
-                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                        !node.attrs.assignedTo && 'bg-gray-50'
+                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                        !node.attrs.assignedTo && 'bg-gray-50 dark:bg-gray-900'
                       )}
                     >
                       Unassigned
@@ -424,8 +424,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.assignedTo === user.id && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.assignedTo === user.id && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         Me
@@ -440,8 +440,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.assignedTo === u.id && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.assignedTo === u.id && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         {u.first_name} {u.last_name}
@@ -462,7 +462,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   }}
                   className={clsx(
                     'p-1 rounded transition-colors',
-                    node.attrs.recurring ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'
+                    node.attrs.recurring ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   )}
                   contentEditable={false}
                   title={recurringInfo?.value ? recurringInfo.label : 'Set recurring'}
@@ -470,7 +470,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   <Repeat className="w-3.5 h-3.5" />
                 </button>
                 {showQuickRecurringMenu && (
-                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                  <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px] dark:border-gray-700 dark:bg-gray-800">
                     {RECURRING_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
@@ -480,8 +480,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.recurring === opt.value && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.recurring === opt.value && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         {opt.label}
@@ -495,7 +495,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
           {/* Due date text (shown when collapsed and has date) */}
           {!isExpanded && node.attrs.dueDate && (
-            <span className="text-xs text-gray-500 flex-shrink-0">
+            <span className="text-xs text-gray-500 flex-shrink-0 dark:text-gray-400">
               {formatDueDate(node.attrs.dueDate)}
             </span>
           )}
@@ -503,7 +503,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
           {/* Expand/Collapse */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+            className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 dark:hover:text-gray-300"
             contentEditable={false}
           >
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -521,10 +521,10 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
         {/* Expanded Section */}
         {isExpanded && (
-          <div className="px-3 pb-3 pt-1 border-t border-gray-100 space-y-3">
+          <div className="px-3 pb-3 pt-1 border-t border-gray-100 space-y-3 dark:border-gray-800">
             {/* Description */}
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Description</label>
+              <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Description</label>
               <input
                 type="text"
                 value={localDescription}
@@ -536,7 +536,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   }
                 }}
                 placeholder="Add description..."
-                className="w-full text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700 dark:bg-gray-900"
                 contentEditable={false}
               />
             </div>
@@ -545,7 +545,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
             <div className="flex items-end gap-3 flex-wrap">
               {/* Due Date */}
               <div className="min-w-[130px]">
-                <label className="text-xs text-gray-500 mb-1 block">Due Date</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Due Date</label>
                 <div className="flex items-center gap-1">
                   <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
@@ -555,7 +555,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                       updateAttributes({ dueDate: e.target.value })
                       if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                     }}
-                    className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-900"
                     contentEditable={false}
                   />
                 </div>
@@ -563,7 +563,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
               {/* Time */}
               <div className="min-w-[100px]">
-                <label className="text-xs text-gray-500 mb-1 block">Time</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Time</label>
                 <div className="flex items-center gap-1">
                   <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <input
@@ -573,7 +573,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                       updateAttributes({ dueTime: e.target.value })
                       if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                     }}
-                    className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-900"
                     contentEditable={false}
                   />
                 </div>
@@ -581,7 +581,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
               {/* Priority */}
               <div className="relative">
-                <label className="text-xs text-gray-500 mb-1 block">Priority</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Priority</label>
                 <button
                   onClick={() => setShowPriorityMenu(!showPriorityMenu)}
                   className={clsx(
@@ -594,7 +594,7 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                   {priorityInfo.label}
                 </button>
                 {showPriorityMenu && (
-                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[90px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[90px] dark:border-gray-700 dark:bg-gray-800">
                     {PRIORITY_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
@@ -604,8 +604,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50',
-                          node.attrs.priority === opt.value && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.priority === opt.value && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         <div className={clsx('w-2 h-2 rounded-full', opt.dot)} />
@@ -618,17 +618,17 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
               {/* Reminder */}
               <div className="relative">
-                <label className="text-xs text-gray-500 mb-1 block">Reminder</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Reminder</label>
                 <button
                   onClick={() => setShowReminderMenu(!showReminderMenu)}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
                   contentEditable={false}
                 >
                   <Bell className="w-3 h-3" />
                   {reminderInfo?.value ? reminderInfo.label : 'None'}
                 </button>
                 {showReminderMenu && (
-                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px] dark:border-gray-700 dark:bg-gray-800">
                     {REMINDER_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
@@ -638,8 +638,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.reminder === opt.value && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.reminder === opt.value && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         {opt.label}
@@ -651,17 +651,17 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
               {/* Assign */}
               <div className="relative">
-                <label className="text-xs text-gray-500 mb-1 block">Assign</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Assign</label>
                 <button
                   onClick={() => setShowAssignMenu(!showAssignMenu)}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
                   contentEditable={false}
                 >
                   <User className="w-3 h-3" />
                   {assignedName || 'None'}
                 </button>
                 {showAssignMenu && (
-                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[130px] max-h-48 overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[130px] max-h-48 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                     <button
                       onClick={() => {
                         updateAttributes({ assignedTo: '' })
@@ -669,8 +669,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                         if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                       }}
                       className={clsx(
-                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                        !node.attrs.assignedTo && 'bg-gray-50'
+                        'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                        !node.attrs.assignedTo && 'bg-gray-50 dark:bg-gray-900'
                       )}
                     >
                       Unassigned
@@ -683,8 +683,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.assignedTo === user.id && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.assignedTo === user.id && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         Me
@@ -701,8 +701,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                             if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                           }}
                           className={clsx(
-                            'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                            node.attrs.assignedTo === u.id && 'bg-gray-50'
+                            'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                            node.attrs.assignedTo === u.id && 'bg-gray-50 dark:bg-gray-900'
                           )}
                         >
                           {u.first_name} {u.last_name}
@@ -714,17 +714,17 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
 
               {/* Recurring */}
               <div className="relative">
-                <label className="text-xs text-gray-500 mb-1 block">Repeat</label>
+                <label className="text-xs text-gray-500 mb-1 block dark:text-gray-400">Repeat</label>
                 <button
                   onClick={() => setShowRecurringMenu(!showRecurringMenu)}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
                   contentEditable={false}
                 >
                   <Repeat className="w-3 h-3" />
                   {recurringInfo?.value ? recurringInfo.label : 'None'}
                 </button>
                 {showRecurringMenu && (
-                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px] dark:border-gray-700 dark:bg-gray-800">
                     {RECURRING_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
@@ -734,8 +734,8 @@ function InlineTaskView({ node, updateAttributes, deleteNode, selected }: Inline
                           if (node.attrs.taskId) setTimeout(() => saveTaskMutation.mutate(), 100)
                         }}
                         className={clsx(
-                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50',
-                          node.attrs.recurring === opt.value && 'bg-gray-50'
+                          'w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-800',
+                          node.attrs.recurring === opt.value && 'bg-gray-50 dark:bg-gray-900'
                         )}
                       >
                         {opt.label}

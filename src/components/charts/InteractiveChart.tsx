@@ -136,8 +136,8 @@ export function InteractiveChart({
       const data = payload[0].payload as ChartDataPoint
 
       return (
-        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm">
-          <div className="font-semibold text-gray-900 mb-2">
+        <div className="bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm dark:border-gray-600 dark:bg-gray-800">
+          <div className="font-semibold text-gray-900 mb-2 dark:text-white">
             {ChartUtils.formatDate(label, '%Y-%m-%d %H:%M')}
           </div>
 
@@ -145,19 +145,19 @@ export function InteractiveChart({
           {data.open !== undefined && (
             <div className="space-y-1 mb-2">
               <div className="flex justify-between gap-4">
-                <span className="text-gray-600">Open:</span>
+                <span className="text-gray-600 dark:text-gray-400">Open:</span>
                 <span className="font-medium">{ChartUtils.formatPrice(data.open)}</span>
               </div>
               <div className="flex justify-between gap-4">
-                <span className="text-gray-600">High:</span>
+                <span className="text-gray-600 dark:text-gray-400">High:</span>
                 <span className="font-medium text-green-600">{ChartUtils.formatPrice(data.high || 0)}</span>
               </div>
               <div className="flex justify-between gap-4">
-                <span className="text-gray-600">Low:</span>
+                <span className="text-gray-600 dark:text-gray-400">Low:</span>
                 <span className="font-medium text-red-600">{ChartUtils.formatPrice(data.low || 0)}</span>
               </div>
               <div className="flex justify-between gap-4">
-                <span className="text-gray-600">Close:</span>
+                <span className="text-gray-600 dark:text-gray-400">Close:</span>
                 <span className="font-medium">{ChartUtils.formatPrice(data.close || data.value)}</span>
               </div>
             </div>
@@ -166,7 +166,7 @@ export function InteractiveChart({
           {/* Simple Price Data */}
           {data.open === undefined && (
             <div className="flex justify-between gap-4 mb-2">
-              <span className="text-gray-600">Price:</span>
+              <span className="text-gray-600 dark:text-gray-400">Price:</span>
               <span className="font-medium">{ChartUtils.formatPrice(data.value)}</span>
             </div>
           )}
@@ -174,7 +174,7 @@ export function InteractiveChart({
           {/* Volume */}
           {data.volume !== undefined && (
             <div className="flex justify-between gap-4 mb-2">
-              <span className="text-gray-600">Volume:</span>
+              <span className="text-gray-600 dark:text-gray-400">Volume:</span>
               <span className="font-medium">{ChartUtils.formatVolume(data.volume)}</span>
             </div>
           )}
@@ -188,7 +188,7 @@ export function InteractiveChart({
 
             return (
               <div key={indicator.id} className="flex justify-between gap-4">
-                <span className="text-gray-600">{indicator.name}:</span>
+                <span className="text-gray-600 dark:text-gray-400">{indicator.name}:</span>
                 <span className="font-medium" style={{ color: indicator.color }}>
                   {ChartUtils.formatPrice(value as number)}
                 </span>
@@ -416,20 +416,20 @@ export function InteractiveChart({
   return (
     <div className={`w-full ${className}`}>
       {/* Chart Controls */}
-      <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+      <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg dark:bg-gray-900">
         <div className="flex items-center space-x-2">
           {/* Chart Type Controls */}
-          <div className="flex items-center space-x-1 border-r border-gray-300 pr-2 mr-2">
+          <div className="flex items-center space-x-1 border-r border-gray-300 pr-2 mr-2 dark:border-gray-600">
             <button
               onClick={() => {}}
-              className={`p-1 rounded ${type === 'line' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-200'}`}
+              className={`p-1 rounded ${type === 'line' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400'}`}
               title="Line Chart"
             >
               <Activity className="h-4 w-4" />
             </button>
             <button
               onClick={() => {}}
-              className={`p-1 rounded ${type === 'area' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-200'}`}
+              className={`p-1 rounded ${type === 'area' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400'}`}
               title="Area Chart"
             >
               <BarChart3 className="h-4 w-4" />
@@ -439,38 +439,38 @@ export function InteractiveChart({
           {/* Zoom Controls */}
           <button
             onClick={() => setIsZooming(!isZooming)}
-            className={`p-1 rounded ${isZooming ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-200'}`}
+            className={`p-1 rounded ${isZooming ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400'}`}
             title="Zoom Mode"
           >
             <ZoomIn className="h-4 w-4" />
           </button>
           <button
             onClick={resetZoom}
-            className="p-1 rounded text-gray-600 hover:bg-gray-200"
+            className="p-1 rounded text-gray-600 hover:bg-gray-200 dark:text-gray-400"
             title="Reset Zoom"
           >
             <ZoomOut className="h-4 w-4" />
           </button>
 
           {/* Annotation Controls */}
-          <div className="border-l border-gray-300 pl-2 ml-2 flex items-center space-x-1">
+          <div className="border-l border-gray-300 pl-2 ml-2 flex items-center space-x-1 dark:border-gray-600">
             <button
               onClick={() => setAnnotationMode(annotationMode === 'percentage' ? null : 'percentage')}
-              className={`p-1 rounded ${annotationMode === 'percentage' ? 'bg-green-100 text-green-600' : 'text-gray-600 hover:bg-gray-200'}`}
+              className={`p-1 rounded ${annotationMode === 'percentage' ? 'bg-green-100 text-green-600' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400'}`}
               title="Percentage Change"
             >
               <span className="text-xs font-semibold">%</span>
             </button>
             <button
               onClick={() => setAnnotationMode(annotationMode === 'trend' ? null : 'trend')}
-              className={`p-1 rounded ${annotationMode === 'trend' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-200'}`}
+              className={`p-1 rounded ${annotationMode === 'trend' ? 'bg-purple-100 text-purple-600' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400'}`}
               title="Trend Line"
             >
               <TrendingUp className="h-4 w-4" />
             </button>
             <button
               onClick={() => setAnnotationMode(annotationMode === 'line' ? null : 'line')}
-              className={`p-1 rounded ${annotationMode === 'line' ? 'bg-indigo-100 text-indigo-600' : 'text-gray-600 hover:bg-gray-200'}`}
+              className={`p-1 rounded ${annotationMode === 'line' ? 'bg-indigo-100 text-indigo-600' : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400'}`}
               title="Horizontal Line"
             >
               <Minus className="h-4 w-4" />
@@ -480,7 +480,7 @@ export function InteractiveChart({
 
         {/* Technical Indicators */}
         <div className="flex items-center space-x-2">
-          <div className="text-sm text-gray-600">Indicators:</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Indicators:</div>
           <button
             onClick={() => addIndicator('sma', 20)}
             className="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
@@ -504,16 +504,16 @@ export function InteractiveChart({
 
       {/* Active Indicators List */}
       {activeIndicators.length > 0 && (
-        <div className="flex items-center space-x-2 mb-4 p-2 bg-gray-50 rounded">
-          <div className="text-sm text-gray-600">Active:</div>
+        <div className="flex items-center space-x-2 mb-4 p-2 bg-gray-50 rounded dark:bg-gray-900">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Active:</div>
           {activeIndicators.map(indicator => (
             <div key={indicator.id} className="flex items-center space-x-1">
               <button
                 onClick={() => toggleIndicator(indicator.id)}
                 className={`px-2 py-1 text-xs rounded ${
                   indicator.visible
-                    ? 'bg-gray-200 text-gray-700'
-                    : 'bg-gray-100 text-gray-400'
+                    ? 'bg-gray-200 text-gray-700 dark:text-gray-300'
+                    : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
                 }`}
                 style={{
                   borderLeft: `3px solid ${indicator.visible ? indicator.color : '#d1d5db'}`
@@ -545,15 +545,15 @@ export function InteractiveChart({
 
       {/* Chart Statistics */}
       {displayData.length > 0 && (
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm">
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm dark:bg-gray-900">
           <div>
-            <div className="text-gray-600">Period</div>
+            <div className="text-gray-600 dark:text-gray-400">Period</div>
             <div className="font-medium">
               {ChartUtils.formatDate(displayData[0].timestamp, '%m/%d')} - {ChartUtils.formatDate(displayData[displayData.length - 1].timestamp, '%m/%d')}
             </div>
           </div>
           <div>
-            <div className="text-gray-600">Change</div>
+            <div className="text-gray-600 dark:text-gray-400">Change</div>
             <div className={`font-medium ${
               (displayData[displayData.length - 1]?.value || 0) >= (displayData[0]?.value || 0)
                 ? 'text-green-600'
@@ -568,13 +568,13 @@ export function InteractiveChart({
             </div>
           </div>
           <div>
-            <div className="text-gray-600">Volatility</div>
+            <div className="text-gray-600 dark:text-gray-400">Volatility</div>
             <div className="font-medium">
               {ChartUtils.formatPercentage(TechnicalIndicators.volatility(displayData) * 100)}
             </div>
           </div>
           <div>
-            <div className="text-gray-600">Points</div>
+            <div className="text-gray-600 dark:text-gray-400">Points</div>
             <div className="font-medium">{displayData.length}</div>
           </div>
         </div>

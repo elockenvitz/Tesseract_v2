@@ -50,7 +50,7 @@ export function FollowButton({
           'px-4 py-1.5 rounded-full text-sm font-medium transition-all',
           isFollowing
             ? 'bg-white/20 text-white hover:bg-red-500/50'
-            : 'bg-white text-gray-900 hover:bg-gray-100',
+            : 'bg-white text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white dark:bg-gray-800',
           isToggling && 'opacity-50',
           className
         )}
@@ -75,7 +75,7 @@ export function FollowButton({
         className={clsx(
           'px-3 py-1 rounded-full text-xs font-medium transition-all',
           isFollowing
-            ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600'
+            ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600 dark:text-gray-300'
             : 'bg-primary-100 text-primary-700 hover:bg-primary-200',
           isToggling && 'opacity-50',
           className
@@ -94,7 +94,7 @@ export function FollowButton({
         className={clsx(
           'p-1.5 rounded-lg transition-colors',
           isFollowing
-            ? 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+            ? 'text-gray-500 hover:text-red-600 hover:bg-red-50 dark:text-gray-400'
             : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50',
           isToggling && 'opacity-50',
           className
@@ -117,7 +117,7 @@ export function FollowButton({
       className={clsx(
         'flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-all',
         isFollowing
-          ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600'
+          ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600 dark:text-gray-300 dark:bg-gray-800'
           : 'bg-primary-600 text-white hover:bg-primary-700',
         isToggling && 'opacity-50',
         className

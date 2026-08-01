@@ -133,7 +133,7 @@ function DiffDisplay({ oldContent, newContent }: { oldContent: string | null; ne
       {diff.map((part, idx) => {
         const needsSpace = idx > 0
         if (part.type === 'unchanged') {
-          return <span key={idx} className="text-gray-700">{needsSpace ? ' ' : ''}{part.text}</span>
+          return <span key={idx} className="text-gray-700 dark:text-gray-300">{needsSpace ? ' ' : ''}{part.text}</span>
         } else if (part.type === 'added') {
           return (
             <span key={idx}>
@@ -207,7 +207,7 @@ function ChangeSummary({ comparisons }: ChangeSummaryProps) {
         </span>
       )}
       <span className="text-gray-400">|</span>
-      <span className="text-gray-500">
+      <span className="text-gray-500 dark:text-gray-400">
         {stats.wordsAdded > 0 && <span className="text-green-600">+{stats.wordsAdded}</span>}
         {stats.wordsAdded > 0 && stats.wordsRemoved > 0 && ' / '}
         {stats.wordsRemoved > 0 && <span className="text-red-600">-{stats.wordsRemoved}</span>}
@@ -230,7 +230,7 @@ function SectionCard({ comparison, viewMode }: SectionCardProps) {
   const config = sectionConfig[comparison.section as keyof typeof sectionConfig] || {
     icon: FileText,
     label: comparison.section,
-    color: 'text-gray-600'
+    color: 'text-gray-600 dark:text-gray-400'
   }
   const Icon = config.icon
 
@@ -247,14 +247,14 @@ function SectionCard({ comparison, viewMode }: SectionCardProps) {
 
   return (
     <div className={clsx(
-      'bg-white rounded-lg border border-gray-200 overflow-hidden',
+      'bg-white rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700 dark:bg-gray-800',
       changeStyles[comparison.changeType]
     )}>
       {/* Header */}
-      <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center gap-2">
           <Icon className={clsx('w-4 h-4', config.color)} />
-          <span className="text-sm font-medium text-gray-900">{config.label}</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-white">{config.label}</span>
         </div>
         <span className={clsx(
           'text-xs px-2 py-0.5 rounded',
@@ -272,13 +272,13 @@ function SectionCard({ comparison, viewMode }: SectionCardProps) {
           <div className="grid grid-cols-2 gap-4">
             {/* Old version */}
             <div>
-              <p className="text-xs font-medium text-gray-500 mb-2">Previous</p>
+              <p className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Previous</p>
               <div className={clsx(
-                'p-3 rounded bg-gray-50 min-h-[60px]',
+                'p-3 rounded bg-gray-50 min-h-[60px] dark:bg-gray-900',
                 !comparison.oldContent && 'flex items-center justify-center'
               )}>
                 {comparison.oldContent ? (
-                  <p className="text-sm text-gray-600">{comparison.oldContent}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{comparison.oldContent}</p>
                 ) : (
                   <span className="text-xs text-gray-400 italic">No content</span>
                 )}
@@ -287,13 +287,13 @@ function SectionCard({ comparison, viewMode }: SectionCardProps) {
 
             {/* New version */}
             <div>
-              <p className="text-xs font-medium text-gray-500 mb-2">Current</p>
+              <p className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">Current</p>
               <div className={clsx(
-                'p-3 rounded bg-gray-50 min-h-[60px]',
+                'p-3 rounded bg-gray-50 min-h-[60px] dark:bg-gray-900',
                 !comparison.newContent && 'flex items-center justify-center'
               )}>
                 {comparison.newContent ? (
-                  <p className="text-sm text-gray-700">{comparison.newContent}</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">{comparison.newContent}</p>
                 ) : (
                   <span className="text-xs text-gray-400 italic">No content</span>
                 )}
@@ -433,11 +433,11 @@ export function VersionComparison({
   if (events.length === 0) {
     return (
       <div className={clsx(
-        'bg-white border border-gray-200 rounded-lg p-6 text-center',
+        'bg-white border border-gray-200 rounded-lg p-6 text-center dark:border-gray-700 dark:bg-gray-800',
         className
       )}>
         <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No versions to compare</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No versions to compare</p>
         <p className="text-xs text-gray-400 mt-1">Make some changes to start tracking versions</p>
       </div>
     )
@@ -446,30 +446,30 @@ export function VersionComparison({
   if (availableDates.length < 2) {
     return (
       <div className={clsx(
-        'bg-white border border-gray-200 rounded-lg p-6 text-center',
+        'bg-white border border-gray-200 rounded-lg p-6 text-center dark:border-gray-700 dark:bg-gray-800',
         className
       )}>
         <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">Need at least 2 versions to compare</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Need at least 2 versions to compare</p>
         <p className="text-xs text-gray-400 mt-1">Currently only 1 version available</p>
       </div>
     )
   }
 
   return (
-    <div className={clsx('bg-white border border-gray-200 rounded-lg overflow-hidden', className)}>
+    <div className={clsx('bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800', className)}>
       {/* Header */}
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center gap-2 mb-3">
-          <GitCompare className="w-4 h-4 text-gray-500" />
-          <h3 className="text-sm font-semibold text-gray-900">Version Comparison</h3>
+          <GitCompare className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Version Comparison</h3>
         </div>
 
         {/* Version selectors */}
         <div className="flex items-center gap-3 flex-wrap">
           {/* Old version */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">From:</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">From:</span>
             <div className="relative">
               <select
                 value={selectedOldDate}
@@ -477,7 +477,7 @@ export function VersionComparison({
                   setSelectedOldDate(e.target.value)
                   setAiSummary(null)
                 }}
-                className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 cursor-pointer min-w-[140px]"
+                className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 cursor-pointer min-w-[140px] dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
               >
                 <option value="">Select date...</option>
                 {availableDates.map(d => (
@@ -494,7 +494,7 @@ export function VersionComparison({
 
           {/* New version */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">To:</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">To:</span>
             <div className="relative">
               <select
                 value={selectedNewDate}
@@ -502,7 +502,7 @@ export function VersionComparison({
                   setSelectedNewDate(e.target.value)
                   setAiSummary(null)
                 }}
-                className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 cursor-pointer min-w-[140px]"
+                className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 cursor-pointer min-w-[140px] dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
               >
                 <option value="">Select date...</option>
                 {availableDates.map(d => (
@@ -516,14 +516,14 @@ export function VersionComparison({
           </div>
 
           {/* View mode toggle */}
-          <div className="flex items-center gap-1 ml-auto bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 ml-auto bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
             <button
               onClick={() => setViewMode('inline')}
               className={clsx(
                 'px-2 py-1 text-xs rounded transition-colors',
                 viewMode === 'inline'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               Inline
@@ -533,8 +533,8 @@ export function VersionComparison({
               className={clsx(
                 'px-2 py-1 text-xs rounded transition-colors',
                 viewMode === 'side-by-side'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               )}
             >
               Side-by-Side
@@ -549,7 +549,7 @@ export function VersionComparison({
           comparisons.length > 0 ? (
             <div className="space-y-4">
               {/* Change summary */}
-              <div className="pb-3 border-b border-gray-100">
+              <div className="pb-3 border-b border-gray-100 dark:border-gray-800">
                 <ChangeSummary comparisons={comparisons} />
               </div>
 
@@ -604,13 +604,13 @@ export function VersionComparison({
           ) : (
             <div className="text-center py-8">
               <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">No changes between these versions</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No changes between these versions</p>
             </div>
           )
         ) : (
           <div className="text-center py-8">
             <GitCompare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">Select two versions to compare</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Select two versions to compare</p>
             <p className="text-xs text-gray-400 mt-1">
               Choose a "From" and "To" date above
             </p>

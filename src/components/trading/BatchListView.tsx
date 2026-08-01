@@ -586,7 +586,7 @@ function TradeRow({
         <span
           className={clsx(
             'inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded',
-            ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600',
+            ACTION_COLORS[trade.action] || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
           )}
         >
           {trade.action}
@@ -1178,7 +1178,7 @@ export function BatchListView({
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 aria-label="Clear search"
               >
                 <XIcon className="h-3 w-3" />

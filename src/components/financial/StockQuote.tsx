@@ -77,8 +77,8 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
       return (
         <div className={`${className}`}>
           <div className="flex flex-col">
-            <div className="text-2xl font-bold text-gray-500">—</div>
-            <div className="text-sm font-medium text-gray-500">—</div>
+            <div className="text-2xl font-bold text-gray-500 dark:text-gray-400">—</div>
+            <div className="text-sm font-medium text-gray-500 dark:text-gray-400">—</div>
             <div className="text-xs text-gray-400 mt-1">No data available</div>
           </div>
         </div>
@@ -119,7 +119,7 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
     return (
       <div className={`${className}`}>
         <div className="flex flex-col">
-          <div className="text-2xl font-bold text-gray-900">${quote.price.toFixed(2)}</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">${quote.price.toFixed(2)}</div>
           <div className={`text-sm font-medium ${changeColor}`}>
             {changeSymbol}{quote.change.toFixed(2)} ({changeSymbol}{quote.changePercent.toFixed(2)}%)
           </div>
@@ -134,8 +134,8 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
   return (
     <div className={`${className}`}>
       <div className="flex items-center gap-2 mb-1">
-        <span className="font-semibold text-gray-800">{quote.symbol}</span>
-        <span className="text-lg font-bold text-gray-900">
+        <span className="font-semibold text-gray-800 dark:text-gray-100">{quote.symbol}</span>
+        <span className="text-lg font-bold text-gray-900 dark:text-white">
           ${quote.price.toFixed(2)}
         </span>
       </div>
@@ -150,7 +150,7 @@ export function StockQuote({ symbol, showDetails = false, compact = false, showO
       </div>
 
       {showDetails && (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-400">
           <div>
             <span className="block font-medium">Open</span>
             <span>${quote.open.toFixed(2)}</span>

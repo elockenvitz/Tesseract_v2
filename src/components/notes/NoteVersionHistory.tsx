@@ -243,7 +243,7 @@ export function NoteVersionHistory({
           isSelected
             ? 'bg-primary-50/80 border-l-2 border-l-primary-400'
             : isFocused
-              ? 'bg-gray-50 border-l-2 border-l-gray-300'
+              ? 'bg-gray-50 border-l-2 border-l-gray-300 dark:bg-gray-900'
               : 'hover:bg-gray-50/80 border-l-2 border-l-transparent',
         )}
         onClick={() => { setFocusedVersionId(version.id); handlePreview(isSelected ? null : version) }}
@@ -252,7 +252,7 @@ export function NoteVersionHistory({
           <div className="min-w-0 flex-1">
             {/* Primary: timestamp */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[13px] font-medium text-gray-900 leading-tight">
+              <span className="text-[13px] font-medium text-gray-900 leading-tight dark:text-white">
                 {friendlyTimestamp(version.created_at)}
               </span>
               {isLatest && !isSelected && (
@@ -284,7 +284,7 @@ export function NoteVersionHistory({
               onClick={(e) => { e.stopPropagation(); handlePreview(isSelected ? null : version) }}
               className={clsx(
                 'p-1 rounded transition-colors',
-                isSelected ? 'bg-primary-100 text-primary-600' : 'hover:bg-gray-100 text-gray-400'
+                isSelected ? 'bg-primary-100 text-primary-600' : 'hover:bg-gray-100 text-gray-400 dark:hover:bg-gray-700'
               )}
               title="Preview"
             >
@@ -292,7 +292,7 @@ export function NoteVersionHistory({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); setConfirmRestoreId(version.id) }}
-              className="p-1 rounded hover:bg-gray-100 text-gray-400 transition-colors"
+              className="p-1 rounded hover:bg-gray-100 text-gray-400 transition-colors dark:hover:bg-gray-700"
               title="Restore this version"
             >
               <RotateCcw className="h-3.5 w-3.5" />
@@ -307,12 +307,12 @@ export function NoteVersionHistory({
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
 
-      <div className="absolute right-0 top-0 h-full w-[420px] bg-white shadow-2xl flex flex-col">
+      <div className="absolute right-0 top-0 h-full w-[420px] bg-white shadow-2xl flex flex-col dark:bg-gray-800">
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
           <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-gray-500" />
-            <h2 className="text-[14px] font-semibold text-gray-900">Saved versions</h2>
+            <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+            <h2 className="text-[14px] font-semibold text-gray-900 dark:text-white">Saved versions</h2>
             {versions.length > 0 && (
               <span className="text-[10px] text-gray-400 tabular-nums">({versions.length})</span>
             )}
@@ -330,7 +330,7 @@ export function NoteVersionHistory({
             )}
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-400 hover:text-gray-600"
+              className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 dark:hover:bg-gray-700"
             >
               <X className="h-4 w-4" />
             </button>
@@ -339,7 +339,7 @@ export function NoteVersionHistory({
 
         {/* ── Checkpoint creation inline ── */}
         {showCheckpointInput && (
-          <div className="px-4 py-2.5 border-b border-gray-100 bg-amber-50/30 flex-shrink-0">
+          <div className="px-4 py-2.5 border-b border-gray-100 bg-amber-50/30 flex-shrink-0 dark:border-gray-800">
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -350,7 +350,7 @@ export function NoteVersionHistory({
                   if (e.key === 'Escape') { setShowCheckpointInput(false); setCheckpointLabel('') }
                 }}
                 placeholder="e.g. Earnings call start"
-                className="flex-1 px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
+                className="flex-1 px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400 dark:border-gray-700"
                 autoFocus
               />
               <Button
@@ -362,7 +362,7 @@ export function NoteVersionHistory({
               </Button>
               <button
                 onClick={() => { setShowCheckpointInput(false); setCheckpointLabel('') }}
-                className="p-1 text-gray-400 hover:text-gray-600"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -410,20 +410,20 @@ export function NoteVersionHistory({
           {isLoading ? (
             <div className="px-4 py-6 space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-10 bg-gray-50 rounded animate-pulse" />
+                <div key={i} className="h-10 bg-gray-50 rounded animate-pulse dark:bg-gray-900" />
               ))}
             </div>
           ) : versions.length === 0 ? (
             <div className="px-4 py-10 text-center">
               <Clock className="h-8 w-8 mx-auto mb-2 text-gray-200" />
-              <p className="text-[13px] font-medium text-gray-500">No saved versions yet</p>
+              <p className="text-[13px] font-medium text-gray-500 dark:text-gray-400">No saved versions yet</p>
               <p className="text-[11px] text-gray-400 mt-0.5">Versions are created automatically as you edit.</p>
             </div>
           ) : (
             <>
               {/* Pinned checkpoints */}
               {pinned.length > 0 && (
-                <div className="border-b border-gray-100">
+                <div className="border-b border-gray-100 dark:border-gray-800">
                   <div className="px-4 pt-2.5 pb-1">
                     <span className="text-[9px] font-semibold uppercase tracking-widest text-amber-600/70 flex items-center gap-1">
                       <Pin className="w-2.5 h-2.5" />
@@ -447,7 +447,7 @@ export function NoteVersionHistory({
                         ? <ChevronRight className="w-3 h-3 text-gray-400" />
                         : <ChevronDown className="w-3 h-3 text-gray-400" />
                       }
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                         {group.label}
                       </span>
                       <span className="text-[10px] text-gray-300 tabular-nums">
@@ -474,10 +474,10 @@ export function NoteVersionHistory({
 
         {/* ── Preview panel ── */}
         {previewVersion && (
-          <div className="border-t border-gray-200 bg-white flex-shrink-0" style={{ height: '40%' }}>
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-50/80 border-b border-gray-100">
+          <div className="border-t border-gray-200 bg-white flex-shrink-0 dark:border-gray-700 dark:bg-gray-800" style={{ height: '40%' }}>
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-50/80 border-b border-gray-100 dark:border-gray-800">
               <div className="min-w-0 flex-1">
-                <h3 className="text-[12px] font-semibold text-gray-900 truncate">
+                <h3 className="text-[12px] font-semibold text-gray-900 truncate dark:text-white">
                   <span className="text-gray-400 font-normal">Previewing:</span>{' '}
                   {friendlyTimestamp(previewVersion.created_at)}
                   {previewVersion.label && (
@@ -493,7 +493,7 @@ export function NoteVersionHistory({
                 <button
                   onClick={handleCopyContent}
                   disabled={!previewContent}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors disabled:opacity-30"
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors disabled:opacity-30 dark:hover:text-gray-200 dark:text-gray-400"
                   title="Copy as plain text"
                 >
                   <Copy className="h-3 w-3" />
@@ -510,7 +510,7 @@ export function NoteVersionHistory({
                 </Button>
                 <button
                   onClick={() => handlePreview(null)}
-                  className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors"
+                  className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -525,11 +525,11 @@ export function NoteVersionHistory({
                 </div>
               ) : previewContent ? (
                 <>
-                  <h4 className="text-[14px] font-semibold text-gray-900 mb-2 pb-1.5 border-b border-gray-100">
+                  <h4 className="text-[14px] font-semibold text-gray-900 mb-2 pb-1.5 border-b border-gray-100 dark:border-gray-800 dark:text-white">
                     {previewVersion.title}
                   </h4>
                   <div
-                    className="prose prose-sm max-w-none text-gray-700 text-[13px]"
+                    className="prose prose-sm max-w-none text-gray-700 text-[13px] dark:text-gray-300"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewContent) }}
                   />
                 </>
@@ -564,12 +564,12 @@ export function NoteVersionHistory({
             }}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmRestoreId(null)} />
-            <div ref={restoreModalRef} className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-5">
-              <h3 className="text-[15px] font-semibold text-gray-900">Restore this version?</h3>
-              <p className="text-[13px] text-gray-500 mt-1.5 leading-relaxed">
+            <div ref={restoreModalRef} className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-5 dark:bg-gray-800">
+              <h3 className="text-[15px] font-semibold text-gray-900 dark:text-white">Restore this version?</h3>
+              <p className="text-[13px] text-gray-500 mt-1.5 leading-relaxed dark:text-gray-400">
                 Your current note will be saved as a backup before restoring. You can undo immediately after.
               </p>
-              <p className="text-[11px] text-gray-400 mt-2 bg-gray-50 rounded px-2.5 py-1.5">
+              <p className="text-[11px] text-gray-400 mt-2 bg-gray-50 rounded px-2.5 py-1.5 dark:bg-gray-900">
                 Restoring from: {friendlyTimestamp(targetVersion.created_at)}
                 {targetVersion.label && <> &middot; {targetVersion.label}</>}
               </p>

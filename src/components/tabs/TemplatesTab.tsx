@@ -240,8 +240,8 @@ function CaseTemplatesManager() {
     <Card padding="sm">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-medium text-gray-900">Investment Case Templates</h3>
-          <p className="text-sm text-gray-500 mt-1">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Investment Case Templates</h3>
+          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
             Create templates for bull, base, and bear case reasoning to quickly populate price targets.
           </p>
         </div>
@@ -255,7 +255,7 @@ function CaseTemplatesManager() {
 
       {/* Create/Edit Form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {error}
@@ -264,7 +264,7 @@ function CaseTemplatesManager() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Template Name
                 </label>
                 <input
@@ -272,12 +272,12 @@ function CaseTemplatesManager() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g., Tech Growth Stock"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Description
                 </label>
                 <input
@@ -285,7 +285,7 @@ function CaseTemplatesManager() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Brief description of when to use this template"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:border-gray-600"
                 />
               </div>
             </div>
@@ -333,8 +333,8 @@ function CaseTemplatesManager() {
               </div>
             </div>
 
-            <p className="text-xs text-gray-500">
-              Tip: Use <code className="px-1 py-0.5 bg-gray-100 rounded">{'{{variableName}}'}</code> for variables like {'{{company}}'}, {'{{sector}}'}, {'{{catalyst}}'}
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Tip: Use <code className="px-1 py-0.5 bg-gray-100 rounded dark:bg-gray-800">{'{{variableName}}'}</code> for variables like {'{{company}}'}, {'{{sector}}'}, {'{{catalyst}}'}
             </p>
 
             <div className="flex items-center">
@@ -343,9 +343,9 @@ function CaseTemplatesManager() {
                 id="case_is_shared"
                 checked={formData.is_shared}
                 onChange={(e) => setFormData({ ...formData, is_shared: e.target.checked })}
-                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded dark:border-gray-600"
               />
-              <label htmlFor="case_is_shared" className="ml-2 text-sm text-gray-700">
+              <label htmlFor="case_is_shared" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
                 Share with team members
               </label>
             </div>
@@ -365,10 +365,10 @@ function CaseTemplatesManager() {
 
       {/* My Templates */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-gray-700">My Case Templates ({myTemplates.length})</h4>
+        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">My Case Templates ({myTemplates.length})</h4>
 
         {myTemplates.length === 0 ? (
-          <p className="text-sm text-gray-500 py-4 text-center">
+          <p className="text-sm text-gray-500 py-4 text-center dark:text-gray-400">
             No case templates yet. Create one to quickly populate bull/base/bear reasoning.
           </p>
         ) : (
@@ -390,8 +390,8 @@ function CaseTemplatesManager() {
 
       {/* Shared Templates */}
       {sharedTemplates.length > 0 && (
-        <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
-          <h4 className="text-sm font-medium text-gray-700">
+        <div className="mt-6 pt-6 border-t border-gray-200 space-y-3 dark:border-gray-700">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Shared Case Templates ({sharedTemplates.length})
           </h4>
           <div className="space-y-2">
@@ -439,19 +439,19 @@ function CaseTemplateCard({
   return (
     <div className={clsx(
       'p-3 border rounded-lg',
-      isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+      isDeleting ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
     )}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="font-medium text-gray-900 truncate">{template.name}</span>
+            <span className="font-medium text-gray-900 truncate dark:text-white">{template.name}</span>
             {template.is_shared && (
               <Share2 className="w-3 h-3 text-blue-500" title="Shared" />
             )}
           </div>
           {template.description && (
-            <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{template.description}</p>
           )}
           <div className="flex items-center gap-2 mt-2">
             {hasBull && (
@@ -487,7 +487,7 @@ function CaseTemplateCard({
               </button>
               <button
                 onClick={onCancelDelete}
-                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded"
+                className="p-1.5 text-gray-600 hover:bg-gray-100 rounded dark:hover:bg-gray-700 dark:text-gray-400"
                 title="Cancel"
               >
                 <X className="w-4 h-4" />
@@ -498,7 +498,7 @@ function CaseTemplateCard({
               {!isShared && onEdit && (
                 <button
                   onClick={onEdit}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded dark:hover:text-gray-300 dark:hover:bg-gray-700"
                   title="Edit"
                 >
                   <Edit2 className="w-4 h-4" />
@@ -555,15 +555,15 @@ export function TemplatesTab() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white">
-        <h1 className="text-xl font-bold text-gray-900">Templates</h1>
-        <p className="text-sm text-gray-500">
+      <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Templates</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           Manage text snippets, investment cases, Excel templates, and your asset page layout
         </p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex-shrink-0 px-6 bg-white border-b border-gray-200">
+      <div className="flex-shrink-0 px-6 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
         <nav className="flex space-x-4" aria-label="Tabs">
           <button
             onClick={() => setActiveSection('text')}
@@ -571,7 +571,7 @@ export function TemplatesTab() {
               'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'text'
                 ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             <Zap className="w-4 h-4" />
@@ -583,7 +583,7 @@ export function TemplatesTab() {
               'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'excel'
                 ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             <FileSpreadsheet className="w-4 h-4" />
@@ -595,7 +595,7 @@ export function TemplatesTab() {
               'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'research'
                 ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             <LayoutGrid className="w-4 h-4" />
@@ -607,7 +607,7 @@ export function TemplatesTab() {
               'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'pdf'
                 ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
             <FileText className="w-4 h-4" />
@@ -617,7 +617,7 @@ export function TemplatesTab() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto px-6 pt-2 pb-4 bg-gray-50">
+      <div className="flex-1 overflow-auto px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
         {activeSection === 'text' && <TemplateManager />}
         {activeSection === 'excel' && <ExcelModelTemplateManager />}
         {activeSection === 'research' && <ResearchFieldsManager />}

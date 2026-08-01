@@ -88,9 +88,9 @@ const typeConfig = {
 const fallbackConfig = {
   icon: FileText,
   label: 'Update',
-  color: 'text-gray-600',
-  bgColor: 'bg-gray-50',
-  borderColor: 'border-gray-200',
+  color: 'text-gray-600 dark:text-gray-400',
+  bgColor: 'bg-gray-50 dark:bg-gray-900',
+  borderColor: 'border-gray-200 dark:border-gray-700',
   dotColor: 'bg-gray-400'
 }
 
@@ -246,7 +246,7 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
         {/* Event dot with sentiment ring */}
         <div
           className={clsx(
-            'relative z-10 flex items-center justify-center w-8 h-8 rounded-full border-2 bg-white',
+            'relative z-10 flex items-center justify-center w-8 h-8 rounded-full border-2 bg-white dark:bg-gray-800',
             config.borderColor,
             sentiment && sentimentColors[sentiment],
             sentiment && 'ring-2 ring-offset-1'
@@ -286,7 +286,7 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
                     <span className={clsx(
                       'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs',
                       sentiment === 'bullish' && 'bg-green-100 text-green-700',
-                      sentiment === 'neutral' && 'bg-gray-100 text-gray-700',
+                      sentiment === 'neutral' && 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800',
                       sentiment === 'bearish' && 'bg-red-100 text-red-700'
                     )}>
                       {sentiment === 'bullish' && <TrendingUp className="w-2.5 h-2.5" />}
@@ -314,7 +314,7 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
                         <ChevronRight className="w-3 h-3 text-gray-300" />
                       </>
                     )}
-                    <span className="font-semibold text-gray-900">${event.priceTarget}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">${event.priceTarget}</span>
                     {priceChange !== null && (
                       <span className={clsx(
                         'text-xs px-1.5 py-0.5 rounded',
@@ -329,7 +329,7 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
                 {/* Content preview */}
                 {event.type !== 'price_target' && event.content && (
                   <p className={clsx(
-                    'mt-1.5 text-xs text-gray-600',
+                    'mt-1.5 text-xs text-gray-600 dark:text-gray-400',
                     !expanded && 'line-clamp-2'
                   )}>
                     {event.previousContent ? (
@@ -358,14 +358,14 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
 
             {/* Expanded content with diff */}
             {expanded && event.previousContent && event.content && (
-              <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+              <div className="mt-3 pt-3 border-t border-gray-200 space-y-2 dark:border-gray-700">
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Previous:</span>
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Previous:</span>
                   <p className="text-xs text-gray-400 line-through mt-1">{event.previousContent}</p>
                 </div>
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Current:</span>
-                  <p className="text-xs text-gray-700 mt-1">{event.content}</p>
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Current:</span>
+                  <p className="text-xs text-gray-700 mt-1 dark:text-gray-300">{event.content}</p>
                 </div>
               </div>
             )}
@@ -404,7 +404,7 @@ function TimelineBar({ events, milestones }: TimelineBarProps) {
   const range = maxDate - minDate || 1
 
   return (
-    <div className="relative h-12 bg-gray-50 rounded-lg border border-gray-200 mb-4 overflow-hidden">
+    <div className="relative h-12 bg-gray-50 rounded-lg border border-gray-200 mb-4 overflow-hidden dark:border-gray-700 dark:bg-gray-900">
       {/* Timeline axis */}
       <div className="absolute inset-x-4 top-6 h-0.5 bg-gray-200" />
 
@@ -528,24 +528,24 @@ export function EvolutionTimeline({
   if (events.length === 0) {
     return (
       <div className={clsx(
-        'bg-white border border-gray-200 rounded-lg p-6 text-center',
+        'bg-white border border-gray-200 rounded-lg p-6 text-center dark:border-gray-700 dark:bg-gray-800',
         className
       )}>
         <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No timeline events yet</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">No timeline events yet</p>
         <p className="text-xs text-gray-400 mt-1">Changes will appear here as you edit</p>
       </div>
     )
   }
 
   return (
-    <div className={clsx('bg-white border border-gray-200 rounded-lg overflow-hidden', className)}>
+    <div className={clsx('bg-white border border-gray-200 rounded-lg overflow-hidden dark:border-gray-700 dark:bg-gray-800', className)}>
       {/* Header with filters */}
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gray-500" />
-            <h3 className="text-sm font-semibold text-gray-900">Evolution Timeline</h3>
+            <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Evolution Timeline</h3>
             <span className="text-xs text-gray-400">
               ({filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''})
             </span>
@@ -553,12 +553,12 @@ export function EvolutionTimeline({
 
           <div className="flex items-center gap-3">
             {/* Significant only toggle */}
-            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer dark:text-gray-400">
               <input
                 type="checkbox"
                 checked={showOnlySignificant}
                 onChange={(e) => setShowOnlySignificant(e.target.checked)}
-                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
               />
               Significant only
             </label>
@@ -567,7 +567,7 @@ export function EvolutionTimeline({
             <select
               value={grouping}
               onChange={(e) => setGrouping(e.target.value as TimeGrouping)}
-              className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+              className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-700 dark:bg-gray-800"
             >
               <option value="none">No grouping</option>
               <option value="week">By week</option>
@@ -584,7 +584,7 @@ export function EvolutionTimeline({
       </div>
 
       {/* Legend */}
-      <div className="px-4 pb-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+      <div className="px-4 pb-2 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
         {Object.entries(typeConfig).map(([key, config]) => (
           <div key={key} className="flex items-center gap-1">
             <div className={clsx('w-2 h-2 rounded-full', config.dotColor)} />
@@ -599,8 +599,8 @@ export function EvolutionTimeline({
           <div key={groupKey}>
             {/* Group header */}
             {grouping !== 'none' && (
-              <div className="mb-3 pb-2 border-b border-gray-100">
-                <h4 className="text-sm font-medium text-gray-700">
+              <div className="mb-3 pb-2 border-b border-gray-100 dark:border-gray-800">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {getGroupLabel(groupKey, grouping)}
                 </h4>
                 <p className="text-xs text-gray-400">

@@ -34,7 +34,7 @@ type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'
 type Visibility = 'private' | 'team' | 'public'
 
 const urgencyConfig: Record<TradeUrgency, { label: string; color: string; bg: string }> = {
-  low: { label: 'Low', color: 'text-gray-600', bg: 'bg-gray-100' },
+  low: { label: 'Low', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
   medium: { label: 'Medium', color: 'text-blue-600', bg: 'bg-blue-100' },
   high: { label: 'High', color: 'text-orange-600', bg: 'bg-orange-100' },
   urgent: { label: 'Urgent', color: 'text-red-600', bg: 'bg-red-100' }
@@ -238,7 +238,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
       const VisibilityIcon = visibilityIcons[(pair.visibility as Visibility) || 'private']
 
       return (
-        <div className="p-3 bg-gray-50 border-b border-gray-200">
+        <div className="p-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-start gap-2 mb-2">
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-600">
               <ArrowLeftRight className="h-3 w-3" />
@@ -258,7 +258,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
               </div>
               <div className="flex flex-wrap gap-1">
                 {longs.map((t: any) => (
-                  <span key={t.id} className="text-xs font-medium text-gray-700">
+                  <span key={t.id} className="text-xs font-medium text-gray-700 dark:text-gray-300">
                     {t.assets?.symbol}
                   </span>
                 ))}
@@ -271,7 +271,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
               </div>
               <div className="flex flex-wrap gap-1">
                 {shorts.map((t: any) => (
-                  <span key={t.id} className="text-xs font-medium text-gray-700">
+                  <span key={t.id} className="text-xs font-medium text-gray-700 dark:text-gray-300">
                     {t.assets?.symbol}
                   </span>
                 ))}
@@ -280,7 +280,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
           </div>
 
           {pair.rationale && (
-            <p className="text-xs text-gray-600 mb-2">{pair.rationale}</p>
+            <p className="text-xs text-gray-600 mb-2 dark:text-gray-400">{pair.rationale}</p>
           )}
 
           <div className="flex items-center gap-3 text-xs text-gray-400">
@@ -308,7 +308,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
       const VisibilityIcon = visibilityIcons[(trade.visibility as Visibility) || 'private']
 
       return (
-        <div className="p-3 bg-gray-50 border-b border-gray-200">
+        <div className="p-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-start gap-2 mb-2">
             <span className={clsx(
               "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium",
@@ -323,12 +323,12 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
           </div>
 
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-semibold text-gray-900">{trade.assets?.symbol}</span>
-            <span className="text-xs text-gray-500">{trade.assets?.company_name}</span>
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">{trade.assets?.symbol}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{trade.assets?.company_name}</span>
           </div>
 
           {trade.rationale && (
-            <p className="text-xs text-gray-600 mb-2">{trade.rationale}</p>
+            <p className="text-xs text-gray-600 mb-2 dark:text-gray-400">{trade.rationale}</p>
           )}
 
           <div className="flex items-center gap-3 text-xs text-gray-400">
@@ -355,16 +355,16 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
   return (
     <div className="flex flex-col h-full">
       {/* Header with back button */}
-      <div className="flex items-center gap-2 p-3 border-b border-gray-200 bg-white">
+      <div className="flex items-center gap-2 p-3 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <button
           onClick={onBack}
-          className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+          className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors dark:hover:text-gray-300"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-gray-900 truncate">{tradeTitle}</h3>
-          <p className="text-xs text-gray-500">Trade Discussion</p>
+          <h3 className="text-sm font-medium text-gray-900 truncate dark:text-white">{tradeTitle}</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Trade Discussion</p>
         </div>
       </div>
 
@@ -411,7 +411,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2 mb-1">
-                            <span className="text-xs font-medium text-gray-900">
+                            <span className="text-xs font-medium text-gray-900 dark:text-white">
                               {getUserDisplayName(message.user)}
                             </span>
                             {message.is_pinned && (
@@ -420,19 +420,19 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
                           </div>
 
                           {message.reply_to && (
-                            <div className="text-xs text-gray-500 mb-1 flex items-center">
+                            <div className="text-xs text-gray-500 mb-1 flex items-center dark:text-gray-400">
                               <Reply className="h-3 w-3 mr-1" />
                               Replying to message
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap dark:text-gray-300">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {isSelected && (
                             <div className="flex items-center space-x-2 mt-2">
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {formatMessageTime(message.created_at)}
                               </span>
                               <span className="text-gray-300">•</span>
@@ -441,7 +441,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
                                   e.stopPropagation()
                                   handleReply(message.id)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors dark:text-gray-400"
                               >
                                 Reply
                               </button>
@@ -450,7 +450,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
                                   e.stopPropagation()
                                   togglePinMutation.mutate({ messageId: message.id, isPinned: message.is_pinned })
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors dark:text-gray-400"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -460,25 +460,25 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
                       </div>
                     ) : (
                       <div
-                        className="flex items-start hover:bg-gray-50 -mx-2 px-2 py-0.5 rounded cursor-pointer"
+                        className="flex items-start hover:bg-gray-50 -mx-2 px-2 py-0.5 rounded cursor-pointer dark:hover:bg-gray-800"
                         onClick={() => setSelectedMessageId(isSelected ? null : message.id)}
                       >
                         <div className="w-6 h-6 flex-shrink-0 mr-3"></div>
                         <div className="flex-1 min-w-0">
                           {message.reply_to && (
-                            <div className="text-xs text-gray-500 mb-1 flex items-center">
+                            <div className="text-xs text-gray-500 mb-1 flex items-center dark:text-gray-400">
                               <Reply className="h-3 w-3 mr-1" />
                               Replying to message
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap dark:text-gray-300">
                             <SmartInputRenderer content={message.content} inline />
                           </div>
 
                           {isSelected && (
                             <div className="flex items-center space-x-2 mt-2">
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {formatMessageTime(message.created_at)}
                               </span>
                               <span className="text-gray-300">•</span>
@@ -487,7 +487,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
                                   e.stopPropagation()
                                   handleReply(message.id)
                                 }}
-                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-primary-600 transition-colors dark:text-gray-400"
                               >
                                 Reply
                               </button>
@@ -496,7 +496,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
                                   e.stopPropagation()
                                   togglePinMutation.mutate({ messageId: message.id, isPinned: message.is_pinned })
                                 }}
-                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors"
+                                className="text-xs text-gray-500 hover:text-warning-600 transition-colors dark:text-gray-400"
                               >
                                 {message.is_pinned ? 'Unpin' : 'Pin'}
                               </button>
@@ -511,7 +511,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
               <div ref={messagesEndRef} className="h-4" />
             </div>
           ) : (
-            <div className="p-6 text-center text-gray-500">
+            <div className="p-6 text-center text-gray-500 dark:text-gray-400">
               <MessageCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm">No discussion yet</p>
               <p className="text-xs">Start the conversation about this trade idea!</p>
@@ -521,7 +521,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
       </div>
 
       {/* Message Input */}
-      <div className="p-3 border-t border-gray-200 bg-white flex-shrink-0">
+      <div className="p-3 border-t border-gray-200 bg-white flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         {replyToMessage && replyToMessageData && (
           <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-center justify-between">
@@ -555,7 +555,7 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
               }}
               onKeyDown={handleKeyDown}
               placeholder="Add to the discussion... Use @ to mention users"
-              textareaClassName="text-sm p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+              textareaClassName="text-sm p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:border-gray-600 dark:bg-gray-800"
               rows={2}
               minHeight="56px"
               enableMentions={true}

@@ -468,11 +468,11 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
       
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto transform transition-all max-h-[90vh] overflow-hidden">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto transform transition-all max-h-[90vh] overflow-hidden dark:bg-gray-800">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {selectedAssetId
                   ? filterType === 'theme'
                     ? 'Add to Theme'
@@ -481,7 +481,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                     : 'Add to List'
                   : 'Asset Lists'}
               </h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">
                 {selectedAssetId
                   ? filterType === 'theme'
                     ? 'Choose a theme to add this asset to'
@@ -494,7 +494,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="h-5 w-5" />
             </button>
@@ -505,7 +505,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
             {showCreateForm ? (
               <div>
                 <Card>
-                  <h4 className="text-sm font-semibold text-gray-900 mb-4">Create New List</h4>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-4 dark:text-white">Create New List</h4>
                   <div className="space-y-4">
                     <div>
                       <Input
@@ -549,15 +549,15 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                     onListSelect?.(l)
                                     onClose()
                                   }}
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left bg-white border border-amber-200 rounded hover:bg-amber-50 transition-colors"
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left bg-white border border-amber-200 rounded hover:bg-amber-50 transition-colors dark:bg-gray-800"
                                 >
                                   <span
                                     className="w-2.5 h-2.5 rounded-full shrink-0"
                                     style={{ backgroundColor: l.color || '#3b82f6' }}
                                   />
-                                  <span className="font-medium text-gray-900 truncate">{l.name}</span>
+                                  <span className="font-medium text-gray-900 truncate dark:text-white">{l.name}</span>
                                   {l.description && (
-                                    <span className="text-xs text-gray-500 truncate">— {l.description}</span>
+                                    <span className="text-xs text-gray-500 truncate dark:text-gray-400">— {l.description}</span>
                                   )}
                                   <span className="ml-auto text-xs text-amber-700 shrink-0">Open →</span>
                                 </button>
@@ -569,14 +569,14 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                         Description (optional)
                       </label>
                       <textarea
                         value={newListDescription}
                         onChange={(e) => setNewListDescription(e.target.value)}
                         placeholder="Describe the purpose of this list..."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                         rows={3}
                       />
                     </div>
@@ -585,7 +585,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                         no user picker. */}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                         Content mode
                       </label>
                       <div className="grid grid-cols-2 gap-2">
@@ -596,14 +596,14 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                             'text-left p-3 rounded-lg border-2 transition-colors',
                             newContentMode === 'manual'
                               ? 'border-primary-500 bg-primary-50'
-                              : 'border-gray-200 hover:border-gray-300'
+                              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                           )}
                         >
                           <div className="flex items-center gap-2 mb-1">
-                            <ListIconForMode className="h-4 w-4 text-gray-700" />
-                            <span className="text-sm font-semibold text-gray-900">Manual</span>
+                            <ListIconForMode className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">Manual</span>
                           </div>
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
                             Add assets one by one. Assign status, tags, owner per row.
                           </p>
                         </button>
@@ -614,14 +614,14 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                             'text-left p-3 rounded-lg border-2 transition-colors',
                             newContentMode === 'screen'
                               ? 'border-primary-500 bg-primary-50'
-                              : 'border-gray-200 hover:border-gray-300'
+                              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                           )}
                         >
                           <div className="flex items-center gap-2 mb-1">
-                            <FilterIcon className="h-4 w-4 text-gray-700" />
-                            <span className="text-sm font-semibold text-gray-900">Screen</span>
+                            <FilterIcon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">Screen</span>
                           </div>
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
                             Auto-populated by criteria across the asset universe.
                           </p>
                         </button>
@@ -641,7 +641,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                         the access level for the NEXT pick (each chip
                         carries its own permission once added). */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                         Invite collaborators (optional)
                       </label>
                       {(() => {
@@ -658,7 +658,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                           <div className="flex gap-2">
                             <div ref={inviteContainerRef} className="relative flex-1">
                               <div
-                                className="flex flex-wrap gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 min-h-[38px] cursor-text bg-white"
+                                className="flex flex-wrap gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 min-h-[38px] cursor-text bg-white dark:border-gray-600 dark:bg-gray-800"
                                 onClick={() => { setShowInviteDropdown(true); inviteInputRef.current?.focus() }}
                               >
                                 {pendingInvites.map((inv, idx) => (
@@ -667,7 +667,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                     className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-700 border border-primary-200"
                                   >
                                     {inv.user.name}
-                                    <span className="px-1 py-0.5 text-[10px] font-medium bg-white text-primary-700 border border-primary-200 rounded">
+                                    <span className="px-1 py-0.5 text-[10px] font-medium bg-white text-primary-700 border border-primary-200 rounded dark:bg-gray-800">
                                       {inv.permission}
                                     </span>
                                     <button
@@ -700,9 +700,9 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                 />
                               </div>
                               {showInviteDropdown && (
-                                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto dark:border-gray-700 dark:bg-gray-800">
                                   {filtered.length === 0 ? (
-                                    <div className="px-3 py-2 text-xs text-gray-500">
+                                    <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                                       {orgMembers.length === 0
                                         ? 'No other members in this organization.'
                                         : 'No matches'}
@@ -717,11 +717,11 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                           setInviteSearchTerm('')
                                           inviteInputRef.current?.focus()
                                         }}
-                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 dark:hover:bg-gray-800 dark:border-gray-800"
                                       >
-                                        <div className="text-sm font-medium text-gray-900">{m.name}</div>
+                                        <div className="text-sm font-medium text-gray-900 dark:text-white">{m.name}</div>
                                         {m.email && m.email !== m.name && (
-                                          <div className="text-xs text-gray-500">{m.email}</div>
+                                          <div className="text-xs text-gray-500 dark:text-gray-400">{m.email}</div>
                                         )}
                                       </button>
                                     ))
@@ -732,7 +732,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                             <select
                               value={invitePermissionDraft}
                               onChange={(e) => setInvitePermissionDraft(e.target.value as 'read' | 'write')}
-                              className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600"
                               title="Default permission for new invites"
                             >
                               <option value="read">Read</option>
@@ -784,7 +784,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       placeholder="Search lists..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
                     />
                   </div>
                   <Button onClick={() => setShowCreateForm(true)}>
@@ -816,7 +816,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                 {/* Available Lists Section */}
                 {selectedAssetId && filteredLists.filter(list => !list.isAdded).length > 0 && (
                   <div className="space-y-4">
-                    <h4 className="text-sm font-semibold text-gray-700">Available Lists</h4>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Available Lists</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {filteredLists.filter(list => !list.isAdded).map((list) => (
                         <div
@@ -846,7 +846,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center space-x-2 mb-2">
-                                      <h4 className="font-semibold text-gray-900 truncate text-base">
+                                      <h4 className="font-semibold text-gray-900 truncate text-base dark:text-white">
                                         {list.name}
                                       </h4>
                                       {list.is_default && (
@@ -860,7 +860,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                       )}
                                     </div>
                                     {list.description && (
-                                      <p className="text-sm text-gray-600 truncate" title={list.description}>
+                                      <p className="text-sm text-gray-600 truncate dark:text-gray-400" title={list.description}>
                                         {list.description}
                                       </p>
                                     )}
@@ -869,8 +869,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                               </div>
 
                               {/* Metadata section */}
-                              <div className="pt-3 border-t border-gray-100">
-                                <div className="flex items-center justify-between text-xs text-gray-500">
+                              <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+                                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                                   <div className="flex items-center space-x-3">
                                     <span className="font-medium">{list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}</span>
                                     {list.collaborators && list.collaborators.length > 0 && (
@@ -906,7 +906,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                 {/* Already Added Section */}
                 {selectedAssetId && filteredLists.filter(list => list.isAdded).length > 0 && (
                   <div className="space-y-4">
-                    <h4 className="text-sm font-semibold text-gray-700">Already in These Lists</h4>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Already in These Lists</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {filteredLists.filter(list => list.isAdded).map((list) => (
                         <div
@@ -924,7 +924,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center space-x-2 mb-2">
-                                      <h4 className="font-semibold text-gray-900 truncate text-base">
+                                      <h4 className="font-semibold text-gray-900 truncate text-base dark:text-white">
                                         {list.name}
                                       </h4>
                                       {list.is_default && (
@@ -938,7 +938,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                       )}
                                     </div>
                                     {list.description && (
-                                      <p className="text-sm text-gray-600 truncate" title={list.description}>
+                                      <p className="text-sm text-gray-600 truncate dark:text-gray-400" title={list.description}>
                                         {list.description}
                                       </p>
                                     )}
@@ -947,8 +947,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                               </div>
 
                               {/* Metadata section */}
-                              <div className="pt-3 border-t border-gray-100">
-                                <div className="flex items-center justify-between text-xs text-gray-500">
+                              <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+                                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                                   <div className="flex items-center space-x-3">
                                     <span className="font-medium">{list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}</span>
                                     {list.collaborators && list.collaborators.length > 0 && (
@@ -1007,7 +1007,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center space-x-2 mb-2">
-                              <h4 className="font-semibold text-gray-900 truncate text-base">
+                              <h4 className="font-semibold text-gray-900 truncate text-base dark:text-white">
                                 {list.name}
                               </h4>
                               {list.is_default && (
@@ -1021,7 +1021,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                               )}
                             </div>
                             {list.description && (
-                              <p className="text-sm text-gray-600 line-clamp-2">
+                              <p className="text-sm text-gray-600 line-clamp-2 dark:text-gray-400">
                                 {list.description}
                               </p>
                             )}
@@ -1041,14 +1041,14 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                             </button>
 
                             {showListMenu === list.id && (
-                              <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[140px]">
+                              <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[140px] dark:border-gray-700 dark:bg-gray-800">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     setEditingListId(list.id)
                                     setShowListMenu(null)
                                   }}
-                                  className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center"
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center dark:hover:bg-gray-800 dark:text-gray-400"
                                 >
                                   <Edit3 className="h-4 w-4 mr-2" />
                                   Edit List
@@ -1059,7 +1059,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                     // Share functionality would go here
                                     setShowListMenu(null)
                                   }}
-                                  className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center"
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50 flex items-center dark:hover:bg-gray-800 dark:text-gray-400"
                                 >
                                   <Share2 className="h-4 w-4 mr-2" />
                                   Share List
@@ -1070,7 +1070,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                                       e.stopPropagation()
                                       handleDeleteList(list.id, list.name)
                                     }}
-                                    className="w-full px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center border-t border-gray-100"
+                                    className="w-full px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50 flex items-center border-t border-gray-100 dark:border-gray-800"
                                   >
                                     <Trash2 className="h-4 w-4 mr-2" />
                                     Delete List
@@ -1083,8 +1083,8 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
                       </div>
 
                       {/* Metadata section */}
-                      <div className="pt-3 border-t border-gray-100">
-                        <div className="flex items-center justify-between text-xs text-gray-500">
+                      <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                           <div className="flex items-center space-x-3">
                             <span className="font-medium">{list.item_count} {list.item_count === 1 ? 'asset' : 'assets'}</span>
                             {list.collaborators && list.collaborators.length > 0 && (
@@ -1109,13 +1109,13 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
               </>
             ) : (
               <div className="text-center py-12">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
                   <List className="h-8 w-8 text-gray-400" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">
                   {assetLists?.length === 0 ? 'No lists yet' : 'No lists match your search'}
                 </h3>
-                <p className="text-gray-500 mb-4">
+                <p className="text-gray-500 mb-4 dark:text-gray-400">
                   {assetLists?.length === 0 
                     ? 'Your default lists will be created automatically.'
                     : 'Try adjusting your search criteria.'
@@ -1128,7 +1128,7 @@ export function AssetListManager({ isOpen, onClose, onListSelect, selectedAssetI
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+          <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
             <Button variant="outline" onClick={onClose}>
               {selectedAssetId ? 'Cancel' : 'Close'}
             </Button>

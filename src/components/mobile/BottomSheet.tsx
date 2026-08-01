@@ -249,7 +249,7 @@ export function BottomSheet({
                     type="button"
                     onClick={requestClose}
                     disabled={!dismissible}
-                    className="flex items-center justify-center h-11 w-11 -mr-2 rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40"
+                    className="flex items-center justify-center h-11 w-11 -mr-2 rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40 dark:text-gray-400"
                     aria-label="Close"
                   >
                     <X className="h-5 w-5" />

@@ -31,7 +31,7 @@ function getPerformanceTier(score: number | null): {
   color: string
   bgColor: string
 } {
-  if (score === null) return { label: 'N/A', color: 'text-gray-500', bgColor: 'bg-gray-100' }
+  if (score === null) return { label: 'N/A', color: 'text-gray-500 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-800' }
   if (score >= 90) return { label: 'Elite', color: 'text-purple-700', bgColor: 'bg-purple-100' }
   if (score >= 80) return { label: 'Excellent', color: 'text-green-700', bgColor: 'bg-green-100' }
   if (score >= 70) return { label: 'Good', color: 'text-blue-700', bgColor: 'bg-blue-100' }
@@ -222,7 +222,7 @@ export function AnalystPerformanceCard({
               <div className="text-sm font-medium text-gray-900 dark:text-white">
                 {performance.user?.full_name || 'Your Performance'}
               </div>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <span>{performance.total_targets} targets</span>
                 <span>•</span>
                 <span className={tier.color}>{tier.label}</span>
@@ -233,7 +233,7 @@ export function AnalystPerformanceCard({
             <div className="text-2xl font-bold text-gray-900 dark:text-white">
               {performance.overall_score?.toFixed(0) || '—'}
             </div>
-            <div className="text-xs text-gray-500">Score</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Score</div>
           </div>
         </div>
       </div>
@@ -259,7 +259,7 @@ export function AnalystPerformanceCard({
           <button
             onClick={() => refreshPerformance.mutate()}
             disabled={refreshPerformance.isPending}
-            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors dark:hover:text-gray-300"
             title="Refresh performance data"
           >
             <RefreshCw className={clsx('w-4 h-4', refreshPerformance.isPending && 'animate-spin')} />
@@ -351,7 +351,7 @@ export function AnalystPerformanceCard({
             value={performance.bullish_bias !== null ? `${performance.bullish_bias > 0 ? '+' : ''}${performance.bullish_bias.toFixed(1)}%` : '—'}
             subvalue={biasDirection === 'bullish' ? 'Bullish tendency' : biasDirection === 'bearish' ? 'Bearish tendency' : 'Neutral'}
             trend={biasDirection === 'bullish' ? 'up' : biasDirection === 'bearish' ? 'down' : 'neutral'}
-            iconColor={biasDirection === 'bullish' ? 'text-green-500' : biasDirection === 'bearish' ? 'text-red-500' : 'text-gray-500'}
+            iconColor={biasDirection === 'bullish' ? 'text-green-500' : biasDirection === 'bearish' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}
           />
         </div>
       </div>
@@ -383,7 +383,7 @@ export function AnalystPerformanceCard({
                     <span className="text-lg font-bold text-gray-900 dark:text-white">
                       {metrics.hit_rate?.toFixed(0) || '—'}%
                     </span>
-                    <span className="text-xs text-gray-500">hit rate</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">hit rate</span>
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {metrics.count} targets • {metrics.avg_accuracy?.toFixed(0) || '—'}% avg accuracy

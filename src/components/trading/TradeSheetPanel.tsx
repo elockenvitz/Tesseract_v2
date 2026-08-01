@@ -48,7 +48,7 @@ function TradeRow({ variant, symbol }: { variant: IntentVariant; symbol: string 
       <td className="py-1.5 pr-3">
         <span className={clsx(
           'inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded',
-          ACTION_COLORS[variant.action] || 'bg-gray-100 text-gray-600'
+          ACTION_COLORS[variant.action] || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
         )}>
           {variant.action}
         </span>
@@ -170,7 +170,7 @@ function SheetListItem({
                   className="text-sm font-medium px-1.5 py-0.5 rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white w-48 focus:outline-none focus:ring-1 focus:ring-primary-400"
                 />
                 <button onClick={handleSaveRename} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 p-0.5"><CheckCircle2 className="w-3.5 h-3.5" /></button>
-                <button onClick={() => setIsRenaming(false)} className="text-gray-400 hover:text-gray-600 p-0.5"><X className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setIsRenaming(false)} className="text-gray-400 hover:text-gray-600 p-0.5 dark:hover:text-gray-300"><X className="w-3.5 h-3.5" /></button>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 group/name">

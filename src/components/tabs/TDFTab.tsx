@@ -299,7 +299,7 @@ export function TDFTab({ tdf }: TDFTabProps) {
                 "pb-3 px-1 text-sm font-medium border-b-2 transition-colors",
                 activeSection === tab.key
                   ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400"
               )}
             >
               {tab.label}
@@ -444,7 +444,7 @@ function OverviewSection({
             )}
           </div>
           {glidePathTarget && (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
               Target: {glidePathTarget.equity_weight}% Equity / {glidePathTarget.fixed_income_weight}% FI
             </div>
           )}
@@ -676,7 +676,7 @@ function ComparisonSection({
                 <td className="px-4 py-3 text-right">
                   <span className={clsx(
                     "font-medium",
-                    row.change > 0 ? 'text-green-600' : row.change < 0 ? 'text-red-600' : 'text-gray-500'
+                    row.change > 0 ? 'text-green-600' : row.change < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'
                   )}>
                     {row.change > 0 ? '+' : ''}{row.change.toFixed(2)}%
                   </span>
@@ -937,7 +937,7 @@ function TradesSection({
     proposed: 'bg-yellow-100 text-yellow-700',
     approved: 'bg-blue-100 text-blue-700',
     executed: 'bg-green-100 text-green-700',
-    cancelled: 'bg-gray-100 text-gray-700',
+    cancelled: 'bg-gray-100 text-gray-700 dark:text-gray-300 dark:bg-gray-800',
   }
 
   return (

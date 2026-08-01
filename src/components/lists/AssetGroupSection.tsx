@@ -140,7 +140,7 @@ export function AssetGroupSection({
       <div
         ref={setDroppableRef}
         className={clsx(
-          'flex items-center gap-2 px-3 py-2 bg-gray-50 border-y border-gray-200 transition-colors',
+          'flex items-center gap-2 px-3 py-2 bg-gray-50 border-y border-gray-200 transition-colors dark:border-gray-700 dark:bg-gray-900',
           isOver && 'bg-blue-50 border-blue-200'
         )}
       >
@@ -149,7 +149,7 @@ export function AssetGroupSection({
           <button
             {...listeners}
             {...attributes}
-            className="touch-none cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
+            className="touch-none cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <GripVertical className="h-4 w-4" />
           </button>
@@ -158,7 +158,7 @@ export function AssetGroupSection({
         {/* Collapse Toggle */}
         <button
           onClick={onToggleCollapse}
-          className="p-0.5 rounded hover:bg-gray-200 transition-colors text-gray-500"
+          className="p-0.5 rounded hover:bg-gray-200 transition-colors text-gray-500 dark:text-gray-400"
         >
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -183,7 +183,7 @@ export function AssetGroupSection({
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={handleSaveEdit}
-              className="flex-1 px-1.5 py-0.5 text-sm font-medium border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 px-1.5 py-0.5 text-sm font-medium border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
             />
             <button
               onClick={handleSaveEdit}
@@ -200,7 +200,7 @@ export function AssetGroupSection({
           </div>
         ) : (
           <span
-            className="font-medium text-sm text-gray-700 flex-1 truncate cursor-pointer hover:text-gray-900"
+            className="font-medium text-sm text-gray-700 flex-1 truncate cursor-pointer hover:text-gray-900 dark:hover:text-white dark:text-gray-300"
             onDoubleClick={() => setIsEditing(true)}
           >
             {group.name}
@@ -216,20 +216,20 @@ export function AssetGroupSection({
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600 opacity-0 group-hover/section:opacity-100"
+            className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600 opacity-0 group-hover/section:opacity-100 dark:hover:text-gray-300"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
 
           {/* Dropdown Menu */}
           {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+            <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 dark:border-gray-700 dark:bg-gray-800">
               <button
                 onClick={() => {
                   setShowMenu(false)
                   setIsEditing(true)
                 }}
-                className="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Rename
@@ -239,12 +239,12 @@ export function AssetGroupSection({
                   setShowMenu(false)
                   setShowColorPicker(true)
                 }}
-                className="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 dark:hover:bg-gray-800 dark:text-gray-300"
               >
                 <Palette className="h-3.5 w-3.5" />
                 Change Color
               </button>
-              <hr className="my-1 border-gray-100" />
+              <hr className="my-1 border-gray-100 dark:border-gray-800" />
               <button
                 onClick={() => {
                   setShowMenu(false)
@@ -260,7 +260,7 @@ export function AssetGroupSection({
 
           {/* Color Picker */}
           {showColorPicker && (
-            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-2">
+            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-2 dark:border-gray-700 dark:bg-gray-800">
               <div className="grid grid-cols-3 gap-1">
                 {GROUP_COLORS.map((color) => (
                   <button
@@ -328,7 +328,7 @@ export function AddGroupButton({ onAdd, isLoading }: AddGroupButtonProps) {
 
   if (isAdding) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-200">
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
         <input
           ref={inputRef}
           type="text"
@@ -337,7 +337,7 @@ export function AddGroupButton({ onAdd, isLoading }: AddGroupButtonProps) {
           onKeyDown={handleKeyDown}
           onBlur={handleCancel}
           placeholder="Group name..."
-          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
           disabled={isLoading}
         />
         <button
@@ -349,7 +349,7 @@ export function AddGroupButton({ onAdd, isLoading }: AddGroupButtonProps) {
         </button>
         <button
           onClick={handleCancel}
-          className="p-1 rounded hover:bg-gray-100 text-gray-500"
+          className="p-1 rounded hover:bg-gray-100 text-gray-500 dark:hover:bg-gray-700 dark:text-gray-400"
         >
           <X className="h-4 w-4" />
         </button>
@@ -360,7 +360,7 @@ export function AddGroupButton({ onAdd, isLoading }: AddGroupButtonProps) {
   return (
     <button
       onClick={() => setIsAdding(true)}
-      className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 w-full transition-colors border-t border-gray-200"
+      className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 w-full transition-colors border-t border-gray-200 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
     >
       <Plus className="h-4 w-4" />
       Add Group

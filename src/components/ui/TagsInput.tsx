@@ -78,7 +78,7 @@ export function TagsInput({
           setTimeout(() => inputRef.current?.focus(), 0)
         }}
         className={clsx(
-          "flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md px-2 py-1 transition-colors",
+          "flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md px-2 py-1 transition-colors dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400",
           className
         )}
       >
@@ -96,7 +96,7 @@ export function TagsInput({
           key={tag}
           className={clsx(
             "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-            "bg-gray-100 text-gray-700 border border-gray-200"
+            "bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
           )}
         >
           {tag}
@@ -122,7 +122,7 @@ export function TagsInput({
           placeholder={value.length === 0 ? placeholder : 'Add...'}
           className={clsx(
             "flex-1 min-w-[80px] text-xs bg-transparent border-none outline-none",
-            "placeholder:text-gray-400 text-gray-700",
+            "placeholder:text-gray-400 text-gray-700 dark:text-gray-300",
             compact ? "py-0.5" : "py-1"
           )}
           maxLength={maxTagLength}

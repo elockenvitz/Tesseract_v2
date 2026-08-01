@@ -93,17 +93,17 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4 pt-32 pb-8">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col dark:bg-gray-800">
         {/* Fixed Header */}
-        <div className="p-6 border-b border-gray-200 flex-shrink-0">
+        <div className="p-6 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Edit Automation Rule</h2>
-              <p className="text-sm text-gray-500 mt-1">Update when and how this workflow should be automated</p>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Automation Rule</h2>
+              <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Update when and how this workflow should be automated</p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
             >
               <X className="w-5 h-5" />
             </button>
@@ -116,14 +116,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
         <form id="edit-rule-form" onSubmit={handleSubmit} className="space-y-6">
           {/* Rule Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Rule Name
             </label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
               placeholder="e.g., Weekly Review Reset"
               required
             />
@@ -131,7 +131,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
           {/* Rule Type Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">
               Trigger Type
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -163,16 +163,16 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                     className={`p-4 border-2 rounded-lg transition-all text-left ${
                       formData.type === option.value
                         ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700'
                     }`}
                   >
                     <div className="flex items-start space-x-3">
                       <Icon className={`w-5 h-5 mt-0.5 ${formData.type === option.value ? 'text-blue-600' : 'text-gray-400'}`} />
                       <div>
-                        <div className={`font-medium ${formData.type === option.value ? 'text-blue-900' : 'text-gray-900'}`}>
+                        <div className={`font-medium ${formData.type === option.value ? 'text-blue-900' : 'text-gray-900 dark:text-white'}`}>
                           {option.label}
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">{option.desc}</div>
+                        <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">{option.desc}</div>
                       </div>
                     </div>
                   </button>
@@ -182,14 +182,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
           </div>
 
           {/* Trigger Configuration */}
-          <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-            <h4 className="text-sm font-medium text-gray-900">Trigger Configuration</h4>
+          <div className="bg-gray-50 rounded-lg p-4 space-y-4 dark:bg-gray-900">
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white">Trigger Configuration</h4>
 
             {formData.type === 'time' && (
               <div className="space-y-4">
                 {/* Recurrence Pattern */}
-                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
-                  <h5 className="text-sm font-semibold text-gray-900 mb-3">Recurrence Pattern</h5>
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Recurrence Pattern</h5>
 
                   {/* Pattern Type Selection - Two Column Layout */}
                   <div className="flex space-x-8">
@@ -210,7 +210,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             }
                           })}
                         />
-                        <label htmlFor="pattern-daily" className="font-medium text-gray-900 cursor-pointer">Daily</label>
+                        <label htmlFor="pattern-daily" className="font-medium text-gray-900 cursor-pointer dark:text-white">Daily</label>
                       </div>
 
                       {/* Weekly */}
@@ -228,7 +228,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             }
                           })}
                         />
-                        <label htmlFor="pattern-weekly" className="font-medium text-gray-900 cursor-pointer">Weekly</label>
+                        <label htmlFor="pattern-weekly" className="font-medium text-gray-900 cursor-pointer dark:text-white">Weekly</label>
                       </div>
 
                       {/* Monthly */}
@@ -247,7 +247,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             }
                           })}
                         />
-                        <label htmlFor="pattern-monthly" className="font-medium text-gray-900 cursor-pointer">Monthly</label>
+                        <label htmlFor="pattern-monthly" className="font-medium text-gray-900 cursor-pointer dark:text-white">Monthly</label>
                       </div>
 
                       {/* Quarterly */}
@@ -266,7 +266,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             }
                           })}
                         />
-                        <label htmlFor="pattern-quarterly" className="font-medium text-gray-900 cursor-pointer">Quarterly</label>
+                        <label htmlFor="pattern-quarterly" className="font-medium text-gray-900 cursor-pointer dark:text-white">Quarterly</label>
                       </div>
 
                       {/* Yearly */}
@@ -285,12 +285,12 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             }
                           })}
                         />
-                        <label htmlFor="pattern-yearly" className="font-medium text-gray-900 cursor-pointer">Yearly</label>
+                        <label htmlFor="pattern-yearly" className="font-medium text-gray-900 cursor-pointer dark:text-white">Yearly</label>
                       </div>
                     </div>
 
                     {/* Right Column - Configuration Options */}
-                    <div className="flex-1 border-l border-gray-200 pl-6">
+                    <div className="flex-1 border-l border-gray-200 pl-6 dark:border-gray-700">
                       {/* Daily Options */}
                       {formData.conditionValue.pattern_type === 'daily' && (
                         <div className="flex flex-col space-y-2">
@@ -304,7 +304,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 conditionValue: { ...formData.conditionValue, daily_type: 'every_x_days', interval: 1 }
                               })}
                             />
-                            <label htmlFor="daily-every-x" className="text-sm text-gray-700">Every</label>
+                            <label htmlFor="daily-every-x" className="text-sm text-gray-700 dark:text-gray-300">Every</label>
                             <input
                               type="number"
                               min="1"
@@ -313,10 +313,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, interval: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.daily_type !== 'every_x_days'}
                             />
-                            <label className="text-sm text-gray-700">day(s)</label>
+                            <label className="text-sm text-gray-700 dark:text-gray-300">day(s)</label>
                           </div>
                           <div className="flex items-center space-x-2">
                             <input
@@ -328,7 +328,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 conditionValue: { ...formData.conditionValue, daily_type: 'every_weekday' }
                               })}
                             />
-                            <label htmlFor="daily-weekday" className="text-sm text-gray-700">Every weekday</label>
+                            <label htmlFor="daily-weekday" className="text-sm text-gray-700 dark:text-gray-300">Every weekday</label>
                           </div>
                         </div>
                       )}
@@ -337,7 +337,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                       {formData.conditionValue.pattern_type === 'weekly' && (
                         <div className="flex flex-col space-y-2">
                           <div className="flex items-center space-x-2">
-                            <span className="text-sm text-gray-700">Recur every</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">Recur every</span>
                             <input
                               type="number"
                               min="1"
@@ -346,9 +346,9 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, interval: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                             />
-                            <span className="text-sm text-gray-700">week(s) on:</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">week(s) on:</span>
                           </div>
                           <div className="grid grid-cols-4 gap-2">
                             {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
@@ -387,7 +387,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 conditionValue: { ...formData.conditionValue, monthly_type: 'day_of_month', day_number: 1 }
                               })}
                             />
-                            <label htmlFor="monthly-day" className="text-sm text-gray-700">Day</label>
+                            <label htmlFor="monthly-day" className="text-sm text-gray-700 dark:text-gray-300">Day</label>
                             <input
                               type="number"
                               min="1"
@@ -397,10 +397,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, day_number: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.monthly_type !== 'day_of_month'}
                             />
-                            <span className="text-sm text-gray-700">of every</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">of every</span>
                             <input
                               type="number"
                               min="1"
@@ -409,10 +409,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, interval: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.monthly_type !== 'day_of_month'}
                             />
-                            <span className="text-sm text-gray-700">month(s)</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">month(s)</span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <input
@@ -429,14 +429,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 }
                               })}
                             />
-                            <label htmlFor="monthly-position" className="text-sm text-gray-700">The</label>
+                            <label htmlFor="monthly-position" className="text-sm text-gray-700 dark:text-gray-300">The</label>
                             <select
                               value={formData.conditionValue.position || 'first'}
                               onChange={(e) => setFormData({
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, position: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.monthly_type !== 'position_of_month'}
                             >
                               <option value="first">First</option>
@@ -451,7 +451,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, day_name: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.monthly_type !== 'position_of_month'}
                             >
                               <option value="day">Day</option>
@@ -465,7 +465,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                               <option value="saturday">Saturday</option>
                               <option value="sunday">Sunday</option>
                             </select>
-                            <span className="text-sm text-gray-700">of every</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">of every</span>
                             <input
                               type="number"
                               min="1"
@@ -474,10 +474,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, interval: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.monthly_type !== 'position_of_month'}
                             />
-                            <span className="text-sm text-gray-700">month(s)</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">month(s)</span>
                           </div>
                         </div>
                       )}
@@ -495,7 +495,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 conditionValue: { ...formData.conditionValue, quarterly_type: 'day_of_quarter', day_number: 1 }
                               })}
                             />
-                            <label htmlFor="quarterly-day" className="text-sm text-gray-700">Day</label>
+                            <label htmlFor="quarterly-day" className="text-sm text-gray-700 dark:text-gray-300">Day</label>
                             <input
                               type="number"
                               min="1"
@@ -505,10 +505,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, day_number: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.quarterly_type !== 'day_of_quarter'}
                             />
-                            <span className="text-sm text-gray-700">of every</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">of every</span>
                             <input
                               type="number"
                               min="1"
@@ -517,10 +517,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, interval: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.quarterly_type !== 'day_of_quarter'}
                             />
-                            <span className="text-sm text-gray-700">quarter(s)</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">quarter(s)</span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <input
@@ -537,14 +537,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 }
                               })}
                             />
-                            <label htmlFor="quarterly-position" className="text-sm text-gray-700">The</label>
+                            <label htmlFor="quarterly-position" className="text-sm text-gray-700 dark:text-gray-300">The</label>
                             <select
                               value={formData.conditionValue.position || 'first'}
                               onChange={(e) => setFormData({
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, position: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.quarterly_type !== 'position_of_quarter'}
                             >
                               <option value="first">First</option>
@@ -559,7 +559,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, day_name: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.quarterly_type !== 'position_of_quarter'}
                             >
                               <option value="day">Day</option>
@@ -573,7 +573,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                               <option value="saturday">Saturday</option>
                               <option value="sunday">Sunday</option>
                             </select>
-                            <span className="text-sm text-gray-700">of every</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">of every</span>
                             <input
                               type="number"
                               min="1"
@@ -582,10 +582,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, interval: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.quarterly_type !== 'position_of_quarter'}
                             />
-                            <span className="text-sm text-gray-700">quarter(s)</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">quarter(s)</span>
                           </div>
                         </div>
                       )}
@@ -603,14 +603,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 conditionValue: { ...formData.conditionValue, yearly_type: 'specific_date' }
                               })}
                             />
-                            <label htmlFor="yearly-date" className="text-sm text-gray-700">On</label>
+                            <label htmlFor="yearly-date" className="text-sm text-gray-700 dark:text-gray-300">On</label>
                             <select
                               value={formData.conditionValue.month || 'january'}
                               onChange={(e) => setFormData({
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, month: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.yearly_type !== 'specific_date'}
                             >
                               {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => (
@@ -626,7 +626,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, day_number: parseInt(e.target.value) || 1 }
                               })}
-                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.yearly_type !== 'specific_date'}
                             />
                           </div>
@@ -646,14 +646,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 }
                               })}
                             />
-                            <label htmlFor="yearly-position" className="text-sm text-gray-700">The</label>
+                            <label htmlFor="yearly-position" className="text-sm text-gray-700 dark:text-gray-300">The</label>
                             <select
                               value={formData.conditionValue.position || 'first'}
                               onChange={(e) => setFormData({
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, position: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.yearly_type !== 'position_of_year'}
                             >
                               <option value="first">First</option>
@@ -668,7 +668,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, day_name: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.yearly_type !== 'position_of_year'}
                             >
                               <option value="day">Day</option>
@@ -682,14 +682,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                               <option value="saturday">Saturday</option>
                               <option value="sunday">Sunday</option>
                             </select>
-                            <span className="text-sm text-gray-700">of</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">of</span>
                             <select
                               value={formData.conditionValue.month || 'january'}
                               onChange={(e) => setFormData({
                                 ...formData,
                                 conditionValue: { ...formData.conditionValue, month: e.target.value }
                               })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                               disabled={formData.conditionValue.yearly_type !== 'position_of_year'}
                             >
                               {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => (
@@ -704,10 +704,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                 </div>
 
                 {/* Time of Day */}
-                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
-                  <h5 className="text-sm font-semibold text-gray-900 mb-3">Time of Day</h5>
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Time of Day</h5>
                   <div className="flex items-center space-x-3">
-                    <label className="text-sm text-gray-700">Trigger at:</label>
+                    <label className="text-sm text-gray-700 dark:text-gray-300">Trigger at:</label>
                     <input
                       type="time"
                       value={formData.conditionValue.trigger_time || '09:00'}
@@ -715,20 +715,20 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, trigger_time: e.target.value }
                       })}
-                      className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     />
-                    <span className="text-xs text-gray-500">(Your local time)</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">(Your local time)</span>
                   </div>
                 </div>
 
                 {/* Range of Recurrence */}
-                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
-                  <h5 className="text-sm font-semibold text-gray-900 mb-3">Range of Recurrence</h5>
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Range of Recurrence</h5>
 
                   <div className="space-y-3">
                     {/* Start Date */}
                     <div className="flex items-center space-x-2">
-                      <label className="text-sm font-medium text-gray-700 w-20">Start:</label>
+                      <label className="text-sm font-medium text-gray-700 w-20 dark:text-gray-300">Start:</label>
                       <input
                         type="date"
                         value={formData.conditionValue.start_date || ''}
@@ -736,7 +736,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                           ...formData,
                           conditionValue: { ...formData.conditionValue, start_date: e.target.value }
                         })}
-                        className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       />
                     </div>
 
@@ -752,7 +752,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             conditionValue: { ...formData.conditionValue, end_type: 'no_end' }
                           })}
                         />
-                        <label htmlFor="end-no-end" className="text-sm text-gray-700">No end date</label>
+                        <label htmlFor="end-no-end" className="text-sm text-gray-700 dark:text-gray-300">No end date</label>
                       </div>
 
                       <div className="flex items-center space-x-2">
@@ -765,7 +765,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             conditionValue: { ...formData.conditionValue, end_type: 'after_occurrences', occurrences: 10 }
                           })}
                         />
-                        <label htmlFor="end-after" className="text-sm text-gray-700">End after</label>
+                        <label htmlFor="end-after" className="text-sm text-gray-700 dark:text-gray-300">End after</label>
                         <input
                           type="number"
                           min="1"
@@ -774,10 +774,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             ...formData,
                             conditionValue: { ...formData.conditionValue, occurrences: parseInt(e.target.value) || 1 }
                           })}
-                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm dark:border-gray-600"
                           disabled={formData.conditionValue.end_type !== 'after_occurrences'}
                         />
-                        <span className="text-sm text-gray-700">occurrences</span>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">occurrences</span>
                       </div>
 
                       <div className="flex items-center space-x-2">
@@ -790,7 +790,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             conditionValue: { ...formData.conditionValue, end_type: 'end_by_date' }
                           })}
                         />
-                        <label htmlFor="end-by-date" className="text-sm text-gray-700">End by</label>
+                        <label htmlFor="end-by-date" className="text-sm text-gray-700 dark:text-gray-300">End by</label>
                         <input
                           type="date"
                           value={formData.conditionValue.end_date || ''}
@@ -798,7 +798,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             ...formData,
                             conditionValue: { ...formData.conditionValue, end_date: e.target.value }
                           })}
-                          className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                           disabled={formData.conditionValue.end_type !== 'end_by_date'}
                         />
                       </div>
@@ -811,11 +811,11 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
             {formData.type === 'event' && (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Event Type</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Event Type</label>
                   <select
                     value={formData.conditionType}
                     onChange={(e) => setFormData({ ...formData, conditionType: e.target.value, conditionValue: {} })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                   >
                     <optgroup label="Corporate Events">
                       <option value="earnings_date">Earnings Date</option>
@@ -842,28 +842,28 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, days_offset: parseInt(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="3"
                     />
-                    <span className="text-sm text-gray-600">days</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <select
                       value={formData.conditionValue.timing || 'before'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, timing: e.target.value }
                       })}
-                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="before">before</option>
                       <option value="after">after</option>
                     </select>
-                    <span className="text-sm text-gray-600">earnings</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">earnings</span>
                   </div>
                 )}
 
                 {formData.conditionType === 'price_change' && (
                   <div className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-600">When price changes by</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">When price changes by</span>
                     <input
                       type="number"
                       min="0"
@@ -873,17 +873,17 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, percentage: parseFloat(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="5"
                     />
-                    <span className="text-sm text-gray-600">%</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">%</span>
                     <select
                       value={formData.conditionValue.direction || 'either'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, direction: e.target.value }
                       })}
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     >
                       <option value="up">up</option>
                       <option value="down">down</option>
@@ -894,7 +894,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
                 {formData.conditionType === 'volume_spike' && (
                   <div className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-600">When volume is</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">When volume is</span>
                     <input
                       type="number"
                       min="1"
@@ -904,10 +904,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, multiplier: parseFloat(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="2"
                     />
-                    <span className="text-sm text-gray-600">× average volume</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">× average volume</span>
                   </div>
                 )}
 
@@ -921,22 +921,22 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, days_offset: parseInt(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="3"
                     />
-                    <span className="text-sm text-gray-600">days</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <select
                       value={formData.conditionValue.timing || 'before'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, timing: e.target.value }
                       })}
-                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="before">before</option>
                       <option value="after">after</option>
                     </select>
-                    <span className="text-sm text-gray-600">dividend date</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">dividend date</span>
                   </div>
                 )}
 
@@ -950,22 +950,22 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, days_offset: parseInt(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="3"
                     />
-                    <span className="text-sm text-gray-600">days</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <select
                       value={formData.conditionValue.timing || 'before'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, timing: e.target.value }
                       })}
-                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="before">before</option>
                       <option value="after">after</option>
                     </select>
-                    <span className="text-sm text-gray-600">conference</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">conference</span>
                   </div>
                 )}
 
@@ -979,22 +979,22 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, days_offset: parseInt(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="3"
                     />
-                    <span className="text-sm text-gray-600">days</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <select
                       value={formData.conditionValue.timing || 'before'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, timing: e.target.value }
                       })}
-                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="before">before</option>
                       <option value="after">after</option>
                     </select>
-                    <span className="text-sm text-gray-600">investor relations call</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">investor relations call</span>
                   </div>
                 )}
 
@@ -1008,22 +1008,22 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, days_offset: parseInt(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="3"
                     />
-                    <span className="text-sm text-gray-600">days</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <select
                       value={formData.conditionValue.timing || 'before'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, timing: e.target.value }
                       })}
-                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="before">before</option>
                       <option value="after">after</option>
                     </select>
-                    <span className="text-sm text-gray-600">sell-side analyst call</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">sell-side analyst call</span>
                   </div>
                 )}
 
@@ -1037,22 +1037,22 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, days_offset: parseInt(e.target.value) }
                       })}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       placeholder="3"
                     />
-                    <span className="text-sm text-gray-600">days</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <select
                       value={formData.conditionValue.timing || 'before'}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, timing: e.target.value }
                       })}
-                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="before">before</option>
                       <option value="after">after</option>
                     </select>
-                    <span className="text-sm text-gray-600">roadshow</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">roadshow</span>
                   </div>
                 )}
               </div>
@@ -1061,11 +1061,11 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
             {formData.type === 'activity' && (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Activity Type</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Activity Type</label>
                   <select
                     value={formData.conditionType}
                     onChange={(e) => setFormData({ ...formData, conditionType: e.target.value, conditionValue: {} })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                   >
                     <option value="stage_completion">Stage Completion</option>
                     <option value="note_added">Note Added</option>
@@ -1076,14 +1076,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
                 {formData.conditionType === 'stage_completion' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Stage</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Stage</label>
                     <select
                       value={formData.conditionValue.stage_key || ''}
                       onChange={(e) => setFormData({
                         ...formData,
                         conditionValue: { ...formData.conditionValue, stage_key: e.target.value }
                       })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="">Any stage</option>
                       {workflowStages.map((stage) => (
@@ -1099,7 +1099,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
             {formData.type === 'perpetual' && (
               <div>
-                <p className="text-sm text-gray-600">This workflow will always be available to work on and will not trigger automatically.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">This workflow will always be available to work on and will not trigger automatically.</p>
               </div>
             )}
 
@@ -1107,8 +1107,8 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
             {formData.conditionType === 'time_after_creation' && (
               <div className="space-y-4">
                 {/* Primary Duration */}
-                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
-                  <h5 className="text-sm font-semibold text-gray-900 mb-3">Duration After Creation</h5>
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">Duration After Creation</h5>
                   <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                     <input
                       type="number"
@@ -1126,7 +1126,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                           })
                         }
                       }}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     />
                     <select
                       value={formData.conditionValue.unit || 'days'}
@@ -1134,7 +1134,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, unit: e.target.value }
                       })}
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                     >
                       <option value="minutes">minutes</option>
                       <option value="hours">hours</option>
@@ -1163,7 +1163,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                       </button>
                     ) : (
                       <>
-                        <span className="text-sm text-gray-500">and</span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">and</span>
                         <input
                           type="number"
                           min="0"
@@ -1180,7 +1180,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                               })
                             }
                           }}
-                          className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                         />
                         <select
                           value={formData.conditionValue.secondaryUnit || 'hours'}
@@ -1188,7 +1188,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                             ...formData,
                             conditionValue: { ...formData.conditionValue, secondaryUnit: e.target.value }
                           })}
-                          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                         >
                           <option value="minutes">minutes</option>
                           <option value="hours">hours</option>
@@ -1211,7 +1211,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                   </div>
 
                   {/* Duration summary */}
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
                     {(() => {
                       const cv = formData.conditionValue
                       const amount = cv.amount || 0
@@ -1247,7 +1247,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                 </div>
 
                 {/* Specific Time of Day */}
-                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                <div className="bg-white border-2 border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1256,14 +1256,14 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         conditionValue: { ...formData.conditionValue, atSpecificTime: e.target.checked }
                       })}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
                     />
-                    <span className="text-sm font-medium text-gray-700">Trigger at a specific time of day</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Trigger at a specific time of day</span>
                   </label>
 
                   {formData.conditionValue.atSpecificTime && (
                     <div className="mt-3 flex items-center space-x-2">
-                      <span className="text-sm text-gray-600">At</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">At</span>
                       <input
                         type="time"
                         value={formData.conditionValue.triggerTime || '09:00'}
@@ -1271,9 +1271,9 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                           ...formData,
                           conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
                         })}
-                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                       />
-                      <span className="text-xs text-gray-500">(your local time)</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">(your local time)</span>
                     </div>
                   )}
                 </div>
@@ -1283,8 +1283,8 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
             {/* Branch Ending: Specific Date */}
             {formData.conditionType === 'specific_date' && (
-              <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
-                <h5 className="text-sm font-semibold text-gray-900 mb-3">End Date & Time</h5>
+              <div className="bg-white border-2 border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+                <h5 className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">End Date & Time</h5>
                 <div className="flex items-center space-x-3 flex-wrap gap-y-2">
                   <input
                     type="date"
@@ -1293,9 +1293,9 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                       ...formData,
                       conditionValue: { ...formData.conditionValue, date: e.target.value }
                     })}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                   />
-                  <span className="text-sm text-gray-500">at</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">at</span>
                   <input
                     type="time"
                     value={formData.conditionValue.triggerTime || '09:00'}
@@ -1303,9 +1303,9 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                       ...formData,
                       conditionValue: { ...formData.conditionValue, triggerTime: e.target.value }
                     })}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600"
                   />
-                  <span className="text-xs text-gray-500">(your local time)</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">(your local time)</span>
                 </div>
               </div>
             )}
@@ -1313,11 +1313,11 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
           {/* Action Configuration - Only shown for non-perpetual rules */}
           {formData.type !== 'perpetual' && (
-          <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-            <h4 className="text-sm font-medium text-gray-900">Action Configuration</h4>
+          <div className="bg-gray-50 rounded-lg p-4 space-y-4 dark:bg-gray-900">
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white">Action Configuration</h4>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">When this rule triggers, what should happen?</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">When this rule triggers, what should happen?</label>
               <select
                 value={formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy' ? 'branch_create' : formData.actionType}
                 onChange={(e) => {
@@ -1328,7 +1328,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                     setFormData({ ...formData, actionType: val, actionValue: {} })
                   }
                 }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
               >
                 <optgroup label="Workflow Progress">
                   <option value="move_stage">Move to a specific stage</option>
@@ -1346,35 +1346,35 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
             {(formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy') && (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Run mode</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Run mode</label>
                 <div className="grid grid-cols-2 gap-3">
                   <div
                     className={`border-2 rounded-lg p-3 cursor-pointer transition-all ${
                       formData.actionType === 'branch_nocopy'
                         ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-gray-200 hover:border-gray-300'
+                        : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                     }`}
                     onClick={() => setFormData({ ...formData, actionType: 'branch_nocopy' })}
                   >
                     <div className="flex items-center space-x-2 mb-1">
                       <input type="radio" checked={formData.actionType === 'branch_nocopy'} readOnly className="text-indigo-600" />
-                      <span className="text-sm font-medium text-gray-900">Fresh start</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">Fresh start</span>
                     </div>
-                    <p className="text-xs text-gray-500 ml-6">Clean run, no carried-over progress</p>
+                    <p className="text-xs text-gray-500 ml-6 dark:text-gray-400">Clean run, no carried-over progress</p>
                   </div>
                   <div
                     className={`border-2 rounded-lg p-3 cursor-pointer transition-all ${
                       formData.actionType === 'branch_copy'
                         ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
+                        : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
                     }`}
                     onClick={() => setFormData({ ...formData, actionType: 'branch_copy' })}
                   >
                     <div className="flex items-center space-x-2 mb-1">
                       <input type="radio" checked={formData.actionType === 'branch_copy'} readOnly className="text-blue-600" />
-                      <span className="text-sm font-medium text-gray-900">Carry forward</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">Carry forward</span>
                     </div>
-                    <p className="text-xs text-gray-500 ml-6">Reset stages but keep notes, comments, and custom items from the prior run</p>
+                    <p className="text-xs text-gray-500 ml-6 dark:text-gray-400">Reset stages but keep notes, comments, and custom items from the prior run</p>
                   </div>
                 </div>
               </div>
@@ -1383,17 +1383,17 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
             {(formData.actionType === 'branch_copy' || formData.actionType === 'branch_nocopy') && (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                     How should the new workflow be named?
                   </label>
-                  <p className="text-xs text-gray-500 mb-3">
+                  <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                     Add text that will be appended to "{workflowName}". Use dynamic codes that automatically update with the current date.
                   </p>
                 </div>
 
                 {/* Quick Insert Templates */}
                 <div className="space-y-2">
-                  <span className="text-xs font-medium text-gray-700">Common templates:</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Common templates:</span>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -1401,10 +1401,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         actionValue: { ...formData.actionValue, branch_suffix: '{MONTH} {YEAR}' }
                       })}
-                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left"
+                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left dark:border-gray-600 dark:bg-gray-800"
                     >
-                      <div className="font-medium text-gray-900">{new Date().toLocaleString('en-US', { month: 'short' })} {getCurrentYear()}</div>
-                      <div className="text-gray-500 mt-0.5">Monthly</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{new Date().toLocaleString('en-US', { month: 'short' })} {getCurrentYear()}</div>
+                      <div className="text-gray-500 mt-0.5 dark:text-gray-400">Monthly</div>
                     </button>
                     <button
                       type="button"
@@ -1412,10 +1412,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         actionValue: { ...formData.actionValue, branch_suffix: '{QUARTER} {YEAR}' }
                       })}
-                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left"
+                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left dark:border-gray-600 dark:bg-gray-800"
                     >
-                      <div className="font-medium text-gray-900">Q{getCurrentQuarter()} {getCurrentYear()}</div>
-                      <div className="text-gray-500 mt-0.5">Quarterly</div>
+                      <div className="font-medium text-gray-900 dark:text-white">Q{getCurrentQuarter()} {getCurrentYear()}</div>
+                      <div className="text-gray-500 mt-0.5 dark:text-gray-400">Quarterly</div>
                     </button>
                     <button
                       type="button"
@@ -1423,10 +1423,10 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         actionValue: { ...formData.actionValue, branch_suffix: '{YEAR}' }
                       })}
-                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left"
+                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left dark:border-gray-600 dark:bg-gray-800"
                     >
-                      <div className="font-medium text-gray-900">{getCurrentYear()}</div>
-                      <div className="text-gray-500 mt-0.5">Annual</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{getCurrentYear()}</div>
+                      <div className="text-gray-500 mt-0.5 dark:text-gray-400">Annual</div>
                     </button>
                     <button
                       type="button"
@@ -1434,17 +1434,17 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                         ...formData,
                         actionValue: { ...formData.actionValue, branch_suffix: '{DATE}' }
                       })}
-                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left"
+                      className="px-3 py-2 text-xs bg-white border border-gray-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg transition-colors text-left dark:border-gray-600 dark:bg-gray-800"
                     >
-                      <div className="font-medium text-gray-900">{processDynamicSuffix('{DATE}')}</div>
-                      <div className="text-gray-500 mt-0.5">Date</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{processDynamicSuffix('{DATE}')}</div>
+                      <div className="text-gray-500 mt-0.5 dark:text-gray-400">Date</div>
                     </button>
                   </div>
                 </div>
 
                 {/* Input Field */}
                 <div className="space-y-2">
-                  <label className="block text-xs font-medium text-gray-600">Custom suffix:</label>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Custom suffix:</label>
                   <input
                     type="text"
                     value={formData.actionValue.branch_suffix || ''}
@@ -1452,7 +1452,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                       ...formData,
                       actionValue: { ...formData.actionValue, branch_suffix: e.target.value }
                     })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                     placeholder="Type or use a template above"
                   />
                 </div>
@@ -1476,18 +1476,18 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
                 {/* Available Codes */}
                 <details className="text-xs">
-                  <summary className="cursor-pointer text-gray-600 hover:text-gray-900 font-medium">
+                  <summary className="cursor-pointer text-gray-600 hover:text-gray-900 font-medium dark:hover:text-white dark:text-gray-400">
                     Available dynamic codes
                   </summary>
-                  <div className="mt-2 ml-4 space-y-1 text-gray-600">
+                  <div className="mt-2 ml-4 space-y-1 text-gray-600 dark:text-gray-400">
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{QUARTER}'}</code> = Q{getCurrentQuarter()}</span>
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{Q}'}</code> = {getCurrentQuarter()}</span>
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{YEAR}'}</code> = {getCurrentYear()}</span>
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{YY}'}</code> = {getCurrentYear().toString().slice(-2)}</span>
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{MONTH}'}</code> = {new Date().toLocaleString('en-US', { month: 'short' })}</span>
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{DAY}'}</code> = {new Date().getDate()}</span>
-                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600">{'{DATE}'}</code> = {processDynamicSuffix('{DATE}')}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{QUARTER}'}</code> = Q{getCurrentQuarter()}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{Q}'}</code> = {getCurrentQuarter()}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{YEAR}'}</code> = {getCurrentYear()}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{YY}'}</code> = {getCurrentYear().toString().slice(-2)}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{MONTH}'}</code> = {new Date().toLocaleString('en-US', { month: 'short' })}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{DAY}'}</code> = {new Date().getDate()}</span>
+                      <span><code className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 dark:bg-gray-800">{'{DATE}'}</code> = {processDynamicSuffix('{DATE}')}</span>
                     </div>
                   </div>
                 </details>
@@ -1496,7 +1496,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
 
             {(formData.actionType === 'move_stage' || formData.actionType === 'reset_workflow') && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                   {formData.actionType === 'move_stage' ? 'Which stage to move to?' : 'Which stage to restart from?'}
                 </label>
                 <select
@@ -1505,7 +1505,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                     ...formData,
                     actionValue: { ...formData.actionValue, target_stage: e.target.value }
                   })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800"
                 >
                   <option value="">First stage</option>
                   {workflowStages.map((stage) => (
@@ -1514,7 +1514,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                   {formData.actionType === 'move_stage'
                     ? 'The workflow will move to this stage when the rule triggers'
                     : 'The workflow will restart from this stage (all progress will be reset)'}
@@ -1543,9 +1543,9 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
               id="is_active"
               checked={formData.isActive}
               onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:border-gray-600"
             />
-            <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900 font-medium">
+            <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900 font-medium dark:text-white">
               Activate this rule
             </label>
           </div>
@@ -1553,7 +1553,7 @@ export function EditRuleModal({ rule, workflowName, workflowStages, cadenceTimef
         </div>
 
         {/* Fixed Footer */}
-        <div className="p-4 border-t border-gray-200 flex justify-end space-x-3 flex-shrink-0 bg-gray-50">
+        <div className="p-4 border-t border-gray-200 flex justify-end space-x-3 flex-shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>

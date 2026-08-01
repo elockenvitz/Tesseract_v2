@@ -1558,7 +1558,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
   // If project belongs to a different org, show switch banner
   if (projectTargetOrg) {
     return (
-      <div className="h-full flex items-start justify-center p-8 bg-gray-50">
+      <div className="h-full flex items-start justify-center p-8 bg-gray-50 dark:bg-gray-900">
         <div className="max-w-lg w-full">
           <OrgSwitchBanner targetOrg={projectTargetOrg} entityLabel="This project" />
         </div>
@@ -1680,7 +1680,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         'flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium transition-colors hover:ring-2 hover:ring-offset-1',
                         isBlocked
                           ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:ring-red-300'
-                          : localStatus ? getStatusColor(localStatus) + ' hover:ring-primary-300' : 'bg-gray-100 text-gray-500'
+                          : localStatus ? getStatusColor(localStatus) + ' hover:ring-primary-300' : 'bg-gray-100 text-gray-500 dark:text-gray-400 dark:bg-gray-800'
                       )}
                     >
                       {isBlocked ? (
@@ -2155,7 +2155,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                             </div>
                           ))}
                           {blockedBy.length > 2 && (
-                            <span className="text-xs text-gray-500">+{blockedBy.length - 2} more</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">+{blockedBy.length - 2} more</span>
                           )}
                         </div>
                       ) : (
@@ -2179,7 +2179,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                             </div>
                           ))}
                           {blocking.length > 2 && (
-                            <span className="text-xs text-gray-500">+{blocking.length - 2} more</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">+{blocking.length - 2} more</span>
                           )}
                         </div>
                       ) : (
@@ -2651,7 +2651,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 <div className="mb-4">
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     Associated Groups
-                    <span className="ml-2 text-xs font-normal text-gray-500">
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
                       ({projectOrgGroups.length})
                     </span>
                   </h4>
@@ -2726,7 +2726,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Current Team
-                    <span className="ml-2 text-xs font-normal text-gray-500">
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
                       ({(teamMembers?.filter((m: any) => m.assigned_to !== projectData.created_by).length || 0) + (projectData.creator ? 1 : 0)} member{((teamMembers?.filter((m: any) => m.assigned_to !== projectData.created_by).length || 0) + (projectData.creator ? 1 : 0)) !== 1 ? 's' : ''})
                     </span>
                   </h4>
@@ -2971,14 +2971,14 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                   {reprioritizeType === 'none' ? (
                     <button
                       onClick={() => setReprioritizeType('project')}
-                      className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors"
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors dark:hover:bg-gray-700 dark:text-gray-400"
                     >
                       <ArrowUpDown className="w-3.5 h-3.5" />
                       Suggest Reprioritization
                     </button>
                   ) : (
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs text-gray-500">Reprioritize:</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Reprioritize:</span>
                       <button
                         onClick={() => {
                           setReprioritizeType('project')
@@ -2988,7 +2988,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                           'px-2 py-0.5 text-xs rounded-full transition-colors',
                           reprioritizeType === 'project'
                             ? 'bg-amber-500 text-white'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                         )}
                       >
                         Project
@@ -3004,7 +3004,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                             'px-2 py-0.5 text-xs rounded-full transition-colors max-w-[100px] truncate',
                             reprioritizeType === 'deliverable' && reprioritizeTarget === d.id
                               ? 'bg-amber-500 text-white'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
                           )}
                           title={d.title}
                         >
@@ -3016,7 +3016,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                           setReprioritizeType('none')
                           setReprioritizeTarget(null)
                         }}
-                        className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                        className="p-0.5 text-gray-400 hover:text-gray-600 rounded dark:hover:text-gray-300"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -3041,7 +3041,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                         'px-2 py-1 text-xs rounded transition-colors',
                         commentFilter === filter.value
                           ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white font-medium'
-                          : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                          : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-400'
                       )}
                     >
                       {filter.label}
@@ -3050,7 +3050,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 </div>
                 <button
                   onClick={() => setCommentSort(commentSort === 'newest' ? 'oldest' : 'newest')}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400"
                 >
                   {commentSort === 'newest' ? 'Newest first' : 'Oldest first'}
                 </button>
@@ -3063,7 +3063,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 </div>
               )}
               {!commentsError && commentTree.length === 0 && (
-                <div className="text-center py-6 text-gray-500 text-sm">
+                <div className="text-center py-6 text-gray-500 text-sm dark:text-gray-400">
                   {commentFilter === 'all' ? 'No comments yet' : 'No matching comments'}
                 </div>
               )}
@@ -3117,7 +3117,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                 }
                                 setCollapsedComments(newCollapsed)
                               }}
-                              className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                              className="p-0.5 rounded hover:bg-gray-100 transition-colors dark:hover:bg-gray-700"
                             >
                               <ChevronRight className={clsx(
                                 'w-4 h-4 text-gray-400 transition-transform',
@@ -3204,7 +3204,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                       setReplyingTo(replyingTo === comment.id ? null : comment.id)
                                       setReplyContent('')
                                     }}
-                                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                                   >
                                     <Reply className="w-3.5 h-3.5" />
                                     Reply
@@ -3217,7 +3217,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                         setEditingCommentId(comment.id)
                                         setEditCommentContent(comment.content)
                                       }}
-                                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
                                     >
                                       Edit
                                     </button>
@@ -3300,7 +3300,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                                           setReplyingTo(null)
                                           setReplyContent('')
                                         }}
-                                        className="text-xs text-gray-400 hover:text-gray-600"
+                                        className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                       >
                                         Cancel
                                       </button>

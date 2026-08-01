@@ -87,13 +87,13 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
       case 'embed':
         return renderEmbedCapture()
       default:
-        return <div className="text-gray-500 italic">Unknown capture type</div>
+        return <div className="text-gray-500 italic dark:text-gray-400">Unknown capture type</div>
     }
   }
 
   const renderEntityCapture = () => {
     if (!entityConfig || !entityType) {
-      return <div className="text-gray-500 italic">Invalid entity type</div>
+      return <div className="text-gray-500 italic dark:text-gray-400">Invalid entity type</div>
     }
 
     return (
@@ -127,13 +127,13 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
     return (
       <div className="flex flex-col">
         {/* Header */}
-        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-t-lg border-b border-gray-100">
+        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-t-lg border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
           <div className="p-1.5 rounded-md bg-violet-50 text-violet-600">
             <Camera className="h-4 w-4" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-900 truncate">
+              <span className="font-medium text-gray-900 truncate dark:text-white">
                 {displayTitle || 'Screenshot'}
               </span>
               <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-violet-100 text-violet-700">
@@ -155,7 +155,7 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
           <div className="flex items-center gap-1">
             <button
               onClick={handleToggleExpand}
-              className="p-1.5 rounded-md hover:bg-gray-200 text-gray-500 transition-colors"
+              className="p-1.5 rounded-md hover:bg-gray-200 text-gray-500 transition-colors dark:text-gray-400"
             >
               {localExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </button>
@@ -170,20 +170,20 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
 
         {/* Expanded content */}
         {localExpanded && imageUrl && (
-          <div className="p-4 bg-white rounded-b-lg">
+          <div className="p-4 bg-white rounded-b-lg dark:bg-gray-800">
             <img
               src={imageUrl}
               alt={displayTitle || 'Screenshot'}
-              className="max-w-full rounded-lg border border-gray-200"
+              className="max-w-full rounded-lg border border-gray-200 dark:border-gray-700"
               style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
             />
             {screenshotNotes && (
-              <p className="mt-3 text-sm text-gray-600">{screenshotNotes}</p>
+              <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{screenshotNotes}</p>
             )}
             {screenshotTags?.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {screenshotTags.map((tag: string, i: number) => (
-                  <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
+                  <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded dark:text-gray-400 dark:bg-gray-800">
                     {tag}
                   </span>
                 ))}
@@ -203,11 +203,11 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
           href={externalUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all overflow-hidden"
+          className="flex bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all overflow-hidden dark:border-gray-700 dark:bg-gray-800"
         >
           {/* Image */}
           {externalImageUrl && (
-            <div className="w-32 h-24 flex-shrink-0 bg-gray-100">
+            <div className="w-32 h-24 flex-shrink-0 bg-gray-100 dark:bg-gray-800">
               <img
                 src={externalImageUrl}
                 alt=""
@@ -223,11 +223,11 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
                 <img src={externalFaviconUrl} alt="" className="w-4 h-4 mt-0.5" />
               )}
               <div className="flex-1 min-w-0">
-                <h4 className="font-medium text-gray-900 truncate">
+                <h4 className="font-medium text-gray-900 truncate dark:text-white">
                   {externalTitle || displayTitle || externalUrl}
                 </h4>
                 {externalDescription && (
-                  <p className="text-sm text-gray-500 line-clamp-2 mt-0.5">
+                  <p className="text-sm text-gray-500 line-clamp-2 mt-0.5 dark:text-gray-400">
                     {externalDescription}
                   </p>
                 )}
@@ -259,7 +259,7 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
     <NodeViewWrapper
       className={clsx(
         'capture-wrapper my-2 rounded-lg border transition-all',
-        selected ? 'border-primary-300 ring-2 ring-primary-100' : 'border-gray-200',
+        selected ? 'border-primary-300 ring-2 ring-primary-100' : 'border-gray-200 dark:border-gray-700',
         'hover:border-gray-300'
       )}
       data-drag-handle

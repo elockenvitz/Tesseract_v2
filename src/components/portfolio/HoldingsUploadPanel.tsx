@@ -104,11 +104,11 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-800">
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
           Upload Holdings — {portfolioName}
         </h3>
         {step !== 'upload' && (
-          <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">
             Start Over
           </button>
         )}
@@ -120,10 +120,10 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all"
+          className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all dark:border-gray-600"
         >
           <Upload className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-          <p className="text-sm text-gray-600 font-medium">Drop a CSV file here or click to browse</p>
+          <p className="text-sm text-gray-600 font-medium dark:text-gray-400">Drop a CSV file here or click to browse</p>
           <p className="text-xs text-gray-400 mt-1">Supported: .csv files with holdings data</p>
           <input
             ref={fileInputRef}
@@ -141,8 +141,8 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
       {/* Step 2: Column Mapping */}
       {step === 'mapping' && (
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
               <span className="font-medium">{filename}</span>
               <span className="text-gray-400">— {headers.length} columns detected</span>
@@ -151,14 +151,14 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
             <div className="space-y-2">
               {STANDARD_FIELDS.map((field) => (
                 <div key={field.key} className="flex items-center gap-3">
-                  <label className="w-32 text-xs font-medium text-gray-600 flex items-center gap-1">
+                  <label className="w-32 text-xs font-medium text-gray-600 flex items-center gap-1 dark:text-gray-400">
                     {field.label}
                     {field.required && <span className="text-red-400">*</span>}
                   </label>
                   <select
                     value={mappings[field.key] || ''}
                     onChange={(e) => setMappings(prev => ({ ...prev, [field.key]: e.target.value }))}
-                    className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-indigo-500"
+                    className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-indigo-500 dark:border-gray-600"
                   >
                     <option value="">— Not mapped —</option>
                     {headers.map((h) => (
@@ -175,7 +175,7 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
 
           {/* Snapshot date */}
           <div className="flex items-center gap-3">
-            <label className="text-xs font-medium text-gray-600 flex items-center gap-1">
+            <label className="text-xs font-medium text-gray-600 flex items-center gap-1 dark:text-gray-400">
               <Calendar className="w-3.5 h-3.5" />
               Snapshot Date
             </label>
@@ -183,7 +183,7 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
               type="date"
               value={snapshotDate}
               onChange={(e) => setSnapshotDate(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-indigo-500"
+              className="px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-indigo-500 dark:border-gray-600"
             />
           </div>
 
@@ -195,7 +195,7 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
             >
               Preview Data
             </button>
-            <button onClick={reset} className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+            <button onClick={reset} className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400">
               Cancel
             </button>
           </div>
@@ -207,7 +207,7 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
         <div className="space-y-4">
           {/* Summary */}
           <div className="flex items-center gap-4 text-xs">
-            <span className="text-gray-600">{parseResult.positions.length} positions parsed</span>
+            <span className="text-gray-600 dark:text-gray-400">{parseResult.positions.length} positions parsed</span>
             {parseResult.warnings.length > 0 && (
               <span className="text-amber-600 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
@@ -232,24 +232,24 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
           )}
 
           {/* Data table preview */}
-          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-64 overflow-y-auto dark:border-gray-700">
             <table className="w-full text-xs">
-              <thead className="bg-gray-50 sticky top-0">
+              <thead className="bg-gray-50 sticky top-0 dark:bg-gray-900">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Symbol</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-500">Shares</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-500">Price</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-500">Mkt Value</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Symbol</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Shares</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Price</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Mkt Value</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {parseResult.positions.slice(0, 50).map((p, i) => (
                   <tr key={i} className="hover:bg-gray-50/50">
-                    <td className="px-3 py-1.5 font-mono font-medium text-gray-900">{p.symbol}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{p.shares.toLocaleString()}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{p.price != null ? `$${p.price.toFixed(2)}` : '—'}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{p.market_value != null ? `$${p.market_value.toLocaleString()}` : '—'}</td>
+                    <td className="px-3 py-1.5 font-mono font-medium text-gray-900 dark:text-white">{p.symbol}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{p.shares.toLocaleString()}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{p.price != null ? `$${p.price.toFixed(2)}` : '—'}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700 dark:text-gray-300">{p.market_value != null ? `$${p.market_value.toLocaleString()}` : '—'}</td>
                     <td className="px-3 py-1.5">
                       {p.warning ? (
                         <span className="text-amber-600 flex items-center gap-0.5">
@@ -266,7 +266,7 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
               </tbody>
             </table>
             {parseResult.positions.length > 50 && (
-              <div className="px-3 py-2 bg-gray-50 text-xs text-gray-400 text-center">
+              <div className="px-3 py-2 bg-gray-50 text-xs text-gray-400 text-center dark:bg-gray-900">
                 Showing 50 of {parseResult.positions.length} positions
               </div>
             )}
@@ -281,7 +281,7 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
             >
               {uploadMutation.isPending ? 'Uploading...' : `Upload ${parseResult.positions.length} Positions`}
             </button>
-            <button onClick={() => setStep('mapping')} className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+            <button onClick={() => setStep('mapping')} className="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400">
               Back to Mapping
             </button>
           </div>
@@ -303,13 +303,13 @@ export function HoldingsUploadPanel({ portfolioId, portfolioName }: HoldingsUplo
       {/* Upload History */}
       {uploadHistory.length > 0 && step === 'upload' && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recent Uploads</h4>
-          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+          <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">Recent Uploads</h4>
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
             {uploadHistory.slice(0, 5).map((entry) => (
               <div key={entry.id} className="px-3 py-2 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   <FileSpreadsheet className="w-3.5 h-3.5 text-gray-400" />
-                  <span className="text-gray-700">{entry.filename}</span>
+                  <span className="text-gray-700 dark:text-gray-300">{entry.filename}</span>
                   <span className="text-gray-400">{entry.positions_count} positions</span>
                 </div>
                 <div className="flex items-center gap-2">

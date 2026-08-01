@@ -58,7 +58,7 @@ export function DensityToggle({ className = '' }: DensityToggleProps) {
   const activeValue: DensityMode = density === 'micro' ? 'ultra' : density
 
   return (
-    <div className={clsx('flex items-center bg-gray-100 rounded-md p-0.5', className)}>
+    <div className={clsx('flex items-center bg-gray-100 rounded-md p-0.5 dark:bg-gray-800', className)}>
       {VISIBLE_MODES.map(mode => (
         <button
           key={mode.value}
@@ -66,8 +66,8 @@ export function DensityToggle({ className = '' }: DensityToggleProps) {
           className={clsx(
             'px-2.5 py-1 text-[11px] font-medium rounded transition-all',
             activeValue === mode.value
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
           )}
         >
           {mode.label}

@@ -57,7 +57,7 @@ function ToastDemo({ variant }: { variant: 'success' | 'error' | 'info' | 'warni
       <Button onClick={handleClick}>
         Show {variant} toast
       </Button>
-      <p className="mt-4 text-sm text-gray-600">
+      <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
         Click the button to see a {variant} toast notification.
         <br />
         Press Escape to close any toast.
@@ -135,7 +135,7 @@ export const MultipleToasts: Story = {
           <Button onClick={handleShowMultiple}>
             Show multiple toasts
           </Button>
-          <p className="mt-4 text-sm text-gray-600">
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
             Click to see multiple toasts stacked vertically.
           </p>
         </div>
@@ -176,7 +176,7 @@ export const CustomDuration: Story = {
               Permanent toast
             </Button>
           </div>
-          <p className="mt-4 text-sm text-gray-600">
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
             Try different durations. Permanent toasts must be closed manually.
           </p>
         </div>

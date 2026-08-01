@@ -339,7 +339,7 @@ export function EditableCell({
         </button>
         <button
           onClick={handleCancel}
-          className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
           title="Cancel (Escape)"
         >
           <X className="w-4 h-4" />

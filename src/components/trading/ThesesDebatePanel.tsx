@@ -220,7 +220,7 @@ function AddResearchMenu({
                 className="flex-1 text-xs bg-transparent text-gray-900 dark:text-white placeholder-gray-400 border-none focus:ring-0 focus:outline-none p-0"
                 autoFocus
               />
-              <button onClick={() => setShowSearch(false)} className="p-0.5 text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowSearch(false)} className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="h-3 w-3" />
               </button>
             </div>
@@ -561,7 +561,7 @@ function InlineArgumentComposer({
                 'px-2 py-0.5 text-[10px] font-medium rounded transition-colors capitalize',
                 conviction === c
                   ? 'bg-gray-700 text-white dark:bg-gray-300 dark:text-gray-900'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700',
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-300',
               )}
             >
               {c}
@@ -573,7 +573,7 @@ function InlineArgumentComposer({
           <select
             value={scope ?? '__shared__'}
             onChange={e => setScope(e.target.value === '__shared__' ? null : e.target.value)}
-            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500"
+            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400"
           >
             <option value="__shared__">Shared</option>
             {portfolios.map(p => (
@@ -583,7 +583,7 @@ function InlineArgumentComposer({
         )}
 
         <div className="flex items-center gap-1.5 ml-auto">
-          <button onClick={onClose} className="px-2 py-0.5 text-[11px] text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="px-2 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
             Cancel
           </button>
           <button
@@ -704,7 +704,7 @@ function InlineContextComposer({
         ) : <div />}
 
         <div className="flex items-center gap-1.5">
-          <button onClick={onClose} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+          <button onClick={onClose} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 dark:text-gray-400">
             Cancel
           </button>
           <button
@@ -1177,7 +1177,7 @@ function EditCard({
         </div>
       )}
       <div className="flex justify-end gap-1">
-        <button onClick={onCancel} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">
+        <button onClick={onCancel} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400">
           Cancel
         </button>
         <button

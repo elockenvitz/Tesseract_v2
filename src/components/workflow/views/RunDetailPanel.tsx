@@ -69,21 +69,21 @@ export function RunDetailPanel({
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Shared header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center space-x-3">
           <button
             onClick={onBack}
-            className="text-gray-500 hover:text-gray-700 transition-colors"
+            className="text-gray-500 hover:text-gray-700 transition-colors dark:hover:text-gray-200 dark:text-gray-400"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{branchName}</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">{branchName}</h2>
             <div className="flex items-center space-x-2">
-              <p className="text-sm text-gray-500">{parentWorkflowName}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{parentWorkflowName}</p>
               {templateVersionNumber != null && templateVersionNumber > 0 ? (
                 <span
-                  className="inline-flex items-center space-x-1 px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4"
+                  className="inline-flex items-center space-x-1 px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-500 leading-4 dark:text-gray-400 dark:bg-gray-800"
                   title={`Process definition v${templateVersionNumber}`}
                 >
                   <Tag className="w-2.5 h-2.5" />
@@ -91,7 +91,7 @@ export function RunDetailPanel({
                 </span>
               ) : (
                 <span
-                  className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-400 leading-4"
+                  className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium rounded bg-gray-100 text-gray-400 leading-4 dark:bg-gray-800"
                   title="No definition version assigned"
                 >
                   v—
@@ -103,7 +103,7 @@ export function RunDetailPanel({
       </div>
 
       {/* Scope-specific body */}
-      <div className="flex-1 p-6 bg-gray-50 overflow-y-auto space-y-6">
+      <div className="flex-1 p-6 bg-gray-50 overflow-y-auto space-y-6 dark:bg-gray-900">
         {scopeType === 'portfolio' ? (
           <PortfolioRunDetailPanel
             branchId={branchId}

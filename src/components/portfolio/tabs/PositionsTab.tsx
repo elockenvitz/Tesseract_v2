@@ -22,13 +22,13 @@ function fmtDollar(val: number, decimals = 0): string {
 
 function freshnessInfo(daysAgo: number | null) {
   if (daysAgo === null) return { label: '—', cls: 'text-gray-400', dotCls: 'bg-gray-300' }
-  if (daysAgo <= 7)  return { label: `${daysAgo}d`, cls: 'text-gray-700', dotCls: 'bg-emerald-500' }
-  if (daysAgo <= 30) return { label: `${daysAgo}d`, cls: 'text-gray-500', dotCls: 'bg-gray-400' }
+  if (daysAgo <= 7)  return { label: `${daysAgo}d`, cls: 'text-gray-700 dark:text-gray-300', dotCls: 'bg-emerald-500' }
+  if (daysAgo <= 30) return { label: `${daysAgo}d`, cls: 'text-gray-500 dark:text-gray-400', dotCls: 'bg-gray-400' }
   if (daysAgo <= 90) return { label: `${daysAgo}d`, cls: 'text-amber-600', dotCls: 'bg-amber-400' }
   return { label: `${daysAgo}d`, cls: 'text-red-600', dotCls: 'bg-red-500' }
 }
 
-function clr(v: number) { return v > 0 ? 'text-green-600' : v < 0 ? 'text-red-600' : 'text-gray-500' }
+function clr(v: number) { return v > 0 ? 'text-green-600' : v < 0 ? 'text-red-600' : 'text-gray-500 dark:text-gray-400' }
 
 // ---------------------------------------------------------------------------
 // View presets & grouping
@@ -114,7 +114,7 @@ function SortHeader({ label, column, sortColumn, sortDirection, onSort, align = 
   return (
     <th
       className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider cursor-pointer select-none group transition-colors hover:bg-gray-100/80 ${
-        isActive ? 'text-gray-700' : 'text-gray-500'
+        isActive ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'
       }`}
       style={{ textAlign: align }}
       onClick={() => onSort(column)}
@@ -397,8 +397,8 @@ export function PositionsTab({
     return (
       <div className="text-center py-12">
         <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No positions in this portfolio</h3>
-        <p className="text-gray-500">Add holdings to track your portfolio performance.</p>
+        <h3 className="text-lg font-medium text-gray-900 mb-2 dark:text-white">No positions in this portfolio</h3>
+        <p className="text-gray-500 dark:text-gray-400">Add holdings to track your portfolio performance.</p>
       </div>
     )
   }
@@ -415,14 +415,14 @@ export function PositionsTab({
     <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown} className="outline-none flex flex-col">
 
       {/* ─── VIEW BAR ─────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-0.5">
           {VIEW_PRESETS.map(v => (
             <button
               key={v.key}
               onClick={() => setActiveView(v.key)}
               className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                activeView === v.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                activeView === v.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
               }`}
             >
               {v.label}
@@ -437,7 +437,7 @@ export function PositionsTab({
             <select
               value={groupBy}
               onChange={e => setGroupBy(e.target.value as GroupBy)}
-              className="text-[10px] font-medium text-gray-600 bg-transparent border border-gray-200 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-300 appearance-none pr-4"
+              className="text-[10px] font-medium text-gray-600 bg-transparent border border-gray-200 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-300 appearance-none pr-4 dark:border-gray-700 dark:text-gray-400"
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%239ca3af' d='M2 3l2 2 2-2z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center' }}
             >
               <option value="none">None</option>
@@ -449,7 +449,7 @@ export function PositionsTab({
 
           {/* Session P&L */}
           {hasQuotes && (
-            <div className="flex items-center gap-1.5 pl-3 border-l border-gray-200">
+            <div className="flex items-center gap-1.5 pl-3 border-l border-gray-200 dark:border-gray-700">
               <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Today</span>
               <span className={`text-[11px] font-semibold tabular-nums ${clr(totalDailyPnl)}`}>
                 {fmtPnl(totalDailyPnl)}
@@ -478,7 +478,7 @@ export function PositionsTab({
       ) : (
       /* ─── TABLE ─────────────────────────────────────────── */
       <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50/80">
               <tr>
                 {COLUMNS.map((col) =>
@@ -493,14 +493,14 @@ export function PositionsTab({
                       align={col.align}
                     />
                   ) : (
-                    <th key={col.key} className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider" style={{ textAlign: col.align }}>
+                    <th key={col.key} className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400" style={{ textAlign: col.align }}>
                       {col.label}
                     </th>
                   ),
                 )}
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
+            <tbody className="bg-white divide-y divide-gray-100 dark:divide-gray-800 dark:bg-gray-800">
               {displayRows.length > 0 ? displayRows.map((row, ri) => {
                 const isSelected = selectedRowIdx === ri
                 const isExpanded = expandedAssetId === row.holding.asset_id
@@ -516,17 +516,17 @@ export function PositionsTab({
                 return (
                   <React.Fragment key={row.holding.id}>
                     {showGroupHeader && gMeta && (
-                      <tr className="bg-gray-100/70 border-t border-gray-200">
+                      <tr className="bg-gray-100/70 border-t border-gray-200 dark:border-gray-700">
                         {/* Asset: group name + count */}
                         <td className="pl-3 pr-2 py-1.5 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">{gKey}</span>
+                            <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide dark:text-gray-400">{gKey}</span>
                             <span className="text-[9px] text-gray-400 tabular-nums">{gMeta.count}</span>
                           </div>
                         </td>
                         {/* Weight % */}
                         <td className="px-3 py-1.5 whitespace-nowrap text-right">
-                          <span className="text-[11px] font-semibold text-gray-700 tabular-nums">{gMeta.weight.toFixed(1)}%</span>
+                          <span className="text-[11px] font-semibold text-gray-700 tabular-nums dark:text-gray-300">{gMeta.weight.toFixed(1)}%</span>
                         </td>
                         {/* Today P&L */}
                         <td className="px-3 py-1.5 whitespace-nowrap text-right">
@@ -557,7 +557,7 @@ export function PositionsTab({
                         </td>
                         {/* Shares */}
                         <td className="px-3 py-1.5 whitespace-nowrap text-right">
-                          <span className="text-[11px] text-gray-500 tabular-nums">{gMeta.shares.toLocaleString()}</span>
+                          <span className="text-[11px] text-gray-500 tabular-nums dark:text-gray-400">{gMeta.shares.toLocaleString()}</span>
                         </td>
                         {/* Avg Cost: n/a */}
                         <td className="px-3 py-1.5" />
@@ -576,7 +576,7 @@ export function PositionsTab({
                         <div className="flex items-center gap-1.5">
                           <div className={`w-1 h-1 rounded-full shrink-0 ${isSelected ? 'bg-primary-500' : 'bg-transparent'}`} />
                           <div className="min-w-0">
-                            <div className="text-[13px] font-bold text-gray-900 tracking-wide leading-tight">{row.symbol}</div>
+                            <div className="text-[13px] font-bold text-gray-900 tracking-wide leading-tight dark:text-white">{row.symbol}</div>
                             <div className="text-[10px] text-gray-400 truncate max-w-[140px] leading-tight">{row.companyName}</div>
                           </div>
                         </div>
@@ -586,7 +586,7 @@ export function PositionsTab({
                         <div className="flex items-center justify-end">
                           <div className="relative h-4 w-16">
                             <div className="absolute inset-y-0 left-0 bg-primary-500/[0.12] rounded-sm" style={{ width: `${maxWeight > 0 ? (row.weightPct / maxWeight) * 100 : 0}%` }} />
-                            <span className="absolute inset-0 flex items-center justify-end text-[13px] font-medium text-gray-900 tabular-nums">{row.weightPct.toFixed(1)}%</span>
+                            <span className="absolute inset-0 flex items-center justify-end text-[13px] font-medium text-gray-900 tabular-nums dark:text-white">{row.weightPct.toFixed(1)}%</span>
                           </div>
                         </div>
                       </td>
@@ -605,7 +605,7 @@ export function PositionsTab({
                       </td>
                       {/* Price */}
                       <td className={`px-3 py-2 whitespace-nowrap text-right ${cellCls(ri, 3)}`} onClick={() => handleCellClick(row.holding.asset_id, 3)}>
-                        <span className="text-[13px] text-gray-900 tabular-nums">${(q?.price ?? row.price).toFixed(2)}</span>
+                        <span className="text-[13px] text-gray-900 tabular-nums dark:text-white">${(q?.price ?? row.price).toFixed(2)}</span>
                       </td>
                       {/* Unrealized P&L */}
                       <td className={`px-3 py-2 whitespace-nowrap text-right ${cellCls(ri, 4)}`} onClick={() => handleCellClick(row.holding.asset_id, 4)}>
@@ -621,11 +621,11 @@ export function PositionsTab({
                       </td>
                       {/* Shares */}
                       <td className={`px-3 py-2 whitespace-nowrap text-right ${cellCls(ri, 6)}`} onClick={() => handleCellClick(row.holding.asset_id, 6)}>
-                        <span className="text-[13px] text-gray-500 tabular-nums">{row.shares.toLocaleString()}</span>
+                        <span className="text-[13px] text-gray-500 tabular-nums dark:text-gray-400">{row.shares.toLocaleString()}</span>
                       </td>
                       {/* Avg Cost */}
                       <td className={`px-3 py-2 whitespace-nowrap text-right ${cellCls(ri, 7)}`} onClick={() => handleCellClick(row.holding.asset_id, 7)}>
-                        <span className="text-[13px] text-gray-500 tabular-nums">${row.avgCost.toFixed(2)}</span>
+                        <span className="text-[13px] text-gray-500 tabular-nums dark:text-gray-400">${row.avgCost.toFixed(2)}</span>
                       </td>
                       {/* Sector */}
                       <td className={`px-3 py-2 whitespace-nowrap ${cellCls(ri, 8)}`} onClick={() => handleCellClick(row.holding.asset_id, 8)}>
@@ -748,7 +748,7 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
                 onCellClick={onCellClick}
               />
               {isExpanded && isSelected && inspectorCtx && (
-                <div className="bg-gray-50/60 px-2.5 py-1.5 border-b border-gray-100">
+                <div className="bg-gray-50/60 px-2.5 py-1.5 border-b border-gray-100 dark:border-gray-800">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-baseline gap-2 min-w-0 flex-1">
                       <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">
@@ -781,10 +781,10 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
 
   return (
     <div>
-      <div className="grid grid-cols-2 divide-x divide-gray-200">
+      <div className="grid grid-cols-2 divide-x divide-gray-200 dark:divide-gray-700">
         {/* Gainers */}
         <div>
-          <div className="flex items-center justify-between px-2.5 py-1.5 bg-emerald-50/50 border-b border-gray-200">
+          <div className="flex items-center justify-between px-2.5 py-1.5 bg-emerald-50/50 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Gainers</span>
               <span className="text-[10px] text-emerald-500/60 tabular-nums">{gainers.length}</span>
@@ -797,7 +797,7 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
 
         {/* Losers */}
         <div>
-          <div className="flex items-center justify-between px-2.5 py-1.5 bg-red-50/50 border-b border-gray-200">
+          <div className="flex items-center justify-between px-2.5 py-1.5 bg-red-50/50 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">Losers</span>
               <span className="text-[10px] text-red-400/60 tabular-nums">{losers.length}</span>
@@ -811,7 +811,7 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
 
       {/* Unchanged footer */}
       {unchanged > 0 && (
-        <div className="px-2.5 py-1 border-t border-gray-200 text-center">
+        <div className="px-2.5 py-1 border-t border-gray-200 text-center dark:border-gray-700">
           <span className="text-[9px] text-gray-400">{unchanged} position{unchanged !== 1 ? 's' : ''} unchanged</span>
         </div>
       )}
@@ -826,7 +826,7 @@ function GainersLosersView({ rows, hasQuotes, selectedAssetId, selectedCol, expa
 function SplitColumnHeaders() {
   const hCls = 'text-[9px] font-semibold text-gray-400 uppercase tracking-wider'
   return (
-    <div className="flex items-center gap-2 px-2.5 py-1 border-b border-gray-100 bg-gray-50/40">
+    <div className="flex items-center gap-2 px-2.5 py-1 border-b border-gray-100 bg-gray-50/40 dark:border-gray-800">
       <span className={`${hCls} min-w-0 flex-1`}>Asset</span>
       <span className={hCls}>Change</span>
       <span className={`${hCls} w-16 text-right`}>P&L</span>
@@ -865,7 +865,7 @@ function SplitRow({ row, variant, isSelected, selectedCol, onCellClick }: {
         className={`min-w-0 flex-1 px-0.5 ${splitCellCls(0)}`}
         onClick={() => onCellClick(row.holding.asset_id, 0)}
       >
-        <span className="text-[12px] font-bold text-gray-900">{row.symbol}</span>
+        <span className="text-[12px] font-bold text-gray-900 dark:text-white">{row.symbol}</span>
         <span className="text-[10px] text-gray-400 ml-1.5 truncate">{row.companyName}</span>
       </div>
       {/* Cell 1: Change % */}
@@ -905,7 +905,7 @@ interface InspectorCtx {
 function renderFieldDetail(col: ColKey, row: EnrichedRow, ctx: InspectorCtx, q: any): React.ReactNode {
   const kvCls = 'text-[12px]'
   const labelCls = 'text-gray-400'
-  const valCls = 'text-gray-700 font-medium'
+  const valCls = 'text-gray-700 font-medium dark:text-gray-300'
   const sep = <span className="text-gray-200 mx-1.5">&middot;</span>
 
   switch (col) {

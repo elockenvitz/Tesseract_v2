@@ -335,7 +335,7 @@ function TDFCard({
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {tdf.fund_code && <span className="mr-2">{tdf.fund_code}</span>}
             {isRetired ? (
-              <span className="text-gray-500">In Retirement</span>
+              <span className="text-gray-500 dark:text-gray-400">In Retirement</span>
             ) : (
               <span>{yearsToRetirement} years to retirement</span>
             )}
