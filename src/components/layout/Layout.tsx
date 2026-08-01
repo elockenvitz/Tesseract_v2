@@ -12,6 +12,7 @@ import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarS
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
+import { OverflowAuditOverlay } from '../mobile/OverflowAuditOverlay'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -496,6 +497,9 @@ export function Layout({
           }
         }}
       />
+
+      {/* Inert unless the URL carries ?overflow=1 */}
+      <OverflowAuditOverlay />
 
       {isMobile && (
         <MobileNavDrawer
