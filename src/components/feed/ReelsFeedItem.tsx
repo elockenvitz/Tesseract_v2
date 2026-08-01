@@ -119,11 +119,14 @@ export function ReelsFeedItem({
     : undefined
 
   // Get clean content
+  // 200 characters truncated most theses mid-sentence and hid the reasoning
+  // behind a "Read more" tap. The content area scrolls, so show far more of it
+  // before collapsing.
   const cleanContent = stripHtml(item.content)
-  const isLongContent = cleanContent.length > 200
+  const isLongContent = cleanContent.length > 600
   const displayContent = isContentExpanded || !isLongContent
     ? cleanContent
-    : cleanContent.substring(0, 200) + '...'
+    : cleanContent.substring(0, 600) + '…'
 
   return (
     <div className={clsx(
@@ -210,7 +213,10 @@ export function ReelsFeedItem({
       </div>
 
       {/* Chart area */}
-      <div className="absolute top-[52px] left-0 right-0 h-[50%] px-4 py-2">
+      {/* Chart takes less of a phone screen than a desktop one — the written
+          reasoning below it is the part that needs room, and at 50% the text
+          area was too short to read a thesis without scrolling. */}
+      <div className="absolute top-[52px] left-0 right-0 h-[38%] sm:h-[50%] px-4 py-2">
         {displaySymbol ? (
           <ReelsChartPanel
             symbol={displaySymbol}
@@ -231,7 +237,7 @@ export function ReelsFeedItem({
       </div>
 
       {/* Content area */}
-      <div className="absolute top-[calc(52px+50%)] left-0 right-0 bottom-0 px-4 py-3 overflow-y-auto">
+      <div className="absolute top-[calc(52px+38%)] sm:top-[calc(52px+50%)] left-0 right-0 bottom-0 px-4 py-3 overflow-y-auto">
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
           {/* Qualifiers lead, compactly, so they frame the reasoning rather
               than trailing after it as a stack of competing chips. */}

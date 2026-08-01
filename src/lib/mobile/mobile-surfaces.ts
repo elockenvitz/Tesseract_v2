@@ -1,5 +1,5 @@
 import {
-  Activity, Beaker, BookOpen, Briefcase, Building2, Calendar, FileText, Flag,
+  Beaker, BookOpen, Briefcase, Building2, Calendar, FileText, Flag,
   FolderKanban, FolderOpen, LineChart, Lightbulb, List, ListTodo, Repeat,
   Shield, StickyNote, Tag, Target, TrendingUp, Users,
 } from 'lucide-react'
@@ -40,14 +40,21 @@ export interface MobileSurface {
 export const MOBILE_SURFACES: MobileSurface[] = [
   // ---- Core ---------------------------------------------------------------
   {
-    type: 'dashboard', title: 'Dashboard', icon: Activity,
-    color: 'text-primary-600', bg: 'bg-primary-50',
+    // On phones this tab *is* the ideas feed — MobileDashboard replaces the
+    // desktop analytics surface entirely — so it is named for what it shows.
+    // It is also the app's home: DashboardPage.handleTabClose refuses to
+    // close it, so it is always present.
+    type: 'dashboard', title: 'Ideas', icon: Lightbulb,
+    color: 'text-purple-500', bg: 'bg-purple-50',
     support: 'full', group: 'core', inNav: true,
   },
   {
+    // Not offered separately on mobile: it would open a second, near-identical
+    // ideas surface alongside the one already at home. Kept in the registry so
+    // an existing `idea-generator` tab still resolves correctly.
     type: 'idea-generator', title: 'Ideas', icon: Lightbulb,
     color: 'text-purple-500', bg: 'bg-purple-50',
-    support: 'full', group: 'core', inNav: true,
+    support: 'full', group: 'core', inNav: false,
   },
   {
     type: 'trade-queue', title: 'Pipeline', icon: ListTodo,
