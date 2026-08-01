@@ -20,6 +20,7 @@ import { PortfolioTab } from '../components/tabs/PortfolioTab'
 import { ListTab } from '../components/tabs/ListTab'
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
+import { MobileDashboard } from '../components/mobile/MobileDashboard'
 import { isDesktopOnly } from '../lib/mobile/mobile-surfaces'
 import { useIsMobile } from '../hooks/useMediaQuery'
 const IdeaGeneratorPage = lazy(() => import('./IdeaGeneratorPage').then(m => ({ default: m.IdeaGeneratorPage })))
@@ -1203,6 +1204,23 @@ export function DashboardPage() {
             <p className="text-xs">Loading your workspace…</p>
           </div>
         </div>
+      )
+    }
+
+    // Phones get a purpose-built feed dashboard. The desktop surfaces are wide
+    // multi-column workbenches; reflowed onto 390px they produce cramped cards
+    // and horizontal overflow that breakpoints do not fix. See MobileDashboard.
+    if (isMobile) {
+      return (
+        <MobileDashboard
+          onNavigate={handleSearchResult}
+          onOpenFullChart={(symbol) => handleSearchResult({
+            id: `chart-${symbol}`,
+            title: symbol,
+            type: 'charting',
+            data: { symbol },
+          })}
+        />
       )
     }
 

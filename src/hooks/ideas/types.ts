@@ -151,7 +151,7 @@ export interface InsightItem extends BaseIdeaItem {
 
 export type FeedItem = QuickThoughtItem | TradeIdeaItem | PairTradeItem | NoteItem | ThesisUpdateItem | InsightItem
 
-export interface ScoredFeedItem extends FeedItem {
+export interface FeedItemScore {
   score: number
   scoreBreakdown: {
     recency: number
@@ -162,6 +162,18 @@ export interface ScoredFeedItem extends FeedItem {
   }
   cardSize: CardSize
 }
+
+/**
+ * Must be an intersection, not `interface ScoredFeedItem extends FeedItem`.
+ * `FeedItem` is a union, and an interface cannot extend one — TypeScript
+ * reported TS2312 and fell back to an empty type, so every downstream
+ * `item.type` / `item.id` access failed with "property does not exist".
+ *
+ * An intersection distributes over the union — `(A | B) & S` becomes
+ * `(A & S) | (B & S)` — which keeps each member's fields reachable *and*
+ * preserves `type` as a discriminant, so narrowing by `item.type` still works.
+ */
+export type ScoredFeedItem = FeedItem & FeedItemScore
 
 export interface FeedFilters {
   types?: ItemType[]
