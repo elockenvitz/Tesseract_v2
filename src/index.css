@@ -17,6 +17,21 @@
     color-scheme: dark;
   }
 
+  /* Boot loader theming. index.html hardcodes the light palette because it
+     paints before any CSS or JS runs, and the CSP (script-src 'self') blocks
+     the usual inline theme-detection script. Once this stylesheet is in, the
+     loader tracks the theme — which matters most on re-shows (org switch),
+     where a full-screen white flash over a dark app is very visible. */
+  :root.dark #tesseract-boot-loader {
+    background: #111827;
+    color: #6b7280;
+  }
+
+  :root.dark #tesseract-boot-loader .ring {
+    border-color: #374151;
+    border-top-color: #6366f1;
+  }
+
   html {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }

@@ -95,7 +95,10 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
     error: listsError
   } = useQuery({
     queryKey: ['list-surfaces', currentOrgId],
-    enabled: !!currentOrgId,
+    // Both guards are required: queryFn interpolates currentOrgId into the
+    // .or() filter with a non-null assertion, so firing without it puts the
+    // literal string "undefined" into the query.
+    enabled: !!currentOrgId && !!userId,
     queryFn: async () => {
       // Scope user-created lists by organization_id; keep the two
       // system-seeded `is_default=true` lists (Investment Ideas / Work
@@ -141,8 +144,7 @@ export function useListSurfaces(sortBy: ListSortKey = 'recent') {
         collaborators: list.asset_list_collaborations || [],
         portfolio: list.portfolio
       })) as ListSurface[]
-    },
-    enabled: !!userId
+    }
   })
 
   // Query 2 — Favorites
