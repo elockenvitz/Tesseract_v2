@@ -160,7 +160,7 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {error && (
-        <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg">
+        <div className="bg-error-50 border border-error-200 text-error-700 dark:bg-error-900/30 dark:border-error-800 dark:text-error-300 px-4 py-3 rounded-lg">
           {error}
         </div>
       )}
@@ -177,11 +177,11 @@ export function LoginForm() {
 
       {/* SSO-required banner */}
       {ssoState === 'sso_required' && ssoResult?.org_name && (
-        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 px-4 py-3 rounded-lg flex items-start gap-3">
-          <Shield className="w-4 h-4 mt-0.5 flex-shrink-0 text-indigo-600" />
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-200 px-4 py-3 rounded-lg flex items-start gap-3">
+          <Shield className="w-4 h-4 mt-0.5 flex-shrink-0 text-indigo-600 dark:text-indigo-400" />
           <div>
             <p className="text-sm font-medium">{ssoResult.org_name} requires SSO</p>
-            <p className="text-xs text-indigo-600 mt-0.5">
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
               Password sign-in is disabled for this organization. Use the SSO button below.
             </p>
           </div>
@@ -223,10 +223,11 @@ export function LoginForm() {
           {showPasswordField && (
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
+                <div className="w-full border-t border-gray-200 dark:border-gray-700" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-gray-400">or</span>
+                {/* Must match the Card surface it sits on, not the page. */}
+                <span className="bg-white dark:bg-gray-800 px-2 text-gray-400 dark:text-gray-500">or</span>
               </div>
             </div>
           )}
@@ -247,7 +248,7 @@ export function LoginForm() {
       )}
 
       <div className="text-center">
-        <span className="text-sm text-gray-600">
+        <span className="text-sm text-gray-600 dark:text-gray-400">
           Don't have an account?{' '}
           <Link
             to="/signup"
