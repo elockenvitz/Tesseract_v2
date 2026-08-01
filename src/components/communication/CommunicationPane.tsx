@@ -8,6 +8,8 @@ import { clsx } from 'clsx'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 
 interface CommunicationPaneProps {
+  /** Presents the pane as a bottom sheet instead of a fixed right rail. */
+  isMobile?: boolean
   isOpen: boolean
   onToggle: () => void
   isFullscreen: boolean
@@ -34,6 +36,7 @@ interface CommunicationPaneProps {
 }
 
 export function CommunicationPane({
+  isMobile = false,
   isOpen,
   onToggle,
   isFullscreen,
@@ -160,9 +163,19 @@ export function CommunicationPane({
 
   return (
     <div className={clsx(
-      'fixed right-0 top-16 bottom-0 bg-white border-l border-gray-200 shadow-lg transform transition-transform duration-300 ease-in-out z-30',
-      isFullscreen ? 'left-0' : 'w-96',
-      isOpen ? 'translate-x-0' : 'translate-x-full'
+      'fixed bg-white shadow-lg transform transition-transform duration-300 ease-in-out z-30',
+      // Phone: a bottom sheet that rises over the content, leaving the header
+      // reachable. Desktop: the original right rail.
+      isMobile
+        ? clsx(
+            'inset-x-0 bottom-0 top-16 w-full rounded-t-2xl border-t border-gray-200',
+            isOpen ? 'translate-y-0' : 'translate-y-full'
+          )
+        : clsx(
+            'right-0 top-16 bottom-0 border-l border-gray-200',
+            isFullscreen ? 'left-0' : 'w-96',
+            isOpen ? 'translate-x-0' : 'translate-x-full'
+          )
     )}>
       <div className="flex flex-col h-full">
         {/* Header */}

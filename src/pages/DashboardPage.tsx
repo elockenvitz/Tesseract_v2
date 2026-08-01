@@ -19,6 +19,9 @@ import { ThemeTab } from '../components/tabs/ThemeTab'
 import { PortfolioTab } from '../components/tabs/PortfolioTab'
 import { ListTab } from '../components/tabs/ListTab'
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
+import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
+import { isDesktopOnly } from '../lib/mobile/mobile-surfaces'
+import { useIsMobile } from '../hooks/useMediaQuery'
 const IdeaGeneratorPage = lazy(() => import('./IdeaGeneratorPage').then(m => ({ default: m.IdeaGeneratorPage })))
 const WorkflowsPage = lazy(() => import('./WorkflowsPage').then(m => ({ default: m.WorkflowsPage })))
 import { ProjectsPage } from './ProjectsPage'
@@ -206,6 +209,9 @@ export function DashboardPage() {
 
   // Session tracking (heartbeat-based)
   useSessionTracking()
+
+  // Gates the desktop-only fallback in renderTabContent.
+  const isMobile = useIsMobile()
 
   // ─── Pilot Mode gating ───────────────────────────────────────────────
   const pilotMode = usePilotMode()
@@ -912,6 +918,19 @@ export function DashboardPage() {
 
     if (activeTab.isBlank) {
       return <BlankTab onSearchResult={handleSearchResult} />
+    }
+
+    // Surfaces with no phone treatment get an honest explanation rather than a
+    // desktop layout crushed into 390px. What is and isn't supported lives in
+    // lib/mobile/mobile-surfaces.ts — unregistered types default to desktop-only.
+    if (isMobile && isDesktopOnly(activeTab.type)) {
+      return (
+        <DesktopOnlyCard
+          type={activeTab.type}
+          title={activeTab.title}
+          onOpenSurface={handleSearchResult}
+        />
+      )
     }
 
     // Pilot mode substitution: render read-only preview components for

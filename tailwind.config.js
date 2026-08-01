@@ -98,9 +98,16 @@ export default {
           900: '#581c87',
         },
       },
+      screens: {
+        // Narrow-phone breakpoint below Tailwind's `sm`. Stock breakpoints are
+        // otherwise unchanged so `useIsMobile()` and `md:` stay in agreement.
+        'xs': '480px',
+      },
       spacing: {
         '18': '4.5rem',
         '88': '22rem',
+        'safe-top': 'env(safe-area-inset-top, 0px)',
+        'safe-bottom': 'env(safe-area-inset-bottom, 0px)',
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',

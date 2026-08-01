@@ -15,6 +15,7 @@ import { ProfilePage } from '../../pages/ProfilePage'
 import { SettingsPage } from '../../pages/SettingsPage'
 import { SetupWizard } from '../onboarding/SetupWizard'
 import { TesseractLogo } from '../ui/TesseractLogo'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 // SetupWizard removed — org creation disabled for normal users
 
 interface HeaderProps {
@@ -28,6 +29,9 @@ interface HeaderProps {
   commPaneView?: string
   onShowAI?: () => void
   onShowThoughts?: () => void
+  /** Phone only — the Tesseract mark opens the nav drawer instead of the
+   *  app-launcher dropdown, which is wider than a phone viewport. */
+  onOpenMobileNav?: () => void
 }
 
 export function Header({
@@ -40,8 +44,10 @@ export function Header({
   onToggleCommPane,
   commPaneView = 'thoughts',
   onShowAI = () => {},
-  onShowThoughts = () => {}
+  onShowThoughts = () => {},
+  onOpenMobileNav
 }: HeaderProps) {
+  const isMobile = useIsMobile()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showAppMenu, setShowAppMenu] = useState(false)
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false)
@@ -292,22 +298,26 @@ export function Header({
             <div className="relative" ref={appMenuRef}>
               <button
                 onClick={() => {
-                  setShowAppMenu(!showAppMenu)
                   // Tick off post-graduation Get Started step 1.
                   // PilotPostGradGetStarted listens for this and marks
                   // the stage; markStage is self-deduped so re-clicks
                   // don't repeatedly hit the DB.
                   window.dispatchEvent(new CustomEvent('pilot-postgrad:app-launcher-opened'))
+                  if (isMobile && onOpenMobileNav) {
+                    onOpenMobileNav()
+                    return
+                  }
+                  setShowAppMenu(!showAppMenu)
                 }}
-                className="flex items-center justify-center w-9 h-9 -ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                aria-label="App launcher"
-                title="App launcher"
+                className="flex items-center justify-center w-11 h-11 -ml-2 md:w-9 md:h-9 md:-ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label={isMobile ? 'Open navigation' : 'App launcher'}
+                title={isMobile ? 'Menu' : 'App launcher'}
               >
                 <TesseractLogo size={28} />
               </button>
 
               {/* App Launcher Panel */}
-              {showAppMenu && pilotMode.effectiveIsPilot && (
+              {showAppMenu && !isMobile && pilotMode.effectiveIsPilot && (
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
                   {/* Pilot badge */}
                   <div className="px-4 pb-2 flex items-center gap-1.5">
@@ -427,7 +437,7 @@ export function Header({
               )}
 
               {/* Full (non-pilot) app menu */}
-              {showAppMenu && !pilotMode.effectiveIsPilot && (
+              {showAppMenu && !isMobile && !pilotMode.effectiveIsPilot && (
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
                   {/* Future: System status row can be added here */}
 
