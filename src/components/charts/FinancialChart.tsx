@@ -150,11 +150,11 @@ export function FinancialChart({
   if (!currentQuote || chartData.length === 0) {
     return (
       <div className={`w-full ${className}`} style={{ height }}>
-        <div className=\"bg-gray-50 rounded-lg h-full flex items-center justify-center\">
-          <div className=\"text-center\">
-            <BarChart3 className=\"h-12 w-12 text-gray-400 mx-auto mb-2\" />
-            <div className=\"text-gray-500\">No chart data available</div>
-            <div className=\"text-sm text-gray-400\">Financial data for {symbol} could not be loaded</div>
+        <div className="bg-gray-50 rounded-lg h-full flex items-center justify-center">
+          <div className="text-center">
+            <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+            <div className="text-gray-500">No chart data available</div>
+            <div className="text-sm text-gray-400">Financial data for {symbol} could not be loaded</div>
           </div>
         </div>
       </div>
@@ -164,11 +164,11 @@ export function FinancialChart({
   return (
     <div className={`w-full space-y-4 ${className}`}>
       {/* Chart Header with Controls */}
-      <div className=\"flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg\">
-        <div className=\"flex items-center space-x-4\">
+      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg">
+        <div className="flex items-center space-x-4">
           <div>
-            <h3 className=\"text-lg font-semibold text-gray-900\">{symbol}</h3>
-            <div className=\"text-sm text-gray-500\">
+            <h3 className="text-lg font-semibold text-gray-900">{symbol}</h3>
+            <div className="text-sm text-gray-500">
               {selectedChartType === 'price' && 'Price Chart'}
               {selectedChartType === 'volume' && 'Volume Chart'}
               {selectedChartType === 'percentage' && 'Percentage Change'}
@@ -177,13 +177,13 @@ export function FinancialChart({
 
           {/* Current Price Info */}
           {selectedChartType === 'price' && currentQuote && (
-            <div className=\"flex items-center space-x-4 text-sm\">
+            <div className="flex items-center space-x-4 text-sm">
               <div>
-                <span className=\"text-gray-600\">Current:</span>
-                <span className=\"ml-1 font-medium\">${currentQuote.price.toFixed(2)}</span>
+                <span className="text-gray-600">Current:</span>
+                <span className="ml-1 font-medium">${currentQuote.price.toFixed(2)}</span>
               </div>
               <div>
-                <span className=\"text-gray-600\">Change:</span>
+                <span className="text-gray-600">Change:</span>
                 <span className={`ml-1 font-medium ${
                   currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
@@ -195,9 +195,9 @@ export function FinancialChart({
           )}
         </div>
 
-        <div className=\"flex items-center space-x-2\">
+        <div className="flex items-center space-x-2">
           {/* Chart Type Selector */}
-          <div className=\"flex items-center space-x-1 border-r border-gray-300 pr-3\">
+          <div className="flex items-center space-x-1 border-r border-gray-300 pr-3">
             <button
               onClick={() => setSelectedChartType('price')}
               className={`px-3 py-1 rounded text-sm ${
@@ -206,7 +206,7 @@ export function FinancialChart({
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <TrendingUp className=\"h-4 w-4 inline mr-1\" />
+              <TrendingUp className="h-4 w-4 inline mr-1" />
               Price
             </button>
             <button
@@ -217,7 +217,7 @@ export function FinancialChart({
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <BarChart3 className=\"h-4 w-4 inline mr-1\" />
+              <BarChart3 className="h-4 w-4 inline mr-1" />
               Volume
             </button>
             <button
@@ -228,13 +228,13 @@ export function FinancialChart({
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <span className=\"inline mr-1\">%</span>
+              <span className="inline mr-1">%</span>
               Change
             </button>
           </div>
 
           {/* Timeframe Selector */}
-          <div className=\"flex items-center space-x-1\">
+          <div className="flex items-center space-x-1">
             {['1D', '5D', '1M', '3M', '6M', '1Y', 'YTD'].map((tf) => (
               <button
                 key={tf}
@@ -253,7 +253,7 @@ export function FinancialChart({
       </div>
 
       {/* Interactive Chart */}
-      <div className=\"bg-white border border-gray-200 rounded-lg p-4\">
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
         <InteractiveChart
           data={chartData}
           type={selectedChartType === 'volume' ? 'bar' : selectedChartType === 'percentage' ? 'area' : 'line'}
@@ -268,13 +268,13 @@ export function FinancialChart({
 
       {/* Chart Insights */}
       {chartData.length > 1 && (
-        <div className=\"grid grid-cols-1 md:grid-cols-3 gap-4\">
-          <div className=\"bg-white border border-gray-200 rounded-lg p-4\">
-            <div className=\"flex items-center space-x-2 mb-2\">
-              <TrendingUp className=\"h-4 w-4 text-blue-600\" />
-              <span className=\"text-sm font-medium text-gray-900\">Trend Analysis</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <TrendingUp className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-gray-900">Trend Analysis</span>
             </div>
-            <div className=\"space-y-1 text-sm\">
+            <div className="space-y-1 text-sm">
               {(() => {
                 const firstValue = chartData[0]?.value || 0
                 const lastValue = chartData[chartData.length - 1]?.value || 0
@@ -286,8 +286,8 @@ export function FinancialChart({
 
                 return (
                   <>
-                    <div className=\"text-gray-600\">Direction: <span className=\"font-medium\">{trend}</span></div>
-                    <div className=\"text-gray-600\">
+                    <div className="text-gray-600">Direction: <span className="font-medium">{trend}</span></div>
+                    <div className="text-gray-600">
                       {selectedTimeframe} Change:
                       <span className={`font-medium ml-1 ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {change >= 0 ? '+' : ''}{change.toFixed(2)}%
@@ -299,12 +299,12 @@ export function FinancialChart({
             </div>
           </div>
 
-          <div className=\"bg-white border border-gray-200 rounded-lg p-4\">
-            <div className=\"flex items-center space-x-2 mb-2\">
-              <Zap className=\"h-4 w-4 text-orange-600\" />
-              <span className=\"text-sm font-medium text-gray-900\">Volatility</span>
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Zap className="h-4 w-4 text-orange-600" />
+              <span className="text-sm font-medium text-gray-900">Volatility</span>
             </div>
-            <div className=\"space-y-1 text-sm\">
+            <div className="space-y-1 text-sm">
               {(() => {
                 const values = chartData.map(d => d.value)
                 const mean = values.reduce((a, b) => a + b, 0) / values.length
@@ -314,29 +314,29 @@ export function FinancialChart({
 
                 return (
                   <>
-                    <div className=\"text-gray-600\">Level: <span className=\"font-medium\">{level}</span></div>
-                    <div className=\"text-gray-600\">Coefficient: <span className=\"font-medium\">{volatility.toFixed(2)}%</span></div>
+                    <div className="text-gray-600">Level: <span className="font-medium">{level}</span></div>
+                    <div className="text-gray-600">Coefficient: <span className="font-medium">{volatility.toFixed(2)}%</span></div>
                   </>
                 )
               })()}
             </div>
           </div>
 
-          <div className=\"bg-white border border-gray-200 rounded-lg p-4\">
-            <div className=\"flex items-center space-x-2 mb-2\">
-              <Clock className=\"h-4 w-4 text-green-600\" />
-              <span className=\"text-sm font-medium text-gray-900\">Data Quality</span>
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Clock className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium text-gray-900">Data Quality</span>
             </div>
-            <div className=\"space-y-1 text-sm\">
-              <div className=\"text-gray-600\">Points: <span className=\"font-medium\">{chartData.length}</span></div>
-              <div className=\"text-gray-600\">
+            <div className="space-y-1 text-sm">
+              <div className="text-gray-600">Points: <span className="font-medium">{chartData.length}</span></div>
+              <div className="text-gray-600">
                 Last Updated:
-                <span className=\"font-medium ml-1\">
+                <span className="font-medium ml-1">
                   {currentQuote ? new Date(currentQuote.timestamp).toLocaleTimeString() : 'Unknown'}
                 </span>
               </div>
-              <div className=\"text-gray-600\">
-                Status: <span className=\"font-medium text-green-600\">Live</span>
+              <div className="text-gray-600">
+                Status: <span className="font-medium text-green-600">Live</span>
               </div>
             </div>
           </div>

@@ -214,7 +214,7 @@ export function SmartStageManager({
   return (
     <div className={`relative ${className}`}>
       <div className="flex items-center space-x-2">
-        {/* Advance Button for Outdated Stage - Small Square */
+        {/* Advance Button for Outdated Stage - Small Square */}
         {currentStage === 'outdated' && (
           <button
             onClick={() => onStageChange('prioritized')}
