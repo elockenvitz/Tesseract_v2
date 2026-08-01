@@ -30,6 +30,10 @@ interface ReelsFeedItemProps {
   onOpenFullChart?: (symbol: string) => void
   onShare?: (item: ScoredFeedItem) => void
   onCreateIdea?: (item: ScoredFeedItem) => void
+  /** Suppresses the header Share / Create Idea buttons. Set on mobile, where
+   *  those actions live in the thumb-reachable action rail instead and would
+   *  otherwise appear twice on the same card. */
+  hideHeaderActions?: boolean
 }
 
 const typeConfig: Record<ItemType, {
@@ -90,7 +94,8 @@ export function ReelsFeedItem({
   onAssetClick,
   onOpenFullChart,
   onShare,
-  onCreateIdea
+  onCreateIdea,
+  hideHeaderActions = false
 }: ReelsFeedItemProps) {
   const [isContentExpanded, setIsContentExpanded] = useState(false)
 
@@ -171,7 +176,7 @@ export function ReelsFeedItem({
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2">
+        <div className={clsx('items-center gap-2', hideHeaderActions ? 'hidden' : 'flex')}>
           {/* Share button */}
           <button
             onClick={(e) => {
