@@ -656,11 +656,11 @@ export function Header({
               survive — five 44px targets plus the avatar demand ~310px of a
               390px viewport. Thoughts, AI and DMs are reachable from the nav
               drawer instead. */}
-          <div className="flex items-center flex-shrink-0 space-x-0.5 md:space-x-4">
+          <div className="flex items-center flex-shrink-0 gap-1 md:gap-2">
             {/* Mobile search entry point — replaces the inline input below md */}
             <button
               onClick={() => setShowMobileSearch(true)}
-              className="md:hidden flex items-center justify-center h-11 w-11 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               aria-label="Search"
               title="Search"
             >
@@ -677,9 +677,9 @@ export function Header({
                 // the point of the mobile app, so it must be reachable from
                 // every screen. Amber on mobile so it reads as the one
                 // create action rather than another grey utility icon.
-                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
+                "inline-flex items-center justify-center h-10 w-10 md:h-9 md:w-9 rounded-full transition-colors relative hover:bg-gray-100 dark:hover:bg-gray-800",
                 isCommPaneOpen && commPaneView === 'thoughts'
-                  ? "text-amber-600 bg-amber-100 dark:bg-amber-900/30"
+                  ? "text-amber-600 bg-amber-100 dark:bg-amber-900/40"
                   : "text-amber-500 md:text-gray-400 md:hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="Capture an idea"
@@ -693,9 +693,9 @@ export function Header({
                 onShowAI()
               }}
               className={clsx(
-                "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
+                "hidden md:inline-flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative",
                 isCommPaneOpen && commPaneView === 'ai'
-                  ? "text-primary-600 bg-primary-100"
+                  ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="AI Assistant"
@@ -711,16 +711,16 @@ export function Header({
                 onShowDirectMessages?.()
               }}
               className={clsx(
-                "hidden md:inline-flex p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors relative",
+                "hidden md:inline-flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative",
                 isCommPaneOpen && commPaneView === 'direct-messages'
-                  ? "text-primary-600 bg-primary-100"
+                  ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="Direct messages"
             >
               <Mail className="h-5 w-5" />
               {hasUnreadDirectMessages && (
-                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500"></span>
+                <span className="absolute top-1.5 right-1.5 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-900"></span>
               )}
             </button>
             
@@ -730,16 +730,16 @@ export function Header({
                 onShowNotifications?.()
               }}
               className={clsx(
-                "p-2 hover:bg-gray-100 rounded-lg transition-colors relative dark:hover:bg-gray-700",
+                "inline-flex items-center justify-center h-10 w-10 md:h-9 md:w-9 rounded-full transition-colors relative hover:bg-gray-100 dark:hover:bg-gray-800",
                 isCommPaneOpen && commPaneView === 'notifications'
-                  ? "text-primary-600 bg-primary-100"
+                  ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
               title="View notifications"
             >
               <Bell className="h-5 w-5" />
               {hasUnreadNotifications && (
-                <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-error-500 rounded-full">
+                <span className="absolute top-0 right-0 flex items-center justify-center min-w-[17px] h-[17px] px-1 text-[10px] font-bold text-white bg-error-500 rounded-full ring-2 ring-white dark:ring-gray-900">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
@@ -749,10 +749,10 @@ export function Header({
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-0 md:space-x-3 p-1 md:p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-white dark:text-gray-300"
+                className="flex items-center justify-center gap-0 md:gap-3 h-10 w-10 md:h-auto md:w-auto md:px-2 md:py-1.5 text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full md:rounded-lg transition-colors dark:hover:text-white dark:text-gray-300"
                 title="Account menu"
               >
-                <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center">
+                <div className="w-8 h-8 shrink-0 rounded-full bg-primary-600 flex items-center justify-center">
                   <span className="text-white text-sm font-semibold">
                     {getUserInitials()}
                   </span>

@@ -12,7 +12,9 @@ import { useAttention } from '../../hooks/useAttention'
 import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
-import { loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
+import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
+import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
+import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
@@ -22,7 +24,7 @@ import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
 import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/feed-telemetry'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
 interface MobileDashboardProps {
@@ -52,6 +54,7 @@ export function MobileDashboard({
 }: MobileDashboardProps) {
   const { user } = useAuth()
   const userId = user?.id
+  const queryClient = useQueryClient()
   const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
     useIdeasFeed({ mode: 'for_you' })
 
@@ -59,7 +62,7 @@ export function MobileDashboard({
   // the point here is that returning to the feed reflects what changed.
   useEffect(() => { refetch() }, [refetch])
 
-  const { sections, acknowledge, snoozeFor, markRead, isLoading: attentionLoading } = useAttention()
+  const { sections, acknowledge, snoozeFor, markRead, refetch: refetchAttention, isLoading: attentionLoading } = useAttention()
 
   const attentionItems = useMemo(() => {
     // All four types, not just decisions and actions. The feed is meant to be
@@ -96,7 +99,7 @@ export function MobileDashboard({
   // asset lands where the user left. A fresh visit gets a new seed, which is
   // what makes a genuine refresh reorder the feed.
   const [resumed] = useState(() => loadFeedSession())
-  const [shuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
+  const [shuffleSeed, setShuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
 
   // The feed must not end. Ideas paginate from the server, but attention,
   // signals and derived insights are finite sets. When the server has no more
@@ -272,6 +275,30 @@ export function MobileDashboard({
     }
   }, [shuffleSeed, cycle])
 
+  // A deliberate refresh: refetch every source, re-deal the order, drop the
+  // saved position and return to the top. The browser's own pull-to-refresh
+  // would instead reload the page, which loses all of that.
+  const handleRefresh = useCallback(async () => {
+    setShuffleSeed(Math.floor(Math.random() * 2 ** 31))
+    setCycle(0)
+    clearFeedSession()
+    restoredRef.current = true // nothing to restore after an explicit refresh
+    await Promise.all([
+      refetch(),
+      refetchAttention?.(),
+      // useSignalCards and useDerivedInsights expose no refetch, so refresh
+      // them through the cache they share.
+      queryClient.invalidateQueries({ queryKey: ['signal-cards'] }),
+      queryClient.invalidateQueries({ queryKey: ['derived-insights'] }),
+    ].filter(Boolean) as Promise<unknown>[])
+    scrollerRef.current?.scrollTo({ top: 0 })
+  }, [refetch, refetchAttention, queryClient])
+
+  const { pullDistance, isRefreshing, threshold } = usePullToRefresh({
+    scrollerRef,
+    onRefresh: handleRefresh,
+  })
+
   const openAsset = useCallback(
     (assetId: string, symbol: string) => {
       onNavigate?.({ id: assetId, title: symbol, type: 'asset', data: { id: assetId, symbol } })
@@ -305,8 +332,21 @@ export function MobileDashboard({
   }
 
   return (
-    <>
-      <div ref={scrollerRef} className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain">
+    <div className="relative h-full overflow-hidden">
+      <PullToRefreshIndicator
+        pullDistance={pullDistance}
+        isRefreshing={isRefreshing}
+        threshold={threshold}
+      />
+
+      <div
+        ref={scrollerRef}
+        className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain"
+        style={{
+          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
+          transition: pullDistance > 0 ? 'none' : 'transform 200ms ease-out',
+        }}
+      >
         {feedEntries.map(entry => {
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -423,7 +463,7 @@ export function MobileDashboard({
           }
         />
       )}
-    </>
+    </div>
   )
 }
 
