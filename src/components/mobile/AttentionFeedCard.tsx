@@ -84,7 +84,7 @@ export function AttentionFeedCard({
 
   const panels: { key: string; label: string; body: React.ReactNode }[] = []
 
-  if (decision?.recommendedBy || decision?.proposedWeight != null || decision?.currentWeight != null) {
+  if (item.source_type === 'trade_queue_item') {
     panels.push({
       key: 'recommendation',
       label: 'Recommendation',
@@ -93,23 +93,38 @@ export function AttentionFeedCard({
           {decision?.recommendedBy && (
             <Row label="Recommended by" value={decision.recommendedBy} />
           )}
-          {(decision?.currentWeight != null || decision?.proposedWeight != null) && (
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                Weight
-              </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+              Weight
+            </div>
+            {decision?.proposedWeight != null ? (
               <div className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
                 <span>{fmtPct(decision?.currentWeight)}</span>
                 <ArrowRight className="h-4 w-4 text-gray-400" />
-                <span className={tone}>{fmtPct(decision?.proposedWeight)}</span>
-                {decision?.currentWeight != null && decision?.proposedWeight != null && (
+                <span className={tone}>{fmtPct(decision.proposedWeight)}</span>
+                {decision?.currentWeight != null && (
                   <span className="text-sm font-medium text-gray-500">
                     ({fmtDelta(decision.proposedWeight - decision.currentWeight)})
                   </span>
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              // Say the target is missing rather than showing an em-dash. It is
+              // an optional field on the recommendation, and most are submitted
+              // without it — the reviewer should know that is why there is no
+              // number, not be left wondering whether it failed to load.
+              <div>
+                <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {decision?.currentWeight != null
+                    ? `${fmtPct(decision.currentWeight)} today`
+                    : 'Not currently held'}
+                </div>
+                <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                  No target weight was given with this recommendation.
+                </p>
+              </div>
+            )}
+          </div>
           {decision?.targetPrice != null && (
             <Row label="Target price" value={`$${decision.targetPrice.toFixed(2)}`} />
           )}
@@ -156,7 +171,7 @@ export function AttentionFeedCard({
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header band — mirrors the idea card's, so the two read as one feed. */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
         <span className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', config.chip)}>
           <TypeIcon className="h-4 w-4" />
           {config.label}
@@ -167,7 +182,7 @@ export function AttentionFeedCard({
       </div>
 
       {/* The instruction, first and unmissable. */}
-      <div className="flex-shrink-0 px-4 pt-3 pb-2">
+      <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
         <h2 className="text-2xl font-bold leading-tight">
           <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
           <span className="text-gray-900 dark:text-white">{ticker}</span>
@@ -178,7 +193,7 @@ export function AttentionFeedCard({
       </div>
 
       {symbol && (
-        <div className="flex-shrink-0 h-[38%] min-h-[210px] max-h-[320px] px-4">
+        <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
           <ReelsChartPanel symbol={symbol} companyName={companyName ?? undefined} />
         </div>
       )}
@@ -191,7 +206,7 @@ export function AttentionFeedCard({
           className="flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide"
         >
           {panels.map(p => (
-            <div key={p.key} className="w-full flex-shrink-0 snap-start snap-always px-4 overflow-y-auto">
+            <div key={p.key} className="w-full flex-shrink-0 snap-start snap-always px-3 overflow-y-auto">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
                 {p.label}
               </div>

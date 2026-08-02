@@ -13,7 +13,9 @@ import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
-import { SignalFeedCard } from '../ideas/feed/SignalFeedCard'
+import { SignalFeedTile } from './SignalFeedTile'
+import { DerivedInsightTile } from './DerivedInsightTile'
+import { useDerivedInsights } from '../../hooks/mobile/useDerivedInsights'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
 import { PromptModal } from '../thoughts/PromptModal'
@@ -58,21 +60,25 @@ export function MobileDashboard({
 
   const { sections, acknowledge, snoozeFor, markRead, isLoading: attentionLoading } = useAttention()
 
-  // Only what genuinely awaits the user. `informational` and `alignment` are
-  // useful in the attention centre but would dilute a feed whose opening
-  // screens should be things that block progress if ignored.
   const attentionItems = useMemo(() => {
-    const decisions = sections?.decision_required ?? []
-    const actions = sections?.action_required ?? []
-    return [...decisions, ...actions]
-      .filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    // All four types, not just decisions and actions. The feed is meant to be
+    // endless and to keep pointing the user at something to do; restricting it
+    // to the two most urgent buckets left long stretches with nothing to act
+    // on. Priority still orders them, so decisions surface first.
+    const byPriority = [
+      ...(sections?.decision_required ?? []),
+      ...(sections?.action_required ?? []),
+      ...(sections?.alignment ?? []),
+      ...(sections?.informational ?? []),
+    ]
+    return byPriority.filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
   }, [sections])
 
   // Genuinely derived signals — stale coverage, conflicting team sentiment,
   // catalyst proximity. These are the real "what should I be thinking about"
   // cards; the `prompt` type is excluded because those are canned questions
   // with no finding behind them, which is precisely the filler complained of.
+  const { data: derivedInsights = [] } = useDerivedInsights()
   const { signals } = useSignalCards()
   const realSignals = useMemo(
     () => (signals ?? []).filter(sig => sig.signalType !== 'prompt'),
@@ -84,6 +90,18 @@ export function MobileDashboard({
   const [askItem, setAskItem] = useState<ScoredFeedItem | null>(null)
 
   const { track } = useFeedDwell(userId)
+
+  // New seed per mount, so refreshing genuinely reorders the feed while the
+  // order stays stable for the duration of a scroll.
+  const [shuffleSeed] = useState(() => Math.floor(Math.random() * 2 ** 31))
+
+  // The feed must not end. Ideas paginate from the server, but attention,
+  // signals and derived insights are finite sets. When the server has no more
+  // pages, additional cycles of the derived insights are appended instead of
+  // the scroll simply stopping. Each cycle is reshuffled and labelled, so it
+  // reads as "here is the rest of the book to look at" rather than a silent
+  // repeat.
+  const [cycle, setCycle] = useState(0)
 
   // Snapshot at mount for the same reason as the seen map: re-reading live
   // would re-rank the list under the reader as their own dwell is recorded.
@@ -178,24 +196,44 @@ export function MobileDashboard({
       score: realSignals.length - idx,
       signal: sig,
     }))
-    return interleaveByKind<any>([...attentionEntries, ...ideaEntries, ...signalEntries], {
+
+    // Cycle 0 is the first pass; each additional cycle re-presents the derived
+    // insights further down the book, so scrolling keeps yielding real
+    // observations about real positions rather than running out.
+    const insightEntries = Array.from({ length: cycle + 1 }).flatMap((_, round) =>
+      derivedInsights.map((ins, idx) => ({
+        kind: 'insight' as const,
+        score: derivedInsights.length - idx,
+        insight: ins,
+        round,
+      }))
+    )
+    return interleaveByKind<any>([...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries], {
       maxRun: 1,
       leadWith: 'attention',
+      seed: shuffleSeed,
     })
-  }, [attentionItems, visibleItems, realSignals, interestAtMount])
+  }, [attentionItems, visibleItems, realSignals, derivedInsights, cycle, interestAtMount, shuffleSeed])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
     if (!sentinel) return
     const observer = new IntersectionObserver(
       entries => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage()
+        if (!entries[0].isIntersecting) return
+        if (hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        } else if (derivedInsights.length > 0) {
+          // Server exhausted — keep the scroll alive with another pass over
+          // the book rather than dead-ending.
+          setCycle(c => c + 1)
+        }
       },
       { rootMargin: '400px' }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, derivedInsights.length])
 
   const openAsset = useCallback(
     (assetId: string, symbol: string) => {
@@ -251,12 +289,21 @@ export function MobileDashboard({
             )
           }
 
+          if (entry.kind === 'insight') {
+            return (
+              <section
+                key={`${entry.insight.id}-r${entry.round}`}
+                className="relative h-full w-full snap-start snap-always"
+              >
+                <DerivedInsightTile insight={entry.insight} onAssetClick={openAsset} />
+              </section>
+            )
+          }
+
           if (entry.kind === 'signal') {
             return (
               <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always">
-                <div className="h-full w-full overflow-y-auto p-4 bg-white dark:bg-gray-900">
-                  <SignalFeedCard signal={entry.signal} onAssetClick={openAsset} />
-                </div>
+                <SignalFeedTile signal={entry.signal} onAssetClick={openAsset} />
               </section>
             )
           }

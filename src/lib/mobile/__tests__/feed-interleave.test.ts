@@ -81,6 +81,35 @@ describe('interleaveByKind', () => {
     expect(first.map(e => e.id)).toEqual(second.map(e => e.id))
   })
 
+  it('varies order between seeds but stays stable for one seed', () => {
+    const input = [
+      ...Array.from({ length: 6 }, (_, i) => entry('idea', 6 - i, `i${i}`)),
+      ...Array.from({ length: 6 }, (_, i) => entry('attention', 6 - i, `a${i}`)),
+      ...Array.from({ length: 6 }, (_, i) => entry('signal', 6 - i, `s${i}`)),
+    ]
+
+    const seedA1 = interleaveByKind(input, { maxRun: 1, seed: 1 }).map(e => e.id)
+    const seedA2 = interleaveByKind(input, { maxRun: 1, seed: 1 }).map(e => e.id)
+    const seedB = interleaveByKind(input, { maxRun: 1, seed: 999 }).map(e => e.id)
+
+    // Same seed is reproducible — a reported ordering can be replayed.
+    expect(seedA1).toEqual(seedA2)
+    // Different seed gives a different order, which is what makes a refresh
+    // feel like a refresh rather than the same feed again.
+    expect(seedA1).not.toEqual(seedB)
+    // Nothing is lost or duplicated by shuffling.
+    expect(new Set(seedA1).size).toBe(input.length)
+  })
+
+  it('still avoids runs when seeded', () => {
+    const input = [
+      ...Array.from({ length: 6 }, (_, i) => entry('idea', 6 - i, `i${i}`)),
+      ...Array.from({ length: 6 }, (_, i) => entry('attention', 6 - i, `a${i}`)),
+    ]
+    const out = interleaveByKind(input, { maxRun: 1, seed: 42 })
+    expect(longestRun(out)).toBe(1)
+  })
+
   it('handles an empty input and a single kind', () => {
     expect(interleaveByKind<Entry>([], { maxRun: 1 })).toEqual([])
     const only = [entry('idea', 2), entry('idea', 1)]
