@@ -1,16 +1,16 @@
+import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import {
   AlertTriangle, ArrowRight, BellOff, Check, Gavel, Info, Users,
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
+import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
 interface AttentionFeedCardProps {
   item: AttentionItem
-  /** Ticker for the linked asset, resolved by the caller in one batched query
-   *  rather than a lookup per card. Absent for non-asset items (projects,
-   *  lists), which correctly render without a chart. */
+  /** Ticker for the linked asset, resolved by the caller in one batched query. */
   symbol?: string | null
   companyName?: string | null
   onOpen?: (item: AttentionItem) => void
@@ -18,43 +18,47 @@ interface AttentionFeedCardProps {
   onAcknowledge?: (item: AttentionItem) => void
 }
 
-const TYPE_CONFIG: Record<AttentionType, { icon: typeof Info; label: string; chip: string; accent: string }> = {
+const TYPE_CONFIG: Record<AttentionType, { icon: typeof Info; label: string; chip: string }> = {
   decision_required: {
     icon: Gavel,
     label: 'Decision needed',
     chip: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
-    accent: 'border-l-red-500',
   },
   action_required: {
     icon: AlertTriangle,
     label: 'Action needed',
     chip: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
-    accent: 'border-l-amber-500',
   },
   alignment: {
     icon: Users,
     label: 'Needs alignment',
     chip: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
-    accent: 'border-l-purple-500',
   },
   informational: {
     icon: Info,
     label: 'For information',
     chip: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
-    accent: 'border-l-blue-500',
   },
 }
 
+const ACTION_TONE: Record<string, string> = {
+  sell: 'text-red-600 dark:text-red-400',
+  trim: 'text-red-600 dark:text-red-400',
+  buy: 'text-emerald-600 dark:text-emerald-400',
+  add: 'text-emerald-600 dark:text-emerald-400',
+}
+
 /**
- * A full-screen feed card for something awaiting the user — a decision, an
- * approval, a blocked deliverable.
+ * Full-screen card for something awaiting the user.
  *
- * These are the highest-consequence items in the feed, so they are given the
- * same one-per-screen treatment as ideas rather than being compressed into a
- * list. `reason_text` is shown prominently: on a ranked feed the user must be
- * able to see *why* something reached them, and for a decision that is not a
- * nicety — "the algorithm deprioritised it" is not an acceptable explanation
- * for a missed approval.
+ * Structured to match the idea cards — same header band, same chart block,
+ * same bottom action bar — so the feed reads as one surface rather than two
+ * systems interleaved.
+ *
+ * The instruction leads: "SELL DASH · Growth Fund" is what the user needs
+ * before anything else, because the same verb means different things in
+ * different books. Supporting detail moves into a swipeable panel below so
+ * the chart can stay large enough to actually read.
  */
 export function AttentionFeedCard({
   item,
@@ -67,10 +71,92 @@ export function AttentionFeedCard({
   const config = TYPE_CONFIG[item.attention_type] ?? TYPE_CONFIG.informational
   const TypeIcon = config.icon
   const isOverdue = !!item.due_at && new Date(item.due_at).getTime() < Date.now()
+  const { data: decision } = useDecisionContext(item)
+
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const [panel, setPanel] = useState(0)
+
+  // `title` arrives as "SELL DASH" — split so the verb can carry the tone
+  // while the ticker stays neutral and dominant.
+  const [verb, ...rest] = (item.title || '').split(' ')
+  const ticker = rest.join(' ') || symbol || ''
+  const tone = ACTION_TONE[(decision?.action || verb || '').toLowerCase()] ?? 'text-gray-900 dark:text-white'
+
+  const panels: { key: string; label: string; body: React.ReactNode }[] = []
+
+  if (decision?.recommendedBy || decision?.proposedWeight != null || decision?.currentWeight != null) {
+    panels.push({
+      key: 'recommendation',
+      label: 'Recommendation',
+      body: (
+        <div className="space-y-3">
+          {decision?.recommendedBy && (
+            <Row label="Recommended by" value={decision.recommendedBy} />
+          )}
+          {(decision?.currentWeight != null || decision?.proposedWeight != null) && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                Weight
+              </div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+                <span>{fmtPct(decision?.currentWeight)}</span>
+                <ArrowRight className="h-4 w-4 text-gray-400" />
+                <span className={tone}>{fmtPct(decision?.proposedWeight)}</span>
+                {decision?.currentWeight != null && decision?.proposedWeight != null && (
+                  <span className="text-sm font-medium text-gray-500">
+                    ({fmtDelta(decision.proposedWeight - decision.currentWeight)})
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          {decision?.targetPrice != null && (
+            <Row label="Target price" value={`$${decision.targetPrice.toFixed(2)}`} />
+          )}
+        </div>
+      ),
+    })
+  }
+
+  const rationale = decision?.rationale || item.preview
+  if (rationale) {
+    panels.push({
+      key: 'rationale',
+      label: 'Rationale',
+      body: <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-200">{rationale}</p>,
+    })
+  }
+
+  panels.push({
+    key: 'why',
+    label: 'Why you',
+    body: (
+      <div className="space-y-3">
+        {item.reason_text && (
+          <p className="text-sm text-gray-700 dark:text-gray-300">{item.reason_text}</p>
+        )}
+        {item.next_action && <Row label="Next action" value={item.next_action} />}
+        {item.due_at && (
+          <p className={clsx('text-sm font-medium', isOverdue ? 'text-red-600 dark:text-red-400' : 'text-gray-500')}>
+            {isOverdue ? 'Overdue — due ' : 'Due '}
+            {formatDistanceToNow(new Date(item.due_at), { addSuffix: true })}
+          </p>
+        )}
+      </div>
+    ),
+  })
+
+  const onScroll = () => {
+    const el = scrollerRef.current
+    if (!el) return
+    const i = Math.round(el.scrollLeft / el.clientWidth)
+    if (i !== panel) setPanel(i)
+  }
 
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+      {/* Header band — mirrors the idea card's, so the two read as one feed. */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <span className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', config.chip)}>
           <TypeIcon className="h-4 w-4" />
           {config.label}
@@ -80,76 +166,56 @@ export function AttentionFeedCard({
         </span>
       </div>
 
-      {/* A decision about a position is hard to judge without seeing the
-          price. Same chart component as the idea cards, so the two read as
-          one feed rather than two systems. */}
-      {/* Explicit min/max, not a bare percentage: with a chart, reason text,
-          next action and an action bar competing for the same column, a
-          percentage alone collapses the chart to an unreadable strip. */}
+      {/* The instruction, first and unmissable. */}
+      <div className="flex-shrink-0 px-4 pt-3 pb-2">
+        <h2 className="text-2xl font-bold leading-tight">
+          <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
+          <span className="text-gray-900 dark:text-white">{ticker}</span>
+        </h2>
+        {item.subtitle && (
+          <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{item.subtitle}</p>
+        )}
+      </div>
+
       {symbol && (
-        <div className="flex-shrink-0 h-[32%] min-h-[200px] max-h-[300px] px-4 pt-3">
+        <div className="flex-shrink-0 h-[38%] min-h-[210px] max-h-[320px] px-4">
           <ReelsChartPanel symbol={symbol} companyName={companyName ?? undefined} />
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className={clsx('border-l-4 pl-3', config.accent)}>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white leading-snug">
-            {item.title}
-          </h2>
-          {item.subtitle && (
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{item.subtitle}</p>
-          )}
+      {/* Supporting detail, swipeable so the chart above keeps its height. */}
+      <div className="flex-1 min-h-0 flex flex-col pt-3">
+        <div
+          ref={scrollerRef}
+          onScroll={onScroll}
+          className="flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide"
+        >
+          {panels.map(p => (
+            <div key={p.key} className="w-full flex-shrink-0 snap-start snap-always px-4 overflow-y-auto">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                {p.label}
+              </div>
+              {p.body}
+            </div>
+          ))}
         </div>
 
-        {/* Why this reached you — the explainability the feed owes the user. */}
-        {item.reason_text && (
-          <div className="mt-4 rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-              Why you're seeing this
-            </div>
-            <p className="text-sm text-gray-700 dark:text-gray-300">{item.reason_text}</p>
-          </div>
-        )}
-
-        {item.preview && (
-          <p className="mt-4 text-[15px] leading-relaxed text-gray-800 dark:text-gray-200">
-            {item.preview}
-          </p>
-        )}
-
-        {item.next_action && (
-          <div className="mt-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-              Next action
-            </div>
-            <p className="text-sm text-gray-700 dark:text-gray-300">{item.next_action}</p>
-          </div>
-        )}
-
-        {item.due_at && (
-          <p className={clsx(
-            'mt-4 text-sm font-medium',
-            isOverdue ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'
-          )}>
-            {isOverdue ? 'Overdue — due ' : 'Due '}
-            {formatDistanceToNow(new Date(item.due_at), { addSuffix: true })}
-          </p>
-        )}
-
-        {item.tags?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-4">
-            {item.tags.slice(0, 3).map(tag => (
-              <span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[11px] dark:bg-gray-800 dark:text-gray-400">
-                {tag}
-              </span>
+        {panels.length > 1 && (
+          <div className="flex-shrink-0 flex items-center justify-center gap-1.5 py-2">
+            {panels.map((p, i) => (
+              <span
+                key={p.key}
+                aria-hidden="true"
+                className={clsx(
+                  'h-1.5 rounded-full transition-all',
+                  i === panel ? 'w-4 bg-gray-500 dark:bg-gray-300' : 'w-1.5 bg-gray-300 dark:bg-gray-600'
+                )}
+              />
             ))}
           </div>
         )}
       </div>
 
-      {/* Actions differ from an idea card: reacting bullish to a pending
-          approval is meaningless. Open / snooze / acknowledge are the verbs. */}
       <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
         {onSnooze && (
           <button
@@ -184,4 +250,23 @@ export function AttentionFeedCard({
       </div>
     </div>
   )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
+      <div className="text-sm text-gray-800 dark:text-gray-200">{value}</div>
+    </div>
+  )
+}
+
+function fmtPct(v: number | null | undefined): string {
+  if (v == null) return '—'
+  return `${v.toFixed(2)}%`
+}
+
+function fmtDelta(v: number): string {
+  const sign = v > 0 ? '+' : ''
+  return `${sign}${v.toFixed(2)}pp`
 }
