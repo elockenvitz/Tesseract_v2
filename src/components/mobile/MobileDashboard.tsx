@@ -8,6 +8,9 @@ import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
+import { useAttention } from '../../hooks/useAttention'
+import { AttentionFeedCard } from './AttentionFeedCard'
+import { attentionTarget } from '../../lib/mobile/attention-navigation'
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -42,6 +45,19 @@ export function MobileDashboard({
   // Re-rank on every open. staleTime keeps the network quiet within 30s, but
   // the point here is that returning to the feed reflects what changed.
   useEffect(() => { refetch() }, [refetch])
+
+  const { sections, acknowledge, snoozeFor, markRead, isLoading: attentionLoading } = useAttention()
+
+  // Only what genuinely awaits the user. `informational` and `alignment` are
+  // useful in the attention centre but would dilute a feed whose opening
+  // screens should be things that block progress if ignored.
+  const attentionItems = useMemo(() => {
+    const decisions = sections?.decision_required ?? []
+    const actions = sections?.action_required ?? []
+    return [...decisions, ...actions]
+      .filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  }, [sections])
 
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -93,7 +109,7 @@ export function MobileDashboard({
     [onNavigate]
   )
 
-  if (isLoading) {
+  if (isLoading || attentionLoading) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-gray-400">
@@ -104,7 +120,7 @@ export function MobileDashboard({
     )
   }
 
-  if (!visibleItems.length) {
+  if (!visibleItems.length && !attentionItems.length) {
     return (
       <div className="h-full flex items-center justify-center px-8">
         <div className="text-center">
@@ -121,6 +137,24 @@ export function MobileDashboard({
   return (
     <>
       <div className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain">
+        {/* Things awaiting the user lead the feed. A pending decision is
+            time-sensitive in a way an idea is not, and burying it below ranked
+            content is how approvals get missed. Ordered by the attention
+            system's own score so the most pressing comes first. */}
+        {attentionItems.map(item => (
+          <section key={item.attention_id} className="relative h-full w-full snap-start snap-always">
+            <AttentionFeedCard
+              item={item}
+              onOpen={attentionTarget(item) ? (it) => {
+                markRead(it.attention_id)
+                onNavigate?.(attentionTarget(it))
+              } : undefined}
+              onSnooze={(it) => snoozeFor(it.attention_id, 24)}
+              onAcknowledge={(it) => acknowledge(it.attention_id)}
+            />
+          </section>
+        ))}
+
         {visibleItems.map(item => {
           const source = readthroughSourceType(item.type)
           return (

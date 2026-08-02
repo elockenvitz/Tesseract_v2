@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import {
   TrendingUp, TrendingDown, Lightbulb, FileText, GitBranch, Sparkles,
-  MessageSquare, User, ChevronDown, ChevronUp, ChevronRight, Share2, PlusCircle
+  MessageSquare, User, ChevronDown, ChevronUp, ChevronRight, Share2, PlusCircle, GitCompareArrows
 } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
@@ -57,6 +57,13 @@ const typeConfig: Record<ItemType, {
     badgeColor: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     iconColor: 'text-emerald-500'
   },
+  pair_trade: {
+    icon: GitCompareArrows,
+    label: 'Pair Trade',
+    bgColor: 'bg-white dark:bg-gray-800',
+    badgeColor: 'bg-teal-100 text-teal-700 border-teal-200',
+    iconColor: 'text-teal-500'
+  },
   note: {
     icon: FileText,
     label: 'Research Note',
@@ -87,6 +94,15 @@ const typeConfig: Record<ItemType, {
   }
 }
 
+/** Used when an ItemType has no entry above — degrade, don't crash. */
+const FALLBACK_TYPE_CONFIG = {
+  icon: FileText,
+  label: 'Update',
+  bgColor: 'bg-white dark:bg-gray-800',
+  badgeColor: 'bg-gray-100 text-gray-700 border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',
+  iconColor: 'text-gray-500 dark:text-gray-400',
+}
+
 export function ReelsFeedItem({
   item,
   onItemClick,
@@ -99,7 +115,11 @@ export function ReelsFeedItem({
 }: ReelsFeedItemProps) {
   const [isContentExpanded, setIsContentExpanded] = useState(false)
 
-  const config = typeConfig[item.type]
+  // Fall back rather than destructure a missing entry. `pair_trade` was absent
+  // from typeConfig, so a pair trade in the feed made `config` undefined and
+  // `config.icon` threw — a white screen on what is now the mobile home. A new
+  // ItemType should degrade to a generic card, never crash the feed.
+  const config = typeConfig[item.type] ?? FALLBACK_TYPE_CONFIG
   const TypeIcon = config.icon
 
   // Get asset info if available (notes use 'source' instead of 'asset')
