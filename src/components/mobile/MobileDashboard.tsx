@@ -15,6 +15,10 @@ import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedCard } from '../ideas/feed/SignalFeedCard'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
+import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
+import { PromptModal } from '../thoughts/PromptModal'
+import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
+import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/feed-telemetry'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
@@ -76,6 +80,14 @@ export function MobileDashboard({
   )
 
   const [shareItem, setShareItem] = useState<ScoredFeedItem | null>(null)
+  const [promoteItem, setPromoteItem] = useState<ScoredFeedItem | null>(null)
+  const [askItem, setAskItem] = useState<ScoredFeedItem | null>(null)
+
+  const { track } = useFeedDwell(userId)
+
+  // Snapshot at mount for the same reason as the seen map: re-reading live
+  // would re-rank the list under the reader as their own dwell is recorded.
+  const [interestAtMount] = useState(() => loadInterest(userId ?? ''))
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -146,11 +158,21 @@ export function MobileDashboard({
       score: attentionItems.length - idx,
       attention: a,
     }))
-    const ideaEntries = visibleItems.map((i, idx) => ({
-      kind: 'idea' as const,
-      score: visibleItems.length - idx,
-      idea: i,
-    }))
+    // Learned interest nudges rank rather than dictating it: a strong
+    // interest can lift an item by up to a third of the list, but cannot
+    // override recency and relevance entirely, so the feed still surfaces
+    // new names instead of narrowing to what was read yesterday.
+    const ideaEntries = visibleItems.map((i, idx) => {
+      const boost = interestScore(interestAtMount, {
+        assetId: ('asset' in i && i.asset ? i.asset.id : null) as string | null,
+        authorId: i.author?.id ?? null,
+      })
+      return {
+        kind: 'idea' as const,
+        score: (visibleItems.length - idx) + boost * visibleItems.length * 0.33,
+        idea: i,
+      }
+    })
     const signalEntries = realSignals.map((sig, idx) => ({
       kind: 'signal' as const,
       score: realSignals.length - idx,
@@ -160,7 +182,7 @@ export function MobileDashboard({
       maxRun: 1,
       leadWith: 'attention',
     })
-  }, [attentionItems, visibleItems, realSignals])
+  }, [attentionItems, visibleItems, realSignals, interestAtMount])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -241,15 +263,23 @@ export function MobileDashboard({
 
           const item = entry.idea
           const source = readthroughSourceType(item.type)
+          const itemAssetId = ('asset' in item && item.asset ? item.asset.id : null) as string | null
+          const itemAuthorId = item.author?.id ?? null
+          const note = (signal: 'reaction' | 'share' | 'open' | 'readthrough') =>
+            userId && recordInterest({ userId, signal, assetId: itemAssetId, authorId: itemAuthorId })
           return (
-            <section key={item.id} className="relative h-full w-full snap-start snap-always">
+            <section
+              key={item.id}
+              ref={track({ assetId: itemAssetId, authorId: itemAuthorId })}
+              className="relative h-full w-full snap-start snap-always"
+            >
               {/* Inset by exactly the bar height so the card never renders
                   underneath the actions. */}
               <div className="absolute inset-x-0 top-0" style={{ bottom: ACTION_BAR_HEIGHT }}>
                 <ReelsFeedItem
                   item={item}
                   hideHeaderActions
-                  onAssetClick={openAsset}
+                  onAssetClick={(id, sym) => { note('open'); openAsset(id, sym) }}
                   onShare={onShare}
                   onCreateIdea={onCreateIdea}
                 />
@@ -257,9 +287,11 @@ export function MobileDashboard({
               <MobileFeedActionRail
                 itemId={item.id}
                 itemType={item.type}
-                onShare={() => setShareItem(item)}
-                onCreateIdea={onCreateIdea ? () => onCreateIdea(item) : undefined}
-                onReadthrough={source ? () => setReadthroughFor(item) : undefined}
+                onShare={() => { note('share'); setShareItem(item) }}
+                onReact={() => note('reaction')}
+                onPromote={item.type === 'quick_thought' ? () => setPromoteItem(item) : undefined}
+                onAsk={() => setAskItem(item)}
+                onReadthrough={source ? () => { note('readthrough'); setReadthroughFor(item) } : undefined}
               />
             </section>
           )
@@ -270,6 +302,30 @@ export function MobileDashboard({
 
       {shareItem && (
         <ShareToUserModal isOpen onClose={() => setShareItem(null)} item={shareItem} />
+      )}
+
+      {promoteItem && (
+        <PromoteToTradeIdeaModal
+          isOpen
+          onClose={() => setPromoteItem(null)}
+          quickThoughtId={promoteItem.id}
+          quickThoughtContent={promoteItem.content ?? ''}
+          assetId={('asset' in promoteItem && promoteItem.asset ? promoteItem.asset.id : null) as any}
+          assetSymbol={('asset' in promoteItem && promoteItem.asset ? promoteItem.asset.symbol : null) as any}
+          assetName={('asset' in promoteItem && promoteItem.asset ? promoteItem.asset.company_name : null) as any}
+        />
+      )}
+
+      {askItem && (
+        <PromptModal
+          isOpen
+          onClose={() => setAskItem(null)}
+          context={{
+            type: 'asset' in askItem && askItem.asset ? 'asset' : undefined,
+            id: 'asset' in askItem && askItem.asset ? askItem.asset.id : undefined,
+            title: 'asset' in askItem && askItem.asset ? askItem.asset.symbol : undefined,
+          }}
+        />
       )}
 
       {readthroughFor && (
