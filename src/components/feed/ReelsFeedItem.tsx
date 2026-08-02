@@ -1,13 +1,13 @@
-import React, { useState } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import {
   TrendingUp, TrendingDown, Lightbulb, FileText, GitBranch, Sparkles,
-  MessageSquare, User, ChevronDown, ChevronUp, ChevronRight, Share2, PlusCircle, GitCompareArrows
+  MessageSquare, User, ChevronRight, Share2, PlusCircle, GitCompareArrows
 } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import { PairTradeChartCarousel } from './PairTradeChartCarousel'
 import { TickerQuoteBadge } from '../mobile/TickerQuoteBadge'
+import { ExpandableText } from '../mobile/ExpandableText'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 
 // Strip HTML tags from content for clean display
@@ -115,7 +115,6 @@ export function ReelsFeedItem({
   onCreateIdea,
   hideHeaderActions = false
 }: ReelsFeedItemProps) {
-  const [isContentExpanded, setIsContentExpanded] = useState(false)
 
   // Fall back rather than destructure a missing entry. `pair_trade` was absent
   // from typeConfig, so a pair trade in the feed made `config` undefined and
@@ -147,14 +146,7 @@ export function ReelsFeedItem({
     : undefined
 
   // Get clean content
-  // 200 characters truncated most theses mid-sentence and hid the reasoning
-  // behind a "Read more" tap. The content area scrolls, so show far more of it
-  // before collapsing.
   const cleanContent = stripHtml(item.content)
-  const isLongContent = cleanContent.length > 600
-  const displayContent = isContentExpanded || !isLongContent
-    ? cleanContent
-    : cleanContent.substring(0, 600) + '…'
 
   return (
     // Flex column rather than absolutely-positioned percentage bands. The old
@@ -289,8 +281,8 @@ export function ReelsFeedItem({
       </div>
 
       {/* Content area */}
-      <div className="flex-1 min-h-0 px-3 py-2 overflow-y-auto">
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex-1 min-h-0 px-3 py-2 overflow-hidden">
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 max-h-full overflow-hidden dark:border-gray-700 dark:bg-gray-900">
           {/* Qualifiers lead, compactly, so they frame the reasoning rather
               than trailing after it as a stack of competing chips. */}
           {item.type === 'trade_idea' && 'action' in item && item.action && (
@@ -328,33 +320,10 @@ export function ReelsFeedItem({
             </h2>
           )}
 
-          {/* The reasoning — the substance of the post, so it gets the weight */}
-          <p className="text-gray-800 text-[15px] leading-relaxed dark:text-gray-200">
-            {displayContent}
-          </p>
-
-          {/* Expand/collapse for long content */}
-          {isLongContent && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setIsContentExpanded(!isContentExpanded)
-              }}
-              className="flex items-center gap-1 text-primary-600 hover:text-primary-700 mt-2 text-sm font-medium"
-            >
-              {isContentExpanded ? (
-                <>
-                  <ChevronUp className="h-4 w-4" />
-                  Show less
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-4 w-4" />
-                  Read more
-                </>
-              )}
-            </button>
-          )}
+          {/* The reasoning — the substance of the post, so it gets the weight.
+              Clamped by rendered height rather than character count: 600
+              characters is a different number of lines at every width. */}
+          <ExpandableText text={cleanContent} lines={5} />
 
           {/* Action/urgency now lead the card, above the reasoning. */}
 

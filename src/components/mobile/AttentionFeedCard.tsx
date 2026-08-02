@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
+import { ExpandableText } from './ExpandableText'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
@@ -91,9 +92,6 @@ export function AttentionFeedCard({
       label: 'Recommendation',
       body: (
         <div className="space-y-3">
-          {decision?.recommendedBy && (
-            <Row label="Recommended by" value={decision.recommendedBy} />
-          )}
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
               Weight
@@ -139,7 +137,7 @@ export function AttentionFeedCard({
     panels.push({
       key: 'rationale',
       label: 'Rationale',
-      body: <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-200">{rationale}</p>,
+      body: <ExpandableText text={rationale} lines={5} />,
     })
   }
 
@@ -188,10 +186,20 @@ export function AttentionFeedCard({
 
       {/* The instruction, first and unmissable. */}
       <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
-        <h2 className="text-2xl font-bold leading-tight">
-          <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
-          <span className="text-gray-900 dark:text-white">{ticker}</span>
-        </h2>
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-2xl font-bold leading-tight min-w-0">
+            <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
+            <span className="text-gray-900 dark:text-white">{ticker}</span>
+          </h2>
+          {/* Attribution sits with the instruction it attributes — as its own
+              labelled row inside a panel called "Recommendation" it read as
+              the same word twice. */}
+          {decision?.recommendedBy && (
+            <span className="ml-auto shrink-0 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[9rem]">
+              by {decision.recommendedBy}
+            </span>
+          )}
+        </div>
         {item.subtitle && (
           <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{item.subtitle}</p>
         )}
@@ -211,7 +219,7 @@ export function AttentionFeedCard({
           className="flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide"
         >
           {panels.map(p => (
-            <div key={p.key} className="w-full flex-shrink-0 snap-start snap-always px-3 overflow-y-auto">
+            <div key={p.key} className="w-full flex-shrink-0 snap-start snap-always px-3 overflow-hidden">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
                 {p.label}
               </div>

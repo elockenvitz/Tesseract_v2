@@ -291,7 +291,7 @@ async function fetchFeedPage(
     queries.push((async () => {
       let q = supabase
         .from('trade_queue_items')
-        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
         .eq('status', 'idea')
         .eq('visibility_tier', 'active')
         .eq('organization_id', ctx.organizationId!)
@@ -314,7 +314,9 @@ async function fetchFeedPage(
         : { data: [] }
       const userMap = new Map((users || []).map(u => [u.id, u]))
 
-      return (data as any[]).filter(d => !d.pair_id).map(d => ({
+      // Exclude pair legs on either linking column — a leg that slipped
+      // through would render as a standalone idea alongside its own pair.
+      return (data as any[]).filter(d => !d.pair_id && !d.pair_trade_id).map(d => ({
         id: d.id,
         type: 'trade_idea' as const,
         content: d.rationale || '',
@@ -341,10 +343,17 @@ async function fetchFeedPage(
     queries.push((async () => {
       let legQuery = supabase
         .from('trade_queue_items')
-        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
-        .not('pair_id', 'is', null)
-        .eq('status', 'idea')
+        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, pair_leg_type, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        // Legs link through either column depending on when they were created,
+        // so matching only one silently drops whole pairs.
+        .or('pair_id.not.is.null,pair_trade_id.not.is.null')
+        // Not restricted to status 'idea' the way single ideas are. A pair that
+        // has been approved or executed is still the team's position on a
+        // relationship between two names, and is worth seeing in the feed;
+        // filtering to 'idea' hid every pair that had actually progressed.
+        // visibility_tier already excludes trashed rows.
         .eq('visibility_tier', 'active')
+        .neq('status', 'deleted')
         .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
         .order('created_at', { ascending: false })
@@ -357,9 +366,11 @@ async function fetchFeedPage(
 
       const byPair = new Map<string, any[]>()
       for (const leg of legs as any[]) {
-        const list = byPair.get(leg.pair_id)
+        const key = leg.pair_trade_id || leg.pair_id
+        if (!key) continue
+        const list = byPair.get(key)
         if (list) list.push(leg)
-        else byPair.set(leg.pair_id, [leg])
+        else byPair.set(key, [leg])
       }
 
       const pairIds = [...byPair.keys()]
@@ -375,9 +386,14 @@ async function fetchFeedPage(
       const pairMap = new Map((pairs || []).map((p: any) => [p.id, p]))
       const userMap = new Map((users || []).map((u: any) => [u.id, u]))
 
-      // Long vs short is derived from the leg action; a pair with only one
-      // side is still shown, since a half-built pair is worth seeing.
-      const isLong = (action?: string) => action === 'buy' || action === 'add'
+      // `pair_leg_type` states the side explicitly and is authoritative where
+      // present; older legs have it null, so the action is the fallback. A pair
+      // with only one side is still shown — a half-built pair is worth seeing.
+      const isLong = (leg: any) => {
+        if (leg.pair_leg_type === 'long') return true
+        if (leg.pair_leg_type === 'short') return false
+        return leg.action === 'buy' || leg.action === 'add'
+      }
 
       return pairIds.map(pairId => {
         const pairLegs = byPair.get(pairId) || []
@@ -399,10 +415,10 @@ async function fetchFeedPage(
           urgency: (meta?.urgency || first?.urgency) as any,
           rationale: meta?.rationale || first?.rationale,
           status: meta?.status || first?.status,
-          long_legs: pairLegs.filter(l => isLong(l.action)).map(toLeg),
-          short_legs: pairLegs.filter(l => !isLong(l.action)).map(toLeg),
+          long_legs: pairLegs.filter(isLong).map(toLeg),
+          short_legs: pairLegs.filter(l => !isLong(l)).map(toLeg),
           portfolio: first?.portfolios || undefined,
-          asset: pairLegs.find(l => isLong(l.action))?.assets || first?.assets || undefined,
+          asset: pairLegs.find(isLong)?.assets || first?.assets || undefined,
         }
       })
     })())

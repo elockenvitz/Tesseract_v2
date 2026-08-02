@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
+import { ExpandableText } from './ExpandableText'
 import type { SignalCard, SignalType } from '../../hooks/ideas/useIdeasFeed'
 
 interface SignalFeedTileProps {
@@ -85,8 +86,8 @@ export function SignalFeedTile({ signal, onAssetClick }: SignalFeedTileProps) {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
-        <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-200">{signal.body}</p>
+      <div className="flex-1 min-h-0 overflow-hidden px-3 py-2">
+        <ExpandableText text={signal.body} lines={4} />
 
         {signal.metric && (
           <div className="mt-3">
