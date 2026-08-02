@@ -5,6 +5,7 @@ import {
   AlertTriangle, ArrowRight, BellOff, Check, Gavel, Info, Users,
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
+import { TickerQuoteBadge } from './TickerQuoteBadge'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
@@ -176,9 +177,13 @@ export function AttentionFeedCard({
           <TypeIcon className="h-4 w-4" />
           {config.label}
         </span>
-        <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
-          {formatDistanceToNow(new Date(item.last_activity_at || item.created_at), { addSuffix: true })}
-        </span>
+        {symbol ? (
+          <TickerQuoteBadge symbol={symbol} companyName={companyName} className="ml-auto" />
+        ) : (
+          <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
+            {formatDistanceToNow(new Date(item.last_activity_at || item.created_at), { addSuffix: true })}
+          </span>
+        )}
       </div>
 
       {/* The instruction, first and unmissable. */}
@@ -194,7 +199,7 @@ export function AttentionFeedCard({
 
       {symbol && (
         <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
-          <ReelsChartPanel symbol={symbol} companyName={companyName ?? undefined} />
+          <ReelsChartPanel symbol={symbol} hideHeader />
         </div>
       )}
 

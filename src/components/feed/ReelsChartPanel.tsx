@@ -25,6 +25,10 @@ interface ReelsChartPanelProps {
   symbol: string
   companyName?: string
   onOpenFullChart?: (symbol: string) => void
+  /** Suppresses the panel's own symbol/price row. Set when the surrounding
+   *  tile already shows that information, so the chart gets the height back
+   *  instead of the card carrying two headers. */
+  hideHeader?: boolean
   eventDate?: string  // ISO date string for when an event occurred (e.g., trade idea created)
   eventLabel?: string // Label for the event
 }
@@ -33,6 +37,7 @@ export function ReelsChartPanel({
   symbol,
   companyName,
   onOpenFullChart,
+  hideHeader = false,
   eventDate,
   eventLabel
 }: ReelsChartPanelProps) {
@@ -115,6 +120,7 @@ export function ReelsChartPanel({
   return (
     <div className="w-full h-full flex flex-col">
       {/* Header with symbol info */}
+      {!hideHeader && (
       <div className="flex items-center justify-between px-2 py-2 bg-white border-b border-gray-200 rounded-t-xl relative z-30 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center gap-3">
           <div>
@@ -159,9 +165,10 @@ export function ReelsChartPanel({
           </button>
         )}
       </div>
+      )}
 
       {/* Timeframe selector */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 overflow-x-auto dark:border-gray-700 dark:bg-gray-900">
+      <div className={clsx("flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 overflow-x-auto dark:border-gray-700 dark:bg-gray-900", hideHeader && "rounded-t-xl border-t")}>
         {timeframes.map(tf => (
           <button
             key={tf.value}

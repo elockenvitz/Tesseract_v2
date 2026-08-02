@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import { ArrowRight, FileQuestion, Scale, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
+import { TickerQuoteBadge } from './TickerQuoteBadge'
 import type { DerivedInsight, DerivedInsightKind } from '../../hooks/mobile/useDerivedInsights'
 
 interface DerivedInsightTileProps {
@@ -51,11 +52,14 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
           <Icon className="h-4 w-4" />
           {config.label}
         </span>
-        {insight.weightPct != null && (
-          <span className="ml-auto text-xs font-semibold text-gray-500 dark:text-gray-400 whitespace-nowrap">
-            {insight.weightPct.toFixed(2)}%
-          </span>
-        )}
+        {/* A bare "4.20%" in the corner said nothing — it could have been a
+            price move, a target, anything. Ticker and price go here instead;
+            the weight is stated in words in the body, where it has context. */}
+        <TickerQuoteBadge
+          symbol={insight.symbol}
+          companyName={insight.companyName}
+          className="ml-auto"
+        />
       </div>
 
       <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
@@ -70,7 +74,7 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
       </div>
 
       <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
-        <ReelsChartPanel symbol={insight.symbol} companyName={insight.companyName ?? undefined} />
+        <ReelsChartPanel symbol={insight.symbol} hideHeader />
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">

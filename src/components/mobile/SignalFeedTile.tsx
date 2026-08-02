@@ -4,6 +4,7 @@ import {
   ArrowRight, CalendarClock, Radar, Split, TimerReset,
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
+import { TickerQuoteBadge } from './TickerQuoteBadge'
 import type { SignalCard, SignalType } from '../../hooks/ideas/useIdeasFeed'
 
 interface SignalFeedTileProps {
@@ -62,11 +63,13 @@ export function SignalFeedTile({ signal, onAssetClick }: SignalFeedTileProps) {
           <Icon className="h-4 w-4" />
           {config.label}
         </span>
-        {signal.createdAt && (
+        {primary ? (
+          <TickerQuoteBadge symbol={primary.symbol} className="ml-auto" />
+        ) : signal.createdAt ? (
           <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
             {formatDistanceToNow(new Date(signal.createdAt), { addSuffix: true })}
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Headline leads, matching the decision card's instruction-first shape. */}
@@ -78,7 +81,7 @@ export function SignalFeedTile({ signal, onAssetClick }: SignalFeedTileProps) {
 
       {primary && (
         <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
-          <ReelsChartPanel symbol={primary.symbol} />
+          <ReelsChartPanel symbol={primary.symbol} hideHeader />
         </div>
       )}
 
