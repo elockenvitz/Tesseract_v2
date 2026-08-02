@@ -84,7 +84,7 @@ export function AttentionFeedCard({
 
   const panels: { key: string; label: string; body: React.ReactNode }[] = []
 
-  if (decision?.recommendedBy || decision?.proposedWeight != null || decision?.currentWeight != null) {
+  if (item.source_type === 'trade_queue_item') {
     panels.push({
       key: 'recommendation',
       label: 'Recommendation',
@@ -93,23 +93,38 @@ export function AttentionFeedCard({
           {decision?.recommendedBy && (
             <Row label="Recommended by" value={decision.recommendedBy} />
           )}
-          {(decision?.currentWeight != null || decision?.proposedWeight != null) && (
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                Weight
-              </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+              Weight
+            </div>
+            {decision?.proposedWeight != null ? (
               <div className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
                 <span>{fmtPct(decision?.currentWeight)}</span>
                 <ArrowRight className="h-4 w-4 text-gray-400" />
-                <span className={tone}>{fmtPct(decision?.proposedWeight)}</span>
-                {decision?.currentWeight != null && decision?.proposedWeight != null && (
+                <span className={tone}>{fmtPct(decision.proposedWeight)}</span>
+                {decision?.currentWeight != null && (
                   <span className="text-sm font-medium text-gray-500">
                     ({fmtDelta(decision.proposedWeight - decision.currentWeight)})
                   </span>
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              // Say the target is missing rather than showing an em-dash. It is
+              // an optional field on the recommendation, and most are submitted
+              // without it — the reviewer should know that is why there is no
+              // number, not be left wondering whether it failed to load.
+              <div>
+                <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {decision?.currentWeight != null
+                    ? `${fmtPct(decision.currentWeight)} today`
+                    : 'Not currently held'}
+                </div>
+                <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                  No target weight was given with this recommendation.
+                </p>
+              </div>
+            )}
+          </div>
           {decision?.targetPrice != null && (
             <Row label="Target price" value={`$${decision.targetPrice.toFixed(2)}`} />
           )}

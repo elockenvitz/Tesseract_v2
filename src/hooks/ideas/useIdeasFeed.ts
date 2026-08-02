@@ -331,6 +331,83 @@ async function fetchFeedPage(
     })())
   }
 
+  // Pair trades. The trade-idea query above deliberately drops legs
+  // (`!d.pair_id`) so a pair does not appear as two unrelated cards — but
+  // nothing was adding the pair back, so pair trades never reached the feed at
+  // all. Built from the legs rather than from `pair_trades` directly: the legs
+  // carry organization_id, so the same org scoping applies without inventing a
+  // second rule for a table that has no org column.
+  if (!wantTypes || wantTypes.includes('pair_trade')) {
+    queries.push((async () => {
+      let legQuery = supabase
+        .from('trade_queue_items')
+        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        .not('pair_id', 'is', null)
+        .eq('status', 'idea')
+        .eq('visibility_tier', 'active')
+        .eq('organization_id', ctx.organizationId!)
+        .gte('created_at', timeStart)
+        .order('created_at', { ascending: false })
+        .limit(fetchSize * 3)
+
+      if (filters.portfolioId) legQuery = legQuery.eq('portfolio_id', filters.portfolioId)
+
+      const { data: legs } = await legQuery
+      if (!legs?.length) return []
+
+      const byPair = new Map<string, any[]>()
+      for (const leg of legs as any[]) {
+        const list = byPair.get(leg.pair_id)
+        if (list) list.push(leg)
+        else byPair.set(leg.pair_id, [leg])
+      }
+
+      const pairIds = [...byPair.keys()]
+      const [{ data: pairs }, { data: users }] = await Promise.all([
+        supabase.from('pair_trades').select('id, name, rationale, thesis_summary, urgency, status, created_by, created_at').in('id', pairIds),
+        (async () => {
+          const authorIds = [...new Set((legs as any[]).map(l => l.created_by).filter(Boolean))]
+          if (!authorIds.length) return { data: [] as any[] }
+          return supabase.from('users').select('id, email, first_name, last_name').in('id', authorIds)
+        })(),
+      ])
+
+      const pairMap = new Map((pairs || []).map((p: any) => [p.id, p]))
+      const userMap = new Map((users || []).map((u: any) => [u.id, u]))
+
+      // Long vs short is derived from the leg action; a pair with only one
+      // side is still shown, since a half-built pair is worth seeing.
+      const isLong = (action?: string) => action === 'buy' || action === 'add'
+
+      return pairIds.map(pairId => {
+        const pairLegs = byPair.get(pairId) || []
+        const meta: any = pairMap.get(pairId)
+        const first = pairLegs[0]
+        const author = userMap.get(first?.created_by)
+
+        const toLeg = (l: any) => ({ id: l.id, action: l.action, asset: l.assets })
+
+        return {
+          id: pairId,
+          type: 'pair_trade' as const,
+          content: meta?.rationale || meta?.thesis_summary || first?.rationale || '',
+          created_at: meta?.created_at || first?.created_at,
+          author: author
+            ? { id: author.id, email: author.email, first_name: author.first_name, last_name: author.last_name }
+            : { id: first?.created_by || '' },
+          pair_id: pairId,
+          urgency: (meta?.urgency || first?.urgency) as any,
+          rationale: meta?.rationale || first?.rationale,
+          status: meta?.status || first?.status,
+          long_legs: pairLegs.filter(l => isLong(l.action)).map(toLeg),
+          short_legs: pairLegs.filter(l => !isLong(l.action)).map(toLeg),
+          portfolio: first?.portfolios || undefined,
+          asset: pairLegs.find(l => isLong(l.action))?.assets || first?.assets || undefined,
+        }
+      })
+    })())
+  }
+
   // Notes (asset notes only for now — most relevant). Strictly scoped
   // to current org via asset_notes.organization_id.
   if (!wantTypes || wantTypes.includes('note')) {
