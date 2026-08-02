@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import { PairTradeChartCarousel } from './PairTradeChartCarousel'
+import { TickerQuoteBadge } from '../mobile/TickerQuoteBadge'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 
 // Strip HTML tags from content for clean display
@@ -215,6 +216,16 @@ export function ReelsFeedItem({
           </span>
         </div>
 
+        {/* Ticker and price fill what was an empty right-hand gap, and let the
+            chart below drop its own header row. */}
+        {hideHeaderActions && displaySymbol && !isPairTrade && (
+          <TickerQuoteBadge
+            symbol={displaySymbol}
+            companyName={asset?.company_name}
+            className="ml-auto"
+          />
+        )}
+
         {/* Action buttons */}
         <div className={clsx('items-center gap-2', hideHeaderActions ? 'hidden' : 'flex')}>
           {/* Share button */}
@@ -264,6 +275,7 @@ export function ReelsFeedItem({
             onOpenFullChart={onOpenFullChart}
             eventDate={eventDate}
             eventLabel={eventLabel}
+            hideHeader={hideHeaderActions}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
