@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { subDays, formatDistanceToNow } from 'date-fns'
 import type { SignalCard, SignalType } from './useIdeasFeed'
 
@@ -21,13 +22,14 @@ import type { SignalCard, SignalType } from './useIdeasFeed'
 // Generate attention cluster signals
 // ============================================================
 
-async function generateAttentionClusters(): Promise<SignalCard[]> {
+async function generateAttentionClusters(orgId: string): Promise<SignalCard[]> {
   const since = subDays(new Date(), 7).toISOString()
 
   // Count quick thoughts per asset in last 7 days
   const { data: thoughts } = await supabase
     .from('quick_thoughts')
     .select('asset_id, created_by, sentiment, assets:asset_id(id, symbol, company_name)')
+    .eq('organization_id', orgId)
     .eq('is_archived', false)
     .not('asset_id', 'is', null)
     .gte('created_at', since)
@@ -74,12 +76,13 @@ async function generateAttentionClusters(): Promise<SignalCard[]> {
 // Generate conflict signals (bullish vs bearish)
 // ============================================================
 
-async function generateConflictSignals(): Promise<SignalCard[]> {
+async function generateConflictSignals(orgId: string): Promise<SignalCard[]> {
   const since = subDays(new Date(), 14).toISOString()
 
   const { data: thoughts } = await supabase
     .from('quick_thoughts')
     .select('asset_id, sentiment, created_by, assets:asset_id(id, symbol, company_name)')
+    .eq('organization_id', orgId)
     .eq('is_archived', false)
     .not('asset_id', 'is', null)
     .not('sentiment', 'is', null)
@@ -123,7 +126,7 @@ async function generateConflictSignals(): Promise<SignalCard[]> {
 // Generate stale coverage signals
 // ============================================================
 
-async function generateStaleCoverageSignals(userId: string): Promise<SignalCard[]> {
+async function generateStaleCoverageSignals(userId: string, orgId: string): Promise<SignalCard[]> {
   // Get user's portfolio holdings
   const { data: holdings } = await supabase
     .from('portfolio_holdings')
@@ -150,16 +153,19 @@ async function generateStaleCoverageSignals(userId: string): Promise<SignalCard[
     supabase
       .from('asset_contributions')
       .select('asset_id')
+    .eq('organization_id', orgId)
       .in('asset_id', assetIds)
       .gte('updated_at', since30d),
     supabase
       .from('asset_notes')
       .select('asset_id')
+    .eq('organization_id', orgId)
       .in('asset_id', assetIds)
       .gte('created_at', since30d),
     supabase
       .from('analyst_price_targets')
       .select('asset_id')
+    .eq('organization_id', orgId)
       .in('asset_id', assetIds)
       .gte('updated_at', since30d),
   ])
@@ -201,16 +207,19 @@ async function generateStaleCoverageSignals(userId: string): Promise<SignalCard[
 
 export function useSignalCards() {
   const { user } = useAuth()
+  // Signals describe one organisation's book and team. Without scoping they
+  // mixed activity across every org the user belongs to.
+  const { currentOrgId } = useOrganization()
 
   const query = useQuery({
-    queryKey: ['signal-cards', user?.id],
+    queryKey: ['signal-cards', user?.id, currentOrgId],
     queryFn: async () => {
-      if (!user) return []
+      if (!user || !currentOrgId) return []
 
       const [clusters, conflicts, stale] = await Promise.all([
-        generateAttentionClusters(),
-        generateConflictSignals(),
-        generateStaleCoverageSignals(user.id),
+        generateAttentionClusters(currentOrgId!),
+        generateConflictSignals(currentOrgId!),
+        generateStaleCoverageSignals(user.id, currentOrgId!),
       ])
 
       return [...clusters, ...conflicts, ...stale]

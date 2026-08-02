@@ -553,11 +553,13 @@ export function Header({
               )}
             </div>
 
-            {/* Divider + Org Switcher */}
+            {/* Divider + Org Switcher. Hidden on phones: the drawer carries
+                the org name and switcher, which frees the top bar for the
+                controls that have to be one tap away. */}
             {currentOrg && (
               <>
-              <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1.5 md:mx-3 flex-shrink-0" />
-              <div className="relative" ref={orgSwitcherRef}>
+              <div className="hidden md:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1.5 md:mx-3 flex-shrink-0" />
+              <div className="hidden md:block relative" ref={orgSwitcherRef}>
                 <button
                   onClick={() => { if (userOrgs.length > 1) setShowOrgSwitcher(!showOrgSwitcher) }}
                   className={clsx(

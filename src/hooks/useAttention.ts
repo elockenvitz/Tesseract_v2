@@ -14,6 +14,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import type {
   AttentionResponse,
   AttentionItem,
@@ -181,13 +182,17 @@ function calculateScore(item: AttentionItem, userId: string): { score: number; b
 }
 
 // Collect project deliverables
-async function collectProjectDeliverables(userId: string): Promise<AttentionItem[]> {
+async function collectProjectDeliverables(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // First get projects the user is assigned to
   const { data: userProjectIds } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const projectIds = userProjectIds?.map(p => p.project_id) || []
@@ -272,13 +277,17 @@ async function collectProjectDeliverables(userId: string): Promise<AttentionItem
 }
 
 // Collect projects
-async function collectProjects(userId: string): Promise<AttentionItem[]> {
+async function collectProjects(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Get project IDs where user is assigned
   const { data: userProjectAssignments } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const assignedProjectIds = userProjectAssignments?.map(p => p.project_id) || []
@@ -292,6 +301,7 @@ async function collectProjects(userId: string): Promise<AttentionItem[]> {
         role
       )
     `)
+    .eq('organization_id', orgId)
     .in('status', ['planning', 'in_progress', 'blocked'])
     .limit(30)
 
@@ -367,7 +377,7 @@ async function collectProjects(userId: string): Promise<AttentionItem[]> {
 // Collect trade queue items
 // Only items in 'deciding' stage show as Decision Required
 // Items in earlier stages (idea, discussing, approved/simulating) are for grooming, not decisions
-async function collectTradeQueueItems(userId: string): Promise<AttentionItem[]> {
+async function collectTradeQueueItems(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Only fetch items in 'deciding' status - these require an actual decision
@@ -389,6 +399,7 @@ async function collectTradeQueueItems(userId: string): Promise<AttentionItem[]> 
         vote
       )
     `)
+    .eq('organization_id', orgId)
     .eq('status', 'deciding')
     .limit(20)
 
@@ -449,16 +460,19 @@ async function collectTradeQueueItems(userId: string): Promise<AttentionItem[]> 
 }
 
 // Collect list suggestions
-async function collectListSuggestions(userId: string): Promise<AttentionItem[]> {
+async function collectListSuggestions(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: suggestions, error } = await supabase
     .from('asset_list_suggestions')
+    // No organization_id of its own; scoped through the list. `!inner` turns
+    // the embed into a join condition so the filter actually restricts rows.
     .select(`
       *,
-      asset_lists (
+      asset_lists!inner (
         id,
-        name
+        name,
+        organization_id
       ),
       assets (
         id,
@@ -466,6 +480,7 @@ async function collectListSuggestions(userId: string): Promise<AttentionItem[]> 
         company_name
       )
     `)
+    .eq('asset_lists.organization_id', orgId)
     .eq('target_user_id', userId)
     .eq('status', 'pending')
     .limit(20)
@@ -515,9 +530,56 @@ async function collectListSuggestions(userId: string): Promise<AttentionItem[]> 
   return items
 }
 
+/**
+ * Notifications carry a polymorphic `context_type` / `context_id` rather than
+ * an organization_id, so they cannot be filtered in the query. Resolve the
+ * contexts that belong to org-scoped tables and drop anything pointing outside
+ * the current organisation. Notifications with no context, or a context type we
+ * do not scope, are kept — they are addressed to the user rather than to a
+ * workspace.
+ */
+async function filterNotificationsToOrg(rows: any[], orgId: string): Promise<any[]> {
+  const SCOPED: Record<string, string> = {
+    asset_list: 'asset_lists',
+    list: 'asset_lists',
+    portfolio: 'portfolios',
+    project: 'projects',
+    trade_idea: 'trade_queue_items',
+    trade_queue_item: 'trade_queue_items',
+    quick_thought: 'quick_thoughts',
+    note: 'asset_notes',
+  }
+
+  const byTable = new Map<string, Set<string>>()
+  for (const r of rows) {
+    const table = SCOPED[r.context_type]
+    if (!table || !r.context_id) continue
+    const set = byTable.get(table) ?? new Set<string>()
+    set.add(r.context_id)
+    byTable.set(table, set)
+  }
+  if (!byTable.size) return rows
+
+  const allowed = new Set<string>()
+  await Promise.all([...byTable.entries()].map(async ([table, ids]) => {
+    const { data } = await supabase
+      .from(table)
+      .select('id')
+      .eq('organization_id', orgId)
+      .in('id', [...ids])
+    for (const row of (data ?? []) as any[]) allowed.add(row.id)
+  }))
+
+  return rows.filter(r => {
+    const table = SCOPED[r.context_type]
+    if (!table || !r.context_id) return true
+    return allowed.has(r.context_id)
+  })
+}
+
 // Collect notifications
 // Note: For unread notifications, we don't filter by time window since they're still actionable
-async function collectNotifications(userId: string, _windowStart: Date): Promise<AttentionItem[]> {
+async function collectNotifications(userId: string, _windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: notifications, error } = await supabase
@@ -530,7 +592,10 @@ async function collectNotifications(userId: string, _windowStart: Date): Promise
 
   if (error || !notifications) return items
 
-  for (const n of notifications) {
+  // Drop notifications whose subject lives in another organisation.
+  const scopedNotifications = await filterNotificationsToOrg(notifications as any[], orgId)
+
+  for (const n of scopedNotifications) {
     const attentionId = await generateAttentionId(
       'notification',
       n.id,
@@ -584,7 +649,7 @@ async function collectNotifications(userId: string, _windowStart: Date): Promise
 //    - Time hook set (revisit/alert/expiration) → action_required (reminder)
 // 2. TEAMMATE items (for What's New):
 //    - Shared AND relates to assets/projects/portfolios user works with → informational
-async function collectQuickThoughts(userId: string, windowStart: Date): Promise<AttentionItem[]> {
+async function collectQuickThoughts(userId: string, windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // First, get user's own Thesis and time-hooked thoughts
@@ -596,6 +661,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date): Promise<
       portfolios (id, name),
       projects (id, title)
     `)
+    .eq('organization_id', orgId)
     .eq('created_by', userId)
     .eq('is_archived', false)
     .or('idea_type.eq.thesis,date_type.neq.null')
@@ -699,7 +765,11 @@ async function collectQuickThoughts(userId: string, windowStart: Date): Promise<
 
   const { data: userProjects } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const { data: userPortfolios } = await supabase
@@ -799,7 +869,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date): Promise<
 }
 
 // Collect project activity for alignment
-async function collectAlignmentProjects(userId: string, windowStart: Date): Promise<AttentionItem[]> {
+async function collectAlignmentProjects(userId: string, windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: projects, error } = await supabase
@@ -811,6 +881,7 @@ async function collectAlignmentProjects(userId: string, windowStart: Date): Prom
         role
       )
     `)
+    .eq('organization_id', orgId)
     .in('status', ['planning', 'in_progress'])
     .gte('updated_at', windowStart.toISOString())
     .order('updated_at', { ascending: false })
@@ -871,13 +942,15 @@ async function collectAlignmentProjects(userId: string, windowStart: Date): Prom
 }
 
 // Collect decision requests (PM inbox)
-async function collectDecisionRequests(userId: string): Promise<AttentionItem[]> {
+async function collectDecisionRequests(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Get portfolios where user is PM
   const { data: pmPortfolios } = await supabase
     .from('portfolio_team')
-    .select('portfolio_id')
+    // Scoped through the portfolio, which carries organization_id.
+    .select('portfolio_id, portfolios!inner(organization_id)')
+    .eq('portfolios.organization_id', orgId)
     .eq('user_id', userId)
     .in('role', ['pm', 'admin'])
 
@@ -946,13 +1019,14 @@ async function collectDecisionRequests(userId: string): Promise<AttentionItem[]>
 }
 
 // Collect stale trade ideas (user created, no update in 7+ days)
-async function collectStaleTradeIdeas(userId: string): Promise<AttentionItem[]> {
+async function collectStaleTradeIdeas(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
   const staleThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
   const { data: ideas, error } = await supabase
     .from('trade_queue_items')
     .select('id, action, status, stage, urgency, created_at, updated_at, assets!inner(id, symbol, company_name), portfolios(name)')
+    .eq('organization_id', orgId)
     .eq('created_by', userId)
     .not('status', 'in', '("approved","rejected","executed","deleted","cancelled")')
     .lt('updated_at', staleThreshold.toISOString())
@@ -999,13 +1073,14 @@ async function collectStaleTradeIdeas(userId: string): Promise<AttentionItem[]> 
 }
 
 // Collect neglected covered assets (assets user covers with no thesis/rating/contribution updates)
-async function collectNeglectedCoverage(userId: string): Promise<AttentionItem[]> {
+async function collectNeglectedCoverage(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Get assets user covers
   const { data: coverage, error: covErr } = await supabase
     .from('coverage')
     .select('asset_id, updated_at, assets!inner(id, symbol, company_name)')
+    .eq('organization_id', orgId)
     .eq('user_id', userId)
     .eq('is_active', true)
 
@@ -1073,7 +1148,7 @@ async function collectNeglectedCoverage(userId: string): Promise<AttentionItem[]
 }
 
 // Collect upcoming earnings for covered assets
-async function collectUpcomingEarnings(userId: string): Promise<AttentionItem[]> {
+async function collectUpcomingEarnings(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: coverage } = await supabase
@@ -1134,12 +1209,16 @@ async function collectUpcomingEarnings(userId: string): Promise<AttentionItem[]>
 }
 
 // Collect overdue personal tasks
-async function collectOverduePersonalTasks(userId: string): Promise<AttentionItem[]> {
+async function collectOverduePersonalTasks(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: tasks, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, priority, due_date, created_at')
+    // A personal task with no link is the user's own and belongs in every
+    // workspace; one linked to a project must not follow them into a
+    // different organisation. linked_project_id is selected so the rows can be
+    // filtered below.
+    .select('id, title, description, priority, due_date, created_at, linked_project_id')
     .eq('user_id', userId)
     .eq('completed', false)
     .not('due_date', 'is', null)
@@ -1149,7 +1228,23 @@ async function collectOverduePersonalTasks(userId: string): Promise<AttentionIte
 
   if (error || !tasks) return items
 
-  for (const t of tasks) {
+  // Exclude tasks whose linked project belongs to another organisation.
+  // Unlinked tasks are kept: they are the user's own, not a workspace's.
+  const linkedProjectIds = [...new Set((tasks as any[]).map(t => t.linked_project_id).filter(Boolean))]
+  let allowedProjects = new Set<string>()
+  if (linkedProjectIds.length) {
+    const { data: inOrg } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('organization_id', orgId)
+      .in('id', linkedProjectIds)
+    allowedProjects = new Set((inOrg ?? []).map((p: any) => p.id))
+  }
+  const scopedTasks = (tasks as any[]).filter(
+    t => !t.linked_project_id || allowedProjects.has(t.linked_project_id)
+  )
+
+  for (const t of scopedTasks) {
     const daysOver = Math.floor((Date.now() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24))
     const attentionId = await generateAttentionId('personal_task', t.id, 'action_required', 'task_overdue')
 
@@ -1184,13 +1279,17 @@ async function collectOverduePersonalTasks(userId: string): Promise<AttentionIte
 }
 
 // Collect stale projects (not blocked, but no updates in 14+ days)
-async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
+async function collectStaleProjects(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
   const staleThreshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
 
   const { data: assignments } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const assignedIds = (assignments || []).map(a => a.project_id)
@@ -1198,6 +1297,7 @@ async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
   const { data: projects, error } = await supabase
     .from('projects')
     .select('id, title, status, priority, due_date, created_by, updated_at, created_at')
+    .eq('organization_id', orgId)
     .is('deleted_at', null)
     .in('status', ['planning', 'in_progress', 'review'])
     .lt('updated_at', staleThreshold.toISOString())
@@ -1244,7 +1344,7 @@ async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
 }
 
 // Main computation function
-async function computeAttention(userId: string, windowHours: number): Promise<AttentionResponse> {
+async function computeAttention(userId: string, windowHours: number, orgId: string): Promise<AttentionResponse> {
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000)
 
   // Fetch user's attention state
@@ -1265,19 +1365,19 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
     decisionRequests, staleIdeas, neglectedCoverage,
     upcomingEarnings, overduePersonalTasks, staleProjects,
   ] = await Promise.all([
-    collectProjectDeliverables(userId),
-    collectProjects(userId),
-    collectTradeQueueItems(userId),
-    collectListSuggestions(userId),
-    collectNotifications(userId, windowStart),
-    collectAlignmentProjects(userId, windowStart),
-    collectQuickThoughts(userId, windowStart),
-    collectDecisionRequests(userId),
-    collectStaleTradeIdeas(userId),
-    collectNeglectedCoverage(userId),
-    collectUpcomingEarnings(userId),
-    collectOverduePersonalTasks(userId),
-    collectStaleProjects(userId),
+    collectProjectDeliverables(userId, orgId),
+    collectProjects(userId, orgId),
+    collectTradeQueueItems(userId, orgId),
+    collectListSuggestions(userId, orgId),
+    collectNotifications(userId, windowStart, orgId),
+    collectAlignmentProjects(userId, windowStart, orgId),
+    collectQuickThoughts(userId, windowStart, orgId),
+    collectDecisionRequests(userId, orgId),
+    collectStaleTradeIdeas(userId, orgId),
+    collectNeglectedCoverage(userId, orgId),
+    collectUpcomingEarnings(userId, orgId),
+    collectOverduePersonalTasks(userId, orgId),
+    collectStaleProjects(userId, orgId),
   ])
 
   let allItems: AttentionItem[] = [
@@ -1381,6 +1481,10 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
 export function useAttention(options: UseAttentionOptions = {}) {
   const { windowHours = 24, enabled = true, refetchInterval = 60000 } = options
   const { user } = useAuth()
+  // Attention is computed per organisation. Without this the collectors
+  // returned every org the user belongs to, so decisions and ideas from one
+  // workspace appeared in another.
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   const {
@@ -1391,14 +1495,14 @@ export function useAttention(options: UseAttentionOptions = {}) {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['attention', user?.id, windowHours],
+    queryKey: ['attention', user?.id, currentOrgId, windowHours],
     queryFn: async (): Promise<AttentionResponse> => {
       if (!user?.id) {
         throw new Error('User not authenticated')
       }
-      return computeAttention(user.id, windowHours)
+      return computeAttention(user.id, windowHours, currentOrgId!)
     },
-    enabled: enabled && !!user?.id,
+    enabled: enabled && !!user?.id && !!currentOrgId,
     staleTime: 30000,
     refetchInterval: refetchInterval,
     refetchOnWindowFocus: true,
@@ -1677,16 +1781,17 @@ export function useAttention(options: UseAttentionOptions = {}) {
 
 export function useAttentionCounts(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options
+  const { currentOrgId } = useOrganization()
   const { user } = useAuth()
 
   const { data } = useQuery({
     queryKey: ['attention-counts', user?.id],
     queryFn: async () => {
       if (!user?.id) return null
-      const result = await computeAttention(user.id, 24)
+      const result = await computeAttention(user.id, 24, currentOrgId!)
       return result?.counts || null
     },
-    enabled: enabled && !!user?.id,
+    enabled: enabled && !!user?.id && !!currentOrgId,
     staleTime: 60000,
     refetchInterval: 120000,
   })
