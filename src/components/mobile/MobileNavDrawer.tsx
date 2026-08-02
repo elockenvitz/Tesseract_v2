@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
-import { ChevronRight, Monitor, Search, X } from 'lucide-react'
+import { Check, ChevronRight, Monitor, Search, X } from 'lucide-react'
 import { TesseractLogo } from '../ui/TesseractLogo'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import {
@@ -41,7 +41,8 @@ export function MobileNavDrawer({
   onTabChange,
   onTabClose,
 }: MobileNavDrawerProps) {
-  const { currentOrg } = useOrganization()
+  const { currentOrg, userOrgs, switchOrg } = useOrganization()
+  const [showOrgs, setShowOrgs] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -104,11 +105,26 @@ export function MobileNavDrawer({
       >
         <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-200 dark:border-gray-700 pt-safe">
           <TesseractLogo size={26} />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+          <button
+            type="button"
+            onClick={() => userOrgs.length > 1 && setShowOrgs(v => !v)}
+            className="flex-1 min-w-0 flex items-center gap-1 text-left no-touch-target"
+            aria-expanded={showOrgs}
+            aria-haspopup={userOrgs.length > 1}
+            disabled={userOrgs.length <= 1}
+          >
+            <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
               {currentOrg?.name ?? 'Tesseract'}
-            </div>
-          </div>
+            </span>
+            {userOrgs.length > 1 && (
+              <ChevronRight
+                className={clsx(
+                  'h-4 w-4 shrink-0 text-gray-400 transition-transform',
+                  showOrgs && 'rotate-90'
+                )}
+              />
+            )}
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -120,6 +136,43 @@ export function MobileNavDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain pb-safe">
+          {/* Switching workspace reloads, so it sits above navigation rather
+              than among it — it changes what every destination below means. */}
+          {showOrgs && userOrgs.length > 1 && (
+            <div className="border-b border-gray-200 dark:border-gray-700 py-1">
+              {userOrgs.map(org => {
+                const isCurrent = org.id === currentOrg?.id
+                return (
+                  <button
+                    key={org.id}
+                    type="button"
+                    onClick={async () => {
+                      if (isCurrent) { setShowOrgs(false); return }
+                      onClose()
+                      await switchOrg(org.id)
+                    }}
+                    className={clsx(
+                      'w-full flex items-center gap-3 min-h-[52px] px-4 text-left',
+                      'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
+                      isCurrent && 'bg-primary-50 dark:bg-primary-900/20'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'flex-1 min-w-0 truncate text-sm',
+                        isCurrent
+                          ? 'font-semibold text-primary-700 dark:text-primary-300'
+                          : 'text-gray-700 dark:text-gray-200'
+                      )}
+                    >
+                      {org.name}
+                    </span>
+                    {isCurrent && <Check className="h-4 w-4 text-primary-600 shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {onOpenSearch && (
             <div className="p-3">
               <button

@@ -182,13 +182,17 @@ function calculateScore(item: AttentionItem, userId: string): { score: number; b
 }
 
 // Collect project deliverables
-async function collectProjectDeliverables(userId: string): Promise<AttentionItem[]> {
+async function collectProjectDeliverables(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // First get projects the user is assigned to
   const { data: userProjectIds } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const projectIds = userProjectIds?.map(p => p.project_id) || []
@@ -279,7 +283,11 @@ async function collectProjects(userId: string, orgId: string): Promise<Attention
   // Get project IDs where user is assigned
   const { data: userProjectAssignments } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const assignedProjectIds = userProjectAssignments?.map(p => p.project_id) || []
@@ -452,16 +460,19 @@ async function collectTradeQueueItems(userId: string, orgId: string): Promise<At
 }
 
 // Collect list suggestions
-async function collectListSuggestions(userId: string): Promise<AttentionItem[]> {
+async function collectListSuggestions(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: suggestions, error } = await supabase
     .from('asset_list_suggestions')
+    // No organization_id of its own; scoped through the list. `!inner` turns
+    // the embed into a join condition so the filter actually restricts rows.
     .select(`
       *,
-      asset_lists (
+      asset_lists!inner (
         id,
-        name
+        name,
+        organization_id
       ),
       assets (
         id,
@@ -469,6 +480,7 @@ async function collectListSuggestions(userId: string): Promise<AttentionItem[]> 
         company_name
       )
     `)
+    .eq('asset_lists.organization_id', orgId)
     .eq('target_user_id', userId)
     .eq('status', 'pending')
     .limit(20)
@@ -518,9 +530,56 @@ async function collectListSuggestions(userId: string): Promise<AttentionItem[]> 
   return items
 }
 
+/**
+ * Notifications carry a polymorphic `context_type` / `context_id` rather than
+ * an organization_id, so they cannot be filtered in the query. Resolve the
+ * contexts that belong to org-scoped tables and drop anything pointing outside
+ * the current organisation. Notifications with no context, or a context type we
+ * do not scope, are kept — they are addressed to the user rather than to a
+ * workspace.
+ */
+async function filterNotificationsToOrg(rows: any[], orgId: string): Promise<any[]> {
+  const SCOPED: Record<string, string> = {
+    asset_list: 'asset_lists',
+    list: 'asset_lists',
+    portfolio: 'portfolios',
+    project: 'projects',
+    trade_idea: 'trade_queue_items',
+    trade_queue_item: 'trade_queue_items',
+    quick_thought: 'quick_thoughts',
+    note: 'asset_notes',
+  }
+
+  const byTable = new Map<string, Set<string>>()
+  for (const r of rows) {
+    const table = SCOPED[r.context_type]
+    if (!table || !r.context_id) continue
+    const set = byTable.get(table) ?? new Set<string>()
+    set.add(r.context_id)
+    byTable.set(table, set)
+  }
+  if (!byTable.size) return rows
+
+  const allowed = new Set<string>()
+  await Promise.all([...byTable.entries()].map(async ([table, ids]) => {
+    const { data } = await supabase
+      .from(table)
+      .select('id')
+      .eq('organization_id', orgId)
+      .in('id', [...ids])
+    for (const row of (data ?? []) as any[]) allowed.add(row.id)
+  }))
+
+  return rows.filter(r => {
+    const table = SCOPED[r.context_type]
+    if (!table || !r.context_id) return true
+    return allowed.has(r.context_id)
+  })
+}
+
 // Collect notifications
 // Note: For unread notifications, we don't filter by time window since they're still actionable
-async function collectNotifications(userId: string, _windowStart: Date): Promise<AttentionItem[]> {
+async function collectNotifications(userId: string, _windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: notifications, error } = await supabase
@@ -533,7 +592,10 @@ async function collectNotifications(userId: string, _windowStart: Date): Promise
 
   if (error || !notifications) return items
 
-  for (const n of notifications) {
+  // Drop notifications whose subject lives in another organisation.
+  const scopedNotifications = await filterNotificationsToOrg(notifications as any[], orgId)
+
+  for (const n of scopedNotifications) {
     const attentionId = await generateAttentionId(
       'notification',
       n.id,
@@ -703,7 +765,11 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
 
   const { data: userProjects } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const { data: userPortfolios } = await supabase
@@ -876,13 +942,15 @@ async function collectAlignmentProjects(userId: string, windowStart: Date, orgId
 }
 
 // Collect decision requests (PM inbox)
-async function collectDecisionRequests(userId: string): Promise<AttentionItem[]> {
+async function collectDecisionRequests(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Get portfolios where user is PM
   const { data: pmPortfolios } = await supabase
     .from('portfolio_team')
-    .select('portfolio_id')
+    // Scoped through the portfolio, which carries organization_id.
+    .select('portfolio_id, portfolios!inner(organization_id)')
+    .eq('portfolios.organization_id', orgId)
     .eq('user_id', userId)
     .in('role', ['pm', 'admin'])
 
@@ -1080,7 +1148,7 @@ async function collectNeglectedCoverage(userId: string, orgId: string): Promise<
 }
 
 // Collect upcoming earnings for covered assets
-async function collectUpcomingEarnings(userId: string): Promise<AttentionItem[]> {
+async function collectUpcomingEarnings(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: coverage } = await supabase
@@ -1141,12 +1209,16 @@ async function collectUpcomingEarnings(userId: string): Promise<AttentionItem[]>
 }
 
 // Collect overdue personal tasks
-async function collectOverduePersonalTasks(userId: string): Promise<AttentionItem[]> {
+async function collectOverduePersonalTasks(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: tasks, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, priority, due_date, created_at')
+    // A personal task with no link is the user's own and belongs in every
+    // workspace; one linked to a project must not follow them into a
+    // different organisation. linked_project_id is selected so the rows can be
+    // filtered below.
+    .select('id, title, description, priority, due_date, created_at, linked_project_id')
     .eq('user_id', userId)
     .eq('completed', false)
     .not('due_date', 'is', null)
@@ -1156,7 +1228,23 @@ async function collectOverduePersonalTasks(userId: string): Promise<AttentionIte
 
   if (error || !tasks) return items
 
-  for (const t of tasks) {
+  // Exclude tasks whose linked project belongs to another organisation.
+  // Unlinked tasks are kept: they are the user's own, not a workspace's.
+  const linkedProjectIds = [...new Set((tasks as any[]).map(t => t.linked_project_id).filter(Boolean))]
+  let allowedProjects = new Set<string>()
+  if (linkedProjectIds.length) {
+    const { data: inOrg } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('organization_id', orgId)
+      .in('id', linkedProjectIds)
+    allowedProjects = new Set((inOrg ?? []).map((p: any) => p.id))
+  }
+  const scopedTasks = (tasks as any[]).filter(
+    t => !t.linked_project_id || allowedProjects.has(t.linked_project_id)
+  )
+
+  for (const t of scopedTasks) {
     const daysOver = Math.floor((Date.now() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24))
     const attentionId = await generateAttentionId('personal_task', t.id, 'action_required', 'task_overdue')
 
@@ -1197,7 +1285,11 @@ async function collectStaleProjects(userId: string, orgId: string): Promise<Atte
 
   const { data: assignments } = await supabase
     .from('project_assignments')
-    .select('project_id')
+    // project_assignments has no organization_id, so it is scoped through the
+    // project it points at. `!inner` makes the embedded filter a join
+    // condition rather than an optional expansion.
+    .select('project_id, projects!inner(organization_id)')
+    .eq('projects.organization_id', orgId)
     .eq('assigned_to', userId)
 
   const assignedIds = (assignments || []).map(a => a.project_id)
@@ -1273,18 +1365,18 @@ async function computeAttention(userId: string, windowHours: number, orgId: stri
     decisionRequests, staleIdeas, neglectedCoverage,
     upcomingEarnings, overduePersonalTasks, staleProjects,
   ] = await Promise.all([
-    collectProjectDeliverables(userId),
+    collectProjectDeliverables(userId, orgId),
     collectProjects(userId, orgId),
     collectTradeQueueItems(userId, orgId),
-    collectListSuggestions(userId),
-    collectNotifications(userId, windowStart),
+    collectListSuggestions(userId, orgId),
+    collectNotifications(userId, windowStart, orgId),
     collectAlignmentProjects(userId, windowStart, orgId),
     collectQuickThoughts(userId, windowStart, orgId),
-    collectDecisionRequests(userId),
+    collectDecisionRequests(userId, orgId),
     collectStaleTradeIdeas(userId, orgId),
     collectNeglectedCoverage(userId, orgId),
-    collectUpcomingEarnings(userId),
-    collectOverduePersonalTasks(userId),
+    collectUpcomingEarnings(userId, orgId),
+    collectOverduePersonalTasks(userId, orgId),
     collectStaleProjects(userId, orgId),
   ])
 
