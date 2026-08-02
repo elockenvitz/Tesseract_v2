@@ -6,6 +6,7 @@ import {
   MessageSquare, User, ChevronDown, ChevronUp, ChevronRight, Share2, PlusCircle, GitCompareArrows
 } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
+import { PairTradeChartCarousel } from './PairTradeChartCarousel'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 
 // Strip HTML tags from content for clean display
@@ -128,6 +129,12 @@ export function ReelsFeedItem({
   const hasSource = !!noteSource && noteSource.type === 'asset'
   const displaySymbol = asset?.symbol || (hasSource ? noteSource?.name : null)
 
+  // Pair trades carry legs instead of a single asset, so they get a carousel
+  // rather than the single-symbol chart path below.
+  const isPairTrade =
+    item.type === 'pair_trade' &&
+    (((item as any).long_legs?.length ?? 0) > 0 || ((item as any).short_legs?.length ?? 0) > 0)
+
   // Debug logging for trade ideas
   if (item.type === 'trade_idea') {
   }
@@ -149,12 +156,18 @@ export function ReelsFeedItem({
     : cleanContent.substring(0, 600) + '…'
 
   return (
+    // Flex column rather than absolutely-positioned percentage bands. The old
+    // layout hard-coded `top-[52px]` and `top-[calc(52px+38%)]`, so the chart's
+    // real height depended on the container — and once the action bar took 64px
+    // off the bottom, the percentage resolved against a shorter box and the
+    // chart collapsed to an unusable sliver. Flex plus explicit min/max keeps
+    // the chart legible regardless of what else is on screen.
     <div className={clsx(
-      'relative w-full h-full overflow-hidden',
+      'relative w-full h-full overflow-hidden flex flex-col',
       config.bgColor
     )}>
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
+      <div className="flex-shrink-0 z-30 flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
         <div className="flex items-center gap-3">
           {/* Type badge */}
           <span className={clsx(
@@ -236,8 +249,15 @@ export function ReelsFeedItem({
       {/* Chart takes less of a phone screen than a desktop one — the written
           reasoning below it is the part that needs room, and at 50% the text
           area was too short to read a thesis without scrolling. */}
-      <div className="absolute top-[52px] left-0 right-0 h-[38%] sm:h-[50%] px-4 py-2">
-        {displaySymbol ? (
+      <div className="flex-shrink-0 h-[44%] min-h-[224px] max-h-[360px] px-4 py-2">
+        {isPairTrade ? (
+          // A pair trade is a relationship between two positions; one chart
+          // misrepresents it. Swipe horizontally between the legs.
+          <PairTradeChartCarousel
+            longLegs={(item as any).long_legs ?? []}
+            shortLegs={(item as any).short_legs ?? []}
+          />
+        ) : displaySymbol ? (
           <ReelsChartPanel
             symbol={displaySymbol}
             companyName={asset?.company_name}
@@ -257,7 +277,7 @@ export function ReelsFeedItem({
       </div>
 
       {/* Content area */}
-      <div className="absolute top-[calc(52px+38%)] sm:top-[calc(52px+50%)] left-0 right-0 bottom-0 px-4 py-3 overflow-y-auto">
+      <div className="flex-1 min-h-0 px-4 py-3 overflow-y-auto">
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
           {/* Qualifiers lead, compactly, so they frame the reasoning rather
               than trailing after it as a stack of competing chips. */}

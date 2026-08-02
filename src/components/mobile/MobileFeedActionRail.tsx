@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { GitCompareArrows, PlusCircle, Share2, TrendingDown, TrendingUp } from 'lucide-react'
+import { GitCompareArrows, MessageSquarePlus, PlusCircle, Share2, TrendingDown, TrendingUp } from 'lucide-react'
 import { useIdeaReactions } from '../../hooks/ideas/useIdeaReactions'
 import type { ItemType } from '../../hooks/ideas/types'
 
@@ -11,8 +11,14 @@ interface MobileFeedActionRailProps {
   itemId: string
   itemType: ItemType
   onShare?: () => void
-  onCreateIdea?: () => void
   onReadthrough?: () => void
+  /** Turn a captured thought into a structured idea the team can evaluate.
+   *  Only meaningful for quick thoughts, so the caller decides. */
+  onPromote?: () => void
+  /** Ask a colleague for input, carrying this item's asset as context. */
+  onAsk?: () => void
+  /** Fired on any reaction, so interest telemetry can record it. */
+  onReact?: () => void
 }
 
 /**
@@ -31,8 +37,10 @@ export function MobileFeedActionRail({
   itemId,
   itemType,
   onShare,
-  onCreateIdea,
   onReadthrough,
+  onPromote,
+  onAsk,
+  onReact,
 }: MobileFeedActionRailProps) {
   const { reactionCounts, toggleReaction, isToggling } = useIdeaReactions(itemId, itemType)
 
@@ -51,7 +59,7 @@ export function MobileFeedActionRail({
         active={bullish.hasReacted}
         activeClass="text-emerald-600 dark:text-emerald-400"
         disabled={isToggling}
-        onClick={() => toggleReaction('bullish')}
+        onClick={() => { onReact?.(); toggleReaction('bullish') }}
       />
       <BarButton
         icon={TrendingDown}
@@ -60,14 +68,17 @@ export function MobileFeedActionRail({
         active={bearish.hasReacted}
         activeClass="text-red-600 dark:text-red-400"
         disabled={isToggling}
-        onClick={() => toggleReaction('bearish')}
+        onClick={() => { onReact?.(); toggleReaction('bearish') }}
       />
       {onReadthrough && (
-        <BarButton icon={GitCompareArrows} label="Readthrough" onClick={onReadthrough} />
+        <BarButton icon={GitCompareArrows} label="Read-thru" onClick={onReadthrough} />
       )}
+      {onAsk && <BarButton icon={MessageSquarePlus} label="Ask" onClick={onAsk} />}
       {onShare && <BarButton icon={Share2} label="Share" onClick={onShare} />}
-      {onCreateIdea && (
-        <BarButton icon={PlusCircle} label="Idea" activeClass="text-primary-600" active onClick={onCreateIdea} />
+      {/* Promote is the strongest "move this forward" verb available, so it
+          carries the accent when offered. */}
+      {onPromote && (
+        <BarButton icon={PlusCircle} label="Promote" activeClass="text-primary-600" active onClick={onPromote} />
       )}
     </div>
   )
