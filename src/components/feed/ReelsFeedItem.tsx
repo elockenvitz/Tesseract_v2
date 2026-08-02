@@ -167,7 +167,7 @@ export function ReelsFeedItem({
       config.bgColor
     )}>
       {/* Header */}
-      <div className="flex-shrink-0 z-30 flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
+      <div className="flex-shrink-0 z-30 flex items-center justify-between px-3 py-2 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
         <div className="flex items-center gap-3">
           {/* Type badge */}
           <span className={clsx(
@@ -249,7 +249,7 @@ export function ReelsFeedItem({
       {/* Chart takes less of a phone screen than a desktop one — the written
           reasoning below it is the part that needs room, and at 50% the text
           area was too short to read a thesis without scrolling. */}
-      <div className="flex-shrink-0 h-[44%] min-h-[224px] max-h-[360px] px-4 py-2">
+      <div className="flex-shrink-0 h-[52%] min-h-[260px] max-h-[420px] px-3 pt-2 pb-1">
         {isPairTrade ? (
           // A pair trade is a relationship between two positions; one chart
           // misrepresents it. Swipe horizontally between the legs.
@@ -277,7 +277,7 @@ export function ReelsFeedItem({
       </div>
 
       {/* Content area */}
-      <div className="flex-1 min-h-0 px-4 py-3 overflow-y-auto">
+      <div className="flex-1 min-h-0 px-3 py-2 overflow-y-auto">
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 max-h-full overflow-y-auto dark:border-gray-700 dark:bg-gray-900">
           {/* Qualifiers lead, compactly, so they frame the reasoning rather
               than trailing after it as a stack of competing chips. */}

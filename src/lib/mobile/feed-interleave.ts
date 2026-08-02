@@ -30,12 +30,36 @@ export interface InterleaveOptions {
    * decision opens the feed even when an idea outranks it on its own scale.
    */
   leadWith?: string
+  /**
+   * Varies which kind is chosen at each step. Without it, strict
+   * highest-score-first with maxRun=1 produces a fixed rotation —
+   * attention, idea, signal, attention, idea, signal — which reads as
+   * "sorted by type" even though it is technically interleaved.
+   *
+   * Seeded rather than `Math.random()` so a given feed render is
+   * reproducible: pass a per-mount seed and the order varies between
+   * refreshes but is stable while the user scrolls, and a bug report can
+   * be replayed.
+   */
+  seed?: number
+}
+
+/** Small deterministic PRNG (mulberry32). Adequate for shuffling a feed. */
+function makeRandom(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
 }
 
 export function interleaveByKind<T extends InterleavableEntry>(
   entries: T[],
-  { maxRun = 1, leadWith }: InterleaveOptions = {}
+  { maxRun = 1, leadWith, seed }: InterleaveOptions = {}
 ): T[] {
+  const random = seed == null ? null : makeRandom(seed)
   // Bucket, preserving each source's own ordering by score.
   const buckets = new Map<string, T[]>()
   for (const entry of entries) {
@@ -65,13 +89,31 @@ export function interleaveByKind<T extends InterleavableEntry>(
     const eligible = available.filter(([kind]) => !(kind === runKind && runLength >= maxRun))
     const pool = eligible.length ? eligible : available
 
-    // Highest-scoring head among the permitted kinds.
-    let bestKind = pool[0][0]
-    let bestScore = pool[0][1][0].score
-    for (const [kind, items] of pool) {
-      if (items[0].score > bestScore) {
-        bestScore = items[0].score
-        bestKind = kind
+    let bestKind: string
+    if (random) {
+      // Weighted pick among the permitted kinds. Weighting by remaining count
+      // keeps a large source flowing rather than starving behind a small one,
+      // while the randomness stops the output settling into a fixed rotation.
+      const weights = pool.map(([, items]) => items.length)
+      const total = weights.reduce((a, b) => a + b, 0)
+      let roll = random() * total
+      bestKind = pool[pool.length - 1][0]
+      for (let i = 0; i < pool.length; i++) {
+        roll -= weights[i]
+        if (roll <= 0) {
+          bestKind = pool[i][0]
+          break
+        }
+      }
+    } else {
+      // Highest-scoring head among the permitted kinds.
+      bestKind = pool[0][0]
+      let bestScore = pool[0][1][0].score
+      for (const [kind, items] of pool) {
+        if (items[0].score > bestScore) {
+          bestScore = items[0].score
+          bestKind = kind
+        }
       }
     }
 

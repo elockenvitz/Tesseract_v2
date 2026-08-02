@@ -13,7 +13,7 @@ import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
-import { SignalFeedCard } from '../ideas/feed/SignalFeedCard'
+import { SignalFeedTile } from './SignalFeedTile'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
 import { PromptModal } from '../thoughts/PromptModal'
@@ -58,15 +58,18 @@ export function MobileDashboard({
 
   const { sections, acknowledge, snoozeFor, markRead, isLoading: attentionLoading } = useAttention()
 
-  // Only what genuinely awaits the user. `informational` and `alignment` are
-  // useful in the attention centre but would dilute a feed whose opening
-  // screens should be things that block progress if ignored.
   const attentionItems = useMemo(() => {
-    const decisions = sections?.decision_required ?? []
-    const actions = sections?.action_required ?? []
-    return [...decisions, ...actions]
-      .filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    // All four types, not just decisions and actions. The feed is meant to be
+    // endless and to keep pointing the user at something to do; restricting it
+    // to the two most urgent buckets left long stretches with nothing to act
+    // on. Priority still orders them, so decisions surface first.
+    const byPriority = [
+      ...(sections?.decision_required ?? []),
+      ...(sections?.action_required ?? []),
+      ...(sections?.alignment ?? []),
+      ...(sections?.informational ?? []),
+    ]
+    return byPriority.filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
   }, [sections])
 
   // Genuinely derived signals — stale coverage, conflicting team sentiment,
@@ -84,6 +87,10 @@ export function MobileDashboard({
   const [askItem, setAskItem] = useState<ScoredFeedItem | null>(null)
 
   const { track } = useFeedDwell(userId)
+
+  // New seed per mount, so refreshing genuinely reorders the feed while the
+  // order stays stable for the duration of a scroll.
+  const [shuffleSeed] = useState(() => Math.floor(Math.random() * 2 ** 31))
 
   // Snapshot at mount for the same reason as the seen map: re-reading live
   // would re-rank the list under the reader as their own dwell is recorded.
@@ -181,8 +188,9 @@ export function MobileDashboard({
     return interleaveByKind<any>([...attentionEntries, ...ideaEntries, ...signalEntries], {
       maxRun: 1,
       leadWith: 'attention',
+      seed: shuffleSeed,
     })
-  }, [attentionItems, visibleItems, realSignals, interestAtMount])
+  }, [attentionItems, visibleItems, realSignals, interestAtMount, shuffleSeed])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -254,9 +262,7 @@ export function MobileDashboard({
           if (entry.kind === 'signal') {
             return (
               <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always">
-                <div className="h-full w-full overflow-y-auto p-4 bg-white dark:bg-gray-900">
-                  <SignalFeedCard signal={entry.signal} onAssetClick={openAsset} />
-                </div>
+                <SignalFeedTile signal={entry.signal} onAssetClick={openAsset} />
               </section>
             )
           }
