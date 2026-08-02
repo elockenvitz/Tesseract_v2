@@ -114,7 +114,11 @@ export function MobileDashboard({
   const [interestAtMount] = useState(() => loadInterest(userId ?? ''))
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
-  const scrollerRef = useRef<HTMLDivElement>(null)
+  // State, not a ref. The component returns early while loading, so the
+  // scroller does not exist on first render — effects keyed on a ref bound to
+  // nothing and never re-ran, which is why pull-to-refresh did nothing and the
+  // scroll position was never saved.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const restoredRef = useRef(false)
 
   // One query for every asset referenced by an attention item, rather than a
@@ -137,6 +141,62 @@ export function MobileDashboard({
     enabled: attentionAssetIds.length > 0,
     staleTime: 5 * 60 * 1000,
   })
+
+  // Attention items are raised per trade-queue row, so a four-leg pair
+  // produces four near-identical decision cards. Look up pair membership for
+  // the sources on screen so legs of one pair can be collapsed into a single
+  // tile.
+  const attentionSourceIds = useMemo(
+    () => attentionItems
+      .filter(a => a.source_type === 'trade_queue_item')
+      .map(a => a.source_id)
+      .filter(Boolean) as string[],
+    [attentionItems]
+  )
+  const { data: pairInfo } = useQuery({
+    queryKey: ['attention-pair-membership', attentionSourceIds],
+    queryFn: async () => {
+      const empty = { keyBySource: {} as Record<string, string>, legsByPair: {} as Record<string, any[]> }
+      if (!attentionSourceIds.length) return empty
+
+      const { data: sources, error } = await supabase
+        .from('trade_queue_items')
+        .select('id, pair_id, pair_trade_id')
+        .in('id', attentionSourceIds)
+      if (error) throw error
+
+      const keyBySource: Record<string, string> = {}
+      const pairKeys = new Set<string>()
+      for (const row of (sources ?? []) as any[]) {
+        const key = row.pair_trade_id || row.pair_id
+        if (!key) continue
+        keyBySource[row.id] = key
+        pairKeys.add(key)
+      }
+      if (!pairKeys.size) return { keyBySource, legsByPair: {} }
+
+      // Every leg of those pairs, so the surviving card can show the whole
+      // trade rather than the one leg that happened to raise the alert.
+      const keys = [...pairKeys]
+      const { data: legs } = await supabase
+        .from('trade_queue_items')
+        .select('id, action, pair_id, pair_trade_id, pair_leg_type, assets:asset_id(id, symbol, company_name)')
+        .or(`pair_id.in.(${keys.join(',')}),pair_trade_id.in.(${keys.join(',')})`)
+        .eq('visibility_tier', 'active')
+        .neq('status', 'deleted')
+
+      const legsByPair: Record<string, any[]> = {}
+      for (const leg of (legs ?? []) as any[]) {
+        const key = leg.pair_trade_id || leg.pair_id
+        if (!key) continue
+        ;(legsByPair[key] ||= []).push(leg)
+      }
+      return { keyBySource, legsByPair }
+    },
+    enabled: attentionSourceIds.length > 0,
+    staleTime: 60_000,
+  })
+  const pairKeyBySource = pairInfo?.keyBySource
 
   // Drop only genuinely empty cards. An earlier 24-character threshold was
   // hiding real posts — short reasoning is still reasoning. This now catches
@@ -173,15 +233,30 @@ export function MobileDashboard({
     return () => clearTimeout(timer)
   }, [userId, visibleItems])
 
+  // One card per pair. The highest-priority leg is kept — the list is already
+  // ordered by attention priority — and the rest are dropped rather than
+  // rendered as separate screens for what is one decision.
+  const dedupedAttention = useMemo(() => {
+    if (!pairKeyBySource || !Object.keys(pairKeyBySource).length) return attentionItems
+    const seenPairs = new Set<string>()
+    return attentionItems.filter(a => {
+      const key = a.source_id ? pairKeyBySource[a.source_id] : undefined
+      if (!key) return true
+      if (seenPairs.has(key)) return false
+      seenPairs.add(key)
+      return true
+    })
+  }, [attentionItems, pairKeyBySource])
+
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
   // using position preserves the ordering each source already decided
   // (including the seen-rotation applied to ideas) while making the two
   // comparable. `leadWith` keeps the single most pressing decision first.
   const feedEntries = useMemo(() => {
-    const attentionEntries = attentionItems.map((a, idx) => ({
+    const attentionEntries = dedupedAttention.map((a, idx) => ({
       kind: 'attention' as const,
-      score: attentionItems.length - idx,
+      score: dedupedAttention.length - idx,
       attention: a,
     }))
     // Learned interest nudges rank rather than dictating it: a strong
@@ -221,7 +296,7 @@ export function MobileDashboard({
       leadWith: 'attention',
       seed: shuffleSeed,
     })
-  }, [attentionItems, visibleItems, realSignals, derivedInsights, cycle, interestAtMount, shuffleSeed])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, cycle, interestAtMount, shuffleSeed])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -247,19 +322,19 @@ export function MobileDashboard({
   // Attempting it before render leaves scrollTop clamped to zero.
   useEffect(() => {
     if (restoredRef.current || !resumed?.scrollTop) return
-    const el = scrollerRef.current
-    if (!el || !feedEntries.length) return
+    if (!scroller || !feedEntries.length) return
+    const el = scroller
     restoredRef.current = true
     // Two frames: one for the list to lay out, one for snap to settle.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       el.scrollTop = resumed.scrollTop
     }))
-  }, [resumed, feedEntries.length])
+  }, [resumed, scroller, feedEntries.length])
 
   // Persist position as the user scrolls, and once more on unmount so a fast
   // navigation away is not lost to the throttle window.
   useEffect(() => {
-    const el = scrollerRef.current
+    const el = scroller
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
     const persist = () => saveFeedSession({ seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
@@ -273,7 +348,7 @@ export function MobileDashboard({
       if (timer) clearTimeout(timer)
       persist()
     }
-  }, [shuffleSeed, cycle])
+  }, [scroller, shuffleSeed, cycle])
 
   // A deliberate refresh: refetch every source, re-deal the order, drop the
   // saved position and return to the top. The browser's own pull-to-refresh
@@ -291,11 +366,11 @@ export function MobileDashboard({
       queryClient.invalidateQueries({ queryKey: ['signal-cards'] }),
       queryClient.invalidateQueries({ queryKey: ['derived-insights'] }),
     ].filter(Boolean) as Promise<unknown>[])
-    scrollerRef.current?.scrollTo({ top: 0 })
-  }, [refetch, refetchAttention, queryClient])
+    scroller?.scrollTo({ top: 0 })
+  }, [refetch, refetchAttention, queryClient, scroller])
 
   const { pullDistance, isRefreshing, threshold } = usePullToRefresh({
-    scrollerRef,
+    scroller,
     onRefresh: handleRefresh,
   })
 
@@ -340,7 +415,7 @@ export function MobileDashboard({
       />
 
       <div
-        ref={scrollerRef}
+        ref={setScroller}
         className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain"
         style={{
           transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
@@ -358,6 +433,10 @@ export function MobileDashboard({
                   item={a}
                   symbol={linked?.symbol}
                   companyName={linked?.company_name}
+                  pairLegs={(() => {
+                    const key = a.source_id ? pairInfo?.keyBySource?.[a.source_id] : undefined
+                    return key ? pairInfo?.legsByPair?.[key] : undefined
+                  })()}
                   onOpen={target ? () => { markRead(a.attention_id); onNavigate?.(target) } : undefined}
                   onSnooze={() => snoozeFor(a.attention_id, 24)}
                   onAcknowledge={() => acknowledge(a.attention_id)}

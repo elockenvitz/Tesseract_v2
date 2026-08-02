@@ -27,8 +27,30 @@ export interface FeedSession {
   savedAt: number
 }
 
+/**
+ * True when this page load was an explicit reload rather than an in-app
+ * navigation. A reload is the user asking for a fresh feed; restoring the
+ * previous order and position in that case makes refreshing look broken.
+ */
+function isPageReload(): boolean {
+  if (typeof performance === 'undefined') return false
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    return nav?.type === 'reload'
+  } catch {
+    return false
+  }
+}
+
 export function loadFeedSession(): FeedSession | null {
   if (typeof sessionStorage === 'undefined') return null
+  // Resume only for in-app navigation. Without this a browser refresh looked
+  // identical to returning from an asset page, so it restored the same seed
+  // and offset — the feed appeared not to change at all.
+  if (isPageReload()) {
+    clearFeedSession()
+    return null
+  }
   try {
     const raw = sessionStorage.getItem(KEY)
     if (!raw) return null

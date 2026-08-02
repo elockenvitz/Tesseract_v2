@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface UsePullToRefreshOptions {
-  /** The scrolling element. Pull only engages when it is already at the top. */
-  scrollerRef: React.RefObject<HTMLElement>
+  /**
+   * The scrolling element itself, not a ref. Passing a ref meant the binding
+   * effect ran once on mount — before the feed had loaded and the scroller
+   * existed — bound to nothing, and never re-ran, so the gesture was dead.
+   * Taking the element makes its arrival a dependency.
+   */
+  scroller: HTMLElement | null
   onRefresh: () => Promise<void> | void
   /** Drag distance, after resistance, that commits the refresh. */
   threshold?: number
@@ -30,7 +35,7 @@ const MAX_PULL = 96
  * pass through untouched.
  */
 export function usePullToRefresh({
-  scrollerRef,
+  scroller,
   onRefresh,
   threshold = 72,
   enabled = true,
@@ -66,7 +71,7 @@ export function usePullToRefresh({
   }, [onRefresh, threshold])
 
   useEffect(() => {
-    const el = scrollerRef.current
+    const el = scroller
     if (!el || !enabled) return
 
     const onTouchStart = (e: TouchEvent) => {
@@ -130,7 +135,7 @@ export function usePullToRefresh({
       el.removeEventListener('touchend', onTouchEnd)
       el.removeEventListener('touchcancel', onTouchEnd)
     }
-  }, [scrollerRef, enabled, finish])
+  }, [scroller, enabled, finish])
 
   // Mirror into a ref so touchend reads the current distance without the
   // listener having to be re-bound on every pixel of travel.
