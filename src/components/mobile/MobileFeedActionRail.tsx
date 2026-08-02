@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { GitCompareArrows, MessageSquarePlus, PlusCircle, Share2, TrendingDown, TrendingUp } from 'lucide-react'
+import { GitCompareArrows, MessageSquarePlus, PenLine, PlusCircle, Share2, TrendingDown, TrendingUp } from 'lucide-react'
 import { useIdeaReactions } from '../../hooks/ideas/useIdeaReactions'
 import type { ItemType } from '../../hooks/ideas/types'
 
@@ -19,6 +19,8 @@ interface MobileFeedActionRailProps {
   onAsk?: () => void
   /** Fired on any reaction, so interest telemetry can record it. */
   onReact?: () => void
+  /** Log a thought, idea, recommendation or prompt against this post. */
+  onCapture?: () => void
 }
 
 /**
@@ -41,6 +43,7 @@ export function MobileFeedActionRail({
   onPromote,
   onAsk,
   onReact,
+  onCapture,
 }: MobileFeedActionRailProps) {
   const { reactionCounts, toggleReaction, isToggling } = useIdeaReactions(itemId, itemType)
 
@@ -75,6 +78,7 @@ export function MobileFeedActionRail({
       )}
       {onAsk && <BarButton icon={MessageSquarePlus} label="Ask" onClick={onAsk} />}
       {onShare && <BarButton icon={Share2} label="Share" onClick={onShare} />}
+      {onCapture && <BarButton icon={PenLine} label="Capture" onClick={onCapture} />}
       {/* Promote is the strongest "move this forward" verb available, so it
           carries the accent when offered. */}
       {onPromote && (

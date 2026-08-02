@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { TrendingDown, TrendingUp } from 'lucide-react'
+import { ChevronLeft, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import type { PairTradeLeg } from '../../hooks/ideas/types'
 
@@ -27,19 +27,21 @@ const NEIGHBOUR_WINDOW = 1
  * A pair is a relationship between positions, so one chart misrepresents it,
  * and stacking legs vertically leaves each too short to read on a phone.
  *
- * Two things matter for this to feel right:
+ * Legs are changed with the arrows or the dots, not by swiping. Swiping and
+ * inspecting the price are the same gesture — press and drag horizontally —
+ * so a swipe-paged carousel makes it impossible to read a price history
+ * without changing chart. Explicit controls give the drag back to the chart,
+ * which is the more valuable of the two.
+ *
+ * Two further things matter for this to feel right:
  *
  * - Only the visible chart and its immediate neighbours are mounted. Each
  *   panel is a Recharts instance with its own quote request, so rendering four
  *   at once made the first swipe stall while they all laid out — the main
  *   cause of the swipe feeling heavy.
- * - The active index is derived from scroll position inside a rAF, so it
- *   cannot disagree with what is on screen and does not re-render per event.
- *
- * `touch-action` is deliberately left alone. Pinning it to `pan-x` would make
- * the carousel swipe crisper, but the chart is half the tile and a vertical
- * drag there would then do nothing — paging the feed from the chart area
- * matters more. The browser's own axis locking handles the rest.
+ * - The chart area declares `touch-action: pan-y`, so a horizontal drag there
+ *   belongs to the chart's crosshair and never scrolls anything, while a
+ *   vertical drag still pages the feed.
  */
 export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCarouselProps) {
   const legs: CarouselLeg[] = useMemo(() => {
@@ -58,24 +60,15 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
     return [...build(longLegs, 'long'), ...build(shortLegs, 'short')]
   }, [longLegs, shortLegs])
 
-  const scrollerRef = useRef<HTMLDivElement>(null)
-  const frame = useRef<number | null>(null)
   const [active, setActive] = useState(0)
-
-  const onScroll = useCallback(() => {
-    if (frame.current != null) return
-    frame.current = requestAnimationFrame(() => {
-      frame.current = null
-      const el = scrollerRef.current
-      if (!el || el.clientWidth === 0) return
-      const index = Math.round(el.scrollLeft / el.clientWidth)
-      setActive(prev => (prev === index ? prev : index))
+  const clamped = Math.min(active, Math.max(0, legs.length - 1))
+  const go = useCallback((delta: number) => {
+    setActive(prev => {
+      const next = prev + delta
+      if (next < 0 || next > legs.length - 1) return prev
+      return next
     })
-  }, [])
-
-  useEffect(() => () => {
-    if (frame.current != null) cancelAnimationFrame(frame.current)
-  }, [])
+  }, [legs.length])
 
   if (!legs.length) {
     return (
@@ -87,15 +80,21 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div
-        ref={scrollerRef}
-        onScroll={onScroll}
-        className="flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide"
-      >
+      <div className="flex-1 min-h-0 relative">
         {legs.map((leg, i) => {
-          const near = Math.abs(i - active) <= NEIGHBOUR_WINDOW
+          const isActive = i === clamped
+          // Neighbours stay mounted so switching legs is instant, but only the
+          // active one is visible or reachable.
+          if (Math.abs(i - clamped) > NEIGHBOUR_WINDOW) return null
           return (
-            <div key={leg.key} className="w-full h-full flex-shrink-0 snap-start snap-always relative">
+            <div
+              key={leg.key}
+              aria-hidden={!isActive}
+              className={clsx(
+                'absolute inset-0',
+                isActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              )}
+            >
               <span
                 className={clsx(
                   'absolute top-1 left-1 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide',
@@ -108,32 +107,57 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
                 {leg.action} {leg.symbol}
               </span>
 
-              {near ? (
+              {/* Horizontal drag is the crosshair's; vertical still pages the feed. */}
+              <div className="w-full h-full" style={{ touchAction: 'pan-y' }}>
                 <ReelsChartPanel symbol={leg.symbol} companyName={leg.companyName} hideHeader />
-              ) : (
-                // Placeholder keeps the scroll width correct so snap points and
-                // the derived index stay accurate while the chart is unmounted.
-                <div className="w-full h-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900" />
-              )}
+              </div>
             </div>
           )
         })}
       </div>
 
       {legs.length > 1 && (
-        <div className="flex-shrink-0 flex items-center justify-center gap-1.5 pt-1.5">
+        <div className="flex-shrink-0 flex items-center justify-center gap-2 pt-1.5">
+          <button
+            type="button"
+            onClick={() => go(-1)}
+            disabled={clamped === 0}
+            className="flex items-center justify-center h-8 w-8 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+            aria-label="Previous leg"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
           {legs.map((leg, i) => (
-            <span
+            <button
               key={leg.key}
-              aria-hidden="true"
-              className={clsx(
-                'h-1.5 rounded-full transition-all',
-                i === active ? 'w-4 bg-gray-500 dark:bg-gray-300' : 'w-1.5 bg-gray-300 dark:bg-gray-600'
-              )}
-            />
+              type="button"
+              onClick={() => setActive(i)}
+              className="flex items-center justify-center h-8 px-1 no-touch-target"
+              aria-label={`Show ${leg.action} ${leg.symbol}`}
+              aria-current={i === clamped}
+            >
+              <span
+                className={clsx(
+                  'h-1.5 rounded-full transition-all block',
+                  i === clamped ? 'w-4 bg-gray-500 dark:bg-gray-300' : 'w-1.5 bg-gray-300 dark:bg-gray-600'
+                )}
+              />
+            </button>
           ))}
+
+          <button
+            type="button"
+            onClick={() => go(1)}
+            disabled={clamped === legs.length - 1}
+            className="flex items-center justify-center h-8 w-8 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+            aria-label="Next leg"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+
           <span className="sr-only" role="status">
-            {legs[active]?.symbol} — chart {active + 1} of {legs.length}
+            {legs[clamped]?.symbol} — chart {clamped + 1} of {legs.length}
           </span>
         </div>
       )}

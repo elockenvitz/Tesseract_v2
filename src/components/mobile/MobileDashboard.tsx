@@ -20,6 +20,7 @@ import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
 import { useDerivedInsights } from '../../hooks/mobile/useDerivedInsights'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
+import { FeedCaptureSheet } from './FeedCaptureSheet'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
@@ -82,8 +83,8 @@ export function MobileDashboard({
   // catalyst proximity. These are the real "what should I be thinking about"
   // cards; the `prompt` type is excluded because those are canned questions
   // with no finding behind them, which is precisely the filler complained of.
-  const { data: derivedInsights = [] } = useDerivedInsights()
-  const { signals } = useSignalCards()
+  const { data: derivedInsights = [], isLoading: insightsLoading } = useDerivedInsights()
+  const { signals, isLoading: signalsLoading } = useSignalCards()
   const realSignals = useMemo(
     () => (signals ?? []).filter(sig => sig.signalType !== 'prompt'),
     [signals]
@@ -92,6 +93,11 @@ export function MobileDashboard({
   const [shareItem, setShareItem] = useState<ScoredFeedItem | null>(null)
   const [promoteItem, setPromoteItem] = useState<ScoredFeedItem | null>(null)
   const [askItem, setAskItem] = useState<ScoredFeedItem | null>(null)
+  /** Asset the reader was looking at when they tapped Capture, so a thought
+   *  logged from the feed arrives already attached to its subject. */
+  const [captureCtx, setCaptureCtx] = useState<
+    { assetId: string | null; symbol: string | null; name: string | null } | null
+  >(null)
 
   const { track } = useFeedDwell(userId)
 
@@ -385,7 +391,14 @@ export function MobileDashboard({
     [onNavigate]
   )
 
-  if (isLoading || attentionLoading) {
+  // Every source gates the first paint. The feed's order is composed from all
+  // of them, so rendering before they have arrived shows one tile and then
+  // swaps it for another as each source lands.
+  const composing =
+    isLoading || attentionLoading || signalsLoading || insightsLoading ||
+    (attentionSourceIds.length > 0 && pairInfoLoading)
+
+  if (composing) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-gray-400">
@@ -436,6 +449,11 @@ export function MobileDashboard({
                   onOpen={target ? () => { markRead(a.attention_id); onNavigate?.(target) } : undefined}
                   onSnooze={() => snoozeFor(a.attention_id, 24)}
                   onAcknowledge={() => acknowledge(a.attention_id)}
+                  onCapture={() => setCaptureCtx({
+                    assetId: linked?.id ?? null,
+                    symbol: linked?.symbol ?? null,
+                    name: linked?.company_name ?? null,
+                  })}
                 />
               </section>
             )
@@ -447,7 +465,15 @@ export function MobileDashboard({
                 key={`${entry.insight.id}-r${entry.round}`}
                 className="relative h-full w-full snap-start snap-always"
               >
-                <DerivedInsightTile insight={entry.insight} onAssetClick={openAsset} />
+                <DerivedInsightTile
+                  insight={entry.insight}
+                  onAssetClick={openAsset}
+                  onCapture={() => setCaptureCtx({
+                    assetId: entry.insight.assetId ?? null,
+                    symbol: entry.insight.symbol ?? null,
+                    name: null,
+                  })}
+                />
               </section>
             )
           }
@@ -455,7 +481,15 @@ export function MobileDashboard({
           if (entry.kind === 'signal') {
             return (
               <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always">
-                <SignalFeedTile signal={entry.signal} onAssetClick={openAsset} />
+                <SignalFeedTile
+                  signal={entry.signal}
+                  onAssetClick={openAsset}
+                  onCapture={() => setCaptureCtx({
+                    assetId: entry.signal.asset?.id ?? null,
+                    symbol: entry.signal.asset?.symbol ?? null,
+                    name: entry.signal.asset?.company_name ?? null,
+                  })}
+                />
               </section>
             )
           }
@@ -491,6 +525,11 @@ export function MobileDashboard({
                 onPromote={item.type === 'quick_thought' ? () => setPromoteItem(item) : undefined}
                 onAsk={() => setAskItem(item)}
                 onReadthrough={source ? () => { note('readthrough'); setReadthroughFor(item) } : undefined}
+                onCapture={() => setCaptureCtx({
+                  assetId: itemAssetId,
+                  symbol: ('asset' in item && item.asset ? item.asset.symbol : null) as string | null,
+                  name: ('asset' in item && item.asset ? item.asset.company_name : null) as string | null,
+                })}
               />
             </section>
           )
@@ -498,6 +537,14 @@ export function MobileDashboard({
 
         <div ref={sentinelRef} className="h-px" />
       </div>
+
+      <FeedCaptureSheet
+        open={captureCtx !== null}
+        onClose={() => setCaptureCtx(null)}
+        assetId={captureCtx?.assetId}
+        assetSymbol={captureCtx?.symbol}
+        assetName={captureCtx?.name}
+      />
 
       {shareItem && (
         <ShareToUserModal isOpen onClose={() => setShareItem(null)} item={shareItem} />

@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { ArrowRight, FileQuestion, Scale, TimerReset } from 'lucide-react'
+import { ArrowRight, FileQuestion, PenLine, Scale, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
 import { ExpandableText } from './ExpandableText'
@@ -8,6 +8,7 @@ import type { DerivedInsight, DerivedInsightKind } from '../../hooks/mobile/useD
 interface DerivedInsightTileProps {
   insight: DerivedInsight
   onAssetClick?: (assetId: string, symbol: string) => void
+  /** Log a thought, idea, recommendation or prompt from this tile. */
   onCapture?: (insight: DerivedInsight) => void
 }
 
@@ -83,15 +84,7 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
       </div>
 
       <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
-        {onCapture && (
-          <button
-            type="button"
-            onClick={() => onCapture(insight)}
-            className="flex-1 flex items-center justify-center h-12 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-semibold no-touch-target"
-          >
-            Add a note
-          </button>
-        )}
+        <CaptureButton onCapture={onCapture ? () => onCapture(insight) : undefined} />
         <button
           type="button"
           onClick={() => onAssetClick?.(insight.assetId, insight.symbol)}
@@ -102,5 +95,22 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
         </button>
       </div>
     </div>
+  )
+}
+
+/** Capture sits on every tile type, in the same place, so logging a thought
+ *  never depends on which kind of post happens to be on screen. */
+function CaptureButton({ onCapture }: { onCapture?: () => void }) {
+  if (!onCapture) return null
+  return (
+    <button
+      type="button"
+      onClick={onCapture}
+      className="flex flex-col items-center justify-center gap-0.5 w-14 rounded-xl text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+      aria-label="Capture a thought"
+    >
+      <PenLine className="h-5 w-5" />
+      <span className="text-[10px] font-medium leading-none">Capture</span>
+    </button>
   )
 }
