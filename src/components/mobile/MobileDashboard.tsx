@@ -11,6 +11,9 @@ import { useAuth } from '../../hooks/useAuth'
 import { useAttention } from '../../hooks/useAttention'
 import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
+import { interleaveByKind } from '../../lib/mobile/feed-interleave'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -62,6 +65,27 @@ export function MobileDashboard({
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
+  // One query for every asset referenced by an attention item, rather than a
+  // lookup inside each card.
+  const attentionAssetIds = useMemo(
+    () => Array.from(new Set(attentionItems.map(a => a.context?.asset_id).filter(Boolean) as string[])),
+    [attentionItems]
+  )
+  const { data: attentionAssets } = useQuery({
+    queryKey: ['attention-feed-assets', attentionAssetIds],
+    queryFn: async () => {
+      if (!attentionAssetIds.length) return {} as Record<string, { symbol: string; company_name: string | null }>
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name')
+        .in('id', attentionAssetIds)
+      if (error) throw error
+      return Object.fromEntries((data ?? []).map((a: any) => [a.id, a]))
+    },
+    enabled: attentionAssetIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+
   // Drop only genuinely empty cards. An earlier 24-character threshold was
   // hiding real posts — short reasoning is still reasoning. This now catches
   // just the AI insights that arrive as a call to action with no finding.
@@ -88,6 +112,28 @@ export function MobileDashboard({
     const timer = setTimeout(() => markSeen(userId, visibleItems.slice(0, 10).map(i => i.id)), 1500)
     return () => clearTimeout(timer)
   }, [userId, visibleItems])
+
+  // Interleave so consecutive screens are not all one kind. Scores are
+  // position-derived rather than raw: each source ranks on its own scale, and
+  // using position preserves the ordering each source already decided
+  // (including the seen-rotation applied to ideas) while making the two
+  // comparable. `leadWith` keeps the single most pressing decision first.
+  const feedEntries = useMemo(() => {
+    const attentionEntries = attentionItems.map((a, idx) => ({
+      kind: 'attention' as const,
+      score: attentionItems.length - idx,
+      attention: a,
+    }))
+    const ideaEntries = visibleItems.map((i, idx) => ({
+      kind: 'idea' as const,
+      score: visibleItems.length - idx,
+      idea: i,
+    }))
+    return interleaveByKind<any>([...attentionEntries, ...ideaEntries], {
+      maxRun: 1,
+      leadWith: 'attention',
+    })
+  }, [attentionItems, visibleItems])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -137,25 +183,26 @@ export function MobileDashboard({
   return (
     <>
       <div className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain">
-        {/* Things awaiting the user lead the feed. A pending decision is
-            time-sensitive in a way an idea is not, and burying it below ranked
-            content is how approvals get missed. Ordered by the attention
-            system's own score so the most pressing comes first. */}
-        {attentionItems.map(item => (
-          <section key={item.attention_id} className="relative h-full w-full snap-start snap-always">
-            <AttentionFeedCard
-              item={item}
-              onOpen={attentionTarget(item) ? (it) => {
-                markRead(it.attention_id)
-                onNavigate?.(attentionTarget(it))
-              } : undefined}
-              onSnooze={(it) => snoozeFor(it.attention_id, 24)}
-              onAcknowledge={(it) => acknowledge(it.attention_id)}
-            />
-          </section>
-        ))}
+        {feedEntries.map(entry => {
+          if (entry.kind === 'attention') {
+            const a = entry.attention
+            const linked = a.context?.asset_id ? attentionAssets?.[a.context.asset_id] : null
+            const target = attentionTarget(a)
+            return (
+              <section key={a.attention_id} className="relative h-full w-full snap-start snap-always">
+                <AttentionFeedCard
+                  item={a}
+                  symbol={linked?.symbol}
+                  companyName={linked?.company_name}
+                  onOpen={target ? () => { markRead(a.attention_id); onNavigate?.(target) } : undefined}
+                  onSnooze={() => snoozeFor(a.attention_id, 24)}
+                  onAcknowledge={() => acknowledge(a.attention_id)}
+                />
+              </section>
+            )
+          }
 
-        {visibleItems.map(item => {
+          const item = entry.idea
           const source = readthroughSourceType(item.type)
           return (
             <section key={item.id} className="relative h-full w-full snap-start snap-always">
@@ -180,6 +227,7 @@ export function MobileDashboard({
             </section>
           )
         })}
+
         <div ref={sentinelRef} className="h-px" />
       </div>
 
