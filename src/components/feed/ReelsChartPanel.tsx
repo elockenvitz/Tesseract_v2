@@ -193,7 +193,7 @@ export function ReelsChartPanel({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 25, right: 10, left: 0, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id={`gradient-${symbol}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
@@ -214,17 +214,15 @@ export function ReelsChartPanel({
                 }}
                 tick={{ fontSize: 10, fill: '#9ca3af' }}
                 tickLine={false}
-                axisLine={{ stroke: '#e5e7eb' }}
-                minTickGap={40}
-              />
-              <YAxis
-                domain={['auto', 'auto']}
-                tickFormatter={(value) => `$${value.toFixed(0)}`}
-                tick={{ fontSize: 10, fill: '#9ca3af' }}
-                tickLine={false}
                 axisLine={false}
-                width={45}
+                  minTickGap={56}
+                  interval="preserveStartEnd"
               />
+              {/* Hidden Y axis, Yahoo-style: the price is already the headline
+                    above, so dropping the gutter gives the series the full
+                    width — which is what makes the shape readable at this
+                    size. Still auto-scales to the data. */}
+                <YAxis domain={['auto', 'auto']} hide />
               <Tooltip
                 formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
                 labelFormatter={(timestamp) => new Date(timestamp).toLocaleDateString([], {
