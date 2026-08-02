@@ -83,8 +83,11 @@ export function AttentionFeedCard({
       {/* A decision about a position is hard to judge without seeing the
           price. Same chart component as the idea cards, so the two read as
           one feed rather than two systems. */}
+      {/* Explicit min/max, not a bare percentage: with a chart, reason text,
+          next action and an action bar competing for the same column, a
+          percentage alone collapses the chart to an unreadable strip. */}
       {symbol && (
-        <div className="flex-shrink-0 h-[30%] px-4 pt-3">
+        <div className="flex-shrink-0 h-[32%] min-h-[200px] max-h-[300px] px-4 pt-3">
           <ReelsChartPanel symbol={symbol} companyName={companyName ?? undefined} />
         </div>
       )}
