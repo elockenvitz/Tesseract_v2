@@ -401,7 +401,10 @@ async function fetchFeedPage(
         const first = pairLegs[0]
         const author = userMap.get(first?.created_by)
 
+        // Legs whose asset join came back empty cannot be charted or labelled,
+        // so they are dropped here rather than handed downstream to crash on.
         const toLeg = (l: any) => ({ id: l.id, action: l.action, asset: l.assets })
+        const chartable = (l: any) => !!l?.assets?.symbol
 
         return {
           id: pairId,
@@ -415,8 +418,8 @@ async function fetchFeedPage(
           urgency: (meta?.urgency || first?.urgency) as any,
           rationale: meta?.rationale || first?.rationale,
           status: meta?.status || first?.status,
-          long_legs: pairLegs.filter(isLong).map(toLeg),
-          short_legs: pairLegs.filter(l => !isLong(l)).map(toLeg),
+          long_legs: pairLegs.filter(l => isLong(l) && chartable(l)).map(toLeg),
+          short_legs: pairLegs.filter(l => !isLong(l) && chartable(l)).map(toLeg),
           portfolio: first?.portfolios || undefined,
           asset: pairLegs.find(isLong)?.assets || first?.assets || undefined,
         }

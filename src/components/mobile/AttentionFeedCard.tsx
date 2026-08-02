@@ -82,11 +82,13 @@ export function AttentionFeedCard({
   const { data: decision } = useDecisionContext(item)
 
   // A pair is a relationship between names, so one chart misrepresents it.
-  const isPair = (pairLegs?.length ?? 0) > 1
+  const isPair = (pairLegs?.filter(l => (l as any)?.assets?.symbol).length ?? 0) > 1
   const isLongLeg = (l: any) =>
     l.pair_leg_type === 'long' || (l.pair_leg_type == null && (l.action === 'buy' || l.action === 'add'))
-  const longLegs = (pairLegs ?? []).filter(isLongLeg).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
-  const shortLegs = (pairLegs ?? []).filter(l => !isLongLeg(l)).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
+  // Only legs with a resolved asset — the others have nothing to chart or name.
+  const chartableLegs = (pairLegs ?? []).filter(l => (l as any)?.assets?.symbol)
+  const longLegs = chartableLegs.filter(isLongLeg).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
+  const shortLegs = chartableLegs.filter(l => !isLongLeg(l)).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
 
   const scrollerRef = useRef<HTMLDivElement>(null)
   const [panel, setPanel] = useState(0)
