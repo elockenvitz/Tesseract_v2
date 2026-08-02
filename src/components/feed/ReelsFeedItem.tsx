@@ -160,14 +160,16 @@ export function ReelsFeedItem({
       config.bgColor
     )}>
       {/* Header */}
-      <div className="flex-shrink-0 z-30 flex items-center justify-between px-3 py-2 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
-        <div className="flex items-center gap-3">
+      <div className="flex-shrink-0 z-30 flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
+        <div className="flex items-center gap-2 min-w-0">
           {/* Type badge */}
+          {/* shrink-0 + nowrap: "Trade Idea" was wrapping onto a second line
+              and pushing the row taller than the header. */}
           <span className={clsx(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border',
+            'flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] sm:text-sm font-medium border whitespace-nowrap',
             config.badgeColor
           )}>
-            <TypeIcon className={clsx('h-4 w-4', config.iconColor)} />
+            <TypeIcon className={clsx('h-3.5 w-3.5 shrink-0', config.iconColor)} />
             {config.label}
           </span>
 
@@ -177,23 +179,23 @@ export function ReelsFeedItem({
               e.stopPropagation()
               onAuthorClick?.(item.author.id)
             }}
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-300"
+            className="flex items-center gap-1.5 min-w-0 text-gray-700 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-300"
           >
             {item.author.avatar_url ? (
               <img
                 src={item.author.avatar_url}
-                alt={item.author.full_name || ''}
-                className="w-7 h-7 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+                alt=""
+                className="hidden sm:block w-7 h-7 rounded-full object-cover border border-gray-200 dark:border-gray-700"
               />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+              <div className="hidden sm:flex w-7 h-7 rounded-full bg-gray-100 items-center justify-center border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
                 <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
               </div>
             )}
             {/* Always show the name. A bare avatar glyph with no label tells
                 the reader nothing about who wrote the post — which is the
                 single most useful piece of context on a research feed. */}
-            <span className="text-sm font-medium truncate max-w-[9rem] sm:max-w-none">
+            <span className="text-[13px] sm:text-sm font-medium truncate max-w-[7rem] sm:max-w-none">
               {item.author.full_name ||
                 (item.author.first_name && item.author.last_name
                   ? `${item.author.first_name} ${item.author.last_name}`
@@ -203,7 +205,7 @@ export function ReelsFeedItem({
 
           {/* Time */}
           {/* Recency matters on a research feed — keep it on phones too. */}
-          <span className="text-gray-400 text-xs md:text-sm whitespace-nowrap">
+          <span className="hidden sm:inline text-gray-400 text-xs md:text-sm whitespace-nowrap">
             {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
           </span>
         </div>

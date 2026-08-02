@@ -168,7 +168,7 @@ export function ReelsChartPanel({
       )}
 
       {/* Timeframe selector */}
-      <div className={clsx("flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 overflow-x-auto dark:border-gray-700 dark:bg-gray-900", hideHeader && "rounded-t-xl border-t")}>
+      <div className={clsx("flex items-center justify-between gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 dark:border-gray-700 dark:bg-gray-900", hideHeader && "rounded-t-xl border-t")}>
         {timeframes.map(tf => (
           <button
             key={tf.value}

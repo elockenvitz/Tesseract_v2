@@ -17,8 +17,12 @@ interface UsePullToRefreshOptions {
 const RESISTANCE = 0.45
 /** Indicator never travels further than this, regardless of drag. */
 const MAX_PULL = 96
-/** Ignore the first pixels so a slightly-imperfect vertical scroll is not a pull. */
-const START_SLOP = 8
+/** Vertical travel before a pull begins. Deliberately generous: a pull is a
+ *  deliberate gesture, and starting one by accident mid-scroll is worse than
+ *  needing a slightly longer drag. */
+const START_SLOP = 16
+/** Movement needed before the gesture's axis is decided. */
+const AXIS_SLOP = 6
 const RELEASE_EASE = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
 
 /**
@@ -46,6 +50,9 @@ export function usePullToRefresh({
 
   const indicatorRef = useRef<HTMLElement | null>(null)
   const startY = useRef<number | null>(null)
+  const startX = useRef(0)
+  /** Set once a gesture is judged horizontal; it can then never become a pull. */
+  const horizontal = useRef(false)
   const distance = useRef(0)
   const dragging = useRef(false)
   const refreshing = useRef(false)
@@ -110,6 +117,8 @@ export function usePullToRefresh({
         return
       }
       startY.current = e.touches[0].clientY
+      startX.current = e.touches[0].clientX
+      horizontal.current = false
       dragging.current = false
     }
 
@@ -117,6 +126,15 @@ export function usePullToRefresh({
       if (startY.current == null || refreshing.current) return
 
       const raw = e.touches[0].clientY - startY.current
+      const dx = Math.abs(e.touches[0].clientX - startX.current)
+
+      // Decide the axis once, and stick to it. Swiping a pair-trade carousel
+      // drifts vertically by a few pixels, which was enough to start a pull.
+      if (!dragging.current && !horizontal.current && (dx > AXIS_SLOP || raw > AXIS_SLOP)) {
+        horizontal.current = dx > raw
+      }
+      if (horizontal.current) return
+
       if (raw <= START_SLOP) {
         if (dragging.current) {
           dragging.current = false
