@@ -369,7 +369,7 @@ export function MobileDashboard({
     scroller?.scrollTo({ top: 0 })
   }, [refetch, refetchAttention, queryClient, scroller])
 
-  const { pullDistance, isRefreshing, threshold } = usePullToRefresh({
+  const { indicatorRef, isRefreshing, armed } = usePullToRefresh({
     scroller,
     onRefresh: handleRefresh,
   })
@@ -408,19 +408,11 @@ export function MobileDashboard({
 
   return (
     <div className="relative h-full overflow-hidden">
-      <PullToRefreshIndicator
-        pullDistance={pullDistance}
-        isRefreshing={isRefreshing}
-        threshold={threshold}
-      />
+      <PullToRefreshIndicator ref={indicatorRef as any} isRefreshing={isRefreshing} armed={armed} />
 
       <div
         ref={setScroller}
         className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain"
-        style={{
-          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
-          transition: pullDistance > 0 ? 'none' : 'transform 200ms ease-out',
-        }}
       >
         {feedEntries.map(entry => {
           if (entry.kind === 'attention') {

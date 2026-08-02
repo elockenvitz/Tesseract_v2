@@ -14,6 +14,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import type {
   AttentionResponse,
   AttentionItem,
@@ -272,7 +273,7 @@ async function collectProjectDeliverables(userId: string): Promise<AttentionItem
 }
 
 // Collect projects
-async function collectProjects(userId: string): Promise<AttentionItem[]> {
+async function collectProjects(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Get project IDs where user is assigned
@@ -292,6 +293,7 @@ async function collectProjects(userId: string): Promise<AttentionItem[]> {
         role
       )
     `)
+    .eq('organization_id', orgId)
     .in('status', ['planning', 'in_progress', 'blocked'])
     .limit(30)
 
@@ -367,7 +369,7 @@ async function collectProjects(userId: string): Promise<AttentionItem[]> {
 // Collect trade queue items
 // Only items in 'deciding' stage show as Decision Required
 // Items in earlier stages (idea, discussing, approved/simulating) are for grooming, not decisions
-async function collectTradeQueueItems(userId: string): Promise<AttentionItem[]> {
+async function collectTradeQueueItems(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Only fetch items in 'deciding' status - these require an actual decision
@@ -389,6 +391,7 @@ async function collectTradeQueueItems(userId: string): Promise<AttentionItem[]> 
         vote
       )
     `)
+    .eq('organization_id', orgId)
     .eq('status', 'deciding')
     .limit(20)
 
@@ -584,7 +587,7 @@ async function collectNotifications(userId: string, _windowStart: Date): Promise
 //    - Time hook set (revisit/alert/expiration) → action_required (reminder)
 // 2. TEAMMATE items (for What's New):
 //    - Shared AND relates to assets/projects/portfolios user works with → informational
-async function collectQuickThoughts(userId: string, windowStart: Date): Promise<AttentionItem[]> {
+async function collectQuickThoughts(userId: string, windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // First, get user's own Thesis and time-hooked thoughts
@@ -596,6 +599,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date): Promise<
       portfolios (id, name),
       projects (id, title)
     `)
+    .eq('organization_id', orgId)
     .eq('created_by', userId)
     .eq('is_archived', false)
     .or('idea_type.eq.thesis,date_type.neq.null')
@@ -799,7 +803,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date): Promise<
 }
 
 // Collect project activity for alignment
-async function collectAlignmentProjects(userId: string, windowStart: Date): Promise<AttentionItem[]> {
+async function collectAlignmentProjects(userId: string, windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   const { data: projects, error } = await supabase
@@ -811,6 +815,7 @@ async function collectAlignmentProjects(userId: string, windowStart: Date): Prom
         role
       )
     `)
+    .eq('organization_id', orgId)
     .in('status', ['planning', 'in_progress'])
     .gte('updated_at', windowStart.toISOString())
     .order('updated_at', { ascending: false })
@@ -946,13 +951,14 @@ async function collectDecisionRequests(userId: string): Promise<AttentionItem[]>
 }
 
 // Collect stale trade ideas (user created, no update in 7+ days)
-async function collectStaleTradeIdeas(userId: string): Promise<AttentionItem[]> {
+async function collectStaleTradeIdeas(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
   const staleThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
   const { data: ideas, error } = await supabase
     .from('trade_queue_items')
     .select('id, action, status, stage, urgency, created_at, updated_at, assets!inner(id, symbol, company_name), portfolios(name)')
+    .eq('organization_id', orgId)
     .eq('created_by', userId)
     .not('status', 'in', '("approved","rejected","executed","deleted","cancelled")')
     .lt('updated_at', staleThreshold.toISOString())
@@ -999,13 +1005,14 @@ async function collectStaleTradeIdeas(userId: string): Promise<AttentionItem[]> 
 }
 
 // Collect neglected covered assets (assets user covers with no thesis/rating/contribution updates)
-async function collectNeglectedCoverage(userId: string): Promise<AttentionItem[]> {
+async function collectNeglectedCoverage(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
   // Get assets user covers
   const { data: coverage, error: covErr } = await supabase
     .from('coverage')
     .select('asset_id, updated_at, assets!inner(id, symbol, company_name)')
+    .eq('organization_id', orgId)
     .eq('user_id', userId)
     .eq('is_active', true)
 
@@ -1184,7 +1191,7 @@ async function collectOverduePersonalTasks(userId: string): Promise<AttentionIte
 }
 
 // Collect stale projects (not blocked, but no updates in 14+ days)
-async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
+async function collectStaleProjects(userId: string, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
   const staleThreshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
 
@@ -1198,6 +1205,7 @@ async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
   const { data: projects, error } = await supabase
     .from('projects')
     .select('id, title, status, priority, due_date, created_by, updated_at, created_at')
+    .eq('organization_id', orgId)
     .is('deleted_at', null)
     .in('status', ['planning', 'in_progress', 'review'])
     .lt('updated_at', staleThreshold.toISOString())
@@ -1244,7 +1252,7 @@ async function collectStaleProjects(userId: string): Promise<AttentionItem[]> {
 }
 
 // Main computation function
-async function computeAttention(userId: string, windowHours: number): Promise<AttentionResponse> {
+async function computeAttention(userId: string, windowHours: number, orgId: string): Promise<AttentionResponse> {
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000)
 
   // Fetch user's attention state
@@ -1266,18 +1274,18 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
     upcomingEarnings, overduePersonalTasks, staleProjects,
   ] = await Promise.all([
     collectProjectDeliverables(userId),
-    collectProjects(userId),
-    collectTradeQueueItems(userId),
+    collectProjects(userId, orgId),
+    collectTradeQueueItems(userId, orgId),
     collectListSuggestions(userId),
     collectNotifications(userId, windowStart),
-    collectAlignmentProjects(userId, windowStart),
-    collectQuickThoughts(userId, windowStart),
+    collectAlignmentProjects(userId, windowStart, orgId),
+    collectQuickThoughts(userId, windowStart, orgId),
     collectDecisionRequests(userId),
-    collectStaleTradeIdeas(userId),
-    collectNeglectedCoverage(userId),
+    collectStaleTradeIdeas(userId, orgId),
+    collectNeglectedCoverage(userId, orgId),
     collectUpcomingEarnings(userId),
     collectOverduePersonalTasks(userId),
-    collectStaleProjects(userId),
+    collectStaleProjects(userId, orgId),
   ])
 
   let allItems: AttentionItem[] = [
@@ -1381,6 +1389,10 @@ async function computeAttention(userId: string, windowHours: number): Promise<At
 export function useAttention(options: UseAttentionOptions = {}) {
   const { windowHours = 24, enabled = true, refetchInterval = 60000 } = options
   const { user } = useAuth()
+  // Attention is computed per organisation. Without this the collectors
+  // returned every org the user belongs to, so decisions and ideas from one
+  // workspace appeared in another.
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   const {
@@ -1391,14 +1403,14 @@ export function useAttention(options: UseAttentionOptions = {}) {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['attention', user?.id, windowHours],
+    queryKey: ['attention', user?.id, currentOrgId, windowHours],
     queryFn: async (): Promise<AttentionResponse> => {
       if (!user?.id) {
         throw new Error('User not authenticated')
       }
-      return computeAttention(user.id, windowHours)
+      return computeAttention(user.id, windowHours, currentOrgId!)
     },
-    enabled: enabled && !!user?.id,
+    enabled: enabled && !!user?.id && !!currentOrgId,
     staleTime: 30000,
     refetchInterval: refetchInterval,
     refetchOnWindowFocus: true,
@@ -1677,16 +1689,17 @@ export function useAttention(options: UseAttentionOptions = {}) {
 
 export function useAttentionCounts(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options
+  const { currentOrgId } = useOrganization()
   const { user } = useAuth()
 
   const { data } = useQuery({
     queryKey: ['attention-counts', user?.id],
     queryFn: async () => {
       if (!user?.id) return null
-      const result = await computeAttention(user.id, 24)
+      const result = await computeAttention(user.id, 24, currentOrgId!)
       return result?.counts || null
     },
-    enabled: enabled && !!user?.id,
+    enabled: enabled && !!user?.id && !!currentOrgId,
     staleTime: 60000,
     refetchInterval: 120000,
   })

@@ -5,7 +5,6 @@ interface UsePullToRefreshOptions {
    * The scrolling element itself, not a ref. Passing a ref meant the binding
    * effect ran once on mount — before the feed had loaded and the scroller
    * existed — bound to nothing, and never re-ran, so the gesture was dead.
-   * Taking the element makes its arrival a dependency.
    */
   scroller: HTMLElement | null
   onRefresh: () => Promise<void> | void
@@ -18,21 +17,23 @@ interface UsePullToRefreshOptions {
 const RESISTANCE = 0.45
 /** Indicator never travels further than this, regardless of drag. */
 const MAX_PULL = 96
+/** Ignore the first pixels so a slightly-imperfect vertical scroll is not a pull. */
+const START_SLOP = 8
+const RELEASE_EASE = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
 
 /**
  * Pull-to-refresh for the feed.
  *
- * This does not fight the browser's own pull-to-refresh, because that gesture
- * only fires when the *document* scrolls, and the mobile shell pins
- * html/body at `overflow: hidden` so it never does. The gesture is therefore
- * unclaimed, and handling it here means a refresh can refetch and reshuffle
- * the feed rather than reloading the page — which would lose scroll position
- * and re-deal the deck as a side effect.
+ * This does not fight the browser's own pull-to-refresh: that gesture only
+ * fires when the *document* scrolls, and the mobile shell pins html/body at
+ * `overflow: hidden` so it never does. Handling it here means a pull can
+ * refetch and re-deal the feed rather than reloading the page.
  *
- * Only engages at scrollTop 0 and only on a downward drag, so it never steals
- * an ordinary scroll. `touchmove` is bound non-passively purely so the pull
- * can suppress the scroller's own handling once committed; until then events
- * pass through untouched.
+ * Movement is applied straight to the DOM rather than through React state.
+ * Driving the transform from state re-rendered the whole feed — every tile and
+ * every mounted chart — on each touchmove, which is what made the gesture
+ * stutter. React is now told only about the things that change once or twice
+ * per gesture: whether the pull is armed, and whether a refresh is running.
  */
 export function usePullToRefresh({
   scroller,
@@ -40,88 +41,122 @@ export function usePullToRefresh({
   threshold = 72,
   enabled = true,
 }: UsePullToRefreshOptions) {
-  const [pullDistance, setPullDistance] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [armed, setArmed] = useState(false)
 
+  const indicatorRef = useRef<HTMLElement | null>(null)
   const startY = useRef<number | null>(null)
-  const active = useRef(false)
+  const distance = useRef(0)
+  const dragging = useRef(false)
   const refreshing = useRef(false)
+  const armedRef = useRef(false)
 
-  const finish = useCallback(async (distance: number) => {
+  /** Write the current distance to both elements. No React involved. */
+  const paint = useCallback((d: number, animate: boolean) => {
+    const el = scroller
+    if (el) {
+      el.style.transition = animate ? RELEASE_EASE : 'none'
+      el.style.transform = d > 0 ? `translate3d(0, ${d}px, 0)` : ''
+    }
+    const ind = indicatorRef.current
+    if (ind) {
+      ind.style.transition = animate ? RELEASE_EASE + ', opacity 160ms linear' : 'none'
+      ind.style.transform = `translate3d(0, ${Math.max(d - 40, 0)}px, 0)`
+      ind.style.opacity = d <= 0 ? '0' : String(Math.min(d / threshold + 0.2, 1))
+    }
+  }, [scroller, threshold])
+
+  const settle = useCallback(async () => {
+    const committed = distance.current >= threshold
+    dragging.current = false
     startY.current = null
-    active.current = false
 
-    if (distance < threshold || refreshing.current) {
-      setPullDistance(0)
+    if (!committed || refreshing.current) {
+      distance.current = 0
+      armedRef.current = false
+      setArmed(false)
+      paint(0, true)
       return
     }
 
     refreshing.current = true
     setIsRefreshing(true)
-    // Hold the indicator at the threshold while work happens, so the spinner
-    // does not snap back before anything visibly changes.
-    setPullDistance(threshold)
+    // Hold at the threshold while the work runs, so the spinner does not snap
+    // away before anything visibly changes.
+    distance.current = threshold
+    paint(threshold, true)
     try {
       await onRefresh()
     } finally {
       refreshing.current = false
+      armedRef.current = false
       setIsRefreshing(false)
-      setPullDistance(0)
+      setArmed(false)
+      distance.current = 0
+      paint(0, true)
     }
-  }, [onRefresh, threshold])
+  }, [onRefresh, paint, threshold])
 
   useEffect(() => {
     const el = scroller
     if (!el || !enabled) return
 
+    el.style.willChange = 'transform'
+
     const onTouchStart = (e: TouchEvent) => {
-      if (refreshing.current) return
-      // Record a candidate only at the very top; anywhere else this is a
-      // normal scroll and must be left alone.
+      if (refreshing.current || e.touches.length !== 1) return
       if (el.scrollTop > 0) {
         startY.current = null
         return
       }
       startY.current = e.touches[0].clientY
-      active.current = false
+      dragging.current = false
     }
 
     const onTouchMove = (e: TouchEvent) => {
       if (startY.current == null || refreshing.current) return
 
-      const delta = e.touches[0].clientY - startY.current
-      if (delta <= 0) {
-        // Upward drag — hand it back to the scroller.
-        if (active.current) {
-          active.current = false
-          setPullDistance(0)
+      const raw = e.touches[0].clientY - startY.current
+      if (raw <= START_SLOP) {
+        if (dragging.current) {
+          dragging.current = false
+          distance.current = 0
+          paint(0, true)
         }
         return
       }
-      // Scrolled away from the top mid-gesture; abandon the pull.
       if (el.scrollTop > 0) {
         startY.current = null
-        if (active.current) {
-          active.current = false
-          setPullDistance(0)
+        if (dragging.current) {
+          dragging.current = false
+          distance.current = 0
+          paint(0, true)
         }
         return
       }
 
-      active.current = true
-      // Stop the scroller reacting to the same gesture.
+      dragging.current = true
       if (e.cancelable) e.preventDefault()
-      setPullDistance(Math.min(delta * RESISTANCE, MAX_PULL))
+
+      const d = Math.min((raw - START_SLOP) * RESISTANCE, MAX_PULL)
+      distance.current = d
+      paint(d, false)
+
+      // The only state change during a drag, and only when it flips.
+      const nowArmed = d >= threshold
+      if (nowArmed !== armedRef.current) {
+        armedRef.current = nowArmed
+        setArmed(nowArmed)
+      }
     }
 
     const onTouchEnd = () => {
-      if (startY.current == null) return
-      const distance = pullDistanceRef.current
-      if (!active.current) {
+      if (startY.current == null && !dragging.current) return
+      if (!dragging.current) {
         startY.current = null
         return
       }
-      void finish(distance)
+      void settle()
     }
 
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -134,13 +169,11 @@ export function usePullToRefresh({
       el.removeEventListener('touchmove', onTouchMove)
       el.removeEventListener('touchend', onTouchEnd)
       el.removeEventListener('touchcancel', onTouchEnd)
+      el.style.willChange = ''
+      el.style.transition = ''
+      el.style.transform = ''
     }
-  }, [scroller, enabled, finish])
+  }, [scroller, enabled, paint, settle, threshold])
 
-  // Mirror into a ref so touchend reads the current distance without the
-  // listener having to be re-bound on every pixel of travel.
-  const pullDistanceRef = useRef(0)
-  pullDistanceRef.current = pullDistance
-
-  return { pullDistance, isRefreshing, threshold }
+  return { indicatorRef, isRefreshing, armed, threshold }
 }

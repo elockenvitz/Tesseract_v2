@@ -52,11 +52,15 @@ export function useDerivedInsights() {
   return useQuery<DerivedInsight[]>({
     queryKey: ['derived-insights', user?.id, currentOrgId],
     queryFn: async () => {
-      if (!user) return []
+      // Without an org there is nothing safe to show: these queries would
+      // otherwise return positions from every organisation the user belongs to
+      // and present them as the current book.
+      if (!user || !currentOrgId) return []
 
       const { data: positions } = await supabase
         .from('portfolio_holdings_positions')
         .select('asset_id, weight_pct, portfolio_id, assets(id, symbol, company_name), portfolios(name)')
+        .eq('organization_id', currentOrgId)
         .not('asset_id', 'is', null)
         .order('weight_pct', { ascending: false })
         .limit(120)
@@ -68,10 +72,15 @@ export function useDerivedInsights() {
 
       // Most recent research touch per asset, across the places research
       // actually lands. One round-trip each rather than per-asset queries.
+      // Scoped too: research activity from another organisation must not make
+      // a position here look freshly covered.
       const [notes, thoughts, contributions] = await Promise.all([
-        supabase.from('asset_notes').select('asset_id, created_at').in('asset_id', assetIds),
-        supabase.from('quick_thoughts').select('asset_id, created_at').in('asset_id', assetIds),
-        supabase.from('asset_contributions').select('asset_id, updated_at').in('asset_id', assetIds),
+        supabase.from('asset_notes').select('asset_id, created_at')
+          .eq('organization_id', currentOrgId).in('asset_id', assetIds),
+        supabase.from('quick_thoughts').select('asset_id, created_at')
+          .eq('organization_id', currentOrgId).in('asset_id', assetIds),
+        supabase.from('asset_contributions').select('asset_id, updated_at')
+          .eq('organization_id', currentOrgId).in('asset_id', assetIds),
       ])
 
       const lastTouch = new Map<string, number>()
@@ -158,7 +167,7 @@ export function useDerivedInsights() {
 
       return out.sort((a, b) => b.score - a.score)
     },
-    enabled: !!user,
+    enabled: !!user && !!currentOrgId,
     staleTime: 5 * 60 * 1000,
   })
 }
