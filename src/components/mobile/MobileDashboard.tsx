@@ -153,7 +153,7 @@ export function MobileDashboard({
       .filter(Boolean) as string[],
     [attentionItems]
   )
-  const { data: pairInfo } = useQuery({
+  const { data: pairInfo, isLoading: pairInfoLoading } = useQuery({
     queryKey: ['attention-pair-membership', attentionSourceIds],
     queryFn: async () => {
       const empty = { keyBySource: {} as Record<string, string>, legsByPair: {} as Record<string, any[]> }
@@ -237,6 +237,10 @@ export function MobileDashboard({
   // ordered by attention priority — and the rest are dropped rather than
   // rendered as separate screens for what is one decision.
   const dedupedAttention = useMemo(() => {
+    // Until pair membership resolves, every leg still looks like its own
+    // decision. Rendering them would show "SELL CLOV" for a beat and then
+    // replace it with the pair, so hold the attention cards back instead.
+    if (attentionSourceIds.length && pairInfoLoading) return []
     if (!pairKeyBySource || !Object.keys(pairKeyBySource).length) return attentionItems
     const seenPairs = new Set<string>()
     return attentionItems.filter(a => {
@@ -246,7 +250,7 @@ export function MobileDashboard({
       seenPairs.add(key)
       return true
     })
-  }, [attentionItems, pairKeyBySource])
+  }, [attentionItems, pairKeyBySource, attentionSourceIds.length, pairInfoLoading])
 
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and

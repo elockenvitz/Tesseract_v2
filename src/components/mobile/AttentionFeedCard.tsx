@@ -206,10 +206,22 @@ export function AttentionFeedCard({
             {isPair ? (
               // Name the whole trade. Showing only the leg that raised the
               // alert would misdescribe a decision about both sides.
-              <span className="text-gray-900 dark:text-white">
-                {longLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ') || 'Long'}
-                <span className="text-gray-400"> vs </span>
-                {shortLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ') || 'Short'}
+              // Both sides named and coloured. A plain black "A / B vs C / D"
+              // left the reader guessing which side was being bought.
+              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xl">
+                {longLegs.length > 0 && (
+                  <span className="text-emerald-600 dark:text-emerald-400">
+                    BUY {longLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ')}
+                  </span>
+                )}
+                {longLegs.length > 0 && shortLegs.length > 0 && (
+                  <span className="text-gray-400 text-base font-medium">vs</span>
+                )}
+                {shortLegs.length > 0 && (
+                  <span className="text-red-600 dark:text-red-400">
+                    SELL {shortLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ')}
+                  </span>
+                )}
               </span>
             ) : (
               <>

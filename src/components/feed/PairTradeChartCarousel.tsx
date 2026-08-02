@@ -12,6 +12,8 @@ interface PairTradeChartCarouselProps {
 interface CarouselLeg {
   key: string
   side: 'long' | 'short'
+  /** The instruction, in the words used everywhere else: BUY / SELL / ADD / TRIM. */
+  action: string
   symbol: string
   companyName?: string
 }
@@ -49,6 +51,7 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
         .map(l => ({
           key: `${side}-${l.id}`,
           side,
+          action: (l.action || (side === 'long' ? 'buy' : 'sell')).toUpperCase(),
           symbol: l.asset.symbol,
           companyName: l.asset.company_name,
         }))
@@ -102,7 +105,7 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
                 )}
               >
                 {leg.side === 'long' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {leg.symbol}
+                {leg.action} {leg.symbol}
               </span>
 
               {near ? (
