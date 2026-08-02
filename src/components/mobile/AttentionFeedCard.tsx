@@ -3,10 +3,16 @@ import { formatDistanceToNow } from 'date-fns'
 import {
   AlertTriangle, ArrowRight, BellOff, Check, Gavel, Info, Users,
 } from 'lucide-react'
+import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
 interface AttentionFeedCardProps {
   item: AttentionItem
+  /** Ticker for the linked asset, resolved by the caller in one batched query
+   *  rather than a lookup per card. Absent for non-asset items (projects,
+   *  lists), which correctly render without a chart. */
+  symbol?: string | null
+  companyName?: string | null
   onOpen?: (item: AttentionItem) => void
   onSnooze?: (item: AttentionItem) => void
   onAcknowledge?: (item: AttentionItem) => void
@@ -50,7 +56,14 @@ const TYPE_CONFIG: Record<AttentionType, { icon: typeof Info; label: string; chi
  * nicety — "the algorithm deprioritised it" is not an acceptable explanation
  * for a missed approval.
  */
-export function AttentionFeedCard({ item, onOpen, onSnooze, onAcknowledge }: AttentionFeedCardProps) {
+export function AttentionFeedCard({
+  item,
+  symbol,
+  companyName,
+  onOpen,
+  onSnooze,
+  onAcknowledge,
+}: AttentionFeedCardProps) {
   const config = TYPE_CONFIG[item.attention_type] ?? TYPE_CONFIG.informational
   const TypeIcon = config.icon
   const isOverdue = !!item.due_at && new Date(item.due_at).getTime() < Date.now()
@@ -66,6 +79,15 @@ export function AttentionFeedCard({ item, onOpen, onSnooze, onAcknowledge }: Att
           {formatDistanceToNow(new Date(item.last_activity_at || item.created_at), { addSuffix: true })}
         </span>
       </div>
+
+      {/* A decision about a position is hard to judge without seeing the
+          price. Same chart component as the idea cards, so the two read as
+          one feed rather than two systems. */}
+      {symbol && (
+        <div className="flex-shrink-0 h-[30%] px-4 pt-3">
+          <ReelsChartPanel symbol={symbol} companyName={companyName ?? undefined} />
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className={clsx('border-l-4 pl-3', config.accent)}>
