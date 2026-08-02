@@ -2,12 +2,12 @@ import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import {
-  AlertTriangle, ArrowRight, BellOff, Check, Gavel, Info, Users,
+  AlertTriangle, ArrowRight, BellOff, Check, Gavel, Info, PenLine, Share2, Users,
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { PairTradeChartCarousel } from '../feed/PairTradeChartCarousel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
-import { ExpandableText } from './ExpandableText'
+import { ExpandablePanel } from './ExpandablePanel'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
@@ -23,6 +23,9 @@ interface AttentionFeedCardProps {
   onOpen?: (item: AttentionItem) => void
   onSnooze?: (item: AttentionItem) => void
   onAcknowledge?: (item: AttentionItem) => void
+  onShare?: (item: AttentionItem) => void
+  /** Log a thought, idea, recommendation or prompt against this item. */
+  onCapture?: (item: AttentionItem) => void
 }
 
 const TYPE_CONFIG: Record<AttentionType, { icon: typeof Info; label: string; chip: string }> = {
@@ -75,6 +78,8 @@ export function AttentionFeedCard({
   onOpen,
   onSnooze,
   onAcknowledge,
+  onShare,
+  onCapture,
 }: AttentionFeedCardProps) {
   const config = TYPE_CONFIG[item.attention_type] ?? TYPE_CONFIG.informational
   const TypeIcon = config.icon
@@ -152,7 +157,7 @@ export function AttentionFeedCard({
     panels.push({
       key: 'rationale',
       label: 'Rationale',
-      body: <ExpandableText text={rationale} lines={5} />,
+      body: <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{rationale}</p>,
     })
   }
 
@@ -245,7 +250,7 @@ export function AttentionFeedCard({
       </div>
 
       {(isPair || symbol) && (
-        <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
+        <div className="flex-shrink-0 h-[50%] min-h-[220px] max-h-[400px] px-3">
           {isPair ? (
             <PairTradeChartCarousel longLegs={longLegs as any} shortLegs={shortLegs as any} />
           ) : (
@@ -262,11 +267,11 @@ export function AttentionFeedCard({
           className="flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide"
         >
           {panels.map(p => (
-            <div key={p.key} className="w-full flex-shrink-0 snap-start snap-always px-3 overflow-hidden">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+            <div key={p.key} className="w-full h-full flex-shrink-0 snap-start snap-always px-3 flex flex-col min-h-0">
+              <div className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
                 {p.label}
               </div>
-              {p.body}
+              <ExpandablePanel resetKey={panel}>{p.body}</ExpandablePanel>
             </div>
           ))}
         </div>
@@ -308,6 +313,28 @@ export function AttentionFeedCard({
           >
             <Check className="h-5 w-5" />
             <span className="text-[10px] font-medium leading-none">Got it</span>
+          </button>
+        )}
+        {onShare && (
+          <button
+            type="button"
+            onClick={() => onShare(item)}
+            className="flex flex-col items-center justify-center gap-0.5 w-14 rounded-xl text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+            aria-label="Share"
+          >
+            <Share2 className="h-5 w-5" />
+            <span className="text-[10px] font-medium leading-none">Share</span>
+          </button>
+        )}
+        {onCapture && (
+          <button
+            type="button"
+            onClick={() => onCapture(item)}
+            className="flex flex-col items-center justify-center gap-0.5 w-14 rounded-xl text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+            aria-label="Capture a thought"
+          >
+            <PenLine className="h-5 w-5" />
+            <span className="text-[10px] font-medium leading-none">Capture</span>
           </button>
         )}
         <button

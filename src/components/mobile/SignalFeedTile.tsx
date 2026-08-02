@@ -1,8 +1,6 @@
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import {
-  ArrowRight, CalendarClock, Radar, Split, TimerReset,
-} from 'lucide-react'
+import { ArrowRight, CalendarClock, PenLine, Radar, Split, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
 import { ExpandableText } from './ExpandableText'
@@ -11,6 +9,8 @@ import type { SignalCard, SignalType } from '../../hooks/ideas/useIdeasFeed'
 interface SignalFeedTileProps {
   signal: SignalCard
   onAssetClick?: (assetId: string, symbol: string) => void
+  /** Log a thought, idea, recommendation or prompt from this tile. */
+  onCapture?: () => void
 }
 
 const SIGNAL_CONFIG: Record<SignalType, { icon: typeof Radar; label: string; chip: string }> = {
@@ -52,7 +52,7 @@ const SIGNAL_CONFIG: Record<SignalType, { icon: typeof Radar; label: string; chi
  * Signals are observations rather than requests, so the action is navigation
  * to the asset rather than an accept/dismiss verb.
  */
-export function SignalFeedTile({ signal, onAssetClick }: SignalFeedTileProps) {
+export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTileProps) {
   const config = SIGNAL_CONFIG[signal.signalType] ?? SIGNAL_CONFIG.prompt
   const Icon = config.icon
   const primary = signal.relatedAssets?.[0]
@@ -114,7 +114,8 @@ export function SignalFeedTile({ signal, onAssetClick }: SignalFeedTileProps) {
         )}
       </div>
 
-      <div className="flex-shrink-0 flex items-stretch px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
+      <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
+        <CaptureButton onCapture={onCapture} />
         <button
           type="button"
           onClick={() => primary && onAssetClick?.(primary.id, primary.symbol)}
@@ -126,5 +127,22 @@ export function SignalFeedTile({ signal, onAssetClick }: SignalFeedTileProps) {
         </button>
       </div>
     </div>
+  )
+}
+
+/** Capture sits on every tile type, in the same place, so logging a thought
+ *  never depends on which kind of post happens to be on screen. */
+function CaptureButton({ onCapture }: { onCapture?: () => void }) {
+  if (!onCapture) return null
+  return (
+    <button
+      type="button"
+      onClick={onCapture}
+      className="flex flex-col items-center justify-center gap-0.5 w-14 rounded-xl text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+      aria-label="Capture a thought"
+    >
+      <PenLine className="h-5 w-5" />
+      <span className="text-[10px] font-medium leading-none">Capture</span>
+    </button>
   )
 }
