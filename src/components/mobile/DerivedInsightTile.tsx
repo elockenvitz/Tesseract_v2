@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import { ArrowRight, FileQuestion, Scale, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
+import { ExpandableText } from './ExpandableText'
 import type { DerivedInsight, DerivedInsightKind } from '../../hooks/mobile/useDerivedInsights'
 
 interface DerivedInsightTileProps {
@@ -77,8 +78,8 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
         <ReelsChartPanel symbol={insight.symbol} hideHeader />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
-        <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-200">{insight.body}</p>
+      <div className="flex-1 min-h-0 overflow-hidden px-3 py-2">
+        <ExpandableText text={insight.body} lines={4} />
       </div>
 
       <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">

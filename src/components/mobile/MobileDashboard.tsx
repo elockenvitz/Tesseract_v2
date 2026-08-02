@@ -12,6 +12,7 @@ import { useAttention } from '../../hooks/useAttention'
 import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
+import { loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
@@ -91,9 +92,11 @@ export function MobileDashboard({
 
   const { track } = useFeedDwell(userId)
 
-  // New seed per mount, so refreshing genuinely reorders the feed while the
-  // order stays stable for the duration of a scroll.
-  const [shuffleSeed] = useState(() => Math.floor(Math.random() * 2 ** 31))
+  // Resume the previous session if there is a recent one, so returning from an
+  // asset lands where the user left. A fresh visit gets a new seed, which is
+  // what makes a genuine refresh reorder the feed.
+  const [resumed] = useState(() => loadFeedSession())
+  const [shuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
 
   // The feed must not end. Ideas paginate from the server, but attention,
   // signals and derived insights are finite sets. When the server has no more
@@ -101,13 +104,15 @@ export function MobileDashboard({
   // the scroll simply stopping. Each cycle is reshuffled and labelled, so it
   // reads as "here is the rest of the book to look at" rather than a silent
   // repeat.
-  const [cycle, setCycle] = useState(0)
+  const [cycle, setCycle] = useState(() => resumed?.cycle ?? 0)
 
   // Snapshot at mount for the same reason as the seen map: re-reading live
   // would re-rank the list under the reader as their own dwell is recorded.
   const [interestAtMount] = useState(() => loadInterest(userId ?? ''))
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const restoredRef = useRef(false)
 
   // One query for every asset referenced by an attention item, rather than a
   // lookup inside each card.
@@ -235,6 +240,38 @@ export function MobileDashboard({
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, derivedInsights.length])
 
+  // Restore once, after the entries that make up the remembered offset exist.
+  // Attempting it before render leaves scrollTop clamped to zero.
+  useEffect(() => {
+    if (restoredRef.current || !resumed?.scrollTop) return
+    const el = scrollerRef.current
+    if (!el || !feedEntries.length) return
+    restoredRef.current = true
+    // Two frames: one for the list to lay out, one for snap to settle.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.scrollTop = resumed.scrollTop
+    }))
+  }, [resumed, feedEntries.length])
+
+  // Persist position as the user scrolls, and once more on unmount so a fast
+  // navigation away is not lost to the throttle window.
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const persist = () => saveFeedSession({ seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
+    const onScroll = () => {
+      if (timer) return
+      timer = setTimeout(() => { timer = null; persist() }, 400)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      if (timer) clearTimeout(timer)
+      persist()
+    }
+  }, [shuffleSeed, cycle])
+
   const openAsset = useCallback(
     (assetId: string, symbol: string) => {
       onNavigate?.({ id: assetId, title: symbol, type: 'asset', data: { id: assetId, symbol } })
@@ -269,7 +306,7 @@ export function MobileDashboard({
 
   return (
     <>
-      <div className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain">
+      <div ref={scrollerRef} className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain">
         {feedEntries.map(entry => {
           if (entry.kind === 'attention') {
             const a = entry.attention
