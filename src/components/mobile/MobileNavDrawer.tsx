@@ -171,7 +171,9 @@ export function MobileNavDrawer({
                             : 'text-gray-700 dark:text-gray-200'
                         )}
                       >
-                        {tab.title}
+                        {/* The home tab renders the ideas feed on phones, so
+                            label it for what it shows rather than "Dashboard". */}
+                        {tab.id === 'dashboard' ? 'Ideas' : tab.title}
                       </span>
                     </button>
                     {/* The dashboard tab cannot be closed (see
