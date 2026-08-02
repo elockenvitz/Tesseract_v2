@@ -5,6 +5,7 @@ import {
   AlertTriangle, ArrowRight, BellOff, Check, Gavel, Info, Users,
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
+import { PairTradeChartCarousel } from '../feed/PairTradeChartCarousel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
 import { ExpandableText } from './ExpandableText'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
@@ -15,6 +16,10 @@ interface AttentionFeedCardProps {
   /** Ticker for the linked asset, resolved by the caller in one batched query. */
   symbol?: string | null
   companyName?: string | null
+  /** Every leg of the pair this item belongs to. Supplied when the feed has
+   *  collapsed a multi-leg pair into a single card, so the tile can show the
+   *  whole trade rather than the one leg that happened to raise the alert. */
+  pairLegs?: Array<{ id: string; action?: string; pair_leg_type?: string | null; assets?: any }>
   onOpen?: (item: AttentionItem) => void
   onSnooze?: (item: AttentionItem) => void
   onAcknowledge?: (item: AttentionItem) => void
@@ -66,6 +71,7 @@ export function AttentionFeedCard({
   item,
   symbol,
   companyName,
+  pairLegs,
   onOpen,
   onSnooze,
   onAcknowledge,
@@ -74,6 +80,13 @@ export function AttentionFeedCard({
   const TypeIcon = config.icon
   const isOverdue = !!item.due_at && new Date(item.due_at).getTime() < Date.now()
   const { data: decision } = useDecisionContext(item)
+
+  // A pair is a relationship between names, so one chart misrepresents it.
+  const isPair = (pairLegs?.length ?? 0) > 1
+  const isLongLeg = (l: any) =>
+    l.pair_leg_type === 'long' || (l.pair_leg_type == null && (l.action === 'buy' || l.action === 'add'))
+  const longLegs = (pairLegs ?? []).filter(isLongLeg).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
+  const shortLegs = (pairLegs ?? []).filter(l => !isLongLeg(l)).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
 
   const scrollerRef = useRef<HTMLDivElement>(null)
   const [panel, setPanel] = useState(0)
@@ -175,7 +188,7 @@ export function AttentionFeedCard({
           <TypeIcon className="h-4 w-4" />
           {config.label}
         </span>
-        {symbol ? (
+        {symbol && !isPair ? (
           <TickerQuoteBadge symbol={symbol} companyName={companyName} className="ml-auto" />
         ) : (
           <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
@@ -188,8 +201,20 @@ export function AttentionFeedCard({
       <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
         <div className="flex items-baseline gap-2">
           <h2 className="text-2xl font-bold leading-tight min-w-0">
-            <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
-            <span className="text-gray-900 dark:text-white">{ticker}</span>
+            {isPair ? (
+              // Name the whole trade. Showing only the leg that raised the
+              // alert would misdescribe a decision about both sides.
+              <span className="text-gray-900 dark:text-white">
+                {longLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ') || 'Long'}
+                <span className="text-gray-400"> vs </span>
+                {shortLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ') || 'Short'}
+              </span>
+            ) : (
+              <>
+                <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
+                <span className="text-gray-900 dark:text-white">{ticker}</span>
+              </>
+            )}
           </h2>
           {/* Attribution sits with the instruction it attributes — as its own
               labelled row inside a panel called "Recommendation" it read as
@@ -205,9 +230,13 @@ export function AttentionFeedCard({
         )}
       </div>
 
-      {symbol && (
+      {(isPair || symbol) && (
         <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
-          <ReelsChartPanel symbol={symbol} hideHeader />
+          {isPair ? (
+            <PairTradeChartCarousel longLegs={longLegs as any} shortLegs={shortLegs as any} />
+          ) : (
+            <ReelsChartPanel symbol={symbol!} hideHeader />
+          )}
         </div>
       )}
 
