@@ -1,12 +1,8 @@
 import { clsx } from 'clsx'
-import { formatDistanceToNow } from 'date-fns'
-import {
-  TrendingUp, TrendingDown, Lightbulb, FileText, GitBranch, Sparkles,
-  MessageSquare, User, ChevronRight, Share2, PlusCircle, GitCompareArrows
-} from 'lucide-react'
+import { TrendingUp, TrendingDown, Lightbulb, FileText, GitBranch, Sparkles, MessageSquare, ChevronRight, Share2, PlusCircle, GitCompareArrows } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import { PairTradeChartCarousel } from './PairTradeChartCarousel'
-import { TickerQuoteBadge } from '../mobile/TickerQuoteBadge'
+import { FeedTileHeader } from '../mobile/FeedTileHeader'
 import { ExpandableText } from '../mobile/ExpandableText'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 
@@ -159,12 +155,9 @@ export function ReelsFeedItem({
       'relative w-full h-full overflow-hidden flex flex-col',
       config.bgColor
     )}>
-      {/* Header */}
-      <div className="flex-shrink-0 z-30 flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-100 dark:border-gray-800 dark:bg-gray-800">
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Type badge */}
-          {/* shrink-0 + nowrap: "Trade Idea" was wrapping onto a second line
-              and pushing the row taller than the header. */}
+      <FeedTileHeader
+        className="bg-white dark:bg-gray-800"
+        badge={
           <span className={clsx(
             'flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] sm:text-sm font-medium border whitespace-nowrap',
             config.badgeColor
@@ -172,56 +165,17 @@ export function ReelsFeedItem({
             <TypeIcon className={clsx('h-3.5 w-3.5 shrink-0', config.iconColor)} />
             {config.label}
           </span>
-
-          {/* Author */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onAuthorClick?.(item.author.id)
-            }}
-            className="flex items-center gap-1.5 min-w-0 text-gray-700 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-300"
-          >
-            {item.author.avatar_url ? (
-              <img
-                src={item.author.avatar_url}
-                alt=""
-                className="hidden sm:block w-7 h-7 rounded-full object-cover border border-gray-200 dark:border-gray-700"
-              />
-            ) : (
-              <div className="hidden sm:flex w-7 h-7 rounded-full bg-gray-100 items-center justify-center border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-                <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-              </div>
-            )}
-            {/* Always show the name. A bare avatar glyph with no label tells
-                the reader nothing about who wrote the post — which is the
-                single most useful piece of context on a research feed. */}
-            <span className="text-[13px] sm:text-sm font-medium truncate max-w-[7rem] sm:max-w-none">
-              {item.author.full_name ||
-                (item.author.first_name && item.author.last_name
-                  ? `${item.author.first_name} ${item.author.last_name}`
-                  : item.author.email?.split('@')[0] || 'Unknown')}
-            </span>
-          </button>
-
-          {/* Time */}
-          {/* Recency matters on a research feed — keep it on phones too. */}
-          <span className="hidden sm:inline text-gray-400 text-xs md:text-sm whitespace-nowrap">
-            {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
-          </span>
-        </div>
-
-        {/* Ticker and price fill what was an empty right-hand gap, and let the
-            chart below drop its own header row. */}
-        {hideHeaderActions && displaySymbol && !isPairTrade && (
-          <TickerQuoteBadge
-            symbol={displaySymbol}
-            companyName={asset?.company_name}
-            className="ml-auto"
-          />
-        )}
-
-        {/* Action buttons */}
-        <div className={clsx('items-center gap-2', hideHeaderActions ? 'hidden' : 'flex')}>
+        }
+        authorName={item.author.full_name ||
+          (item.author.first_name && item.author.last_name
+            ? `${item.author.first_name} ${item.author.last_name}`
+            : item.author.email?.split('@')[0] || 'Unknown')}
+        onAuthorClick={onAuthorClick ? () => onAuthorClick(item.author.id) : undefined}
+        timestamp={item.created_at}
+        symbol={hideHeaderActions && !isPairTrade ? displaySymbol : null}
+        companyName={asset?.company_name}
+        actions={hideHeaderActions ? undefined : (
+          <>
           {/* Share button */}
           <button
             onClick={(e) => {
@@ -247,8 +201,9 @@ export function ReelsFeedItem({
             <PlusCircle className="h-4 w-4" />
             <span className="hidden sm:inline">Create Idea</span>
           </button>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {/* Chart area */}
       {/* Chart takes less of a phone screen than a desktop one — the written

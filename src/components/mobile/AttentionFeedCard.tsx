@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { PairTradeChartCarousel } from '../feed/PairTradeChartCarousel'
-import { TickerQuoteBadge } from './TickerQuoteBadge'
+import { FeedTileHeader } from './FeedTileHeader'
 import { ExpandablePanel } from './ExpandablePanel'
 import { CarouselControls } from './CarouselControls'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
@@ -184,23 +184,23 @@ export function AttentionFeedCard({
 
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
-      {/* Header band — mirrors the idea card's, so the two read as one feed. */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-        <span className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', config.chip)}>
-          <TypeIcon className="h-4 w-4" />
-          {config.label}
-        </span>
-        {symbol && !isPair ? (
-          <TickerQuoteBadge symbol={symbol} companyName={companyName} className="ml-auto" />
-        ) : (
-          <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
-            {formatDistanceToNow(new Date(item.last_activity_at || item.created_at), { addSuffix: true })}
+      <FeedTileHeader
+        badge={
+          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
+            <TypeIcon className="h-3.5 w-3.5 shrink-0" />
+            {config.label}
           </span>
-        )}
-      </div>
+        }
+        authorName={decision?.recommendedBy}
+        timestamp={item.last_activity_at || item.created_at}
+        // A pair's legs each carry their own quote in the carousel; one in the
+        // header could only describe half the trade.
+        symbol={isPair ? null : symbol}
+        companyName={companyName}
+      />
 
       {/* The instruction, first and unmissable. */}
-      <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
+      <div className="flex-shrink-0 px-3 pt-1.5 pb-1">
         <div className="flex items-baseline gap-2">
           <h2 className="text-2xl font-bold leading-tight min-w-0">
             {isPair ? (
@@ -230,14 +230,6 @@ export function AttentionFeedCard({
               </>
             )}
           </h2>
-          {/* Attribution sits with the instruction it attributes — as its own
-              labelled row inside a panel called "Recommendation" it read as
-              the same word twice. */}
-          {decision?.recommendedBy && (
-            <span className="ml-auto shrink-0 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[9rem]">
-              by {decision.recommendedBy}
-            </span>
-          )}
         </div>
         {item.subtitle && (
           <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{item.subtitle}</p>
@@ -258,9 +250,9 @@ export function AttentionFeedCard({
           Tap-driven like the chart carousel: a horizontal scroll container
           here absorbed the vertical drags meant to page the feed, which is
           why swiping up over this area did nothing. */}
-      <div className="flex-1 min-h-0 flex flex-col pt-3">
+      <div className="flex-1 min-h-0 flex flex-col pt-2">
         <div className="flex-1 min-h-0 px-3 flex flex-col">
-          <div className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+          <div className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
             {panels[activePanel]?.label}
           </div>
           <ExpandablePanel resetKey={activePanel}>{panels[activePanel]?.body}</ExpandablePanel>

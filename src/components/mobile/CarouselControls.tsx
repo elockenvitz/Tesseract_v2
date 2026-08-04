@@ -41,7 +41,7 @@ export function CarouselControls({
         type="button"
         onClick={() => onChange(Math.max(0, index - 1))}
         disabled={index === 0}
-        className="flex items-center justify-center h-8 w-8 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+        className="flex items-center justify-center h-7 w-7 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
         aria-label="Previous"
       >
         <ChevronLeft className="h-5 w-5" />
@@ -52,7 +52,7 @@ export function CarouselControls({
           key={i}
           type="button"
           onClick={() => onChange(i)}
-          className="flex items-center justify-center h-8 px-1 no-touch-target"
+          className="flex items-center justify-center h-7 px-1 no-touch-target"
           aria-label={dotLabel?.(i) ?? `Go to ${i + 1}`}
           aria-current={i === index}
         >
@@ -69,7 +69,7 @@ export function CarouselControls({
         type="button"
         onClick={() => onChange(Math.min(count - 1, index + 1))}
         disabled={index === count - 1}
-        className="flex items-center justify-center h-8 w-8 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+        className="flex items-center justify-center h-7 w-7 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
         aria-label="Next"
       >
         <ChevronRight className="h-5 w-5" />
