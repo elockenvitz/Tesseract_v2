@@ -1,8 +1,9 @@
 import { clsx } from 'clsx'
-import { TrendingUp, TrendingDown, Lightbulb, FileText, GitBranch, Sparkles, MessageSquare, ChevronRight, Share2, PlusCircle, GitCompareArrows } from 'lucide-react'
+import { TrendingUp, Lightbulb, FileText, GitBranch, Sparkles, MessageSquare, ChevronRight, Share2, PlusCircle, GitCompareArrows } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import { PairTradeChartCarousel } from './PairTradeChartCarousel'
 import { FeedTileHeader } from '../mobile/FeedTileHeader'
+import { FeedTileTitle } from '../mobile/FeedTileTitle'
 import { ExpandableText } from '../mobile/ExpandableText'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 
@@ -172,8 +173,6 @@ export function ReelsFeedItem({
             : item.author.email?.split('@')[0] || 'Unknown')}
         onAuthorClick={onAuthorClick ? () => onAuthorClick(item.author.id) : undefined}
         timestamp={item.created_at}
-        symbol={hideHeaderActions && !isPairTrade ? displaySymbol : null}
-        companyName={asset?.company_name}
         actions={hideHeaderActions ? undefined : (
           <>
           {/* Share button */}
@@ -205,11 +204,34 @@ export function ReelsFeedItem({
         )}
       />
 
+      {/* The instruction leads, exactly as it does on a decision tile. It was
+          previously a small chip below the chart, so "BUY MSFT" read as a
+          different thing depending on which surface it arrived through. */}
+      {hideHeaderActions && (displaySymbol || isPairTrade) && (
+        <FeedTileTitle
+          action={item.type === 'trade_idea' && 'action' in item ? item.action : null}
+          symbol={isPairTrade ? null : displaySymbol}
+          longSymbols={
+            isPairTrade
+              ? ((item as any).long_legs ?? []).map((l: any) => l?.asset?.symbol).filter(Boolean)
+              : []
+          }
+          shortSymbols={
+            isPairTrade
+              ? ((item as any).short_legs ?? []).map((l: any) => l?.asset?.symbol).filter(Boolean)
+              : []
+          }
+          headline={'title' in item ? item.title : null}
+          quoteSymbol={isPairTrade ? null : displaySymbol}
+          quoteCompanyName={asset?.company_name}
+        />
+      )}
+
       {/* Chart area */}
-      {/* Chart takes less of a phone screen than a desktop one — the written
-          reasoning below it is the part that needs room, and at 50% the text
-          area was too short to read a thesis without scrolling. */}
-      <div className="flex-shrink-0 h-[52%] min-h-[260px] max-h-[420px] px-3 pt-2 pb-1">
+      {/* A third of the screen. The written reasoning below is the part that
+          needs room, and the chart is one band among a header, an instruction
+          and the case itself. */}
+      <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3 pt-1 pb-1">
         {isPairTrade ? (
           // A pair trade is a relationship between two positions; one chart
           // misrepresents it. Swipe horizontally between the legs.
@@ -240,38 +262,24 @@ export function ReelsFeedItem({
       {/* Content area */}
       <div className="flex-1 min-h-0 px-3 py-2 overflow-hidden">
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 max-h-full overflow-hidden dark:border-gray-700 dark:bg-gray-900">
-          {/* Qualifiers lead, compactly, so they frame the reasoning rather
-              than trailing after it as a stack of competing chips. */}
-          {item.type === 'trade_idea' && 'action' in item && item.action && (
+          {/* Action and urgency. The action is repeated in the title above on
+              tiles that have one, so only the urgency is shown there. */}
+          {item.type === 'trade_idea' && 'urgency' in item &&
+            (item.urgency === 'urgent' || item.urgency === 'high') && (
             <div className="flex items-center gap-2 mb-2">
               <span className={clsx(
-                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide',
-                item.action === 'buy'
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                'px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide',
+                item.urgency === 'urgent'
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                  : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
               )}>
-                {item.action === 'buy'
-                  ? <TrendingUp className="h-3 w-3" />
-                  : <TrendingDown className="h-3 w-3" />}
-                {item.action.toUpperCase()}
+                {item.urgency}
               </span>
-              {/* Only surfaced when it actually signals something. "medium"
-                  and "low" on every card is noise. */}
-              {'urgency' in item && (item.urgency === 'urgent' || item.urgency === 'high') && (
-                <span className={clsx(
-                  'px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide',
-                  item.urgency === 'urgent'
-                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                )}>
-                  {item.urgency}
-                </span>
-              )}
             </div>
           )}
 
-          {/* Title for notes/insights */}
-          {'title' in item && item.title && (
+          {/* Title for notes/insights — mobile shows it in the title band. */}
+          {!hideHeaderActions && 'title' in item && item.title && (
             <h2 className="text-lg font-bold text-gray-900 mb-2 dark:text-white">
               {item.title}
             </h2>

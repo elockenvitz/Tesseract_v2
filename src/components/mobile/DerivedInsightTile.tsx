@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import { ArrowRight, FileQuestion, PenLine, Scale, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandableText } from './ExpandableText'
 import type { DerivedInsight, DerivedInsightKind } from '../../hooks/mobile/useDerivedInsights'
 
@@ -59,14 +60,14 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
             {config.label}
           </span>
         }
-        symbol={insight.symbol}
-        companyName={insight.companyName}
       />
 
-      <div className="flex-shrink-0 px-3 pt-1.5 pb-1">
-        <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-white">
-          {insight.headline}
-        </h2>
+      <FeedTileTitle
+        headline={insight.headline}
+        quoteSymbol={insight.symbol}
+        quoteCompanyName={insight.companyName}
+      />
+      <div className="flex-shrink-0 px-3">
         {insight.portfolioName && (
           <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">
             {insight.portfolioName}
