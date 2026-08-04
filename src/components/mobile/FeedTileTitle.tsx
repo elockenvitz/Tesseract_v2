@@ -43,6 +43,20 @@ export function FeedTileTitle({
   className,
 }: FeedTileTitleProps) {
   const isPair = longSymbols.length > 0 || shortSymbols.length > 0
+  const hasTitle = isPair || !!action || !!symbol || !!headline
+
+  // Nothing to title means the quote gets the band to itself, at full size,
+  // rather than being squeezed into a corner of an empty row.
+  if (!hasTitle && quoteSymbol) {
+    return (
+      <div className={clsx('flex-shrink-0 px-3 pt-1.5 pb-1', className)}>
+        <TickerQuoteBadge symbol={quoteSymbol} companyName={quoteCompanyName} variant="lead" />
+        {subtitle && (
+          <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{subtitle}</p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className={clsx('flex-shrink-0 px-3 pt-1.5 pb-1', className)}>

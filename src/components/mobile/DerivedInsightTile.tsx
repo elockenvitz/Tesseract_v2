@@ -60,10 +60,12 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
             {config.label}
           </span>
         }
+        // No author, so the headline takes that space and the band below
+        // belongs entirely to the quote.
+        headline={insight.headline}
       />
 
       <FeedTileTitle
-        headline={insight.headline}
         quoteSymbol={insight.symbol}
         quoteCompanyName={insight.companyName}
       />

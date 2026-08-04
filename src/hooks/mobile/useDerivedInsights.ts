@@ -116,7 +116,7 @@ export function useDerivedInsights() {
           out.push({
             id: `insight-nothesis-${asset.id}`,
             kind: 'no_thesis',
-            headline: `${asset.symbol} has no written research`,
+            headline: `${asset.symbol} has no research`,
             body: `${asset.symbol}${weight != null ? ` is ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}` : ' is held'}, and there are no notes, thoughts or contributions recorded against it.`,
             assetId: asset.id,
             symbol: asset.symbol,
@@ -133,7 +133,7 @@ export function useDerivedInsights() {
           out.push({
             id: `insight-stale-${asset.id}`,
             kind: 'stale_research',
-            headline: `${asset.symbol}: ${days} days without research`,
+            headline: `${asset.symbol} — ${days}d stale`,
             body: `Nothing has been written on ${asset.symbol}${weight != null ? `, currently ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}` : ''}, since ${new Date(touched).toLocaleDateString()}.`,
             assetId: asset.id,
             symbol: asset.symbol,

@@ -437,7 +437,7 @@ export function MobileDashboard({
             const linked = a.context?.asset_id ? attentionAssets?.[a.context.asset_id] : null
             const target = attentionTarget(a)
             return (
-              <section key={a.attention_id} className="relative h-full w-full snap-start snap-always">
+              <section key={a.attention_id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <AttentionFeedCard
                   item={a}
                   symbol={linked?.symbol}
@@ -463,7 +463,7 @@ export function MobileDashboard({
             return (
               <section
                 key={`${entry.insight.id}-r${entry.round}`}
-                className="relative h-full w-full snap-start snap-always"
+                className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
               >
                 <DerivedInsightTile
                   insight={entry.insight}
@@ -480,7 +480,7 @@ export function MobileDashboard({
 
           if (entry.kind === 'signal') {
             return (
-              <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always">
+              <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <SignalFeedTile
                   signal={entry.signal}
                   onAssetClick={openAsset}
@@ -504,7 +504,7 @@ export function MobileDashboard({
             <section
               key={item.id}
               ref={track({ assetId: itemAssetId, authorId: itemAuthorId })}
-              className="relative h-full w-full snap-start snap-always"
+              className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
             >
               {/* Inset by exactly the bar height so the card never renders
                   underneath the actions. */}

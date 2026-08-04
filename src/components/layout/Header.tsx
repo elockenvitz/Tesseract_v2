@@ -337,18 +337,6 @@ export function Header({
                 <Menu className="md:hidden h-4 w-4 text-gray-600 dark:text-gray-300" />
               </button>
 
-              {/* Search sits on the left, where the desktop search field is,
-                  and keeps its label. As a bare magnifier among five other
-                  icons on the right it read as one more utility button rather
-                  than the way into the app's content. */}
-              <button
-                onClick={() => setShowMobileSearch(true)}
-                className="md:hidden flex items-center gap-1.5 h-9 pl-2 pr-3 ml-1 rounded-full no-touch-target bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-                aria-label="Search"
-              >
-                <Search className="h-4 w-4 shrink-0" />
-                <span className="text-sm">Search</span>
-              </button>
 
               {/* App Launcher Panel */}
               {showAppMenu && !isMobile && pilotMode.effectiveIsPilot && (
@@ -565,6 +553,20 @@ export function Header({
                 </div>
               )}
             </div>
+
+            {/* Search, on the left where the desktop search field is, separated
+                from the launcher by the same divider the org switcher uses.
+                Unfilled: a solid pill read as a button competing with the
+                launcher, where this is really the head of the content column. */}
+            <div className="md:hidden h-5 w-px bg-gray-200 dark:bg-gray-700 mx-2 flex-shrink-0" />
+            <button
+              onClick={() => setShowMobileSearch(true)}
+              className="md:hidden flex items-center gap-1.5 min-w-0 h-9 -ml-0.5 pr-2 rounded-lg no-touch-target text-gray-400 dark:text-gray-500 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+              aria-label="Search"
+            >
+              <Search className="h-[18px] w-[18px] shrink-0" />
+              <span className="text-sm truncate">Search</span>
+            </button>
 
             {/* Divider + Org Switcher. Hidden on phones: the drawer carries
                 the org name and switcher, which frees the top bar for the

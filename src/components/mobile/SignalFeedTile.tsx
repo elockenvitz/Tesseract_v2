@@ -68,14 +68,13 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
         }
         // Signals are derived by the system, so the attribution slot stays
         // empty rather than naming a person who did not write this.
+        // Signals have no author either, so the headline uses that row.
+        headline={signal.headline}
         timestamp={signal.createdAt}
       />
 
       {/* Headline leads, matching the decision card's instruction-first shape. */}
-      <FeedTileTitle
-        headline={signal.headline}
-        quoteSymbol={primary?.symbol}
-      />
+      <FeedTileTitle quoteSymbol={primary?.symbol} />
       <div className="flex-shrink-0 px-3">
       </div>
 
