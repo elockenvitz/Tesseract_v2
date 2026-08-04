@@ -662,7 +662,7 @@ export function Header({
             {/* Mobile search entry point — replaces the inline input below md */}
             <button
               onClick={() => setShowMobileSearch(true)}
-              className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-full no-touch-target text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               aria-label="Search"
               title="Search"
             >
@@ -679,7 +679,7 @@ export function Header({
                 // the point of the mobile app, so it must be reachable from
                 // every screen. Amber on mobile so it reads as the one
                 // create action rather than another grey utility icon.
-                "inline-flex items-center justify-center h-10 w-10 md:h-9 md:w-9 rounded-full transition-colors relative hover:bg-gray-100 dark:hover:bg-gray-800",
+                "inline-flex items-center justify-center h-9 w-9 rounded-full transition-colors relative no-touch-target hover:bg-gray-100 dark:hover:bg-gray-800",
                 isCommPaneOpen && commPaneView === 'thoughts'
                   ? "text-amber-600 bg-amber-100 dark:bg-amber-900/40"
                   : "text-amber-500 md:text-gray-400 md:hover:text-gray-600 dark:hover:text-gray-300"
@@ -695,7 +695,7 @@ export function Header({
                 onShowAI()
               }}
               className={clsx(
-                "hidden md:inline-flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative",
+                "inline-flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative no-touch-target",
                 isCommPaneOpen && commPaneView === 'ai'
                   ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
@@ -713,7 +713,7 @@ export function Header({
                 onShowDirectMessages?.()
               }}
               className={clsx(
-                "hidden md:inline-flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative",
+                "inline-flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative no-touch-target",
                 isCommPaneOpen && commPaneView === 'direct-messages'
                   ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
@@ -732,7 +732,7 @@ export function Header({
                 onShowNotifications?.()
               }}
               className={clsx(
-                "inline-flex items-center justify-center h-10 w-10 md:h-9 md:w-9 rounded-full transition-colors relative hover:bg-gray-100 dark:hover:bg-gray-800",
+                "inline-flex items-center justify-center h-9 w-9 rounded-full transition-colors relative no-touch-target hover:bg-gray-100 dark:hover:bg-gray-800",
                 isCommPaneOpen && commPaneView === 'notifications'
                   ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
@@ -751,10 +751,10 @@ export function Header({
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center justify-center gap-0 md:gap-3 h-10 w-10 md:h-auto md:w-auto md:px-2 md:py-1.5 text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full md:rounded-lg transition-colors dark:hover:text-white dark:text-gray-300"
+                className="flex items-center justify-center gap-0 md:gap-3 h-9 w-9 md:h-auto md:w-auto md:px-2 md:py-1.5 no-touch-target text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full md:rounded-lg transition-colors dark:hover:text-white dark:text-gray-300"
                 title="Account menu"
               >
-                <div className="w-8 h-8 shrink-0 rounded-full bg-primary-600 flex items-center justify-center">
+                <div className="w-7 h-7 md:w-8 md:h-8 shrink-0 rounded-full bg-primary-600 flex items-center justify-center">
                   <span className="text-white text-sm font-semibold">
                     {getUserInitials()}
                   </span>
