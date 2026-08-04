@@ -4,6 +4,10 @@ import { formatDistanceToNow } from 'date-fns'
 interface FeedTileHeaderProps {
   /** Type chip: "Trade Idea", "Decision needed", "Going stale". */
   badge: React.ReactNode
+  /** Short summary shown beside the badge. Used by system-derived tiles, which
+   *  have no author, so the row is free and the band below can go to the
+   *  quote instead of splitting it with a title. */
+  headline?: string | null
   /** Who is responsible for the post — author, or recommender on a decision. */
   authorName?: string | null
   onAuthorClick?: () => void
@@ -32,6 +36,7 @@ interface FeedTileHeaderProps {
  */
 export function FeedTileHeader({
   badge,
+  headline,
   authorName,
   onAuthorClick,
   timestamp,
@@ -48,6 +53,12 @@ export function FeedTileHeader({
       )}
     >
       {badge}
+
+      {headline && (
+        <span className="min-w-0 flex-1 text-[13px] font-semibold text-gray-900 dark:text-gray-100 truncate">
+          {headline}
+        </span>
+      )}
 
       {(authorName || when) && (
         <div className="ml-auto min-w-0 flex flex-col justify-center items-end text-right leading-tight">
