@@ -63,9 +63,12 @@ export function ExpandablePanel({ children, resetKey }: ExpandablePanelProps) {
             ? 'overflow-y-auto overscroll-contain'
             : 'overflow-hidden'
         )}
-        // Once expanded the region owns vertical drags; collapsed it must not
-        // capture them, or the feed cannot be paged from this part of the tile.
-        style={{ touchAction: expanded ? 'pan-y' : 'none' }}
+        // Collapsed, the region has nothing to scroll and must stay out of the
+        // way: `touch-action: none` here swallowed the drag entirely, so
+        // swiping up over the text did not page the feed. Left at the default,
+        // the browser passes the pan to the feed's own scroller. Expanded, the
+        // region scrolls itself.
+        style={expanded ? { touchAction: 'pan-y' } : undefined}
       >
         {children}
       </div>
