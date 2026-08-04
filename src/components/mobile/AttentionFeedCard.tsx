@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -8,6 +8,7 @@ import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { PairTradeChartCarousel } from '../feed/PairTradeChartCarousel'
 import { TickerQuoteBadge } from './TickerQuoteBadge'
 import { ExpandablePanel } from './ExpandablePanel'
+import { CarouselControls } from './CarouselControls'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
@@ -95,7 +96,6 @@ export function AttentionFeedCard({
   const longLegs = chartableLegs.filter(isLongLeg).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
   const shortLegs = chartableLegs.filter(l => !isLongLeg(l)).map(l => ({ id: l.id, action: l.action, asset: l.assets }))
 
-  const scrollerRef = useRef<HTMLDivElement>(null)
   const [panel, setPanel] = useState(0)
 
   // `title` arrives as "SELL DASH" — split so the verb can carry the tone
@@ -180,12 +180,7 @@ export function AttentionFeedCard({
     ),
   })
 
-  const onScroll = () => {
-    const el = scrollerRef.current
-    if (!el) return
-    const i = Math.round(el.scrollLeft / el.clientWidth)
-    if (i !== panel) setPanel(i)
-  }
+  const activePanel = Math.min(panel, Math.max(0, panels.length - 1))
 
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
@@ -259,37 +254,26 @@ export function AttentionFeedCard({
         </div>
       )}
 
-      {/* Supporting detail, swipeable so the chart above keeps its height. */}
+      {/* Supporting detail, paged so the chart above keeps its height.
+          Tap-driven like the chart carousel: a horizontal scroll container
+          here absorbed the vertical drags meant to page the feed, which is
+          why swiping up over this area did nothing. */}
       <div className="flex-1 min-h-0 flex flex-col pt-3">
-        <div
-          ref={scrollerRef}
-          onScroll={onScroll}
-          className="flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide"
-        >
-          {panels.map(p => (
-            <div key={p.key} className="w-full h-full flex-shrink-0 snap-start snap-always px-3 flex flex-col min-h-0">
-              <div className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                {p.label}
-              </div>
-              <ExpandablePanel resetKey={panel}>{p.body}</ExpandablePanel>
-            </div>
-          ))}
+        <div className="flex-1 min-h-0 px-3 flex flex-col">
+          <div className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+            {panels[activePanel]?.label}
+          </div>
+          <ExpandablePanel resetKey={activePanel}>{panels[activePanel]?.body}</ExpandablePanel>
         </div>
 
-        {panels.length > 1 && (
-          <div className="flex-shrink-0 flex items-center justify-center gap-1.5 py-2">
-            {panels.map((p, i) => (
-              <span
-                key={p.key}
-                aria-hidden="true"
-                className={clsx(
-                  'h-1.5 rounded-full transition-all',
-                  i === panel ? 'w-4 bg-gray-500 dark:bg-gray-300' : 'w-1.5 bg-gray-300 dark:bg-gray-600'
-                )}
-              />
-            ))}
-          </div>
-        )}
+        <CarouselControls
+          className="flex-shrink-0 py-1"
+          count={panels.length}
+          index={activePanel}
+          onChange={setPanel}
+          dotLabel={i => `Show ${panels[i].label}`}
+          label={`${panels[activePanel]?.label} — ${activePanel + 1} of ${panels.length}`}
+        />
       </div>
 
       <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
