@@ -7,6 +7,7 @@ import {
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { PairTradeChartCarousel } from '../feed/PairTradeChartCarousel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandablePanel } from './ExpandablePanel'
 import { CarouselControls } from './CarouselControls'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
@@ -193,51 +194,22 @@ export function AttentionFeedCard({
         }
         authorName={decision?.recommendedBy}
         timestamp={item.last_activity_at || item.created_at}
-        // A pair's legs each carry their own quote in the carousel; one in the
-        // header could only describe half the trade.
-        symbol={isPair ? null : symbol}
-        companyName={companyName}
       />
 
-      {/* The instruction, first and unmissable. */}
-      <div className="flex-shrink-0 px-3 pt-1.5 pb-1">
-        <div className="flex items-baseline gap-2">
-          <h2 className="text-2xl font-bold leading-tight min-w-0">
-            {isPair ? (
-              // Name the whole trade. Showing only the leg that raised the
-              // alert would misdescribe a decision about both sides.
-              // Both sides named and coloured. A plain black "A / B vs C / D"
-              // left the reader guessing which side was being bought.
-              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xl">
-                {longLegs.length > 0 && (
-                  <span className="text-emerald-600 dark:text-emerald-400">
-                    BUY {longLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ')}
-                  </span>
-                )}
-                {longLegs.length > 0 && shortLegs.length > 0 && (
-                  <span className="text-gray-400 text-base font-medium">vs</span>
-                )}
-                {shortLegs.length > 0 && (
-                  <span className="text-red-600 dark:text-red-400">
-                    SELL {shortLegs.map(l => l.asset?.symbol).filter(Boolean).join(' / ')}
-                  </span>
-                )}
-              </span>
-            ) : (
-              <>
-                <span className={tone}>{(decision?.action || verb || '').toUpperCase()}</span>{' '}
-                <span className="text-gray-900 dark:text-white">{ticker}</span>
-              </>
-            )}
-          </h2>
-        </div>
-        {item.subtitle && (
-          <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{item.subtitle}</p>
-        )}
-      </div>
+      {/* The instruction, first and unmissable. A pair's legs each carry their
+          own quote in the carousel; one here could only describe half the trade. */}
+      <FeedTileTitle
+        action={isPair ? null : (decision?.action || verb)}
+        symbol={isPair ? null : ticker}
+        longSymbols={longLegs.map(l => l.asset?.symbol).filter(Boolean) as string[]}
+        shortSymbols={shortLegs.map(l => l.asset?.symbol).filter(Boolean) as string[]}
+        subtitle={item.subtitle}
+        quoteSymbol={isPair ? null : symbol}
+        quoteCompanyName={companyName}
+      />
 
       {(isPair || symbol) && (
-        <div className="flex-shrink-0 h-[50%] min-h-[220px] max-h-[400px] px-3">
+        <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3">
           {isPair ? (
             <PairTradeChartCarousel longLegs={longLegs as any} shortLegs={shortLegs as any} />
           ) : (

@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import { ArrowRight, CalendarClock, PenLine, Radar, Split, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandableText } from './ExpandableText'
 import type { SignalCard, SignalType } from '../../hooks/ideas/useIdeasFeed'
 
@@ -68,14 +69,14 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
         // Signals are derived by the system, so the attribution slot stays
         // empty rather than naming a person who did not write this.
         timestamp={signal.createdAt}
-        symbol={primary?.symbol}
       />
 
       {/* Headline leads, matching the decision card's instruction-first shape. */}
-      <div className="flex-shrink-0 px-3 pt-1.5 pb-1">
-        <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-white">
-          {signal.headline}
-        </h2>
+      <FeedTileTitle
+        headline={signal.headline}
+        quoteSymbol={primary?.symbol}
+      />
+      <div className="flex-shrink-0 px-3">
       </div>
 
       {primary && (

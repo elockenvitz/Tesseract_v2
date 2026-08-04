@@ -337,6 +337,19 @@ export function Header({
                 <Menu className="md:hidden h-4 w-4 text-gray-600 dark:text-gray-300" />
               </button>
 
+              {/* Search sits on the left, where the desktop search field is,
+                  and keeps its label. As a bare magnifier among five other
+                  icons on the right it read as one more utility button rather
+                  than the way into the app's content. */}
+              <button
+                onClick={() => setShowMobileSearch(true)}
+                className="md:hidden flex items-center gap-1.5 h-9 pl-2 pr-3 ml-1 rounded-full no-touch-target bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+                aria-label="Search"
+              >
+                <Search className="h-4 w-4 shrink-0" />
+                <span className="text-sm">Search</span>
+              </button>
+
               {/* App Launcher Panel */}
               {showAppMenu && !isMobile && pilotMode.effectiveIsPilot && (
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
@@ -654,21 +667,10 @@ export function Header({
             </div>
           </div>
 
-          {/* Right side actions. On phones only notifications and profile
-              survive — five 44px targets plus the avatar demand ~310px of a
-              390px viewport. Thoughts, AI and DMs are reachable from the nav
-              drawer instead. */}
+          {/* Right side actions. Search has moved to the left beside the
+              launcher, which leaves room for capture, AI, DMs, notifications
+              and the avatar. */}
           <div className="flex items-center flex-shrink-0 gap-1 md:gap-2">
-            {/* Mobile search entry point — replaces the inline input below md */}
-            <button
-              onClick={() => setShowMobileSearch(true)}
-              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-full no-touch-target text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              aria-label="Search"
-              title="Search"
-            >
-              <Search className="h-5 w-5" />
-            </button>
-
             {/* Capture Thought Button */}
             <button
               onClick={() => {
