@@ -93,7 +93,7 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
               <div className="h-full flex flex-col min-h-0">
                 {/* Which leg, and what it is doing. Without the quote the two
                     charts were indistinguishable — a line with no ticker. */}
-                <div className="flex-shrink-0 flex items-start justify-between gap-2 px-0.5 pb-1">
+                <div className="flex-shrink-0 flex items-start justify-between gap-2 px-0.5 pb-0.5">
                   <span
                     className={clsx(
                       'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide shrink-0',
@@ -119,7 +119,7 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
       </div>
 
       <CarouselControls
-        className="flex-shrink-0 pt-1.5"
+        className="flex-shrink-0"
         count={legs.length}
         index={clamped}
         onChange={setActive}

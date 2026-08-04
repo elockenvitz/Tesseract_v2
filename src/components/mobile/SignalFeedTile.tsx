@@ -1,8 +1,7 @@
 import { clsx } from 'clsx'
-import { formatDistanceToNow } from 'date-fns'
 import { ArrowRight, CalendarClock, PenLine, Radar, Split, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
-import { TickerQuoteBadge } from './TickerQuoteBadge'
+import { FeedTileHeader } from './FeedTileHeader'
 import { ExpandableText } from './ExpandableText'
 import type { SignalCard, SignalType } from '../../hooks/ideas/useIdeasFeed'
 
@@ -59,22 +58,21 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
 
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-        <span className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', config.chip)}>
-          <Icon className="h-4 w-4" />
-          {config.label}
-        </span>
-        {primary ? (
-          <TickerQuoteBadge symbol={primary.symbol} className="ml-auto" />
-        ) : signal.createdAt ? (
-          <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
-            {formatDistanceToNow(new Date(signal.createdAt), { addSuffix: true })}
+      <FeedTileHeader
+        badge={
+          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            {config.label}
           </span>
-        ) : null}
-      </div>
+        }
+        // Signals are derived by the system, so the attribution slot stays
+        // empty rather than naming a person who did not write this.
+        timestamp={signal.createdAt}
+        symbol={primary?.symbol}
+      />
 
       {/* Headline leads, matching the decision card's instruction-first shape. */}
-      <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
+      <div className="flex-shrink-0 px-3 pt-1.5 pb-1">
         <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-white">
           {signal.headline}
         </h2>

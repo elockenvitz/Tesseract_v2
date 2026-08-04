@@ -168,7 +168,7 @@ export function ReelsChartPanel({
       )}
 
       {/* Timeframe selector */}
-      <div className={clsx("flex items-center justify-between gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 relative z-30 dark:border-gray-700 dark:bg-gray-900", hideHeader && "rounded-t-xl border-t")}>
+      <div className={clsx("flex items-center justify-between gap-0.5 px-2 py-0.5 bg-gray-50 border-b border-gray-200 relative z-30 dark:border-gray-700 dark:bg-gray-900", hideHeader && "rounded-t-xl border-t")}>
         {timeframes.map(tf => (
           <button
             key={tf.value}
@@ -177,9 +177,9 @@ export function ReelsChartPanel({
               setSelectedTimeframe(tf.value)
             }}
             className={clsx(
-              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
+              'px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors whitespace-nowrap no-touch-target',
               selectedTimeframe === tf.value
-                ? 'bg-primary-100 text-primary-700'
+                ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
             )}
           >

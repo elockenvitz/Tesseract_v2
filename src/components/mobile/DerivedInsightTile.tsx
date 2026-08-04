@@ -1,7 +1,7 @@
 import { clsx } from 'clsx'
 import { ArrowRight, FileQuestion, PenLine, Scale, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
-import { TickerQuoteBadge } from './TickerQuoteBadge'
+import { FeedTileHeader } from './FeedTileHeader'
 import { ExpandableText } from './ExpandableText'
 import type { DerivedInsight, DerivedInsightKind } from '../../hooks/mobile/useDerivedInsights'
 
@@ -49,22 +49,21 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
 
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-        <span className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', config.chip)}>
-          <Icon className="h-4 w-4" />
-          {config.label}
-        </span>
-        {/* A bare "4.20%" in the corner said nothing — it could have been a
-            price move, a target, anything. Ticker and price go here instead;
-            the weight is stated in words in the body, where it has context. */}
-        <TickerQuoteBadge
-          symbol={insight.symbol}
-          companyName={insight.companyName}
-          className="ml-auto"
-        />
-      </div>
+      {/* A bare "4.20%" in the corner said nothing — it could have been a price
+          move, a target, anything. Ticker and price go there instead; the
+          weight is stated in words in the body, where it has context. */}
+      <FeedTileHeader
+        badge={
+          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            {config.label}
+          </span>
+        }
+        symbol={insight.symbol}
+        companyName={insight.companyName}
+      />
 
-      <div className="flex-shrink-0 px-3 pt-2 pb-1.5">
+      <div className="flex-shrink-0 px-3 pt-1.5 pb-1">
         <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-white">
           {insight.headline}
         </h2>
