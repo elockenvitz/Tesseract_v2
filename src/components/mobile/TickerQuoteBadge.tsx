@@ -5,6 +5,8 @@ import { financialDataService } from '../../lib/financial-data/browser-client'
 interface TickerQuoteBadgeProps {
   symbol: string
   companyName?: string | null
+  /** Suppress the ticker when the title beside it already names the asset. */
+  showSymbol?: boolean
   className?: string
 }
 
@@ -19,7 +21,7 @@ interface TickerQuoteBadgeProps {
  * Shares React Query's cache key with the chart panel (`reels-chart-quote`),
  * so displaying the price here costs no additional request.
  */
-export function TickerQuoteBadge({ symbol, companyName, className }: TickerQuoteBadgeProps) {
+export function TickerQuoteBadge({ symbol, companyName, showSymbol = true, className }: TickerQuoteBadgeProps) {
   const { data: quote } = useQuery({
     queryKey: ['reels-chart-quote', symbol],
     queryFn: async () => {
@@ -39,7 +41,9 @@ export function TickerQuoteBadge({ symbol, companyName, className }: TickerQuote
   return (
     <div className={clsx('flex flex-col items-end min-w-0 text-right', className)}>
       <div className="flex items-baseline gap-1.5 min-w-0">
-        <span className="text-sm font-bold text-gray-900 dark:text-white">{symbol}</span>
+        {showSymbol && (
+          <span className="text-sm font-bold text-gray-900 dark:text-white">{symbol}</span>
+        )}
         {price != null && (
           <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white">
             ${price.toFixed(2)}

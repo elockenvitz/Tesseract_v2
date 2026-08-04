@@ -1,6 +1,5 @@
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import { TickerQuoteBadge } from './TickerQuoteBadge'
 
 interface FeedTileHeaderProps {
   /** Type chip: "Trade Idea", "Decision needed", "Going stale". */
@@ -9,10 +8,6 @@ interface FeedTileHeaderProps {
   authorName?: string | null
   onAuthorClick?: () => void
   timestamp?: string | null
-  /** Quote block on the right. Omitted for pair trades, whose legs each need
-   *  their own and so carry it inside the carousel instead. */
-  symbol?: string | null
-  companyName?: string | null
   /** Desktop-only controls; the phone puts these in the bottom bar. */
   actions?: React.ReactNode
   className?: string
@@ -26,18 +21,20 @@ interface FeedTileHeaderProps {
  * sat inline beside the badge on ideas, inside the title row on decisions, and
  * nowhere at all on signals and insights.
  *
- * Attribution stacks — name above time — rather than running along the row.
- * Inline, the two competed with the badge for the same horizontal space and
- * forced the ticker out of the header entirely; stacked they occupy one column
- * and hand the whole right-hand side to the quote.
+ * Attribution stacks — name above time — and sits hard right, opposite the
+ * type badge. Inline and left-justified the two ran into whatever occupied the
+ * rest of the row.
+ *
+ * The quote deliberately does not live here. Sharing this row with attribution
+ * put a two-line ticker block against a two-line name block and they collided
+ * on narrow screens; each tile renders it below instead, beside its own title,
+ * where the full width is available.
  */
 export function FeedTileHeader({
   badge,
   authorName,
   onAuthorClick,
   timestamp,
-  symbol,
-  companyName,
   actions,
   className,
 }: FeedTileHeaderProps) {
@@ -53,13 +50,13 @@ export function FeedTileHeader({
       {badge}
 
       {(authorName || when) && (
-        <div className="min-w-0 flex flex-col justify-center leading-tight">
+        <div className="ml-auto min-w-0 flex flex-col justify-center items-end text-right leading-tight">
           {authorName && (
             <button
               type="button"
               onClick={onAuthorClick}
               disabled={!onAuthorClick}
-              className="text-[13px] font-medium text-gray-700 dark:text-gray-200 truncate text-left no-touch-target disabled:cursor-default"
+              className="text-[13px] font-medium text-gray-700 dark:text-gray-200 truncate text-right no-touch-target disabled:cursor-default"
             >
               by {authorName}
             </button>
@@ -70,10 +67,6 @@ export function FeedTileHeader({
             </span>
           )}
         </div>
-      )}
-
-      {symbol && (
-        <TickerQuoteBadge symbol={symbol} companyName={companyName} className="ml-auto" />
       )}
 
       {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
