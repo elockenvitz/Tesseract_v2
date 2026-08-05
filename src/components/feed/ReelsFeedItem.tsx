@@ -231,7 +231,7 @@ export function ReelsFeedItem({
       {/* A third of the screen. The written reasoning below is the part that
           needs room, and the chart is one band among a header, an instruction
           and the case itself. */}
-      <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3 pt-1 pb-1">
+      <div className={clsx("flex-shrink-0 px-3 pt-1 pb-1", isPairTrade ? "h-[42%] min-h-[230px] max-h-[380px]" : "h-[33%] min-h-[170px] max-h-[300px]")}>
         {isPairTrade ? (
           // A pair trade is a relationship between two positions; one chart
           // misrepresents it. Swipe horizontally between the legs.
