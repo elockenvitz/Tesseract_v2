@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 // @ts-expect-error — plain ESM helper, intentionally untyped
 import { scanTree, ORG_SCOPED_TABLES } from '../org-scope-scan.mjs'
 import baseline from '../known-unscoped-queries.json'
@@ -28,8 +28,16 @@ import baseline from '../known-unscoped-queries.json'
 describe('organisation scoping', () => {
   const known = new Set(baseline as string[])
 
+  // Scanned once and shared. Walking the tree takes seconds and grows with the
+  // codebase; running it per-test put this suite on the edge of the default
+  // 5s timeout, where it failed for being slow rather than for finding
+  // anything. The scan is pure, so one result serves every assertion.
+  let violations: Array<{ file: string; line: number; table: string }>
+  beforeAll(() => {
+    violations = scanTree('src') as typeof violations
+  }, 60_000)
+
   it('introduces no new unscoped queries against org-scoped tables', () => {
-    const violations = scanTree('src') as Array<{ file: string; line: number; table: string }>
     const offenders = violations.filter(v => !known.has(v.file))
 
     const report = offenders
@@ -40,7 +48,6 @@ describe('organisation scoping', () => {
   })
 
   it('keeps the baseline honest — no stale entries', () => {
-    const violations = scanTree('src') as Array<{ file: string }>
     const stillUnscoped = new Set(violations.map(v => v.file))
     // A file listed as unscoped that no longer is should be removed from the
     // baseline, otherwise it silently regains permission to regress.

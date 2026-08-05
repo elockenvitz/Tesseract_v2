@@ -209,7 +209,7 @@ export function AttentionFeedCard({
       />
 
       {(isPair || symbol) && (
-        <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3">
+        <div className={clsx("flex-shrink-0 px-3", isPair ? "h-[42%] min-h-[230px] max-h-[380px]" : "h-[33%] min-h-[170px] max-h-[300px]")}>
           {isPair ? (
             <PairTradeChartCarousel longLegs={longLegs as any} shortLegs={shortLegs as any} />
           ) : (
@@ -240,7 +240,7 @@ export function AttentionFeedCard({
         />
       </div>
 
-      <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
+      <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-2 pb-safe border-t border-gray-200 dark:border-gray-700">
         {onSnooze && (
           <button
             type="button"
@@ -288,7 +288,7 @@ export function AttentionFeedCard({
         <button
           type="button"
           onClick={() => onOpen?.(item)}
-          className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl bg-primary-600 text-white font-semibold no-touch-target"
+          className="flex-1 flex items-center justify-center gap-2 h-10 rounded-xl bg-primary-600 text-white font-semibold no-touch-target"
         >
           Open
           <ArrowRight className="h-4 w-4" />

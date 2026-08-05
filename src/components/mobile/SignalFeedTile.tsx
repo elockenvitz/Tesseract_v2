@@ -69,8 +69,10 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
         // Signals are derived by the system, so the attribution slot stays
         // empty rather than naming a person who did not write this.
         // Signals have no author either, so the headline uses that row.
+        // No timestamp: signal.createdAt is stamped when the card is derived,
+        // so it always reads "1 minute ago" — it describes the query, not the
+        // world, and it truncated the headline beside it.
         headline={signal.headline}
-        timestamp={signal.createdAt}
       />
 
       {/* Headline leads, matching the decision card's instruction-first shape. */}
@@ -79,7 +81,7 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
       </div>
 
       {primary && (
-        <div className="flex-shrink-0 h-[50%] min-h-[250px] max-h-[400px] px-3">
+        <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3">
           <ReelsChartPanel symbol={primary.symbol} hideHeader />
         </div>
       )}
@@ -112,13 +114,13 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
         )}
       </div>
 
-      <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-3 pb-safe border-t border-gray-200 dark:border-gray-700">
+      <div className="flex-shrink-0 flex items-stretch gap-2 px-3 py-2 pb-safe border-t border-gray-200 dark:border-gray-700">
         <CaptureButton onCapture={onCapture} />
         <button
           type="button"
           onClick={() => primary && onAssetClick?.(primary.id, primary.symbol)}
           disabled={!primary}
-          className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl bg-primary-600 text-white font-semibold disabled:opacity-40 no-touch-target"
+          className="flex-1 flex items-center justify-center gap-2 h-10 rounded-xl bg-primary-600 text-white font-semibold disabled:opacity-40 no-touch-target"
         >
           {primary ? `Open ${primary.symbol}` : 'No linked asset'}
           <ArrowRight className="h-4 w-4" />
