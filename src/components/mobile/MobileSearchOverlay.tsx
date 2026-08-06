@@ -42,15 +42,37 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [open, onClose])
 
-  // Focus the search field once the panel is on screen. GlobalSearch owns its
-  // own input ref, so reach for it through the DOM rather than threading a ref
-  // through a shared component used on desktop too.
+  // Focus the field as soon as it exists, rather than after a fixed delay.
+  //
+  // The old version waited 60ms and focused once. iOS only raises the keyboard
+  // for a focus() it can attribute to the tap that caused it, and a timeout
+  // long enough for React to paint is already too late — the field took focus
+  // but no keyboard appeared, so the panel had to be tapped a second time to
+  // type. Polling on animation frames focuses at the first frame the input is
+  // mounted, which is inside the gesture's window.
   useEffect(() => {
     if (!open) return
-    const timer = setTimeout(() => {
-      panelRef.current?.querySelector('input')?.focus()
-    }, 60)
-    return () => clearTimeout(timer)
+    let frame = 0
+    let cancelled = false
+
+    const tryFocus = () => {
+      if (cancelled) return
+      const input = panelRef.current?.querySelector('input')
+      if (input) {
+        input.focus()
+        // Safari occasionally restores a previous selection; putting the caret
+        // at the end makes typing continue rather than overwrite.
+        const end = input.value.length
+        try { input.setSelectionRange(end, end) } catch { /* not all inputs support it */ }
+        return
+      }
+      // Give up after ~1s rather than spinning forever if the field never
+      // renders; a stuck rAF loop is worse than an unfocused input.
+      if (frame++ < 60) requestAnimationFrame(tryFocus)
+    }
+
+    tryFocus()
+    return () => { cancelled = true }
   }, [open])
 
   if (!open || typeof document === 'undefined') return null

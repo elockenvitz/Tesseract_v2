@@ -86,7 +86,7 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 pb-safe space-y-3">
-        {subPage === 'case' && <MobileCaseView assetId={asset.id} />}
+        {subPage === 'case' && <MobileCaseView assetId={asset.id} symbol={asset.symbol} />}
 
         {subPage === 'decisions' && <DecisionsPanel assetId={asset.id} onNavigate={onNavigate} />}
 
