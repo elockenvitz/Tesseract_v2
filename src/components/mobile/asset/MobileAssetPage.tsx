@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, FileText, Layers, ListChecks, TrendingUp } from 'lucide-react'
-import { MobileCaseSection } from './MobileCaseSection'
+import { MobileCaseView } from './MobileCaseView'
 import { TickerQuoteBadge } from '../TickerQuoteBadge'
 import { ExpandableText } from '../ExpandableText'
 import { useAssetTradeIdeas } from '../../../hooks/useAssetTradeIdeas'
 import { useAssetHeaderContext } from '../../../hooks/useAssetHeaderContext'
+import { useAssetPortfolioWeights } from '../../../hooks/useAssetPortfolioWeights'
+import { useAssetLiveWeights } from '../../../hooks/useAssetLiveWeights'
 
 interface MobileAssetPageProps {
   asset: { id: string; symbol: string; company_name?: string | null }
@@ -20,24 +22,6 @@ const SUB_PAGES: { key: SubPage; label: string; icon: typeof FileText }[] = [
   { key: 'lists', label: 'Lists', icon: Layers },
 ]
 
-/** The three sections that make up an asset case, in the order they are argued. */
-const CASE_SECTIONS = [
-  {
-    sectionKey: 'thesis',
-    title: 'Thesis',
-    emptyHint: 'Why own this, and what has to be true.',
-  },
-  {
-    sectionKey: 'where_different',
-    title: "Where we're different",
-    emptyHint: 'What the market is missing or pricing wrongly.',
-  },
-  {
-    sectionKey: 'risks_to_thesis',
-    title: 'Risks to thesis',
-    emptyHint: 'What would break the case, and what you would watch for.',
-  },
-]
 
 /**
  * The asset page, built for a phone.
@@ -102,16 +86,7 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 pb-safe space-y-3">
-        {subPage === 'case' &&
-          CASE_SECTIONS.map(s => (
-            <MobileCaseSection
-              key={s.sectionKey}
-              assetId={asset.id}
-              sectionKey={s.sectionKey}
-              title={s.title}
-              emptyHint={s.emptyHint}
-            />
-          ))}
+        {subPage === 'case' && <MobileCaseView assetId={asset.id} />}
 
         {subPage === 'decisions' && <DecisionsPanel assetId={asset.id} onNavigate={onNavigate} />}
 
@@ -189,12 +164,39 @@ function ListsPanel({
   assetId: string
   onNavigate?: (result: any) => void
 }) {
-  const { portfolios, listsMine, listsShared, themes, isLoading } = useAssetHeaderContext(assetId)
+  const { listsMine, listsShared, themes, isLoading } = useAssetHeaderContext(assetId)
+  // Snapshot weights arrive in one query; the repriced ones need a quote for
+  // every holding in the book. Show the snapshot immediately and upgrade it,
+  // rather than holding the whole panel behind ~40 requests per portfolio.
+  const { data: snapshotWeights = [], isLoading: weightsLoading } = useAssetPortfolioWeights(assetId)
+  const { data: liveWeights, isFetching: repricing } = useAssetLiveWeights(assetId)
 
-  if (isLoading) return <PanelSkeleton />
+  if (isLoading || weightsLoading) return <PanelSkeleton />
+
+  const live = new Map((liveWeights ?? []).map(w => [w.portfolioId, w]))
 
   const groups = [
-    { title: 'Portfolios', icon: Briefcase, rows: portfolios ?? [], type: 'portfolio' },
+    {
+      title: 'Portfolios',
+      icon: Briefcase,
+      rows: snapshotWeights.map(w => {
+        const repriced = live.get(w.portfolioId)
+        return {
+          id: w.portfolioId,
+          name: w.name,
+          weight: repriced?.weight ?? w.weight,
+          marketValue: repriced?.marketValue ?? w.marketValue,
+          isRepriced: repriced?.weight != null,
+          // A portfolio missing prices has an incomplete denominator, which
+          // overstates every weight in it. Say so rather than imply precision.
+          unpricedCount: repriced?.unpricedCount ?? 0,
+          holdingsCount: repriced?.holdingsCount ?? 0,
+          asOf: w.asOf,
+        }
+      }),
+      type: 'portfolio',
+      asOf: repricing ? 'repricing' : live.size > 0 ? 'live' : snapshotWeights[0]?.asOf ?? null,
+    },
     { title: 'My lists', icon: ListChecks, rows: listsMine ?? [], type: 'list' },
     { title: 'Shared lists', icon: ListChecks, rows: listsShared ?? [], type: 'list' },
     { title: 'Themes', icon: Layers, rows: themes ?? [], type: 'theme' },
@@ -218,7 +220,17 @@ function ListsPanel({
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                 {group.title}
               </h3>
-              <span className="ml-auto text-xs text-gray-400">{group.rows.length}</span>
+              {group.asOf ? (
+                <span className="ml-auto text-[11px] text-gray-400">
+                  {group.asOf === 'repricing'
+                    ? 'repricing…'
+                    : group.asOf === 'live'
+                      ? 'at last close'
+                      : `as of ${formatAsOf(group.asOf)}`}
+                </span>
+              ) : (
+                <span className="ml-auto text-xs text-gray-400">{group.rows.length}</span>
+              )}
             </div>
             <div className="divide-y divide-gray-100 dark:divide-gray-800">
               {group.rows.map((row: any) => (
@@ -238,6 +250,27 @@ function ListsPanel({
                   <span className="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate">
                     {row.name}
                   </span>
+                  {row.weight != null ? (
+                    <span className="shrink-0 text-right">
+                      <span className="block text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                        {row.weight.toFixed(2)}%
+                      </span>
+                      {row.unpricedCount > 0 ? (
+                        <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                          {row.unpricedCount} of {row.holdingsCount} unpriced
+                        </span>
+                      ) : row.marketValue != null ? (
+                        <span className="block text-[10px] text-gray-400 tabular-nums">
+                          {formatCompactUsd(row.marketValue)}
+                          {!row.isRepriced && ` · ${formatAsOf(row.asOf)}`}
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : 'unpricedCount' in row ? (
+                    // Held, but the snapshot carried no weight. Saying so beats
+                    // printing 0.00%, which asserts the position is negligible.
+                    <span className="shrink-0 text-[11px] text-gray-400">weight n/a</span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -246,6 +279,20 @@ function ListsPanel({
       })}
     </div>
   )
+}
+
+/** Snapshot dates are calendar days; time of day would be noise. */
+function formatAsOf(date: string): string {
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return date
+  return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
+function formatCompactUsd(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}m`
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`
+  return `$${value.toFixed(0)}`
 }
 
 function PanelSkeleton() {

@@ -8,6 +8,12 @@ on:
     branches: [main, staging]
   push:
     branches: [main, staging]
+  # Manual trigger. Both required jobs once sat at "Expected - waiting for
+  # status to be reported" with no runs recorded at all, which is
+  # indistinguishable from Actions being unavailable to the repository.
+  # A button that can be pressed on demand separates the two, and is worth
+  # having regardless for re-running checks without an empty commit.
+  workflow_dispatch:
 
 # Cancel in-flight runs when a new commit is pushed to the same PR — keeps the
 # Actions billing minutes low and avoids confusing "stale check passed" badges.
