@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { clsx } from 'clsx'
 import { Check, Loader2, Pencil, X } from 'lucide-react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useContributions } from '../../../hooks/useContributions'
@@ -6,11 +7,16 @@ import { ExpandableText } from '../ExpandableText'
 
 interface MobileCaseSectionProps {
   assetId: string
-  /** Storage key: 'thesis' | 'where_different' | 'risks_to_thesis'. */
+  /** The key new contributions are written under. */
   sectionKey: string
+  /** Every key this field's prose might already be stored under, most likely
+   *  first. Some template slugs are aliases with legacy content behind them. */
+  readSectionKeys?: string[]
   title: string
   /** Shown when nobody has written anything, so the section is never a blank box. */
   emptyHint: string
+  /** 'aggregated' shows everyone; a user id narrows to that analyst's view. */
+  viewFilter?: 'aggregated' | string
 }
 
 /** Draft writes are debounced to avoid a request per keystroke. */
@@ -32,18 +38,39 @@ const DRAFT_DEBOUNCE_MS = 1200
 export function MobileCaseSection({
   assetId,
   sectionKey,
+  readSectionKeys,
   title,
   emptyHint,
+  viewFilter = 'aggregated',
 }: MobileCaseSectionProps) {
   const { user } = useAuth()
   const {
+    contributions,
     myContribution,
-    otherContributions,
     isLoading,
     saveDraft,
     publishDraft,
     discardDraft,
   } = useContributions({ assetId, section: sectionKey })
+
+  // Aliased slugs can have prose stored under an older key. Reading only the
+  // write key would render an empty section over content that exists.
+  const aliases = (readSectionKeys ?? []).filter(k => k !== sectionKey)
+  const { contributions: aliased } = useContributions({
+    assetId,
+    section: aliases[0],
+  })
+
+  const all = aliases.length ? [...contributions, ...(aliased ?? [])] : contributions
+
+  // Everyone else's work on this field, or one named analyst's.
+  const otherContributions = all.filter(c => {
+    if (c.created_by === user?.id) return false
+    return viewFilter === 'aggregated' || c.created_by === viewFilter
+  })
+
+  // Reading someone else's view means reading theirs, not editing yours.
+  const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
 
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
@@ -117,12 +144,12 @@ export function MobileCaseSection({
         <h3 className="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
           {title}
         </h3>
-        {hasDraft && !editing && (
+        {isOwnView && hasDraft && !editing && (
           <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
             Draft
           </span>
         )}
-        {!editing && user && (
+        {!editing && user && isOwnView && (
           <button
             type="button"
             onClick={beginEdit}
@@ -174,7 +201,7 @@ export function MobileCaseSection({
           <div className="h-4 w-2/3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
         ) : (
           <>
-            {hasDraft && (
+            {isOwnView && hasDraft && (
               <div className="mb-2 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
@@ -192,14 +219,18 @@ export function MobileCaseSection({
               </div>
             )}
 
-            {published ? (
+            {isOwnView && published ? (
               <ExpandableText text={published} lines={6} />
-            ) : !hasDraft ? (
+            ) : !hasDraft && otherContributions.length === 0 ? (
               <p className="text-sm text-gray-400 dark:text-gray-500">{emptyHint}</p>
             ) : null}
 
             {otherContributions.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 space-y-3">
+              <div className={clsx(
+                'space-y-3',
+                (isOwnView && (published || hasDraft)) &&
+                  'mt-3 pt-3 border-t border-gray-100 dark:border-gray-800'
+              )}>
                 {otherContributions.map(c => (
                   <div key={c.id}>
                     <p className="mb-0.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400">

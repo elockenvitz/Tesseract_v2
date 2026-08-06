@@ -31,6 +31,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
 import { useAnalystPriceTargets } from '../../hooks/useAnalystPriceTargets'
 import { supabase } from '../../lib/supabase'
+import { SLUG_TO_SECTION } from '../../lib/research/contribution-sections'
 import { useQueryClient } from '@tanstack/react-query'
 import { InvestmentCaseTemplateSelector, InvestmentCaseTemplateEditor } from '../investment-case-templates'
 import { InvestmentCaseTemplate, DEFAULT_STYLE_CONFIG, DEFAULT_COVER_CONFIG, DEFAULT_HEADER_FOOTER_CONFIG, DEFAULT_TOC_CONFIG } from '../../types/investmentCaseTemplates'
@@ -1335,27 +1336,6 @@ export function InvestmentCaseBuilder({
 // ============================================================================
 
 // Map field slugs to contribution section keys
-const SLUG_TO_SECTION: Record<string, string[]> = {
-  'investment-thesis': ['thesis'],
-  'thesis': ['thesis'],
-  'where_different': ['where_different'],
-  'where-different': ['where_different'],
-  'risks_to_thesis': ['risks_to_thesis'],
-  'risks-to-thesis': ['risks_to_thesis'],
-  'key-risks': ['risks_to_thesis', 'risks'],
-  'price_targets': ['price_target', 'price_targets'],
-  'price-targets': ['price_target', 'price_targets'],
-  'key_catalysts': ['catalysts', 'key_catalysts'],
-  'catalysts': ['catalysts', 'key_catalysts'],
-  'bull-case': ['bull_case'],
-  'bull_case': ['bull_case'],
-  'bear-case': ['bear_case'],
-  'bear_case': ['bear_case'],
-  'business_model': ['business_model'],
-  'business-model': ['business_model'],
-  'rating': ['rating'],
-  'estimates': ['estimates'],
-}
 
 function getFieldContent(field: FieldConfig, contributions: any[]): string | null {
   // 1. Try known slug → section mapping

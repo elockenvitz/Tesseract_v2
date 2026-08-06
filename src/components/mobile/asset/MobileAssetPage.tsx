@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, FileText, Layers, ListChecks, TrendingUp } from 'lucide-react'
-import { MobileCaseSection } from './MobileCaseSection'
+import { MobileCaseView } from './MobileCaseView'
 import { TickerQuoteBadge } from '../TickerQuoteBadge'
 import { ExpandableText } from '../ExpandableText'
 import { useAssetTradeIdeas } from '../../../hooks/useAssetTradeIdeas'
 import { useAssetHeaderContext } from '../../../hooks/useAssetHeaderContext'
+import { useAssetPortfolioWeights } from '../../../hooks/useAssetPortfolioWeights'
 
 interface MobileAssetPageProps {
   asset: { id: string; symbol: string; company_name?: string | null }
@@ -20,24 +21,6 @@ const SUB_PAGES: { key: SubPage; label: string; icon: typeof FileText }[] = [
   { key: 'lists', label: 'Lists', icon: Layers },
 ]
 
-/** The three sections that make up an asset case, in the order they are argued. */
-const CASE_SECTIONS = [
-  {
-    sectionKey: 'thesis',
-    title: 'Thesis',
-    emptyHint: 'Why own this, and what has to be true.',
-  },
-  {
-    sectionKey: 'where_different',
-    title: "Where we're different",
-    emptyHint: 'What the market is missing or pricing wrongly.',
-  },
-  {
-    sectionKey: 'risks_to_thesis',
-    title: 'Risks to thesis',
-    emptyHint: 'What would break the case, and what you would watch for.',
-  },
-]
 
 /**
  * The asset page, built for a phone.
@@ -102,16 +85,7 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 pb-safe space-y-3">
-        {subPage === 'case' &&
-          CASE_SECTIONS.map(s => (
-            <MobileCaseSection
-              key={s.sectionKey}
-              assetId={asset.id}
-              sectionKey={s.sectionKey}
-              title={s.title}
-              emptyHint={s.emptyHint}
-            />
-          ))}
+        {subPage === 'case' && <MobileCaseView assetId={asset.id} />}
 
         {subPage === 'decisions' && <DecisionsPanel assetId={asset.id} onNavigate={onNavigate} />}
 
@@ -189,12 +163,23 @@ function ListsPanel({
   assetId: string
   onNavigate?: (result: any) => void
 }) {
-  const { portfolios, listsMine, listsShared, themes, isLoading } = useAssetHeaderContext(assetId)
+  const { listsMine, listsShared, themes, isLoading } = useAssetHeaderContext(assetId)
+  const { data: weights = [], isLoading: weightsLoading } = useAssetPortfolioWeights(assetId)
 
-  if (isLoading) return <PanelSkeleton />
+  if (isLoading || weightsLoading) return <PanelSkeleton />
 
   const groups = [
-    { title: 'Portfolios', icon: Briefcase, rows: portfolios ?? [], type: 'portfolio' },
+    {
+      title: 'Portfolios',
+      icon: Briefcase,
+      rows: weights.map(w => ({
+        id: w.portfolioId,
+        name: w.name,
+        weight: w.weight,
+        shares: w.shares,
+      })),
+      type: 'portfolio',
+    },
     { title: 'My lists', icon: ListChecks, rows: listsMine ?? [], type: 'list' },
     { title: 'Shared lists', icon: ListChecks, rows: listsShared ?? [], type: 'list' },
     { title: 'Themes', icon: Layers, rows: themes ?? [], type: 'theme' },
@@ -238,6 +223,23 @@ function ListsPanel({
                   <span className="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate">
                     {row.name}
                   </span>
+                  {row.weight != null && (
+                    <span className="shrink-0 text-right">
+                      <span className="block text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                        {row.weight.toFixed(2)}%
+                      </span>
+                      {row.shares != null && (
+                        <span className="block text-[10px] text-gray-400 tabular-nums">
+                          {row.shares.toLocaleString()} sh
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {/* A held position whose portfolio has no cost basis has no
+                      computable weight. Saying so beats printing 0.00%. */}
+                  {row.weight === null && 'shares' in row && (
+                    <span className="shrink-0 text-[11px] text-gray-400">weight n/a</span>
+                  )}
                 </button>
               ))}
             </div>
