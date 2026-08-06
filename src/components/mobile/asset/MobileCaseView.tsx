@@ -8,8 +8,7 @@ import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useUserAssetPagePreferences } from '../../../hooks/useUserAssetPagePreferences'
 import { contributionSectionsForSlug, writeSectionForSlug } from '../../../lib/research/contribution-sections'
 import { MobileCaseSection } from './MobileCaseSection'
-import { PriceTargetChart } from '../../outcomes/PriceTargetChart'
-import { PriceTargetsSummary } from '../../outcomes/PriceTargetsSummary'
+import { MobileScenarioBar } from './MobileScenarioBar'
 
 interface MobileCaseViewProps {
   assetId: string
@@ -150,14 +149,6 @@ export function MobileCaseView({ assetId, symbol }: MobileCaseViewProps) {
         )}
       </div>
 
-      {/* Bull / base / bear against the price. Both components return null
-          without target data, so an asset nobody has valued shows nothing
-          rather than an empty frame. */}
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-        <PriceTargetChart assetId={assetId} symbol={symbol} height={200} />
-      </div>
-      <PriceTargetsSummary assetId={assetId} hideHeader />
-
       {isLoading ? (
         <div className="space-y-2">
           {[0, 1, 2].map(i => (
@@ -175,14 +166,12 @@ export function MobileCaseView({ assetId, symbol }: MobileCaseViewProps) {
               {section.name ?? section.section_name}
             </h2>
             {(section.fields ?? []).map((field: any) => (
-              <MobileCaseSection
+              <CaseField
                 key={field.field_id}
                 assetId={assetId}
-                sectionKey={writeSectionForSlug(field.field_slug)}
-                readSectionKeys={contributionSectionsForSlug(field.field_slug)}
-                title={field.field_name}
-                emptyHint={field.field_description || 'Nothing written yet.'}
-                viewFilter={view}
+                symbol={symbol}
+                field={field}
+                view={view}
               />
             ))}
           </div>
@@ -190,4 +179,77 @@ export function MobileCaseView({ assetId, symbol }: MobileCaseViewProps) {
       )}
     </div>
   )
+}
+
+/**
+ * One template field, rendered according to its type.
+ *
+ * The template orders fields, and a field's position carries meaning — price
+ * targets sit where the author put them, not hoisted to the top of the page
+ * because they happen to be graphical. Dispatching on field_type here is what
+ * keeps the hierarchy the template describes.
+ */
+function CaseField({
+  assetId,
+  symbol,
+  field,
+  view,
+}: {
+  assetId: string
+  symbol: string
+  field: any
+  view: ViewFilter
+}) {
+  switch (field.field_type) {
+    case 'price_target':
+      return (
+        <div>
+          <h3 className="mb-1 px-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            {field.field_name}
+          </h3>
+          <MobileScenarioBar assetId={assetId} symbol={symbol} />
+        </div>
+      )
+
+    case 'rich_text':
+      return (
+        <MobileCaseSection
+          assetId={assetId}
+          sectionKey={writeSectionForSlug(field.field_slug)}
+          readSectionKeys={contributionSectionsForSlug(field.field_slug)}
+          title={field.field_name}
+          emptyHint={field.field_description || 'Nothing written yet.'}
+          viewFilter={view}
+        />
+      )
+
+    default:
+      // rating, estimates, checklist, key_references, timeline, metric and
+      // numeric each need their own editor. Naming the field and saying where
+      // it lives is honest; rendering it as prose would show its storage
+      // format and invite edits that corrupt it.
+      return <UnsupportedField name={field.field_name} type={field.field_type} />
+  }
+}
+
+function UnsupportedField({ name, type }: { name: string; type: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2.5">
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{name}</h3>
+      <p className="mt-0.5 text-xs text-gray-400">
+        {FIELD_TYPE_LABEL[type] ?? 'This field'} — open on desktop to view or edit.
+      </p>
+    </div>
+  )
+}
+
+const FIELD_TYPE_LABEL: Record<string, string> = {
+  rating: 'Analyst rating',
+  estimates: 'Estimates',
+  checklist: 'Checklist',
+  key_references: 'Notes and documents',
+  timeline: 'Timeline',
+  metric: 'Metric',
+  numeric: 'Number',
+  date: 'Date',
 }
