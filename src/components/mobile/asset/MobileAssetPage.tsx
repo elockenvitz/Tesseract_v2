@@ -7,6 +7,7 @@ import { ExpandableText } from '../ExpandableText'
 import { useAssetTradeIdeas } from '../../../hooks/useAssetTradeIdeas'
 import { useAssetHeaderContext } from '../../../hooks/useAssetHeaderContext'
 import { useAssetPortfolioWeights } from '../../../hooks/useAssetPortfolioWeights'
+import { useAssetLiveWeights } from '../../../hooks/useAssetLiveWeights'
 
 interface MobileAssetPageProps {
   asset: { id: string; symbol: string; company_name?: string | null }
@@ -164,27 +165,37 @@ function ListsPanel({
   onNavigate?: (result: any) => void
 }) {
   const { listsMine, listsShared, themes, isLoading } = useAssetHeaderContext(assetId)
-  const { data: weights = [], isLoading: weightsLoading } = useAssetPortfolioWeights(assetId)
+  // Snapshot weights arrive in one query; the repriced ones need a quote for
+  // every holding in the book. Show the snapshot immediately and upgrade it,
+  // rather than holding the whole panel behind ~40 requests per portfolio.
+  const { data: snapshotWeights = [], isLoading: weightsLoading } = useAssetPortfolioWeights(assetId)
+  const { data: liveWeights, isFetching: repricing } = useAssetLiveWeights(assetId)
 
   if (isLoading || weightsLoading) return <PanelSkeleton />
+
+  const live = new Map((liveWeights ?? []).map(w => [w.portfolioId, w]))
 
   const groups = [
     {
       title: 'Portfolios',
       icon: Briefcase,
-      rows: weights.map(w => ({
-        id: w.portfolioId,
-        name: w.name,
-        weight: w.weight,
-        shares: w.shares,
-        marketValue: w.marketValue,
-        asOf: w.asOf,
-      })),
+      rows: snapshotWeights.map(w => {
+        const repriced = live.get(w.portfolioId)
+        return {
+          id: w.portfolioId,
+          name: w.name,
+          weight: repriced?.weight ?? w.weight,
+          marketValue: repriced?.marketValue ?? w.marketValue,
+          isRepriced: repriced?.weight != null,
+          // A portfolio missing prices has an incomplete denominator, which
+          // overstates every weight in it. Say so rather than imply precision.
+          unpricedCount: repriced?.unpricedCount ?? 0,
+          holdingsCount: repriced?.holdingsCount ?? 0,
+          asOf: w.asOf,
+        }
+      }),
       type: 'portfolio',
-      // Weights come from periodic position snapshots, so the date they were
-      // struck belongs on screen. "Current" with no date invites acting on a
-      // number that may be weeks old.
-      asOf: weights[0]?.asOf ?? null,
+      asOf: repricing ? 'repricing' : live.size > 0 ? 'live' : snapshotWeights[0]?.asOf ?? null,
     },
     { title: 'My lists', icon: ListChecks, rows: listsMine ?? [], type: 'list' },
     { title: 'Shared lists', icon: ListChecks, rows: listsShared ?? [], type: 'list' },
@@ -211,7 +222,11 @@ function ListsPanel({
               </h3>
               {group.asOf ? (
                 <span className="ml-auto text-[11px] text-gray-400">
-                  as of {formatAsOf(group.asOf)}
+                  {group.asOf === 'repricing'
+                    ? 'repricing…'
+                    : group.asOf === 'live'
+                      ? 'at last close'
+                      : `as of ${formatAsOf(group.asOf)}`}
                 </span>
               ) : (
                 <span className="ml-auto text-xs text-gray-400">{group.rows.length}</span>
@@ -240,13 +255,18 @@ function ListsPanel({
                       <span className="block text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                         {row.weight.toFixed(2)}%
                       </span>
-                      {row.marketValue != null && (
+                      {row.unpricedCount > 0 ? (
+                        <span className="block text-[10px] text-amber-600 dark:text-amber-400">
+                          {row.unpricedCount} of {row.holdingsCount} unpriced
+                        </span>
+                      ) : row.marketValue != null ? (
                         <span className="block text-[10px] text-gray-400 tabular-nums">
                           {formatCompactUsd(row.marketValue)}
+                          {!row.isRepriced && ` · ${formatAsOf(row.asOf)}`}
                         </span>
-                      )}
+                      ) : null}
                     </span>
-                  ) : 'asOf' in row ? (
+                  ) : 'unpricedCount' in row ? (
                     // Held, but the snapshot carried no weight. Saying so beats
                     // printing 0.00%, which asserts the position is negligible.
                     <span className="shrink-0 text-[11px] text-gray-400">weight n/a</span>
