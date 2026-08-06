@@ -1,96 +1,91 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 export interface AssetPortfolioWeight {
   portfolioId: string
   name: string
-  shares: number
-  /** Position cost basis, i.e. shares × cost. */
-  costBasis: number
-  /** Percent of the portfolio's total cost basis, or null when unknowable. */
+  shares: number | null
+  price: number | null
+  marketValue: number | null
+  /** Percent of the portfolio's market value, as of `asOf`. */
   weight: number | null
+  /** The snapshot this position came from. Never null — weights are only ever
+   *  as current as the book they were struck from. */
+  asOf: string
 }
 
 /**
- * What this asset weighs in each portfolio that holds it.
+ * What this asset currently weighs in each portfolio that holds it.
  *
- * Weight is position cost basis over portfolio cost basis, matching how the
- * desktop asset page computes it — the same numerator and denominator, so the
- * two surfaces cannot quietly disagree about a position's size.
+ * Read from `portfolio_holdings_positions`, the position snapshots that carry
+ * a computed `weight_pct` against the portfolio's market value. That is the
+ * book of record: computing weight from cost basis instead — as the desktop
+ * asset page does — answers a different question, and a portfolio that has
+ * moved a long way from cost gives a visibly different number.
  *
- * Cost basis rather than market value is a deliberate inherited choice: it
- * needs no live quote, so the number is available immediately and does not
- * change under the reader while a price streams in. It is not the same as
- * market weight, and a portfolio that has moved a long way from cost will show
- * a figure that differs from a market-value weight elsewhere.
+ * Rows are reduced to the newest snapshot per portfolio by `snapshot_date`,
+ * not by row insert time. Those disagree on real data when a back-dated
+ * snapshot is uploaded after a newer one, and ordering by insertion then shows
+ * a superseded weight as current.
+ *
+ * `asOf` is returned rather than hidden because these are periodic snapshots,
+ * not live marks. A weight presented as "current" with no date invites the
+ * reader to trade against a number that may be weeks old.
  */
 export function useAssetPortfolioWeights(assetId: string | undefined) {
+  const { currentOrgId } = useOrganization()
+
   return useQuery({
-    queryKey: ['asset-portfolio-weights', assetId],
-    enabled: !!assetId,
+    queryKey: ['asset-portfolio-weights', assetId, currentOrgId],
+    enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async (): Promise<AssetPortfolioWeight[]> => {
-      const { data: holdings, error } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id, shares, cost, portfolios(id, name)')
+      const { data, error } = await supabase
+        .from('portfolio_holdings_positions')
+        .select(`
+          portfolio_id, shares, price, market_value, weight_pct,
+          portfolios ( name ),
+          snapshot:portfolio_holdings_snapshots!inner ( snapshot_date )
+        `)
         .eq('asset_id', assetId!)
+        // Defensive despite RLS: the table's policy lets platform admins
+        // bypass the org check for support workflows, which would otherwise
+        // leak another org's holdings into ordinary research views.
+        .eq('organization_id', currentOrgId!)
       if (error) throw error
-      if (!holdings?.length) return []
 
-      const portfolioIds = [...new Set(holdings.map((h: any) => h.portfolio_id))]
+      const newest = new Map<string, AssetPortfolioWeight>()
+      for (const row of (data ?? []) as any[]) {
+        const asOf = row.snapshot?.snapshot_date
+        if (!asOf) continue
 
-      // One request for every holding in the relevant portfolios, rather than
-      // a query per portfolio: the desktop page loops, which costs a round
-      // trip per portfolio the asset appears in.
-      const { data: siblings, error: siblingError } = await supabase
-        .from('portfolio_holdings')
-        .select('portfolio_id, shares, cost')
-        .in('portfolio_id', portfolioIds)
-      if (siblingError) throw siblingError
+        const existing = newest.get(row.portfolio_id)
+        if (existing && existing.asOf >= asOf) continue
 
-      const totals = new Map<string, number>()
-      for (const row of (siblings ?? []) as any[]) {
-        const value = num(row.shares) * num(row.cost)
-        totals.set(row.portfolio_id, (totals.get(row.portfolio_id) ?? 0) + value)
+        newest.set(row.portfolio_id, {
+          portfolioId: row.portfolio_id,
+          name: row.portfolios?.name ?? 'Unknown portfolio',
+          shares: numOrNull(row.shares),
+          price: numOrNull(row.price),
+          marketValue: numOrNull(row.market_value),
+          weight: numOrNull(row.weight_pct),
+          asOf,
+        })
       }
 
-      const byPortfolio = new Map<string, AssetPortfolioWeight>()
-      for (const h of holdings as any[]) {
-        const shares = num(h.shares)
-        const costBasis = shares * num(h.cost)
-        const total = totals.get(h.portfolio_id) ?? 0
-        // A zero-cost portfolio makes the ratio meaningless, not zero. Showing
-        // 0.00% would assert the position is negligible when the truth is that
-        // it cannot be computed.
-        const weight = total > 0 ? (costBasis / total) * 100 : null
-
-        // An asset can hold several lots in one portfolio; the position is
-        // their sum, not the last one seen.
-        const existing = byPortfolio.get(h.portfolio_id)
-        if (existing) {
-          existing.shares += shares
-          existing.costBasis += costBasis
-          existing.weight = total > 0 ? (existing.costBasis / total) * 100 : null
-        } else {
-          byPortfolio.set(h.portfolio_id, {
-            portfolioId: h.portfolio_id,
-            name: h.portfolios?.name ?? 'Unknown portfolio',
-            shares,
-            costBasis,
-            weight,
-          })
-        }
-      }
-
-      return [...byPortfolio.values()].sort(
-        (a, b) => (b.weight ?? -1) - (a.weight ?? -1)
-      )
+      return [...newest.values()].sort((a, b) => (b.weight ?? -1) - (a.weight ?? -1))
     },
   })
 }
 
-/** Numeric columns arrive as strings over PostgREST. */
-function num(value: unknown): number {
-  const parsed = typeof value === 'number' ? value : parseFloat(String(value ?? ''))
-  return Number.isFinite(parsed) ? parsed : 0
+/**
+ * Numeric columns arrive as strings over PostgREST. Missing stays missing:
+ * coercing an absent weight to 0 would assert the position is negligible when
+ * the truth is that it was never computed.
+ */
+function numOrNull(value: unknown): number | null {
+  if (value == null) return null
+  const parsed = typeof value === 'number' ? value : parseFloat(String(value))
+  return Number.isFinite(parsed) ? parsed : null
 }

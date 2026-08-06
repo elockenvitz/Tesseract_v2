@@ -177,8 +177,14 @@ function ListsPanel({
         name: w.name,
         weight: w.weight,
         shares: w.shares,
+        marketValue: w.marketValue,
+        asOf: w.asOf,
       })),
       type: 'portfolio',
+      // Weights come from periodic position snapshots, so the date they were
+      // struck belongs on screen. "Current" with no date invites acting on a
+      // number that may be weeks old.
+      asOf: weights[0]?.asOf ?? null,
     },
     { title: 'My lists', icon: ListChecks, rows: listsMine ?? [], type: 'list' },
     { title: 'Shared lists', icon: ListChecks, rows: listsShared ?? [], type: 'list' },
@@ -203,7 +209,13 @@ function ListsPanel({
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                 {group.title}
               </h3>
-              <span className="ml-auto text-xs text-gray-400">{group.rows.length}</span>
+              {group.asOf ? (
+                <span className="ml-auto text-[11px] text-gray-400">
+                  as of {formatAsOf(group.asOf)}
+                </span>
+              ) : (
+                <span className="ml-auto text-xs text-gray-400">{group.rows.length}</span>
+              )}
             </div>
             <div className="divide-y divide-gray-100 dark:divide-gray-800">
               {group.rows.map((row: any) => (
@@ -223,23 +235,22 @@ function ListsPanel({
                   <span className="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate">
                     {row.name}
                   </span>
-                  {row.weight != null && (
+                  {row.weight != null ? (
                     <span className="shrink-0 text-right">
                       <span className="block text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                         {row.weight.toFixed(2)}%
                       </span>
-                      {row.shares != null && (
+                      {row.marketValue != null && (
                         <span className="block text-[10px] text-gray-400 tabular-nums">
-                          {row.shares.toLocaleString()} sh
+                          {formatCompactUsd(row.marketValue)}
                         </span>
                       )}
                     </span>
-                  )}
-                  {/* A held position whose portfolio has no cost basis has no
-                      computable weight. Saying so beats printing 0.00%. */}
-                  {row.weight === null && 'shares' in row && (
+                  ) : 'asOf' in row ? (
+                    // Held, but the snapshot carried no weight. Saying so beats
+                    // printing 0.00%, which asserts the position is negligible.
                     <span className="shrink-0 text-[11px] text-gray-400">weight n/a</span>
-                  )}
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -248,6 +259,20 @@ function ListsPanel({
       })}
     </div>
   )
+}
+
+/** Snapshot dates are calendar days; time of day would be noise. */
+function formatAsOf(date: string): string {
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return date
+  return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
+function formatCompactUsd(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}m`
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`
+  return `$${value.toFixed(0)}`
 }
 
 function PanelSkeleton() {
