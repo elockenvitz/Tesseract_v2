@@ -7,6 +7,7 @@ import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
 import { TabStateManager } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { AssetsListPage } from './AssetsListPage'
 import { ThemesListPage } from './ThemesListPage'
 import { PortfoliosListPage } from './PortfoliosListPage'
@@ -962,7 +963,13 @@ export function DashboardPage() {
 
     switch (activeTab.type) {
       case 'asset':
-        return activeTab.data ? <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} /> : <AssetLoadingState />
+        if (!activeTab.data) return <AssetLoadingState />
+        // Phones get a purpose-built asset page. AssetTab is 4,300 lines of
+        // four sub-pages, view filters and analyst panels built for a wide
+        // screen; see MobileAssetPage.
+        return isMobile
+          ? <MobileAssetPage asset={activeTab.data} onNavigate={handleSearchResult} />
+          : <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':
