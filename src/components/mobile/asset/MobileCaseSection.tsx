@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { Check, Loader2, Pencil, X } from 'lucide-react'
+import { Check, History, Loader2, Pencil, X } from 'lucide-react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useContributions } from '../../../hooks/useContributions'
 import { ExpandableText } from '../ExpandableText'
+import { CaseFieldHistory } from './CaseFieldHistory'
 
 interface MobileCaseSectionProps {
   assetId: string
@@ -73,6 +74,7 @@ export function MobileCaseSection({
   const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
 
   const [editing, setEditing] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -149,6 +151,22 @@ export function MobileCaseSection({
             Draft
           </span>
         )}
+        {!editing && myContribution && (
+          <button
+            type="button"
+            onClick={() => setShowHistory(v => !v)}
+            aria-expanded={showHistory}
+            className={clsx(
+              'shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold no-touch-target',
+              showHistory
+                ? 'text-primary-700 bg-primary-50 dark:text-primary-300 dark:bg-primary-900/30'
+                : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
+            )}
+          >
+            <History className="h-3.5 w-3.5" />
+            Changes
+          </button>
+        )}
         {!editing && user && isOwnView && (
           <button
             type="button"
@@ -215,15 +233,21 @@ export function MobileCaseSection({
                     <X className="h-3 w-3" /> Discard
                   </button>
                 </div>
-                <ExpandableText text={draft!} lines={4} />
+                <ExpandableText text={draft!} lines={4} markdown />
               </div>
             )}
 
             {isOwnView && published ? (
-              <ExpandableText text={published} lines={6} />
+              <ExpandableText text={published} lines={6} markdown />
             ) : !hasDraft && otherContributions.length === 0 ? (
               <p className="text-sm text-gray-400 dark:text-gray-500">{emptyHint}</p>
             ) : null}
+
+            {showHistory && myContribution && (
+              <div className="mb-3 pb-3 border-b border-gray-100 dark:border-gray-800">
+                <CaseFieldHistory contributionId={myContribution.id} />
+              </div>
+            )}
 
             {otherContributions.length > 0 && (
               <div className={clsx(
@@ -236,7 +260,7 @@ export function MobileCaseSection({
                     <p className="mb-0.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400">
                       {c.user?.full_name ?? 'Colleague'}
                     </p>
-                    <ExpandableText text={c.content} lines={4} />
+                    <ExpandableText text={c.content} lines={4} markdown />
                   </div>
                 ))}
               </div>

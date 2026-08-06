@@ -8,9 +8,12 @@ import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useUserAssetPagePreferences } from '../../../hooks/useUserAssetPagePreferences'
 import { contributionSectionsForSlug, writeSectionForSlug } from '../../../lib/research/contribution-sections'
 import { MobileCaseSection } from './MobileCaseSection'
+import { PriceTargetChart } from '../../outcomes/PriceTargetChart'
+import { PriceTargetsSummary } from '../../outcomes/PriceTargetsSummary'
 
 interface MobileCaseViewProps {
   assetId: string
+  symbol: string
 }
 
 /** 'aggregated' shows the firm's view; any other value is a user id. */
@@ -29,7 +32,7 @@ type ViewFilter = 'aggregated' | string
  * desktop page uses, so the phone shows the same template with the same
  * overrides applied rather than a second opinion about what the case contains.
  */
-export function MobileCaseView({ assetId }: MobileCaseViewProps) {
+export function MobileCaseView({ assetId, symbol }: MobileCaseViewProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const [view, setView] = useState<ViewFilter>('aggregated')
@@ -79,9 +82,15 @@ export function MobileCaseView({ assetId }: MobileCaseViewProps) {
 
   const activeLabel = options.find(o => o.userId === view)?.name ?? 'Firm view'
 
-  const sections = (displayedFieldsBySection ?? []).filter(
-    (s: any) => (s.fields ?? []).length > 0
-  )
+  // useUserAssetPagePreferences returns fields regardless of visibility — its
+  // own comment defers the is_visible filter to the renderer. Without it the
+  // page shows every field defined anywhere, including hidden scaffolding.
+  const sections = (displayedFieldsBySection ?? [])
+    .map((section: any) => ({
+      ...section,
+      fields: (section.fields ?? []).filter((f: any) => f.is_visible),
+    }))
+    .filter((section: any) => section.fields.length > 0)
 
   return (
     <div className="space-y-3">
@@ -140,6 +149,14 @@ export function MobileCaseView({ assetId }: MobileCaseViewProps) {
           </>
         )}
       </div>
+
+      {/* Bull / base / bear against the price. Both components return null
+          without target data, so an asset nobody has valued shows nothing
+          rather than an empty frame. */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+        <PriceTargetChart assetId={assetId} symbol={symbol} height={200} />
+      </div>
+      <PriceTargetsSummary assetId={assetId} hideHeader />
 
       {isLoading ? (
         <div className="space-y-2">
