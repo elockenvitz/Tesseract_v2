@@ -8,7 +8,9 @@ import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useUserAssetPagePreferences } from '../../../hooks/useUserAssetPagePreferences'
 import { contributionSectionsForSlug, writeSectionForSlug } from '../../../lib/research/contribution-sections'
 import { MobileCaseSection } from './MobileCaseSection'
-import { MobileScenarioBar } from './MobileScenarioBar'
+import { MobilePriceTargetChart } from './MobilePriceTargetChart'
+import { MobileRatingField } from './MobileRatingField'
+import { MobileEstimatesField } from './MobileEstimatesField'
 
 interface MobileCaseViewProps {
   assetId: string
@@ -207,9 +209,15 @@ function CaseField({
           <h3 className="mb-1 px-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
             {field.field_name}
           </h3>
-          <MobileScenarioBar assetId={assetId} symbol={symbol} />
+          <MobilePriceTargetChart assetId={assetId} symbol={symbol} />
         </div>
       )
+
+    case 'rating':
+      return <MobileRatingField assetId={assetId} title={field.field_name} viewFilter={view} />
+
+    case 'estimates':
+      return <MobileEstimatesField assetId={assetId} title={field.field_name} viewFilter={view} />
 
     case 'rich_text':
       return (
@@ -224,10 +232,10 @@ function CaseField({
       )
 
     default:
-      // rating, estimates, checklist, key_references, timeline, metric and
-      // numeric each need their own editor. Naming the field and saying where
-      // it lives is honest; rendering it as prose would show its storage
-      // format and invite edits that corrupt it.
+      // checklist, key_references, timeline, metric, numeric and date each
+      // need their own editor. Naming the field and saying where it lives is
+      // honest; rendering it as prose would show its storage format and invite
+      // edits that corrupt it.
       return <UnsupportedField name={field.field_name} type={field.field_type} />
   }
 }
@@ -244,8 +252,6 @@ function UnsupportedField({ name, type }: { name: string; type: string }) {
 }
 
 const FIELD_TYPE_LABEL: Record<string, string> = {
-  rating: 'Analyst rating',
-  estimates: 'Estimates',
   checklist: 'Checklist',
   key_references: 'Notes and documents',
   timeline: 'Timeline',
