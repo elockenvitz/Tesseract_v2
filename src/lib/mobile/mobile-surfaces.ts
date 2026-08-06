@@ -84,7 +84,7 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     type: 'asset', title: 'Asset', icon: TrendingUp,
     color: 'text-blue-500', bg: 'bg-blue-50',
     support: 'full', group: 'core',
-    mobileNote: 'Read and edit case narrative',
+    mobileNote: 'Read and edit the case; Process stays on desktop',
   },
   {
     type: 'notes-list', title: 'Notes', icon: StickyNote,
