@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Check, Pencil, X } from 'lucide-react'
+import { Check, Pencil, Plus, X } from 'lucide-react'
 import { useAuth } from '../../../hooks/useAuth'
-import { useAnalystEstimates, type AnalystEstimate } from '../../../hooks/useAnalystEstimates'
+import {
+  useAnalystEstimates,
+  useEstimateMetrics,
+  type AnalystEstimate,
+} from '../../../hooks/useAnalystEstimates'
 
 interface MobileEstimatesFieldProps {
   assetId: string
@@ -29,8 +33,13 @@ export function MobileEstimatesField({
 }: MobileEstimatesFieldProps) {
   const { user } = useAuth()
   const { estimates, isLoading, saveEstimate } = useAnalystEstimates({ assetId })
+  const { metrics } = useEstimateMetrics()
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [newMetric, setNewMetric] = useState('')
+  const [newYear, setNewYear] = useState(String(new Date().getFullYear()))
+  const [newValue, setNewValue] = useState('')
 
   const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
 
@@ -83,16 +92,104 @@ export function MobileEstimatesField({
     setEditing(null)
   }
 
+  const addEstimate = () => {
+    const value = parseFloat(newValue)
+    const year = parseInt(newYear, 10)
+    const metricKey = newMetric || (metrics ?? [])[0]?.key
+    if (metricKey && Number.isFinite(value) && Number.isFinite(year)) {
+      saveEstimate.mutate({
+        metricKey,
+        periodType: 'annual',
+        fiscalYear: year,
+        fiscalQuarter: null,
+        value,
+      })
+    }
+    setAdding(false)
+    setNewValue('')
+  }
+
   return (
     <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
         <h3 className="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
           {title}
         </h3>
+        {isOwnView && !adding && (metrics ?? []).length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setNewMetric((metrics ?? [])[0]?.key ?? '')
+              setAdding(true)
+            }}
+            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-primary-600 dark:text-primary-400 active:bg-primary-50 dark:active:bg-primary-900/30 no-touch-target"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </button>
+        )}
       </div>
 
+      {/* Adding a figure needs the metric list, not just the rows that already
+          exist. Without this the field could only edit estimates made
+          elsewhere, which is no use on an asset nobody has modelled yet. */}
+      {adding && (
+        <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+          <div className="flex items-center gap-2">
+            <select
+              value={newMetric}
+              onChange={e => setNewMetric(e.target.value)}
+              className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+            >
+              {(metrics ?? []).map(m => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={newYear}
+              onChange={e => setNewYear(e.target.value)}
+              aria-label="Fiscal year"
+              className="w-20 shrink-0 h-9 px-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm tabular-nums text-gray-900 dark:text-gray-100"
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="number"
+              inputMode="decimal"
+              autoFocus
+              value={newValue}
+              onChange={e => setNewValue(e.target.value)}
+              placeholder="Value"
+              className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-primary-500 bg-white dark:bg-gray-800 text-sm tabular-nums text-gray-900 dark:text-gray-100 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={addEstimate}
+              disabled={saveEstimate.isPending}
+              className="h-9 px-3 shrink-0 rounded-lg bg-primary-600 text-white text-sm font-semibold disabled:opacity-50 no-touch-target"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdding(false)}
+              className="h-9 w-9 shrink-0 flex items-center justify-center rounded-lg text-gray-500 no-touch-target"
+              aria-label="Cancel"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {byMetric.length === 0 ? (
-        <p className="px-3 py-2.5 text-sm text-gray-400">No estimates yet.</p>
+        <p className="px-3 py-2.5 text-sm text-gray-400">
+          {isOwnView ? 'No estimates yet — add one above.' : 'No estimates from this analyst.'}
+        </p>
       ) : (
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
           {byMetric.map(([key, group]) => (

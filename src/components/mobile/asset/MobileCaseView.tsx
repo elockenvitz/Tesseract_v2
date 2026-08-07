@@ -209,7 +209,7 @@ function CaseField({
           <h3 className="mb-1 px-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
             {field.field_name}
           </h3>
-          <MobilePriceTargetChart assetId={assetId} symbol={symbol} />
+          <MobilePriceTargetChart assetId={assetId} symbol={symbol} viewFilter={view} />
         </div>
       )
 
