@@ -1,21 +1,26 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
   Area,
   ComposedChart,
   ReferenceLine,
   ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import { Maximize2, X } from 'lucide-react'
 import { usePriceTargetChart } from '../../../hooks/usePriceTargetChart'
+import { MobileCaseTargets } from './MobileCaseTargets'
 
 interface MobilePriceTargetChartProps {
   assetId: string
   symbol: string
+  viewFilter?: 'aggregated' | string
 }
 
-const TIMEFRAMES = ['3M', '6M', '1Y', '2Y'] as const
+const TIMEFRAMES = ['1M', '3M', '6M', '1Y', '2Y', '5Y'] as const
 type Timeframe = (typeof TIMEFRAMES)[number]
 
 /** Scenario ordering, as the case is argued rather than alphabetical. */
@@ -36,8 +41,13 @@ const ORDER = ['Bull', 'Base', 'Bear']
  * unreadable, and what the reader needs here is where the three cases sit
  * relative to the price, not who set which.
  */
-export function MobilePriceTargetChart({ assetId, symbol }: MobilePriceTargetChartProps) {
+export function MobilePriceTargetChart({
+  assetId,
+  symbol,
+  viewFilter = 'aggregated',
+}: MobilePriceTargetChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>('1Y')
+  const [fullscreen, setFullscreen] = useState(false)
 
   const { historicalPrices, priceTargets, currentPrice, priceChangePercent, loading, error } =
     usePriceTargetChart({ assetId, symbol, timeframe: timeframe as any })
@@ -125,7 +135,14 @@ export function MobilePriceTargetChart({ assetId, symbol }: MobilePriceTargetCha
           {up ? '+' : ''}
           {priceChangePercent?.toFixed(2)}%
         </span>
-        <span className="ml-auto text-[11px] text-gray-400">{timeframe}</span>
+        <button
+          type="button"
+          onClick={() => setFullscreen(true)}
+          className="ml-auto h-8 w-8 flex items-center justify-center rounded-lg text-gray-400 active:bg-gray-100 dark:active:bg-gray-800 no-touch-target"
+          aria-label="Expand chart"
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="h-48 px-1 pt-1">
@@ -138,7 +155,17 @@ export function MobilePriceTargetChart({ assetId, symbol }: MobilePriceTargetCha
               </linearGradient>
             </defs>
 
-            <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} hide />
+            <XAxis
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={['dataMin', 'dataMax']}
+              tickFormatter={formatTick(timeframe)}
+              tick={{ fontSize: 10, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={28}
+            />
             {/* Y axis hidden, as on the feed charts: the values that matter are
                 labelled directly on the target lines. */}
             <YAxis domain={domain ?? ['dataMin', 'dataMax']} hide />
@@ -173,63 +200,193 @@ export function MobilePriceTargetChart({ assetId, symbol }: MobilePriceTargetCha
         </ResponsiveContainer>
       </div>
 
-      <div className="flex items-center justify-between gap-0.5 px-2 py-1 border-t border-gray-100 dark:border-gray-800">
-        {TIMEFRAMES.map(tf => (
-          <button
-            key={tf}
-            type="button"
-            onClick={() => setTimeframe(tf)}
-            className={clsx(
-              'flex-1 py-1 rounded text-[11px] font-medium transition-colors no-touch-target',
-              tf === timeframe
-                ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
-                : 'text-gray-500 dark:text-gray-400'
-            )}
-          >
-            {tf}
-          </button>
-        ))}
+      <TimeframeBar value={timeframe} onChange={setTimeframe} />
+
+      <div className="border-t border-gray-100 dark:border-gray-800">
+        <MobileCaseTargets
+          assetId={assetId}
+          currentPrice={currentPrice ?? null}
+          viewFilter={viewFilter}
+        />
       </div>
 
-      {scenarioLines.length > 0 && (
-        <ul className="px-3 py-2 border-t border-gray-100 dark:border-gray-800 space-y-1">
-          {scenarioLines.map(line => {
-            const upside =
-              currentPrice > 0 ? ((line.price - currentPrice) / currentPrice) * 100 : null
-            return (
-              <li key={line.name} className="flex items-baseline gap-2">
-                <span
-                  className="h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: line.color }}
-                  aria-hidden
-                />
-                <span className="text-sm font-semibold text-gray-900 dark:text-white w-12 shrink-0">
-                  {line.name}
-                </span>
-                <span className="text-sm tabular-nums text-gray-700 dark:text-gray-200">
-                  ${line.price.toFixed(2)}
-                </span>
-                {line.count > 1 && (
-                  <span className="text-[10px] text-gray-400">avg of {line.count}</span>
-                )}
-                {upside != null && (
-                  <span
-                    className={clsx(
-                      'ml-auto text-xs font-semibold tabular-nums',
-                      upside >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
-                    )}
-                  >
-                    {upside >= 0 ? '+' : ''}
-                    {upside.toFixed(0)}%
-                  </span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+      {fullscreen && (
+        <FullscreenChart
+          symbol={symbol}
+          series={series}
+          domain={domain}
+          lineColor={lineColor}
+          scenarioLines={scenarioLines}
+          timeframe={timeframe}
+          onTimeframe={setTimeframe}
+          onClose={() => setFullscreen(false)}
+        />
       )}
     </div>
   )
+}
+
+
+function TimeframeBar({
+  value,
+  onChange,
+}: {
+  value: Timeframe
+  onChange: (tf: Timeframe) => void
+}) {
+  return (
+    <div className="flex items-center gap-1 px-2 py-1.5 border-t border-gray-100 dark:border-gray-800">
+      {TIMEFRAMES.map(tf => (
+        <button
+          key={tf}
+          type="button"
+          onClick={() => onChange(tf)}
+          aria-pressed={tf === value}
+          className={clsx(
+            'flex-1 h-8 rounded-lg text-xs font-semibold transition-colors no-touch-target',
+            tf === value
+              ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+              : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
+          )}
+        >
+          {tf}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * The chart given the whole screen.
+ *
+ * Inside a scrolling column a chart competes with everything else for height,
+ * and no amount of tuning gives it the aspect ratio a price series wants. Full
+ * screen it gets priced axis labels, a crosshair tooltip and room for the
+ * target lines to sit apart from one another.
+ */
+function FullscreenChart({
+  symbol,
+  series,
+  domain,
+  lineColor,
+  scenarioLines,
+  timeframe,
+  onTimeframe,
+  onClose,
+}: {
+  symbol: string
+  series: { t: number; price: number }[]
+  domain: [number, number] | null
+  lineColor: string
+  scenarioLines: { name: string; color: string; price: number; count: number }[]
+  timeframe: Timeframe
+  onTimeframe: (tf: Timeframe) => void
+  onClose: () => void
+}) {
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex flex-col bg-white dark:bg-gray-900">
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 h-14 pt-safe border-b border-gray-200 dark:border-gray-700">
+        <span className="text-base font-bold text-gray-900 dark:text-white">{symbol}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto h-10 w-10 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 no-touch-target"
+          aria-label="Close chart"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 px-1 py-2">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
+            <defs>
+              <linearGradient id={'mptc-full-' + symbol} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={lineColor} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={['dataMin', 'dataMax']}
+              tickFormatter={formatTick(timeframe)}
+              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={36}
+            />
+            {/* Full screen has room for prices on the axis, which the inline
+                chart does not. */}
+            <YAxis
+              domain={domain ?? ['dataMin', 'dataMax']}
+              orientation="right"
+              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              width={52}
+              tickFormatter={(v: number) => '$' + v.toFixed(0)}
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 12, borderRadius: 8 }}
+              labelFormatter={(t: number) => new Date(t).toLocaleDateString()}
+              formatter={(v: number) => ['$' + v.toFixed(2), 'Price']}
+            />
+            <Area
+              type="monotone"
+              dataKey="price"
+              stroke={lineColor}
+              strokeWidth={2}
+              fill={'url(#mptc-full-' + symbol + ')'}
+              isAnimationActive={false}
+              dot={false}
+            />
+            {scenarioLines.map(line => (
+              <ReferenceLine
+                key={line.name}
+                y={line.price}
+                stroke={line.color}
+                strokeDasharray="4 3"
+                strokeWidth={1.5}
+                label={{
+                  value: line.name + ' $' + line.price.toFixed(0),
+                  position: 'insideTopRight',
+                  fill: line.color,
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="flex-shrink-0 pb-safe">
+        <TimeframeBar value={timeframe} onChange={onTimeframe} />
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/**
+ * Tick labels sized to the span. A year of daily candles labelled with full
+ * dates overlaps into unreadability at phone width, so short ranges show the
+ * day and long ranges the month or year.
+ */
+function formatTick(timeframe: Timeframe) {
+  return (value: number) => {
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return ''
+    if (timeframe === '1M' || timeframe === '3M') {
+      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    }
+    if (timeframe === '5Y' || timeframe === '2Y') {
+      return d.toLocaleDateString(undefined, { year: '2-digit', month: 'short' })
+    }
+    return d.toLocaleDateString(undefined, { month: 'short' })
+  }
 }

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../../hooks/useAuth'
-import { useAnalystRatings, type ConvictionLevel } from '../../../hooks/useAnalystRatings'
+import { useAnalystRatings, useRatingScales, type ConvictionLevel } from '../../../hooks/useAnalystRatings'
 
 interface MobileRatingFieldProps {
   assetId: string
@@ -20,9 +20,10 @@ const CONVICTIONS: ConvictionLevel[] = ['low', 'medium', 'high']
  * change. That makes it one of the few parts of a case genuinely better suited
  * to a phone than a desktop form.
  *
- * The scale comes from whatever rating is already on the asset. There is no
- * fallback list: inventing Buy/Hold/Sell when an organisation uses a 1-5 scale
- * would write a value its own rating scale does not contain.
+ * The scale is read from the organisation's configured rating scales, so the
+ * buttons appear on an asset nobody has rated yet. There is no hard-coded
+ * fallback: inventing Buy/Hold/Sell for an organisation that uses a 1-5 scale
+ * would write a value its own scale does not contain.
  */
 export function MobileRatingField({
   assetId,
@@ -31,17 +32,23 @@ export function MobileRatingField({
 }: MobileRatingFieldProps) {
   const { user } = useAuth()
   const { ratings, myRating, consensus, isLoading, saveRating } = useAnalystRatings({ assetId })
+  const { scales } = useRatingScales()
 
   const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
 
+  // The scale comes from the organisation's configuration, not from whatever
+  // rating happens to exist. Deriving it from existing ratings meant an asset
+  // nobody had rated offered no buttons at all — the field was unusable
+  // exactly when it was most needed.
   const scale = useMemo(() => {
-    const withScale = ratings.find(r => r.rating_scale?.values?.length)
-    const values = withScale?.rating_scale?.values ?? []
+    const fromExisting = ratings.find(r => r.rating_scale?.values?.length)?.rating_scale
+    const configured = (scales ?? []).find(s => s.is_default) ?? (scales ?? [])[0]
+    const chosen = fromExisting ?? configured
     return {
-      id: withScale?.rating_scale_id ?? null,
-      values: [...values].sort((a, b) => a.sort - b.sort),
+      id: chosen?.id ?? null,
+      values: [...(chosen?.values ?? [])].sort((a, b) => a.sort - b.sort),
     }
-  }, [ratings])
+  }, [ratings, scales])
 
   const shown = viewFilter === 'aggregated' ? null : ratings.find(r => r.user_id === viewFilter)
 
@@ -64,10 +71,10 @@ export function MobileRatingField({
 
       <div className="px-3 py-2.5">
         {!scale.id ? (
-          // No rating scale is reachable until someone has rated on it, so
-          // offering buttons would mean guessing the organisation's vocabulary.
+          // Without a configured scale there is no vocabulary to offer, and
+          // guessing one would write values the organisation does not use.
           <p className="text-sm text-gray-400">
-            No rating scale set for this asset yet — set the first rating on desktop.
+            No rating scale is configured for your organisation yet.
           </p>
         ) : isOwnView ? (
           <>
