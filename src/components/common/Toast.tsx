@@ -136,7 +136,17 @@ function ToastContainer({ toasts, onClose }: ToastContainerProps) {
 
   return (
     <div
-      className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none"
+      // z-[9998] because a toast is the app's last line of feedback and must
+      // outrank whatever it is reporting on. At z-50 it rendered *behind* every
+      // overlay above it — bottom sheets (z-[60]), fullscreen surfaces
+      // (z-[90]) — so an action that failed inside a sheet reported the failure
+      // invisibly, and the user saw nothing happen. Sits just under the z-[9999]
+      // reserved for the topmost portal.
+      //
+      // Insets rather than a bare top-4/right-4: on a notched phone top-4 puts
+      // the toast under the status bar, and a fixed right offset with no left
+      // bound lets a long message run off a 390px screen.
+      className="fixed top-4 right-4 left-4 sm:left-auto sm:max-w-sm pt-safe z-[9998] space-y-2 pointer-events-none"
       aria-live="polite"
       aria-atomic="false"
       role="region"
