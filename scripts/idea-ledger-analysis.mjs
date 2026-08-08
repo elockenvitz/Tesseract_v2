@@ -52,26 +52,20 @@
  *   --limit <n>             cap ideas fetched (default 5000)
  *   --csv <path>            also write the per-idea rows to CSV
  *   --no-backfill           snapshots only; skip all Yahoo calls
+ *   --input <path>          read ideas from a JSON dump instead of Supabase.
+ *                           Skips the DB entirely, so no service key is needed
+ *                           and the same run can be repeated offline. The file
+ *                           is an array of trade_queue_items rows with an
+ *                           `assets` object attached, plus an optional
+ *                           `snapshots` object keyed by trade_queue_item_id.
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { writeFile } from 'node:fs/promises'
+import { writeFile, readFile } from 'node:fs/promises'
 
 // ============================================================
 // Config
 // ============================================================
-
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error('ERROR: Set SUPABASE_URL and SUPABASE_SERVICE_KEY (or VITE_ variants)')
-  process.exit(1)
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false },
-})
 
 function arg(name, fallback = undefined) {
   const i = process.argv.indexOf(`--${name}`)
@@ -89,8 +83,24 @@ const OPTS = {
   silentPassDays: Number(arg('silent-pass-days', '60')),
   limit: Number(arg('limit', '5000')),
   csv: arg('csv'),
+  input: arg('input'),
   backfill: !flag('no-backfill'),
 }
+
+// Credentials are only needed when reading from the database. With --input the
+// rows are already on disk, so the script runs with no Supabase access at all.
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+
+if (!OPTS.input && (!SUPABASE_URL || !SUPABASE_KEY)) {
+  console.error('ERROR: Set SUPABASE_URL and SUPABASE_SERVICE_KEY (or VITE_ variants),')
+  console.error('       or pass --input <path> to analyse a JSON dump instead.')
+  process.exit(1)
+}
+
+const supabase = OPTS.input
+  ? null
+  : createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
 
 /** Ideas that were acted on. */
 const ACTED = new Set(['approved', 'executed'])
@@ -116,7 +126,21 @@ const DAY_MS = 86_400_000
 // Fetch
 // ============================================================
 
+/** Ideas from a JSON dump, with the same client-side filters as the DB path. */
+async function loadIdeasFromFile(path) {
+  const parsed = JSON.parse(await readFile(path, 'utf8'))
+  const all = Array.isArray(parsed) ? parsed : parsed.ideas || []
+  return all
+    .filter(i => !i.deleted_at)
+    .filter(i => !OPTS.org || i.organization_id === OPTS.org)
+    .filter(i => !OPTS.user || i.created_by === OPTS.user)
+    .filter(i => !OPTS.since || i.created_at >= OPTS.since)
+    .slice(0, OPTS.limit)
+}
+
 async function fetchIdeas() {
+  if (OPTS.input) return loadIdeasFromFile(OPTS.input)
+
   let q = supabase
     .from('trade_queue_items')
     .select(
@@ -138,8 +162,17 @@ async function fetchIdeas() {
   return data || []
 }
 
-async function fetchSnapshots(ideaIds) {
+async function fetchSnapshots(ideaIds, ideas) {
   const byIdea = new Map()
+
+  // --input dumps may carry snapshots inline on each row.
+  if (OPTS.input) {
+    for (const i of ideas) {
+      if (i.snapshots && Object.keys(i.snapshots).length > 0) byIdea.set(i.id, i.snapshots)
+    }
+    return byIdea
+  }
+
   const CHUNK = 200
   for (let i = 0; i < ideaIds.length; i += CHUNK) {
     const { data, error } = await supabase
@@ -289,7 +322,7 @@ async function main() {
     return
   }
 
-  const snapshots = await fetchSnapshots(ideas.map(i => i.id))
+  const snapshots = await fetchSnapshots(ideas.map(i => i.id), ideas)
   console.log(`Found snapshots for ${snapshots.size} of them.\n`)
 
   // ── Bucket ──
@@ -313,26 +346,35 @@ async function main() {
   console.log(`  other             ${String(buckets.other.length).padStart(5)}`)
   console.log(`  → eligible        ${String(scorable.length).padStart(5)}  (anchor >${OPTS.minDays}d ago, has ticker)\n`)
 
-  // ── Price series, one fetch per symbol ──
-  const needBackfill = new Map() // symbol → [minMs, maxMs]
+  // ── Price series: one fetch per symbol, anchor date → today ──
+  // Fetched for every scorable symbol rather than only the ones missing a
+  // snapshot, because the tail of the same series is also the fallback for
+  // assets.current_price. In production 80 of 179 assets had no cached
+  // current price, so without this fallback nearly half the sample is
+  // silently unscoreable.
+  const windows = new Map() // symbol → earliest anchor ms
   for (const idea of scorable) {
-    const type = STATUS_SNAPSHOT_TYPE[idea.status]
-    if (type && snapshots.get(idea.id)?.[type]) continue // snapshot covers it
     const sym = idea.assets.symbol
     const t = new Date(decisionDate(idea)).getTime()
-    const cur = needBackfill.get(sym)
-    needBackfill.set(sym, cur ? [Math.min(cur[0], t), Math.max(cur[1], t)] : [t, t])
+    windows.set(sym, Math.min(windows.get(sym) ?? t, t))
   }
 
   const seriesBySymbol = new Map()
-  if (OPTS.backfill && needBackfill.size > 0) {
-    console.log(`Backfilling daily closes for ${needBackfill.size} tickers...`)
-    const entries = [...needBackfill.entries()]
-    const results = await mapWithConcurrency(entries, 4, async ([sym, [lo, hi]]) =>
-      [sym, await fetchDailyCloses(sym, lo, hi)],
+  if (OPTS.backfill && windows.size > 0) {
+    console.log(`Fetching daily closes for ${windows.size} tickers...`)
+    const entries = [...windows.entries()]
+    const results = await mapWithConcurrency(entries, 4, async ([sym, lo]) =>
+      [sym, await fetchDailyCloses(sym, lo, Date.now())],
     )
     for (const r of results) if (r && r[1]) seriesBySymbol.set(r[0], r[1])
-    console.log(`  resolved ${seriesBySymbol.size}/${needBackfill.size}\n`)
+    console.log(`  resolved ${seriesBySymbol.size}/${windows.size}\n`)
+  }
+
+  /** Most recent close in a series, used when assets.current_price is unset. */
+  const latestClose = sym => {
+    const s = seriesBySymbol.get(sym)
+    if (!s || s.size === 0) return null
+    return s.get([...s.keys()].sort().pop())
   }
 
   // ── Score ──
@@ -359,7 +401,12 @@ async function main() {
     }
     if (!anchor) { unscoreable.noAnchor++; continue }
 
-    const current = Number(idea.assets.current_price)
+    let current = Number(idea.assets.current_price)
+    let currentSource = 'assets.current_price'
+    if (!(current > 0)) {
+      current = Number(latestClose(symbol))
+      currentSource = 'latest_close'
+    }
     if (!(current > 0)) { unscoreable.noCurrent++; continue }
 
     const disposition = classify(idea)
@@ -377,6 +424,7 @@ async function main() {
       anchor_price: anchor,
       anchor_source: anchorSource,
       current_price: current,
+      current_source: currentSource,
       idea_return_pct: ret * 100,
       // For any flavour of pass: the idea being right means passing was a miss.
       verdict: disposition === 'acted'
