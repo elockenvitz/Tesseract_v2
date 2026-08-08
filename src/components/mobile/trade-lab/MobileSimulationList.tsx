@@ -35,6 +35,86 @@ const FILTERS: { key: Filter; label: string }[] = [
 ]
 
 /**
+ * Which measure the numeric columns are expressed in.
+ *
+ * All eleven desktop columns at once means ~11 columns of horizontal travel to
+ * reach the deltas, and the deltas are what you look at. Splitting by measure
+ * keeps the shape that matters — Now / Sim / Δ — and drops the count to four or
+ * seven, which fits a phone without dragging. Nothing is lost; the same figures
+ * are one tap away instead of one scroll.
+ */
+type Measure = 'weight' | 'shares' | 'value'
+
+const MEASURES: { key: Measure; label: string }[] = [
+  { key: 'weight', label: 'Weight' },
+  { key: 'shares', label: 'Shares' },
+  { key: 'value', label: 'Dollars' },
+]
+
+interface Col {
+  key: string
+  label: string
+  /** Simulated columns are tinted so "what it becomes" reads as a group. */
+  accent?: boolean
+  strong?: boolean
+  /** Rendered as an em dash on rows with no sizing, rather than repeating the
+   *  current figure under a simulated heading. */
+  simOnly?: boolean
+  value: (r: SimulationRow) => string
+  tone?: (r: SimulationRow) => 'up' | 'down' | undefined
+}
+
+const signTone = (n: number | null | undefined) =>
+  n == null ? undefined : n >= 0 ? ('up' as const) : ('down' as const)
+
+/** Current market value of the position; the baseline carries it directly. */
+const curValue = (r: SimulationRow) => r.baseline?.value ?? 0
+
+function columnsFor(measure: Measure, hasBenchmark: boolean): Col[] {
+  if (measure === 'shares') {
+    return [
+      { key: 'shs', label: 'Shares', value: r => fmtShares(r.currentShares) },
+      { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => fmtShares(r.simShares) },
+      { key: 'd', label: 'Δ Shares', simOnly: true, value: r => signedShares(r.deltaShares), tone: r => signTone(r.deltaShares) },
+    ]
+  }
+  if (measure === 'value') {
+    return [
+      { key: 'val', label: 'Value', value: r => formatCompactUsd(curValue(r)) },
+      { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => formatCompactUsd(r.simNotional) },
+      {
+        key: 'd', label: 'Δ $', simOnly: true,
+        value: r => `${r.notional >= 0 ? '+' : '−'}${formatCompactUsd(Math.abs(r.notional))}`,
+        tone: r => signTone(r.notional),
+      },
+    ]
+  }
+  // Weight. Benchmark and active live here because they are weight-space
+  // figures — a share count has no benchmark to be active against.
+  const cols: Col[] = [
+    { key: 'wt', label: 'Wt%', value: r => r.currentWeight.toFixed(2) },
+    { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => r.simWeight.toFixed(2) },
+    { key: 'd', label: 'Δ Wt', simOnly: true, value: r => signed(r.deltaWeight, 2), tone: r => signTone(r.deltaWeight) },
+  ]
+  if (hasBenchmark) {
+    cols.push(
+      { key: 'bench', label: 'Bench', value: r => (r.benchWeight != null ? r.benchWeight.toFixed(2) : '—') },
+      {
+        key: 'act', label: 'Act',
+        value: r => (r.activeWeight != null ? signed(r.activeWeight, 2) : '—'),
+        tone: r => signTone(r.activeWeight),
+      },
+      {
+        key: 'simact', label: 'Sim Act', accent: true, strong: true, simOnly: true,
+        value: r => (r.benchWeight != null ? signed(r.simWeight - r.benchWeight, 2) : '—'),
+        tone: r => (r.benchWeight != null ? signTone(r.simWeight - r.benchWeight) : undefined),
+      },
+    )
+  }
+  return cols
+}
+
+/**
  * The desktop sorts by clicking a column header. These headers are too narrow
  * to carry a sort affordance as well as a label, so the sort is its own control.
  */
@@ -87,6 +167,9 @@ export function MobileSimulationList({
   const [editing, setEditing] = useState<string | null>(null)
   const [sort, setSort] = useState<Sort>('weight')
   const [sortOpen, setSortOpen] = useState(false)
+  const [measure, setMeasure] = useState<Measure>('weight')
+
+  const cols = useMemo(() => columnsFor(measure, hasBenchmark), [measure, hasBenchmark])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -208,6 +291,27 @@ export function MobileSimulationList({
             {SORTS.find(x => x.key === sort)?.label}
           </button>
         </div>
+
+        {/* Which measure the columns speak in. Sits directly above the table it
+            governs, so the relationship needs no explaining. */}
+        <div className="flex items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800">
+          {MEASURES.map(m => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setMeasure(m.key)}
+              aria-current={measure === m.key}
+              className={clsx(
+                'flex-1 h-8 rounded-md text-[12px] font-semibold transition-colors no-touch-target',
+                measure === m.key
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400'
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* The table. Frozen symbol column, sticky header, everything else scrolls
@@ -230,16 +334,9 @@ export function MobileSimulationList({
             <thead>
               <tr>
                 <Th sticky>Sym</Th>
-                <Th>Shs</Th>
-                <Th>Wt%</Th>
-                {hasBenchmark && <Th>Bench</Th>}
-                {hasBenchmark && <Th>Act</Th>}
-                <Th accent>Sim Wt</Th>
-                <Th accent>Sim Shs</Th>
-                {hasBenchmark && <Th accent>Sim Act</Th>}
-                <Th>Δ Wt</Th>
-                <Th>Δ Shs</Th>
-                <Th>Δ $</Th>
+                {cols.map(c => (
+                  <Th key={c.key} accent={c.accent}>{c.label}</Th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -247,7 +344,7 @@ export function MobileSimulationList({
                 <Row
                   key={row.asset_id}
                   row={row}
-                  hasBenchmark={hasBenchmark}
+                  cols={cols}
                   even={i % 2 === 1}
                   onOpen={() => openRow(row)}
                 />
@@ -365,16 +462,15 @@ function Th({
  * the edit is being judged against.
  */
 function Row({
-  row, hasBenchmark, even, onOpen,
+  row, cols, even, onOpen,
 }: {
   row: SimulationRow
-  hasBenchmark: boolean
+  cols: Col[]
   even: boolean
   onOpen: () => void
 }) {
   const traded = !!row.variant?.sizing_input
   const locked = row.isCommittedPending
-  const simActive = row.benchWeight != null ? row.simWeight - row.benchWeight : null
 
   // The frozen cell needs its own opaque background or the scrolling columns
   // show through it, so the stripe colour is shared rather than set on the row.
@@ -402,28 +498,11 @@ function Row({
         </div>
       </td>
 
-      <Td>{fmtShares(row.currentShares)}</Td>
-      <Td>{row.currentWeight.toFixed(2)}</Td>
-      {hasBenchmark && <Td>{row.benchWeight != null ? row.benchWeight.toFixed(2) : '—'}</Td>}
-      {hasBenchmark && (
-        <Td tone={(row.activeWeight ?? 0) >= 0 ? 'up' : 'down'}>
-          {row.activeWeight != null ? signed(row.activeWeight, 2) : '—'}
+      {cols.map(c => (
+        <Td key={c.key} strong={c.strong} tone={c.tone?.(row)}>
+          {c.simOnly && !traded ? '—' : c.value(row)}
         </Td>
-      )}
-
-      <Td strong>{traded ? row.simWeight.toFixed(2) : '—'}</Td>
-      <Td strong>{traded ? fmtShares(row.simShares) : '—'}</Td>
-      {hasBenchmark && (
-        <Td strong tone={(simActive ?? 0) >= 0 ? 'up' : 'down'}>
-          {traded && simActive != null ? signed(simActive, 2) : '—'}
-        </Td>
-      )}
-
-      <Td tone={row.deltaWeight >= 0 ? 'up' : 'down'}>{traded ? signed(row.deltaWeight, 2) : '—'}</Td>
-      <Td tone={row.deltaShares >= 0 ? 'up' : 'down'}>{traded ? signedShares(row.deltaShares) : '—'}</Td>
-      <Td tone={row.notional >= 0 ? 'up' : 'down'}>
-        {traded ? `${row.notional >= 0 ? '+' : '−'}${formatCompactUsd(Math.abs(row.notional))}` : '—'}
-      </Td>
+      ))}
     </tr>
   )
 }
