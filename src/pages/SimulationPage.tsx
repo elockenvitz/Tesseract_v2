@@ -5827,7 +5827,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       if (isAdded) handleRemoveAsset(idea.asset_id)
                       else handleAddAsset(idea)
                     }}
-                    onOpenIdea={(id) => setSelectedTradeId(id)}
+                    onOpenIdea={(id) => {
+                      // The drawer is a z-[70] full-screen overlay on a phone, so
+                      // the detail modal opened underneath it and only appeared
+                      // once the drawer was dismissed. Opening an idea IS leaving
+                      // the list, so close it on the way.
+                      setShowIdeasPanel(false)
+                      setSelectedTradeId(id)
+                    }}
                   />
                 )}
                 {showIdeasPanel && !isMobileViewport && (

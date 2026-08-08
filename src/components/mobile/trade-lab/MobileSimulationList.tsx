@@ -23,10 +23,20 @@ interface MobileSimulationListProps {
 type Filter = 'all' | 'changed' | 'new'
 
 /**
- * The desktop sorts by clicking a column header. With no headers to click, the
- * sort is an explicit control — and the defaults differ by intent: scanning
- * holdings you want the biggest positions first, reviewing changes you want the
- * biggest moves first.
+ * Named for what the list contains, not for a state a position is in.
+ * "Trading / All positions / New" made the reader work out that the first was a
+ * subset of the second, and defaulting to it showed an empty screen on any lab
+ * where nothing had been sized yet.
+ */
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all', label: 'Holdings' },
+  { key: 'changed', label: 'Changed' },
+  { key: 'new', label: 'New' },
+]
+
+/**
+ * The desktop sorts by clicking a column header. These headers are too narrow
+ * to carry a sort affordance as well as a label, so the sort is its own control.
  */
 type Sort = 'weight' | 'delta' | 'active' | 'symbol'
 
@@ -38,40 +48,24 @@ const SORTS: { key: Sort; label: string }[] = [
 ]
 
 /**
- * Named for what the list contains, not for a state a position is in.
- * "Trading / All positions / New" made the reader work out that the first was
- * a subset of the second, and defaulting to it showed an empty screen on any
- * lab where nothing had been sized yet.
- */
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'Holdings' },
-  { key: 'changed', label: 'Changed' },
-  { key: 'new', label: 'New' },
-]
-
-const ACTION_TONE: Record<string, string> = {
-  buy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  add: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  sell: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  trim: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-}
-
-/**
- * The simulation as a list, for a phone.
+ * The holdings simulation, as a table, on a phone.
  *
- * The desktop surface is an eleven-column keyboard-driven table. That does not
- * degrade to 390px — it is not a matter of hiding columns, because the columns
- * *are* the product: current versus simulated, in weight and in shares, with
- * both deltas. Reflowed to a phone it becomes a horizontally scrolling grid
- * whose headers leave the screen, which is worse than useless for numbers whose
- * meaning comes from their label.
+ * An earlier version stacked each position's figures into labelled rows. That
+ * made one position legible on its own and made comparing twenty of them
+ * impossible — which is the entire job of a simulation table. It is a table
+ * again.
  *
- * So each position becomes a card carrying the one comparison that matters —
- * where the weight is now and where the sizing takes it — and the rest moves
- * into the editor, which is a full sheet with room to show it. What is lost is
- * scanning twenty rows at once. What is gained is being able to change one
- * without a keyboard, which is the thing this surface is for on a phone: an
- * idea tested during a meeting, not a book rebalanced at a desk.
+ * What makes a wide table work on a narrow screen is not fewer columns, it is
+ * anchoring: the symbol column is frozen to the left and the header row is
+ * stuck to the top, so you drag the numbers sideways and both the name of the
+ * row and the name of the column stay on screen. Nothing is hidden, nothing is
+ * behind a mode, and the column order matches the desktop board so the same
+ * figures sit in the same relative places.
+ *
+ * Editing is the one thing that does not happen in the grid: a cell at this
+ * width cannot hold a text field plus a keyboard without covering the numbers
+ * the edit is being judged against. Tapping a row opens the sizing sheet, where
+ * the before/after has room to be shown.
  *
  * Every write goes back through the props the desktop table already receives,
  * so the sync, convergence and ordering machinery in SimulationPage is
@@ -119,16 +113,22 @@ export function MobileSimulationList({
     }
   }, [visible, sort])
 
-  // Kept resolved from `rows` rather than held as an object: the row is
-  // recomputed on every variant change, and a captured copy would show the
-  // pre-edit numbers in the sheet that just edited them.
+  // Resolved from `rows` rather than captured: the row is recomputed on every
+  // variant change, and a captured copy would show the sheet the pre-edit
+  // numbers it just edited.
   const editingRow = editing ? rows.find(r => r.asset_id === editing) ?? null : null
+
+  const openRow = (row: SimulationRow) => {
+    if (row.isCommittedPending) return
+    if (!row.variant) onCreateVariant(row.asset_id, 'add')
+    setEditing(row.asset_id)
+  }
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
-      {/* What this simulation does, in three numbers. On the desktop this is a
-          footer of column totals; a footer is unreachable on a phone, and this
-          is the first thing you want, not the last. */}
+      {/* What this simulation does, in three numbers. On the desktop these are
+          a table footer; a footer is a scroll away from what it summarises and
+          is the first question, not the last. */}
       <div className="flex-shrink-0 px-3 pt-3">
         <div className="grid grid-cols-3 gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
           <Stat label="Trades" value={String(summary.tradedCount)} />
@@ -150,7 +150,7 @@ export function MobileSimulationList({
         )}
       </div>
 
-      <div className="flex-shrink-0 px-3 pt-2 pb-1 space-y-2">
+      <div className="flex-shrink-0 px-3 pt-2 pb-2 space-y-2">
         <div className="flex gap-1">
           {FILTERS.map(f => {
             const count = rows.filter(r => {
@@ -210,34 +210,50 @@ export function MobileSimulationList({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-24 space-y-2">
+      {/* The table. Frozen symbol column, sticky header, everything else scrolls
+          sideways as one. */}
+      <div className="flex-1 min-h-0 overflow-auto overscroll-contain pb-24">
         {sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-gray-400">
+          <div className="flex flex-col items-center justify-center gap-2 py-16 px-3 text-gray-400">
             <p className="text-sm text-center">
               {search
                 ? 'No position matches that.'
                 : filter === 'changed'
-                  ? 'Nothing changed yet. Open a holding to size it.'
+                  ? 'Nothing changed yet. Tap a holding to size it.'
                   : filter === 'new'
                     ? 'No new positions in this simulation.'
                     : 'This portfolio has no holdings.'}
             </p>
           </div>
         ) : (
-          sorted.map(row => (
-            <PositionCard
-              key={row.asset_id}
-              row={row}
-              hasBenchmark={hasBenchmark}
-              onOpen={() => {
-                // An untraded row has no variant to edit yet. Creating it here
-                // mirrors the desktop's click-to-create, and the sheet opens on
-                // the row that comes back from the recompute.
-                if (!row.variant) onCreateVariant(row.asset_id, 'add')
-                setEditing(row.asset_id)
-              }}
-            />
-          ))
+          <table className="w-max min-w-full border-separate border-spacing-0 text-[11px] tabular-nums">
+            <thead>
+              <tr>
+                <Th sticky>Sym</Th>
+                <Th>Shs</Th>
+                <Th>Wt%</Th>
+                {hasBenchmark && <Th>Bench</Th>}
+                {hasBenchmark && <Th>Act</Th>}
+                <Th accent>Sim Wt</Th>
+                <Th accent>Sim Shs</Th>
+                {hasBenchmark && <Th accent>Sim Act</Th>}
+                <Th>Δ Wt</Th>
+                <Th>Δ Shs</Th>
+                <Th>Δ $</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((row, i) => (
+                <Row
+                  key={row.asset_id}
+                  row={row}
+                  hasBenchmark={hasBenchmark}
+                  even={i % 2 === 1}
+                  onOpen={() => openRow(row)}
+                />
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
@@ -317,181 +333,139 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
   )
 }
 
+/** Header cell. `sticky` freezes the symbol column; `accent` marks simulated values. */
+function Th({
+  children, sticky, accent,
+}: {
+  children: React.ReactNode
+  sticky?: boolean
+  accent?: boolean
+}) {
+  return (
+    <th
+      className={clsx(
+        'sticky top-0 whitespace-nowrap px-2 py-1.5 font-semibold uppercase tracking-wider text-[9px]',
+        'bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700',
+        accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400',
+        // The corner cell has to outrank both the sticky row and the sticky
+        // column, or the scrolling headers slide underneath or over it.
+        sticky ? 'left-0 z-30 text-left border-r border-gray-200 dark:border-gray-700' : 'z-20 text-right'
+      )}
+    >
+      {children}
+    </th>
+  )
+}
+
 /**
- * One position: where it is, where the sizing takes it, and what that costs.
+ * One position.
  *
- * Untraded rows are deliberately quieter rather than hidden — the whole
- * portfolio has to stay reachable, because sizing a position you do not
- * currently hold starts from finding it.
+ * The whole row is the tap target. There is no in-cell editing: a cell this
+ * narrow cannot hold a text field and its keyboard without covering the numbers
+ * the edit is being judged against.
  */
-/**
- * One position, with every field the desktop table carries.
- *
- * The earlier card showed weight, shares and notional and dropped benchmark and
- * active weight entirely — which meant sizing against a benchmark, the reason
- * the active column exists, could not be done from a phone at all. All eleven
- * desktop columns are here; the difference is that they are labelled rows
- * rather than headed columns, so nothing depends on a header that has scrolled
- * out of view.
- *
- * Untraded rows show the current column only. Repeating the current figure in a
- * "simulated" column that has not changed would imply a change that has not
- * been made.
- */
-function PositionCard({
-  row,
-  hasBenchmark,
-  onOpen,
+function Row({
+  row, hasBenchmark, even, onOpen,
 }: {
   row: SimulationRow
   hasBenchmark: boolean
+  even: boolean
   onOpen: () => void
 }) {
   const traded = !!row.variant?.sizing_input
   const locked = row.isCommittedPending
-  // Active weight after the trade. The row carries the current one; the
-  // simulated one is the whole point of sizing in active space.
   const simActive = row.benchWeight != null ? row.simWeight - row.benchWeight : null
-  const deltaActive =
-    simActive != null && row.activeWeight != null ? simActive - row.activeWeight : null
+
+  // The frozen cell needs its own opaque background or the scrolling columns
+  // show through it, so the stripe colour is shared rather than set on the row.
+  const bg = even ? 'bg-gray-50 dark:bg-gray-800/40' : 'bg-white dark:bg-gray-900'
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      disabled={locked}
-      className={clsx(
-        'w-full text-left rounded-xl border bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800 disabled:opacity-60',
-        traded
-          ? row.deltaWeight >= 0
-            ? 'border-l-[3px] border-l-emerald-500 border-gray-200 dark:border-gray-700'
-            : 'border-l-[3px] border-l-red-500 border-gray-200 dark:border-gray-700'
-          : 'border-gray-200 dark:border-gray-700'
-      )}
+    <tr
+      onClick={locked ? undefined : onOpen}
+      className={clsx(bg, locked && 'opacity-60', !locked && 'cursor-pointer active:bg-primary-50 dark:active:bg-primary-900/20')}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-bold text-gray-900 dark:text-white">{row.symbol}</span>
-        {traded && (
-          <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-bold uppercase', ACTION_TONE[row.derivedAction] ?? 'bg-gray-100 text-gray-600')}>
-            {row.derivedAction}
-          </span>
+      <td
+        className={clsx(
+          'sticky left-0 z-10 px-2 py-2 whitespace-nowrap border-b border-r border-gray-100 dark:border-gray-800',
+          bg,
+          traded && (row.deltaWeight >= 0
+            ? 'border-l-[3px] border-l-emerald-500'
+            : 'border-l-[3px] border-l-red-500')
         )}
-        {row.isNew && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-            New
-          </span>
-        )}
-        {row.hasConflict && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
-        {locked && <Lock className="h-3.5 w-3.5 text-gray-400" />}
-        <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">{row.company_name}</span>
-        {traded && (
-          <span
-            className={clsx(
-              'shrink-0 text-sm font-semibold tabular-nums',
-              row.notional >= 0
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-red-600 dark:text-red-400'
-            )}
-          >
-            {row.notional >= 0 ? '+' : '−'}
-            {formatCompactUsd(Math.abs(row.notional))}
-          </span>
-        )}
-        {!traded && !locked && (
-          <span className="shrink-0 text-[11px] text-primary-600 dark:text-primary-400">Size</span>
-        )}
-      </div>
+      >
+        <div className="flex items-center gap-1">
+          <span className="font-bold text-[12px] text-gray-900 dark:text-white">{row.symbol}</span>
+          {row.isNew && <span className="text-[8px] font-bold uppercase text-blue-600 dark:text-blue-400">new</span>}
+          {row.hasConflict && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+          {locked && <Lock className="h-3 w-3 text-gray-400" />}
+        </div>
+      </td>
 
-      {/* Three columns, headed once. A grid rather than prose because these are
-          the same figures the desk reads on the board and they should line up. */}
-      <div className="mt-2 grid grid-cols-[3.25rem_1fr_1fr_1fr] gap-x-1.5 gap-y-1 items-baseline">
-        <span />
-        <Head>Now</Head>
-        <Head>{traded ? 'Sim' : ''}</Head>
-        <Head>{traded ? 'Δ' : ''}</Head>
+      <Td>{fmtShares(row.currentShares)}</Td>
+      <Td>{row.currentWeight.toFixed(2)}</Td>
+      {hasBenchmark && <Td>{row.benchWeight != null ? row.benchWeight.toFixed(2) : '—'}</Td>}
+      {hasBenchmark && (
+        <Td tone={(row.activeWeight ?? 0) >= 0 ? 'up' : 'down'}>
+          {row.activeWeight != null ? signed(row.activeWeight, 2) : '—'}
+        </Td>
+      )}
 
-        <Label>Weight</Label>
-        <Num>{row.currentWeight.toFixed(2)}%</Num>
-        <Num strong>{traded ? `${row.simWeight.toFixed(2)}%` : ''}</Num>
-        <Num tone={row.deltaWeight >= 0 ? 'up' : 'down'}>
-          {traded ? `${row.deltaWeight >= 0 ? '+' : ''}${row.deltaWeight.toFixed(2)}` : ''}
-        </Num>
+      <Td strong>{traded ? row.simWeight.toFixed(2) : '—'}</Td>
+      <Td strong>{traded ? fmtShares(row.simShares) : '—'}</Td>
+      {hasBenchmark && (
+        <Td strong tone={(simActive ?? 0) >= 0 ? 'up' : 'down'}>
+          {traded && simActive != null ? signed(simActive, 2) : '—'}
+        </Td>
+      )}
 
-        <Label>Shares</Label>
-        <Num>{formatShares(row.currentShares)}</Num>
-        <Num strong>{traded ? formatShares(row.simShares) : ''}</Num>
-        <Num tone={row.deltaShares >= 0 ? 'up' : 'down'}>
-          {traded ? `${row.deltaShares >= 0 ? '+' : ''}${formatShares(row.deltaShares)}` : ''}
-        </Num>
-
-        {hasBenchmark && (
-          <>
-            <Label>Bench</Label>
-            <Num>{row.benchWeight != null ? `${row.benchWeight.toFixed(2)}%` : '—'}</Num>
-            <Num>—</Num>
-            <Num>—</Num>
-
-            <Label>Active</Label>
-            <Num tone={(row.activeWeight ?? 0) >= 0 ? 'up' : 'down'}>
-              {row.activeWeight != null ? `${row.activeWeight >= 0 ? '+' : ''}${row.activeWeight.toFixed(2)}` : '—'}
-            </Num>
-            <Num strong tone={(simActive ?? 0) >= 0 ? 'up' : 'down'}>
-              {traded && simActive != null ? `${simActive >= 0 ? '+' : ''}${simActive.toFixed(2)}` : ''}
-            </Num>
-            <Num tone={(deltaActive ?? 0) >= 0 ? 'up' : 'down'}>
-              {traded && deltaActive != null ? `${deltaActive >= 0 ? '+' : ''}${deltaActive.toFixed(2)}` : ''}
-            </Num>
-          </>
-        )}
-      </div>
-    </button>
+      <Td tone={row.deltaWeight >= 0 ? 'up' : 'down'}>{traded ? signed(row.deltaWeight, 2) : '—'}</Td>
+      <Td tone={row.deltaShares >= 0 ? 'up' : 'down'}>{traded ? signedShares(row.deltaShares) : '—'}</Td>
+      <Td tone={row.notional >= 0 ? 'up' : 'down'}>
+        {traded ? `${row.notional >= 0 ? '+' : '−'}${formatCompactUsd(Math.abs(row.notional))}` : '—'}
+      </Td>
+    </tr>
   )
 }
 
-function Head({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 text-right">
-      {children}
-    </span>
-  )
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">{children}</span>
-  )
-}
-
-function Num({
+function Td({
   children, strong, tone,
 }: {
   children: React.ReactNode
   strong?: boolean
   tone?: 'up' | 'down'
 }) {
-  const empty = children === '' || children == null
+  const blank = children === '—'
   return (
-    <span
+    <td
       className={clsx(
-        'text-[12px] tabular-nums text-right',
-        empty && 'text-transparent',
-        !empty && strong && 'font-semibold text-gray-900 dark:text-white',
-        !empty && !strong && (
+        'px-2 py-2 text-right whitespace-nowrap border-b border-gray-100 dark:border-gray-800',
+        blank && 'text-gray-300 dark:text-gray-600',
+        !blank && strong && 'font-semibold text-gray-900 dark:text-white',
+        !blank && !strong && (
           tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
             : tone === 'down' ? 'text-red-600 dark:text-red-400'
             : 'text-gray-600 dark:text-gray-300'
         )
       )}
     >
-      {empty ? '—' : children}
-    </span>
+      {children}
+    </td>
   )
 }
 
-function formatShares(n: number): string {
+function signed(n: number, dp: number): string {
+  return `${n >= 0 ? '+' : ''}${n.toFixed(dp)}`
+}
+
+function fmtShares(n: number): string {
   const abs = Math.abs(n)
   const body = abs >= 10_000 ? `${(abs / 1000).toFixed(1)}k` : Math.round(abs).toLocaleString()
   return `${n < 0 ? '−' : ''}${body}`
+}
+
+function signedShares(n: number): string {
+  return `${n >= 0 ? '+' : '−'}${fmtShares(Math.abs(n))}`
 }
 
 function formatCompactUsd(value: number): string {
