@@ -6,6 +6,7 @@ import { useAssetGroupingMeta } from '../../../hooks/useAssetGroupingMeta'
 import type { TradeAction } from '../../../types/trading'
 import { BottomSheet } from '../BottomSheet'
 import { MobileSizingSheet } from './MobileSizingSheet'
+import { MobileAddPositionSheet, type AddableAsset } from './MobileAddPositionSheet'
 
 interface MobileSimulationListProps {
   rows: SimulationRow[]
@@ -18,7 +19,11 @@ interface MobileSimulationListProps {
    *  and the real action is derived from the deltas once sizing is entered. */
   onCreateVariant: (assetId: string, action: TradeAction) => void
   onDeleteVariant?: (variantId: string) => void
-  onAddPosition?: () => void
+  /** Adds an asset the portfolio does not hold. Omit to hide the add control. */
+  onAddAsset?: (asset: AddableAsset) => void
+  assetSearch?: string
+  onAssetSearchChange?: (v: string) => void
+  assetSearchResults?: AddableAsset[]
 }
 
 /**
@@ -142,7 +147,10 @@ export function MobileSimulationList({
   onUpdateVariant,
   onCreateVariant,
   onDeleteVariant,
-  onAddPosition,
+  onAddAsset,
+  assetSearch = '',
+  onAssetSearchChange,
+  assetSearchResults = [],
 }: MobileSimulationListProps) {
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -150,6 +158,7 @@ export function MobileSimulationList({
   const [measure, setMeasure] = useState<Measure>('weight')
   const [groupBy, setGroupBy] = useState<GroupBy>('none')
   const [groupOpen, setGroupOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [sortKey, setSortKey] = useState<string>('wt')
   const [sortDesc, setSortDesc] = useState(true)
 
@@ -380,15 +389,36 @@ export function MobileSimulationList({
         )}
       </div>
 
-      {!readOnly && onAddPosition && (
+      {/* The only route to a name the portfolio does not already hold. Every
+          other entry point starts from an existing holding or an existing
+          idea. */}
+      {!readOnly && onAddAsset && onAssetSearchChange && (
         <button
           type="button"
-          onClick={onAddPosition}
+          onClick={() => setAddOpen(true)}
           className="absolute bottom-5 right-5 h-14 w-14 flex items-center justify-center rounded-full bg-primary-600 text-white shadow-lg no-touch-target"
-          aria-label="Add a position to the simulation"
+          aria-label="Add a position the portfolio does not hold"
         >
           <Plus className="h-6 w-6" />
         </button>
+      )}
+
+      {onAddAsset && onAssetSearchChange && (
+        <MobileAddPositionSheet
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          search={assetSearch}
+          onSearchChange={onAssetSearchChange}
+          results={assetSearchResults}
+          existingAssetIds={new Set(rows.map(r => r.asset_id))}
+          onAdd={asset => {
+            onAddAsset(asset)
+            // Open the sizing sheet on the new row as soon as the variant
+            // lands. Adding a position and not sizing it leaves a row that
+            // changes nothing, which is never the intent.
+            setEditing(asset.id)
+          }}
+        />
       )}
 
       <BottomSheet open={groupOpen} onClose={() => setGroupOpen(false)} title="Group by" fitContent>

@@ -6550,6 +6550,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             onUpdateVariant={handleVariantSizingUpdate}
                             onCreateVariant={handleCreateVariantForHolding}
                             onDeleteVariant={handleVariantDelete}
+                            // Same handler and same search the desktop table
+                            // uses for its inline "add trade" row, so an ad-hoc
+                            // ticker takes the identical import + variant path.
+                            onAddAsset={!tableReadOnly ? handleAddManualAsset : undefined}
+                            assetSearch={phantomAssetSearch}
+                            onAssetSearchChange={setPhantomAssetSearch}
+                            assetSearchResults={phantomAssetResults ?? []}
                           />
                         </div>
                       ) : (
