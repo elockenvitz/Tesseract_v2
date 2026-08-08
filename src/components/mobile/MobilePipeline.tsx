@@ -10,9 +10,15 @@ import { isCreatorOrCoAnalyst } from '../../lib/permissions/trade-idea-permissio
 import {
   RESEARCH_STAGES,
   RESEARCH_STAGE_CONFIG,
-  toResearchStage,
 } from '../../lib/trade-status-semantics'
 import type { ResearchStage, UISource } from '../../types/trading'
+import {
+  groupIntoRows,
+  rowSearchText,
+  COMMITTED_PIPELINE_STATUSES,
+  ARCHIVED_PIPELINE_STATUSES,
+  type PipelineRow,
+} from '../../lib/mobile/pipeline-rows'
 import { BottomSheet } from './BottomSheet'
 import { ExpandableText } from './ExpandableText'
 
@@ -36,10 +42,6 @@ import { ExpandableText } from './ExpandableText'
  * Writes go through useTradeIdeaService.moveTrade — the same audited mutation
  * the board uses, with `uiSource` distinguishing where the move came from.
  */
-/** Terminal statuses, split the way the board's fourth column splits them. */
-const COMMITTED: string[] = ['approved', 'executed']
-const ARCHIVED: string[] = ['rejected', 'cancelled', 'archived']
-
 type View = 'pipeline' | 'committed' | 'archived'
 
 const VIEWS: { key: View; label: string }[] = [
@@ -47,17 +49,6 @@ const VIEWS: { key: View; label: string }[] = [
   { key: 'committed', label: 'Committed' },
   { key: 'archived', label: 'Archived' },
 ]
-
-/**
- * A pipeline row: either a single idea or a pair trade carrying its legs.
- *
- * Pairs are one row, not two. The legs move together — movePairTrade moves the
- * whole group — so showing them as independent cards would offer a move that
- * cannot be made leg-by-leg and would double-count the stage's card count.
- */
-type Row =
-  | { kind: 'item'; id: string; stage: string; status: string; item: any }
-  | { kind: 'pair'; id: string; stage: string; status: string; pair: any; legs: any[] }
 
 export function MobilePipeline() {
   const { user } = useAuth()
@@ -67,90 +58,32 @@ export function MobilePipeline() {
   const [view, setView] = useState<View>('pipeline')
   const [stage, setStage] = useState<ResearchStage>('aware')
   const [search, setSearch] = useState('')
-  const [moving, setMoving] = useState<Row | null>(null)
+  const [moving, setMoving] = useState<PipelineRow | null>(null)
 
   const busy = isMoving || isMovingPairTrade
 
-  /**
-   * Collapse the flat item list into rows, grouping pair legs.
-   *
-   * A pair's stage is taken from its first leg: legs move together, so any leg
-   * answers the question, and reading it from the pair_trades row would go
-   * stale whenever a move updated the legs but not the parent.
-   */
-  const rows = useMemo<Row[]>(() => {
-    const pairs = new Map<string, { pair: any; legs: any[] }>()
-    const singles: any[] = []
+  const rows = useMemo(() => groupIntoRows(items), [items])
 
-    for (const item of items) {
-      const pairId = item?.pair_id || item?.pair_trade_id
-      if (pairId) {
-        if (!pairs.has(pairId)) {
-          pairs.set(pairId, {
-            pair: item.pair_trades ?? { id: pairId, name: 'Pair Trade', rationale: item.rationale },
-            legs: [],
-          })
-        }
-        pairs.get(pairId)!.legs.push(item)
-      } else {
-        singles.push(item)
-      }
-    }
-
-    const out: Row[] = singles.map(item => ({
-      kind: 'item' as const,
-      id: item.id,
-      stage: toResearchStage(item.stage) as string,
-      status: item.status,
-      item,
-    }))
-
-    for (const [pairId, group] of pairs) {
-      // Long leg first: a pair reads as "long X / short Y", and ordering by
-      // whatever the query returned made the same pair render differently
-      // between loads.
-      const legs = [...group.legs].sort((a, b) =>
-        (a.pair_leg_type === 'long' ? 0 : 1) - (b.pair_leg_type === 'long' ? 0 : 1)
-      )
-      const first = legs[0]
-      out.push({
-        kind: 'pair',
-        id: pairId,
-        stage: toResearchStage(first?.stage) as string,
-        status: first?.status,
-        pair: group.pair,
-        legs,
-      })
-    }
-    return out
-  }, [items])
-
-  const matchesSearch = (row: Row) => {
+  const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return true
-    const parts =
-      row.kind === 'pair'
-        ? [row.pair?.name, row.pair?.rationale, ...row.legs.map(l => l.assets?.symbol), ...row.legs.map(l => l.assets?.company_name)]
-        : [row.item.assets?.symbol, row.item.assets?.company_name, row.item.rationale]
-    return parts.filter(Boolean).join(' ').toLowerCase().includes(q)
-  }
-
-  const visible = useMemo(() => rows.filter(matchesSearch), [rows, search])
+    if (!q) return rows
+    return rows.filter(row => rowSearchText(row).includes(q))
+  }, [rows, search])
 
   const byStage = useMemo(() => {
-    const map = new Map<ResearchStage, Row[]>(RESEARCH_STAGES.map(s => [s, []]))
+    const map = new Map<ResearchStage, PipelineRow[]>(RESEARCH_STAGES.map(s => [s, []]))
     for (const row of visible) {
-      if (COMMITTED.includes(row.status) || ARCHIVED.includes(row.status)) continue
+      if (COMMITTED_PIPELINE_STATUSES.includes(row.status) || ARCHIVED_PIPELINE_STATUSES.includes(row.status)) continue
       const s = row.stage as ResearchStage
       if (map.has(s)) map.get(s)!.push(row)
     }
     return map
   }, [visible])
 
-  const committedRows = useMemo(() => visible.filter(r => COMMITTED.includes(r.status)), [visible])
-  const archivedRows = useMemo(() => visible.filter(r => ARCHIVED.includes(r.status)), [visible])
+  const committedRows = useMemo(() => visible.filter(r => COMMITTED_PIPELINE_STATUSES.includes(r.status)), [visible])
+  const archivedRows = useMemo(() => visible.filter(r => ARCHIVED_PIPELINE_STATUSES.includes(r.status)), [visible])
 
-  const canMove = (row: Row) => {
+  const canMove = (row: PipelineRow) => {
     // A pair is governed by its legs; the first one answers, since every leg of
     // a pair is created together by the same author.
     const subject = row.kind === 'pair' ? row.legs[0] : row.item
@@ -165,7 +98,7 @@ export function MobilePipeline() {
   const stageIndex = RESEARCH_STAGES.indexOf(stage)
   const current = byStage.get(stage) ?? []
 
-  const commit = (row: Row, target: ResearchStage, uiSource: UISource) => {
+  const commit = (row: PipelineRow, target: ResearchStage, uiSource: UISource) => {
     if (row.kind === 'pair') {
       movePairTrade({ pairTradeId: row.id, targetStatus: target as any, uiSource })
     } else {
@@ -392,7 +325,7 @@ function PipelineCard({
   onStep,
   onOpenSheet,
 }: {
-  row: Row
+  row: PipelineRow
   movable: boolean
   showMoveControls: boolean
   busy: boolean

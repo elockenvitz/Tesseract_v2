@@ -153,6 +153,19 @@
     min-height: 0;
     min-width: 0;
   }
+
+  /* Hide the scrollbar on a strip that scrolls sideways by design — the
+     pipeline's stage chips, for instance. iOS hides it anyway; this stops a
+     desktop-width browser or an Android WebView from drawing a bar under a
+     row of chips. Scrolling itself is untouched, so this is safe only where
+     the overflow is discoverable some other way (here, a partly-visible chip). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
