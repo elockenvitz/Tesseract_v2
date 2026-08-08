@@ -19,11 +19,17 @@ interface MobileSimulationListProps {
   onAddPosition?: () => void
 }
 
-type Filter = 'traded' | 'all' | 'new'
+type Filter = 'all' | 'changed' | 'new'
 
+/**
+ * Named for what the list contains, not for a state a position is in.
+ * "Trading / All positions / New" made the reader work out that the first was
+ * a subset of the second, and defaulting to it showed an empty screen on any
+ * lab where nothing had been sized yet.
+ */
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'traded', label: 'Trading' },
-  { key: 'all', label: 'All positions' },
+  { key: 'all', label: 'Holdings' },
+  { key: 'changed', label: 'Changed' },
   { key: 'new', label: 'New' },
 ]
 
@@ -66,7 +72,7 @@ export function MobileSimulationList({
   onDeleteVariant,
   onAddPosition,
 }: MobileSimulationListProps) {
-  const [filter, setFilter] = useState<Filter>('traded')
+  const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
 
@@ -74,7 +80,7 @@ export function MobileSimulationList({
     const q = search.trim().toLowerCase()
     return rows.filter(r => {
       if (r.isCash) return false
-      if (filter === 'traded' && !r.variant?.sizing_input) return false
+      if (filter === 'changed' && !r.variant?.sizing_input) return false
       if (filter === 'new' && !r.isNew) return false
       if (q && !`${r.symbol} ${r.company_name}`.toLowerCase().includes(q)) return false
       return true
@@ -114,22 +120,31 @@ export function MobileSimulationList({
 
       <div className="flex-shrink-0 px-3 pt-2 pb-1 space-y-2">
         <div className="flex gap-1">
-          {FILTERS.map(f => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              aria-current={filter === f.key}
-              className={clsx(
-                'flex-1 h-9 rounded-lg text-sm font-medium transition-colors no-touch-target',
-                filter === f.key
-                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-                  : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+          {FILTERS.map(f => {
+            const count = rows.filter(r => {
+              if (r.isCash) return false
+              if (f.key === 'changed') return !!r.variant?.sizing_input
+              if (f.key === 'new') return r.isNew
+              return true
+            }).length
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                aria-current={filter === f.key}
+                className={clsx(
+                  'flex-1 h-9 rounded-lg text-sm font-medium transition-colors no-touch-target',
+                  filter === f.key
+                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
+                )}
+              >
+                {f.label}
+                <span className="ml-1 text-[11px] tabular-nums opacity-70">{count}</span>
+              </button>
+            )
+          })}
         </div>
 
         <div className="relative">
@@ -159,8 +174,8 @@ export function MobileSimulationList({
             <p className="text-sm text-center">
               {search
                 ? 'No position matches that.'
-                : filter === 'traded'
-                  ? 'Nothing sized yet. Switch to All positions to start one.'
+                : filter === 'changed'
+                  ? 'Nothing changed yet. Open a holding to size it.'
                   : filter === 'new'
                     ? 'No new positions in this simulation.'
                     : 'This portfolio has no holdings.'}
@@ -282,6 +297,14 @@ function PositionCard({ row, onOpen }: { row: SimulationRow; onOpen: () => void 
         <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
           {row.currentWeight.toFixed(2)}%
         </span>
+        {/* An unsized holding otherwise shows a single number and no hint that
+            the row does anything — the whole point of the list is that it is
+            where you change a weight. */}
+        {!traded && !locked && (
+          <span className="ml-auto text-[11px] text-primary-600 dark:text-primary-400">
+            Tap to size
+          </span>
+        )}
         {traded && (
           <>
             <span className="text-gray-300">→</span>

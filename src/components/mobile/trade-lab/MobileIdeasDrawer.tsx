@@ -19,13 +19,14 @@ interface DrawerItem {
 }
 
 interface MobileIdeasDrawerProps {
+  /** The lab's portfolio, so ideas belonging elsewhere can be called out. */
+  currentPortfolioId?: string | null
   items: DrawerItem[]
   proposals: any[]
   search: string
   onSearchChange: (v: string) => void
   onToggleAsset: (idea: any, isAdded: boolean) => void
   onOpenIdea: (ideaId: string) => void
-  onOpenProposal?: (proposalId: string) => void
 }
 
 const STAGE_LABEL: Record<string, string> = {
@@ -54,13 +55,13 @@ const STAGE_LABEL: Record<string, string> = {
  * stopPropagation on a small square, which on a thumb is a coin toss.
  */
 export function MobileIdeasDrawer({
+  currentPortfolioId,
   items,
   proposals,
   search,
   onSearchChange,
   onToggleAsset,
   onOpenIdea,
-  onOpenProposal,
 }: MobileIdeasDrawerProps) {
   const [tab, setTab] = useState<'ideas' | 'proposals'>(
     proposals.length > 0 ? 'proposals' : 'ideas'
@@ -115,38 +116,77 @@ export function MobileIdeasDrawer({
         ) : tab === 'ideas' ? (
           items.map((item, i) =>
             item.type === 'pair' ? (
-              <PairRow key={item.pairTrade?.id ?? `pair-${i}`} item={item} onToggleAsset={onToggleAsset} onOpenIdea={onOpenIdea} />
+              <PairRow key={item.pairTrade?.id ?? `pair-${i}`} item={item} currentPortfolioId={currentPortfolioId} onToggleAsset={onToggleAsset} onOpenIdea={onOpenIdea} />
             ) : (
-              <IdeaRow key={item.idea?.id ?? `idea-${i}`} idea={item.idea} onToggleAsset={onToggleAsset} onOpenIdea={onOpenIdea} />
+              <IdeaRow key={item.idea?.id ?? `idea-${i}`} idea={item.idea} currentPortfolioId={currentPortfolioId} onToggleAsset={onToggleAsset} onOpenIdea={onOpenIdea} />
             )
           )
         ) : (
-          proposals.map((p, i) => (
-            <button
-              key={p.proposal?.id ?? `proposal-${i}`}
-              type="button"
-              onClick={() => onOpenProposal?.(p.proposal?.id)}
-              className="w-full text-left rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-900/10 p-3 active:bg-amber-100/60"
-            >
-              <div className="flex items-center gap-2">
-                <Scale className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span className="text-sm font-bold text-gray-900 dark:text-white">
-                  {p.proposal?.asset?.symbol ?? p.legs?.[0]?.symbol ?? 'Recommendation'}
-                </span>
-                {p.isPairTrade && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                    Pair
+          proposals.map((p, i) => {
+            const item = p.proposal?.trade_queue_items
+            const asset = item?.assets
+            const proposer = p.proposal?.users
+            return (
+              <button
+                key={p.proposal?.id ?? `proposal-${i}`}
+                type="button"
+                onClick={() => onOpenIdea(item?.id ?? p.proposal?.trade_queue_item_id)}
+                className="w-full text-left rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-900/10 p-3 active:bg-amber-100/60"
+              >
+                <div className="flex items-center gap-2">
+                  <Scale className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">
+                    {asset?.symbol ?? p.legs?.[0]?.symbol ?? '—'}
                   </span>
-                )}
-                <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-gray-300" />
-              </div>
-              {p.proposal?.rationale && (
-                <p className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 line-clamp-2">
-                  {p.proposal.rationale}
+                  {(item?.action || p.legs?.[0]?.action) && (
+                    <span
+                      className={clsx(
+                        'px-1.5 py-0.5 rounded text-[10px] font-bold uppercase',
+                        (item?.action ?? p.legs?.[0]?.action) === 'buy' || (item?.action ?? p.legs?.[0]?.action) === 'add'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                      )}
+                    >
+                      {item?.action ?? p.legs?.[0]?.action}
+                    </span>
+                  )}
+                  {p.isPairTrade && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                      Pair
+                    </span>
+                  )}
+                  <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-gray-300" />
+                </div>
+
+                <p className="mt-0.5 min-w-0 truncate text-[11px] text-gray-500 dark:text-gray-400">
+                  {asset?.company_name}
                 </p>
-              )}
-            </button>
-          ))
+
+                {/* The recommended size is the recommendation. Without it the
+                    card names a ticker and says nothing about what is being
+                    asked for. */}
+                {(p.proposal?.weight != null || p.proposal?.shares != null) && (
+                  <p className="mt-1 text-[12px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">
+                    {p.proposal.weight != null ? `${Number(p.proposal.weight).toFixed(2)}% target` : ''}
+                    {p.proposal.weight != null && p.proposal.shares != null ? ' · ' : ''}
+                    {p.proposal.shares != null ? `${Number(p.proposal.shares).toLocaleString()} sh` : ''}
+                  </p>
+                )}
+
+                {(p.proposal?.notes || item?.rationale) && (
+                  <p className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 line-clamp-2">
+                    {p.proposal?.notes || item?.rationale}
+                  </p>
+                )}
+
+                {proposer && (
+                  <p className="mt-1 text-[11px] text-gray-400 truncate">
+                    from {[proposer.first_name, proposer.last_name].filter(Boolean).join(' ') || proposer.email}
+                  </p>
+                )}
+              </button>
+            )
+          })
         )}
       </div>
     </div>
@@ -191,16 +231,24 @@ function TabButton({
  */
 function IdeaRow({
   idea,
+  currentPortfolioId,
   onToggleAsset,
   onOpenIdea,
 }: {
   idea: any
+  currentPortfolioId?: string | null
   onToggleAsset: (idea: any, isAdded: boolean) => void
   onOpenIdea: (id: string) => void
 }) {
   if (!idea) return null
   const added = !!idea.isAdded
   const stage = idea.effectiveStage || idea.stage || idea.status
+  // The drawer is not scoped to the lab's portfolio — ideas also arrive via
+  // trade_lab_idea_links, so a row can belong somewhere else entirely. Adding
+  // one still simulates it against the portfolio selected at the top, which is
+  // worth knowing before you tick it.
+  const portfolioName = idea.portfolios?.name ?? null
+  const isForeign = !!idea.portfolio_id && !!currentPortfolioId && idea.portfolio_id !== currentPortfolioId
 
   return (
     <div className="flex items-stretch gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
@@ -249,9 +297,30 @@ function IdeaRow({
           </span>
           <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
         </div>
-        {stage && (
-          <p className="mt-0.5 text-[11px] text-gray-400">{STAGE_LABEL[stage] ?? String(stage).replace(/_/g, ' ')}</p>
-        )}
+        <div className="mt-0.5 flex items-center gap-1.5 text-[11px]">
+          {stage && (
+            <span className="text-gray-400">{STAGE_LABEL[stage] ?? String(stage).replace(/_/g, ' ')}</span>
+          )}
+          {portfolioName && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span
+                className={clsx(
+                  'min-w-0 truncate',
+                  isForeign ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-400'
+                )}
+              >
+                {portfolioName}
+              </span>
+            </>
+          )}
+          {!idea.portfolio_id && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className="text-gray-400">No portfolio</span>
+            </>
+          )}
+        </div>
       </button>
     </div>
   )
@@ -260,10 +329,12 @@ function IdeaRow({
 /** A pair, with each leg individually addable — legs can be simulated apart. */
 function PairRow({
   item,
+  currentPortfolioId,
   onToggleAsset,
   onOpenIdea,
 }: {
   item: DrawerItem
+  currentPortfolioId?: string | null
   onToggleAsset: (idea: any, isAdded: boolean) => void
   onOpenIdea: (id: string) => void
 }) {
@@ -279,7 +350,7 @@ function PairRow({
       </div>
       <div className="space-y-1.5 px-2 pb-2">
         {(item.legs ?? []).map((leg: any) => (
-          <IdeaRow key={leg.id} idea={leg} onToggleAsset={onToggleAsset} onOpenIdea={onOpenIdea} />
+          <IdeaRow key={leg.id} idea={leg} currentPortfolioId={currentPortfolioId} onToggleAsset={onToggleAsset} onOpenIdea={onOpenIdea} />
         ))}
       </div>
     </div>
