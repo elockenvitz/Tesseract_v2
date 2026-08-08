@@ -5337,10 +5337,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       {/* Header Bar - Portfolio Selector + View Tabs */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         {/* Top row: Portfolio selector and actions */}
-        <div className="px-6 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Beaker className="h-5 w-5 text-primary-600" />
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="px-3 sm:px-6 py-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Beaker className="h-5 w-5 text-primary-600 shrink-0" />
+            <h1 className="hidden sm:block text-lg font-semibold text-gray-900 dark:text-white">
               {isSharedView ? 'Shared Simulation' : 'Trade Lab'}
             </h1>
             <OrgBadge />
@@ -5500,10 +5500,26 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
         {/* View Tabs Row */}
         {(selectedPortfolioId || isSharedView) && (
-          <div className="px-6 pb-2 flex items-center justify-between">
+          <div className="px-3 sm:px-6 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {/* Left: View Type Tabs — hidden in shared view */}
             {!isSharedView ? (
               <div className="flex items-center gap-1">
+                {/* The drawer is an overlay on a phone rather than a column, so
+                    the only way back into it has to live out here. */}
+                {isMobileViewport && (
+                  <button
+                    onClick={() => setShowIdeasPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800"
+                  >
+                    <Layers className="h-4 w-4" />
+                    Ideas
+                    {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+                      <Badge variant="default" className="text-xs">
+                        {filteredItems.proposals.length + filteredItems.ideas.length}
+                      </Badge>
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedViewType('private')}
                   className={clsx(
@@ -5533,12 +5549,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
             {/* Right: View Toggle (only show for workbench views, not Trade Sheets) */}
             {selectedViewType !== 'lists' && (simulation || isSharedView) && (
-              <div className="flex items-center gap-2">
-                <div className="inline-flex items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex sm:inline-flex w-full sm:w-auto items-center p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
                   <button
                     onClick={() => setImpactView('simulation')}
                     className={clsx(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
                       impactView === 'simulation'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5555,7 +5571,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('impact')}
                     className={clsx(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
                       impactView === 'impact'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5567,7 +5583,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setImpactView('trades')}
                     className={clsx(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                      "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
                       impactView === 'trades'
                         ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -5738,9 +5754,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           /* Workbench View - always show for Workspace tab */
           <>
               {/* Trade Ideas Panel — hidden in shared view */}
-              {!isSharedView && <div className={clsx(
+              {!isSharedView && (!isMobileViewport || showIdeasPanel) && <div className={clsx(
                 "border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col overflow-hidden",
-                showIdeasPanel ? "w-80" : "w-12"
+                isMobileViewport
+                  ? "fixed inset-0 top-0 z-[70] w-full border-r-0 bg-white dark:bg-gray-900 pt-safe pb-safe"
+                  : showIdeasPanel ? "w-80" : "w-12"
               )}>
                 <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700">
                   <button
@@ -5776,8 +5794,16 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       <button
                         onClick={() => setShowIdeasPanel(false)}
                         className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                        aria-label={isMobileViewport ? 'Close trade ideas' : 'Collapse trade ideas'}
                       >
-                        <ChevronRight className="h-4 w-4 text-gray-500 rotate-180 dark:text-gray-400" />
+                        {/* A left-chevron means "collapse this column"; on a phone
+                            the panel is a full-screen overlay, where that reads as
+                            navigation rather than dismissal. */}
+                        {isMobileViewport ? (
+                          <X className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-gray-500 rotate-180 dark:text-gray-400" />
+                        )}
                       </button>
                     </div>
                   )}
