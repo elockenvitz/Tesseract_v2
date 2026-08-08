@@ -41,7 +41,11 @@ export function MobileEstimatesField({
   const [newYear, setNewYear] = useState(String(new Date().getFullYear()))
   const [newValue, setNewValue] = useState('')
 
-  const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
+  // Firm view aggregates every analyst's estimates and is read-only — an
+  // estimate saved from it would have no unambiguous author. Editing lives in
+  // "My view", one tap away in the picker at the top of the case.
+  const isFirmView = viewFilter === 'aggregated'
+  const isOwnView = !!user && viewFilter === user.id
 
   const visible = useMemo(() => {
     if (viewFilter === 'aggregated') return estimates
@@ -188,7 +192,11 @@ export function MobileEstimatesField({
 
       {byMetric.length === 0 ? (
         <p className="px-3 py-2.5 text-sm text-gray-400">
-          {isOwnView ? 'No estimates yet — add one above.' : 'No estimates from this analyst.'}
+          {isOwnView
+            ? 'No estimates yet — add one above.'
+            : isFirmView
+              ? 'Nobody has published estimates for this name yet.'
+              : 'No estimates from this analyst.'}
         </p>
       ) : (
         <div className="divide-y divide-gray-100 dark:divide-gray-800">

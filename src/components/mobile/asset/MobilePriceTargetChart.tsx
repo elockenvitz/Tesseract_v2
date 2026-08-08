@@ -170,6 +170,19 @@ export function MobilePriceTargetChart({
                 labelled directly on the target lines. */}
             <YAxis domain={domain ?? ['dataMin', 'dataMax']} hide />
 
+            {/* The inline chart had no tooltip, so reading a price off it meant
+                opening the fullscreen view first — the one place the targets and
+                the history are already side by side was the one place you could
+                not interrogate. Touch drag moves the crosshair; it does not
+                fight the page scroll, because recharts only claims the gesture
+                once it starts inside the plot. */}
+            <Tooltip
+              contentStyle={{ fontSize: 12, borderRadius: 8, padding: '4px 8px' }}
+              labelFormatter={(t: number) => new Date(t).toLocaleDateString()}
+              formatter={(v: number) => ['$' + v.toFixed(2), 'Price']}
+              cursor={{ stroke: '#9ca3af', strokeDasharray: '3 3' }}
+            />
+
             <Area
               type="monotone"
               dataKey="price"
