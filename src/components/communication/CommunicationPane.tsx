@@ -185,17 +185,24 @@ export function CommunicationPane({
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{getViewTitle()}</h3>
           </div>
           <div className="flex items-center space-x-2">
-            <button
-              onClick={onToggleFullscreen}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
-              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            >
-              {isFullscreen ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </button>
+            {/* Fullscreen only means something against the desktop rail, where
+                it swaps a 384px panel for the full width. On a phone the pane
+                is already edge-to-edge, so the control rendered but had nothing
+                to toggle — every view (thoughts, AI, messages, notifications)
+                showed a button that did nothing. */}
+            {!isMobile && (
+              <button
+                onClick={onToggleFullscreen}
+                className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
+            )}
             <button
               onClick={onToggle}
               className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"

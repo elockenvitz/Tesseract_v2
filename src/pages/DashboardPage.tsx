@@ -8,6 +8,7 @@ import type { Tab } from '../components/layout/TabManager'
 import { TabStateManager } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
+import { MobilePipeline } from '../components/mobile/MobilePipeline'
 import { AssetsListPage } from './AssetsListPage'
 import { ThemesListPage } from './ThemesListPage'
 import { PortfoliosListPage } from './PortfoliosListPage'
@@ -991,7 +992,10 @@ export function DashboardPage() {
       case 'project':
         return activeTab.data ? <ProjectDetailTab project={activeTab.data} onNavigate={handleSearchResult} /> : <div>Loading project...</div>
       case 'trade-queue':
-        return <TradeQueuePage />
+        // The desktop board moves cards with native HTML5 drag, which never
+        // fires on touch — the kanban is inert on a phone, not just cramped.
+        // MobilePipeline shows one stage at a time and makes moving explicit.
+        return isMobile ? <MobilePipeline /> : <TradeQueuePage />
       case 'trade-lab':
         return <SimulationPage simulationId={activeTab.data?.id} tabId={activeTab.id} initialPortfolioId={activeTab.data?.portfolioId} shareId={activeTab.data?.shareId} />
       case 'trade-book':
