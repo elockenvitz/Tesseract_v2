@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Beaker,
+  MoreHorizontal,
+  Save,
   Users,
   RefreshCw,
   X,
@@ -93,6 +95,7 @@ import { TradeSheetReadinessPanel } from '../components/trading/TradeSheetReadin
 import { UnifiedSizingInput, type CurrentPosition as UnifiedCurrentPosition } from '../components/trading/UnifiedSizingInput'
 import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../components/trading/TradeCardConflictBadge'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import { BottomSheet } from '../components/mobile/BottomSheet'
 import { MobileSimulationList } from '../components/mobile/trade-lab/MobileSimulationList'
 import { MobileTradesView } from '../components/mobile/trade-lab/MobileTradesView'
 import { MobileIdeasDrawer } from '../components/mobile/trade-lab/MobileIdeasDrawer'
@@ -393,6 +396,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const tableReadOnly = isReadOnly || canSuggest
   // Phones render MobileSimulationList in place of the eleven-column table.
   const isMobileViewport = useIsMobile()
+  const [mobileLabMenuOpen, setMobileLabMenuOpen] = useState(false)
 
   // Suggestion review panel state (owner-side)
   const [suggestionReviewOpen, setSuggestionReviewOpen] = useState(false)
@@ -5442,6 +5446,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
           {/* Right side controls */}
           <div className="flex items-center gap-2">
+            {/* On a phone these collapse into one control. Ideas, Workspace,
+                Snapshots and Save Snapshot were four separate affordances
+                spread across two header rows for actions taken occasionally;
+                the tabs that get used constantly — Simulation / Impact /
+                Trades — now own the row below on their own. */}
+            {isMobileViewport && !isSharedView && (
+              <button
+                type="button"
+                onClick={() => setMobileLabMenuOpen(true)}
+                aria-label="Trade Lab menu"
+                className="relative shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+                {simulationRows.summary.tradedCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary-500" aria-hidden />
+                )}
+              </button>
+            )}
             {/* Workbench Status Indicator */}
             {simulation && (
               <>
@@ -5469,7 +5491,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 visible on the workspace (even with zero trades) so the
                 action is discoverable; disabled with a tooltip until there's
                 something worth snapshotting. */}
-            {simulation && !isSharedView && selectedViewType !== 'lists' && (
+            {simulation && !isSharedView && selectedViewType !== 'lists' && !isMobileViewport && (
               <Button
                 variant="outline"
                 size="sm"
@@ -5506,9 +5528,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           <div className="px-3 sm:px-6 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {/* Left: View Type Tabs — hidden in shared view */}
             {!isSharedView ? (
-              <div className="flex items-center gap-1">
-                {/* The drawer is an overlay on a phone rather than a column, so
-                    the only way back into it has to live out here. */}
+              <div className={clsx('items-center gap-1', isMobileViewport ? 'hidden' : 'flex')}>
                 {isMobileViewport && (
                   <button
                     onClick={() => setShowIdeasPanel(true)}
@@ -7470,6 +7490,79 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       })()}
 
       {/* Save Snapshot Modal — with optional sharing */}
+      {/* Consolidated Trade Lab menu. Save Snapshot sits inside it and is
+          disabled with a reason until there is something worth snapshotting,
+          which is the same rule the desktop button follows. */}
+      <BottomSheet
+        open={mobileLabMenuOpen}
+        onClose={() => setMobileLabMenuOpen(false)}
+        title="Trade Lab"
+        fitContent
+      >
+        <div className="px-3 pb-3 space-y-1">
+          <button
+            type="button"
+            onClick={() => { setMobileLabMenuOpen(false); setShowIdeasPanel(true) }}
+            className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800 no-touch-target"
+          >
+            <Layers className="h-4 w-4 text-gray-400" />
+            Trade ideas
+            {(filteredItems.proposals.length + filteredItems.ideas.length) > 0 && (
+              <span className="ml-auto text-[11px] tabular-nums text-gray-400">
+                {filteredItems.proposals.length + filteredItems.ideas.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setMobileLabMenuOpen(false); setSelectedViewType('private') }}
+            className={clsx(
+              'w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm no-touch-target',
+              selectedViewType === 'private'
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300 font-semibold'
+                : 'text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800'
+            )}
+          >
+            <FileText className="h-4 w-4 text-gray-400" />
+            Workspace
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setMobileLabMenuOpen(false); setSelectedViewType('lists') }}
+            className={clsx(
+              'w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm no-touch-target',
+              selectedViewType === 'lists'
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300 font-semibold'
+                : 'text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800'
+            )}
+          >
+            <List className="h-4 w-4 text-gray-400" />
+            Snapshots
+          </button>
+
+          {simulation && (
+            <div className="pt-1 mt-1 border-t border-gray-100 dark:border-gray-800">
+              <button
+                type="button"
+                disabled={simulationRows.summary.tradedCount === 0}
+                onClick={() => { setMobileLabMenuOpen(false); setShowCreateSheetConfirm(true) }}
+                className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-primary-700 dark:text-primary-300 disabled:text-gray-400 dark:disabled:text-gray-500 active:bg-primary-50 dark:active:bg-primary-900/20 no-touch-target"
+              >
+                <Save className="h-4 w-4" />
+                Save snapshot
+                <span className="ml-auto text-[11px] font-normal text-gray-400">
+                  {simulationRows.summary.tradedCount === 0
+                    ? 'no changes yet'
+                    : `${simulationRows.summary.tradedCount} ${simulationRows.summary.tradedCount === 1 ? 'change' : 'changes'}`}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+      </BottomSheet>
+
       {showCreateSheetConfirm && simulation && (() => {
         const SaveSnapshotModal = () => {
           const [snapshotName, setSnapshotName] = React.useState('')
