@@ -92,6 +92,8 @@ import { TradeSheetPanel } from '../components/trading/TradeSheetPanel'
 import { TradeSheetReadinessPanel } from '../components/trading/TradeSheetReadinessPanel'
 import { UnifiedSizingInput, type CurrentPosition as UnifiedCurrentPosition } from '../components/trading/UnifiedSizingInput'
 import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../components/trading/TradeCardConflictBadge'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { MobileSimulationList } from '../components/mobile/trade-lab/MobileSimulationList'
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
 import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
@@ -387,6 +389,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   const canCollaborate = isSharedView && sharedSimData?.access_level === 'collaborate' && sharedSimData?.share_mode === 'live'
   // Suggest mode = read-only table + suggest overlay; Collaborate = full editing
   const tableReadOnly = isReadOnly || canSuggest
+  // Phones render MobileSimulationList in place of the eleven-column table.
+  const isMobileViewport = useIsMobile()
 
   // Suggestion review panel state (owner-side)
   const [suggestionReviewOpen, setSuggestionReviewOpen] = useState(false)
@@ -2182,6 +2186,130 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       hasBenchmark,
     })
   }, [simulation, priceMap, tradeLab?.id, queryClient, v3CreateVariant, getActiveWeightConfig, hasBenchmark])
+
+  /**
+   * Sizing write and variant removal, shared by the desktop table and the
+   * phone list. Both were inline on the table; the mobile surface needs the
+   * identical path — temp-variant handling, optimistic cache write, pending
+   * sizing hand-off — and duplicating a hundred lines of it would guarantee
+   * the two drift.
+   */
+  const handleVariantSizingUpdate = (variantId: string, updates: { action?: TradeAction; sizingInput?: string }) => {
+    // Temp variants: apply cache update for instant display, store
+    // pending sizing so it's used when the real variant arrives.
+    if (variantId.startsWith('temp-')) {
+      const tempAssetId = variantId.replace('temp-', '')
+      if (updates.sizingInput !== undefined) {
+        pendingSizingRef.current.set(tempAssetId, updates.sizingInput)
+      }
+      if (tradeLab?.id) {
+        // Cancel in-flight refetches so they don't overwrite our optimistic update
+        queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+        queryClient.setQueryData<IntentVariant[]>(
+          ['intent-variants', tradeLab.id, null],
+          (old) => old?.map(v => v.id === variantId
+            ? {
+                ...v,
+                ...(updates.sizingInput !== undefined ? {
+                  sizing_input: updates.sizingInput,
+                  sizing_spec: null,
+                  computed: null,
+                } : {}),
+                ...(updates.action !== undefined ? { action: updates.action } : {}),
+              }
+            : v
+          ) ?? []
+        )
+      }
+      return
+    }
+    const variant = intentVariants.find(v => v.id === variantId)
+    const assetId = variant?.asset_id || ''
+    const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
+    const holding = baselineHoldings.find(h => h.asset_id === assetId)
+    const currentPosition = holding ? {
+      shares: holding.shares,
+      weight: holding.weight,
+      cost_basis: null,
+      active_weight: null,
+    } : null
+    const assetPrice = {
+      asset_id: assetId,
+      price: priceMap?.[assetId] || holding?.price || 100,
+      timestamp: new Date().toISOString(),
+      source: 'realtime' as const,
+    }
+
+    // Optimistic: update variant in cache immediately so the row
+    // shows the new value before the server round-trip completes.
+    // This also prevents cleanupEmptyVariant from deleting a variant
+    // whose sizing_input was '' in the stale cache.
+    if (tradeLab?.id) {
+      // Cancel in-flight refetches so they don't overwrite our optimistic update
+      queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
+      queryClient.setQueryData<IntentVariant[]>(
+        ['intent-variants', tradeLab.id, null],
+        (old) => old?.map(v => v.id === variantId
+          ? {
+              ...v,
+              ...(updates.sizingInput !== undefined ? {
+                sizing_input: updates.sizingInput,
+                sizing_spec: null,  // Clear stale spec so hook uses quick estimate
+                computed: null,     // Clear stale computed so deltas recompute
+              } : {}),
+              ...(updates.action !== undefined ? { action: updates.action } : {}),
+            }
+          : v
+        ) ?? []
+      )
+    }
+
+    v3UpdateVariant({
+      variantId,
+      updates,
+      currentPosition,
+      price: assetPrice,
+      portfolioTotalValue: simulation.baseline_total_value || 0,
+      roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
+      activeWeightConfig: getActiveWeightConfig(assetId),
+      hasBenchmark,
+    })
+
+    // If this variant has no matching simulation_trade (created via
+    // direct click on baseline position), create one so the dual-write
+    // invariant holds and the trade appears in the Trades tab.
+    if (updates.sizingInput && assetId && simulation?.simulation_trades) {
+      const hasTrade = simulation.simulation_trades.some(t => t.asset_id === assetId)
+      if (!hasTrade) {
+        supabase.from('simulation_trades')
+          .upsert({
+            simulation_id: simulation.id,
+            asset_id: assetId,
+            action: updates.action || variant?.action || 'add',
+            price: priceMap?.[assetId] || holding?.price || 100,
+            sort_order: simulation.simulation_trades.length,
+          }, { onConflict: 'simulation_id,asset_id' })
+          .select()
+          .single()
+          .then(({ error }) => {
+            if (!error) queryClient.invalidateQueries({ queryKey: ['simulation', simulation.id] })
+          })
+      }
+    }
+  }
+
+  const handleVariantDelete = (variantId: string) => {
+    // If deleting a temp variant from a direct edit (user escaped
+    // before server responded), track the cancellation so the
+    // follow-up effect can delete the real variant when it arrives.
+    if (variantId.startsWith('temp-')) {
+      const assetId = variantId.replace('temp-', '')
+      cancelledDirectEditsRef.current.add(assetId)
+      // Also clear any pending sizing for this asset
+      pendingSizingRef.current.delete(assetId)
+    }
+    v3DeleteVariant({ variantId })
+  }
 
   // Pro-rata cash rebalance. User clicks the CASH_USD sim wt cell and
   // enters a target cash weight (0-100). We then scale every non-cash
@@ -6346,6 +6474,27 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           </div>
                         </div>
                       )}
+                      {/* Phones get a list, not the table. Eleven columns do not
+                          degrade to 390px — the columns are the product, and
+                          reflowed they become a horizontally scrolling grid whose
+                          headers leave the screen. MobileSimulationList takes the
+                          same rows and the same write handlers, so the sync,
+                          convergence and ordering machinery above is untouched and
+                          both surfaces stay one implementation deep. */}
+                      {isMobileViewport ? (
+                        <div className="relative flex-1 min-w-0 overflow-hidden">
+                          <MobileSimulationList
+                            rows={simulationRows.rows}
+                            summary={simulationRows.summary}
+                            portfolioTotalValue={effectiveTotalValue}
+                            hasBenchmark={hasBenchmark}
+                            readOnly={tableReadOnly}
+                            onUpdateVariant={handleVariantSizingUpdate}
+                            onCreateVariant={handleCreateVariantForHolding}
+                            onDeleteVariant={handleVariantDelete}
+                          />
+                        </div>
+                      ) : (
                       <div className="flex-1 min-w-0 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
                         <HoldingsSimulationTable
                           rows={simulationRows.rows}
@@ -6364,123 +6513,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           pendingSuggestionsByAsset={pendingSuggestionsByAsset}
                           pendingSuggestionCount={!isSharedView ? pendingSuggestionCount : undefined}
                           onOpenSuggestionReview={!isSharedView ? () => setSuggestionReviewOpen(true) : undefined}
-                          onUpdateVariant={(variantId, updates) => {
-                            // Temp variants: apply cache update for instant display, store
-                            // pending sizing so it's used when the real variant arrives.
-                            if (variantId.startsWith('temp-')) {
-                              const tempAssetId = variantId.replace('temp-', '')
-                              if (updates.sizingInput !== undefined) {
-                                pendingSizingRef.current.set(tempAssetId, updates.sizingInput)
-                              }
-                              if (tradeLab?.id) {
-                                // Cancel in-flight refetches so they don't overwrite our optimistic update
-                                queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
-                                queryClient.setQueryData<IntentVariant[]>(
-                                  ['intent-variants', tradeLab.id, null],
-                                  (old) => old?.map(v => v.id === variantId
-                                    ? {
-                                        ...v,
-                                        ...(updates.sizingInput !== undefined ? {
-                                          sizing_input: updates.sizingInput,
-                                          sizing_spec: null,
-                                          computed: null,
-                                        } : {}),
-                                        ...(updates.action !== undefined ? { action: updates.action } : {}),
-                                      }
-                                    : v
-                                  ) ?? []
-                                )
-                              }
-                              return
-                            }
-                            const variant = intentVariants.find(v => v.id === variantId)
-                            const assetId = variant?.asset_id || ''
-                            const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
-                            const holding = baselineHoldings.find(h => h.asset_id === assetId)
-                            const currentPosition = holding ? {
-                              shares: holding.shares,
-                              weight: holding.weight,
-                              cost_basis: null,
-                              active_weight: null,
-                            } : null
-                            const assetPrice = {
-                              asset_id: assetId,
-                              price: priceMap?.[assetId] || holding?.price || 100,
-                              timestamp: new Date().toISOString(),
-                              source: 'realtime' as const,
-                            }
-
-                            // Optimistic: update variant in cache immediately so the row
-                            // shows the new value before the server round-trip completes.
-                            // This also prevents cleanupEmptyVariant from deleting a variant
-                            // whose sizing_input was '' in the stale cache.
-                            if (tradeLab?.id) {
-                              // Cancel in-flight refetches so they don't overwrite our optimistic update
-                              queryClient.cancelQueries({ queryKey: ['intent-variants', tradeLab.id] })
-                              queryClient.setQueryData<IntentVariant[]>(
-                                ['intent-variants', tradeLab.id, null],
-                                (old) => old?.map(v => v.id === variantId
-                                  ? {
-                                      ...v,
-                                      ...(updates.sizingInput !== undefined ? {
-                                        sizing_input: updates.sizingInput,
-                                        sizing_spec: null,  // Clear stale spec so hook uses quick estimate
-                                        computed: null,     // Clear stale computed so deltas recompute
-                                      } : {}),
-                                      ...(updates.action !== undefined ? { action: updates.action } : {}),
-                                    }
-                                  : v
-                                ) ?? []
-                              )
-                            }
-
-                            v3UpdateVariant({
-                              variantId,
-                              updates,
-                              currentPosition,
-                              price: assetPrice,
-                              portfolioTotalValue: simulation.baseline_total_value || 0,
-                              roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
-                              activeWeightConfig: getActiveWeightConfig(assetId),
-                              hasBenchmark,
-                            })
-
-                            // If this variant has no matching simulation_trade (created via
-                            // direct click on baseline position), create one so the dual-write
-                            // invariant holds and the trade appears in the Trades tab.
-                            if (updates.sizingInput && assetId && simulation?.simulation_trades) {
-                              const hasTrade = simulation.simulation_trades.some(t => t.asset_id === assetId)
-                              if (!hasTrade) {
-                                supabase.from('simulation_trades')
-                                  .upsert({
-                                    simulation_id: simulation.id,
-                                    asset_id: assetId,
-                                    action: updates.action || variant?.action || 'add',
-                                    price: priceMap?.[assetId] || holding?.price || 100,
-                                    sort_order: simulation.simulation_trades.length,
-                                  }, { onConflict: 'simulation_id,asset_id' })
-                                  .select()
-                                  .single()
-                                  .then(({ error }) => {
-                                    if (!error) queryClient.invalidateQueries({ queryKey: ['simulation', simulation.id] })
-                                  })
-                              }
-                            }
-                          }}
+                          onUpdateVariant={handleVariantSizingUpdate}
                           onRemoveAsset={handleRemoveAsset}
                           recentlyRemovedAssetIds={recentlyRemovedAssetIds}
-                          onDeleteVariant={(variantId) => {
-                            // If deleting a temp variant from a direct edit (user escaped
-                            // before server responded), track the cancellation so the
-                            // follow-up effect can delete the real variant when it arrives.
-                            if (variantId.startsWith('temp-')) {
-                              const assetId = variantId.replace('temp-', '')
-                              cancelledDirectEditsRef.current.add(assetId)
-                              // Also clear any pending sizing for this asset
-                              pendingSizingRef.current.delete(assetId)
-                            }
-                            v3DeleteVariant({ variantId })
-                          }}
+                          onDeleteVariant={handleVariantDelete}
                           onCreateVariant={handleCreateVariantForHolding}
                           onSetCashTarget={!isSharedView ? handleSetCashTarget : undefined}
                           onClearAllTrades={!isSharedView ? handleClearAllTrades : undefined}
@@ -6511,6 +6547,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                           decisionConfirmationOpen={!!decisionRecord}
                         />
                       </div>
+                      )}
                       {/* Suggestion Review Panel (owner-side) */}
                       {suggestionReviewOpen && !isSharedView && (
                         <SuggestionReviewPanel
