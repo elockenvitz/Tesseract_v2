@@ -5,6 +5,7 @@ import { MobileCaseView } from './MobileCaseView'
 import { TickerQuoteBadge } from '../TickerQuoteBadge'
 import { ExpandableText } from '../ExpandableText'
 import { useAssetTradeIdeas } from '../../../hooks/useAssetTradeIdeas'
+import { useAssetRecentDecisions, getDecisionLabel } from '../../../hooks/useAssetRecentDecisions'
 import { useAssetHeaderContext } from '../../../hooks/useAssetHeaderContext'
 import { useAssetPortfolioWeights } from '../../../hooks/useAssetPortfolioWeights'
 import { useAssetLiveWeights } from '../../../hooks/useAssetLiveWeights'
@@ -96,6 +97,15 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
   )
 }
 
+/**
+ * What is being done about this name — proposed and already decided.
+ *
+ * useAssetTradeIdeas filters to `outcome IS NULL`, so on its own this tab
+ * showed only what was still open and silently dropped every idea that had
+ * actually been decided. A tab called "Decisions" that cannot show a decision
+ * is the wrong way round, so the resolved items are fetched alongside and
+ * listed underneath.
+ */
 function DecisionsPanel({
   assetId,
   onNavigate,
@@ -104,12 +114,87 @@ function DecisionsPanel({
   onNavigate?: (result: any) => void
 }) {
   const { ideas, isLoading } = useAssetTradeIdeas({ assetId, limit: 25 })
+  const { decisions, isLoading: decisionsLoading } = useAssetRecentDecisions({ assetId, limit: 25 })
 
-  if (isLoading) return <PanelSkeleton />
-  if (!ideas.length) {
-    return <EmptyPanel icon={TrendingUp} message="Nothing in flight on this name." />
+  if (isLoading || decisionsLoading) return <PanelSkeleton />
+  if (!ideas.length && !decisions.length) {
+    return <EmptyPanel icon={TrendingUp} message="Nothing proposed or decided on this name." />
   }
 
+  return (
+    <div className="space-y-4">
+      {ideas.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            In flight · {ideas.length}
+          </h2>
+          <InFlightList ideas={ideas} onNavigate={onNavigate} />
+        </div>
+      )}
+
+      {decisions.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            Decided · {decisions.length}
+          </h2>
+          <div className="space-y-2">
+            {decisions.map(d => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() =>
+                  onNavigate?.({ id: 'outcomes', title: 'Decision Outcomes', type: 'outcomes', data: null })
+                }
+                className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span
+                    className={clsx(
+                      'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide',
+                      DECISION_TONE(d.outcome, d.decision_outcome)
+                    )}
+                  >
+                    {getDecisionLabel(d.action, d.outcome, d.decision_outcome)}
+                  </span>
+                  {d.proposed_weight != null && (
+                    <span className="text-xs font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                      {d.proposed_weight}%
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-[11px] text-gray-400">
+                    {formatAsOf(d.outcome_at ?? d.decided_at ?? '')}
+                  </span>
+                </div>
+
+                {d.rationale && <ExpandableText text={d.rationale} lines={3} />}
+
+                <p className="mt-1.5 text-[11px] text-gray-400 truncate">
+                  {d.portfolio?.name ?? 'No portfolio'}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Rejected and deferred read differently from executed; colour says which. */
+function DECISION_TONE(outcome: string | null, decisionOutcome: string | null): string {
+  const v = outcome ?? decisionOutcome
+  if (v === 'rejected') return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+  if (v === 'deferred') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+  return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+}
+
+function InFlightList({
+  ideas,
+  onNavigate,
+}: {
+  ideas: ReturnType<typeof useAssetTradeIdeas>['ideas']
+  onNavigate?: (result: any) => void
+}) {
   return (
     <div className="space-y-2">
       {ideas.map(idea => (
@@ -144,12 +229,45 @@ function DecisionsPanel({
             )}
           </div>
 
+          {/* The card fetched urgency, shares, target price, conviction and
+              horizon and displayed none of them, so an idea with a full case
+              behind it read as a bare action and a stage. */}
+          {(idea.target_price != null ||
+            idea.proposed_shares != null ||
+            idea.conviction ||
+            idea.time_horizon ||
+            idea.urgency) && (
+            <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+              {idea.target_price != null && (
+                <span>
+                  Target{' '}
+                  <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                    ${Number(idea.target_price).toFixed(2)}
+                  </span>
+                </span>
+              )}
+              {idea.proposed_shares != null && (
+                <span className="tabular-nums">
+                  {Number(idea.proposed_shares).toLocaleString()} sh
+                </span>
+              )}
+              {idea.conviction && <span className="capitalize">{idea.conviction} conviction</span>}
+              {idea.time_horizon && <span>{idea.time_horizon.replace(/_/g, ' ')}</span>}
+              {idea.urgency && idea.urgency !== 'medium' && (
+                <span className="capitalize font-medium text-amber-600 dark:text-amber-400">
+                  {idea.urgency} urgency
+                </span>
+              )}
+            </div>
+          )}
+
           {idea.rationale && <ExpandableText text={idea.rationale} lines={3} />}
 
           <p className="mt-1.5 text-[11px] text-gray-400 truncate">
             {idea.portfolio?.name ?? 'No portfolio'}
             {idea.creator &&
               ` · ${[idea.creator.first_name, idea.creator.last_name].filter(Boolean).join(' ')}`}
+            {` · ${formatAsOf(idea.updated_at)}`}
           </p>
         </button>
       ))}

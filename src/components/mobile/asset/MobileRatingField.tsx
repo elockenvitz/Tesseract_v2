@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
+import { Check, X } from 'lucide-react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useAnalystRatings, useRatingScales, type ConvictionLevel } from '../../../hooks/useAnalystRatings'
 
@@ -34,7 +35,16 @@ export function MobileRatingField({
   const { ratings, myRating, consensus, isLoading, saveRating } = useAnalystRatings({ assetId })
   const { scales } = useRatingScales()
 
-  const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
+  // Firm view is the aggregate of everyone's ratings and is read-only; a rating
+  // set from it would have no author. Editing lives in "My view".
+  const isFirmView = viewFilter === 'aggregated'
+  const canEdit = !!user && viewFilter === user.id
+
+  // A rating is the most consequential single tap in the case — it is the
+  // firm's published stance on the name — and it was previously committed the
+  // instant a button was pressed, with no way back. Selecting now stages the
+  // change and a second, explicit tap commits it.
+  const [pending, setPending] = useState<string | null>(null)
 
   // The scale comes from the organisation's configuration, not from whatever
   // rating happens to exist. Deriving it from existing ratings meant an asset
@@ -50,7 +60,13 @@ export function MobileRatingField({
     }
   }, [ratings, scales])
 
-  const shown = viewFilter === 'aggregated' ? null : ratings.find(r => r.user_id === viewFilter)
+  const shown = isFirmView ? null : ratings.find(r => r.user_id === viewFilter)
+
+  /** The most-held rating, which is what the firm view leads with. */
+  const topConsensus = useMemo(
+    () => [...consensus].sort((a, b) => b.count - a.count)[0] ?? null,
+    [consensus]
+  )
 
   if (isLoading) {
     return <div className="h-24 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
@@ -58,12 +74,14 @@ export function MobileRatingField({
 
   return (
     <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-        <h3 className="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+      {/* Title wraps rather than truncating: template field names run long and
+          the count badge was clipping them. */}
+      <div className="flex items-start gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+        <h3 className="flex-1 min-w-0 text-sm font-semibold leading-snug text-gray-900 dark:text-gray-100">
           {title}
         </h3>
         {ratings.length > 0 && (
-          <span className="shrink-0 text-[11px] text-gray-400">
+          <span className="mt-0.5 shrink-0 text-[11px] text-gray-400">
             {ratings.length} {ratings.length === 1 ? 'analyst' : 'analysts'}
           </span>
         )}
@@ -76,36 +94,67 @@ export function MobileRatingField({
           <p className="text-sm text-gray-400">
             No rating scale is configured for your organisation yet.
           </p>
-        ) : isOwnView ? (
+        ) : canEdit ? (
           <>
             <div className="flex flex-wrap gap-1.5">
               {scale.values.map(v => {
                 const active = myRating?.rating_value === v.value
+                const staged = pending === v.value
                 return (
                   <button
                     key={v.value}
                     type="button"
                     disabled={saveRating.isPending}
-                    onClick={() =>
-                      saveRating.mutate({
-                        ratingValue: v.value,
-                        ratingScaleId: scale.id!,
-                        conviction: myRating?.conviction ?? null,
-                      })
-                    }
+                    onClick={() => setPending(active ? null : v.value)}
                     className={clsx(
                       'px-3 h-9 rounded-lg text-sm font-semibold border transition-colors no-touch-target disabled:opacity-50',
-                      active
-                        ? 'border-transparent text-white'
-                        : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800'
+                      staged
+                        ? 'border-primary-500 border-dashed text-primary-700 bg-primary-50 dark:text-primary-300 dark:bg-primary-900/30'
+                        : active
+                          ? 'border-transparent text-white'
+                          : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800'
                     )}
-                    style={active && v.color ? { backgroundColor: v.color } : undefined}
+                    style={active && !staged && v.color ? { backgroundColor: v.color } : undefined}
                   >
                     {v.label}
                   </button>
                 )
               })}
             </div>
+
+            {pending && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-primary-200 dark:border-primary-900/50 bg-primary-50 dark:bg-primary-900/20 px-2.5 py-2">
+                <span className="flex-1 min-w-0 text-[12px] text-primary-900 dark:text-primary-200">
+                  {myRating
+                    ? `Change rating to ${labelFor(pending, scale.values)}?`
+                    : `Set rating to ${labelFor(pending, scale.values)}?`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPending(null)}
+                  className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg text-gray-500 no-touch-target"
+                  aria-label="Cancel rating change"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={saveRating.isPending}
+                  onClick={() => {
+                    saveRating.mutate({
+                      ratingValue: pending,
+                      ratingScaleId: scale.id!,
+                      conviction: myRating?.conviction ?? null,
+                    })
+                    setPending(null)
+                  }}
+                  className="h-8 px-3 shrink-0 inline-flex items-center gap-1 rounded-lg bg-primary-600 text-white text-[12px] font-semibold disabled:opacity-50 no-touch-target"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Confirm
+                </button>
+              </div>
+            )}
 
             {myRating && (
               <div className="mt-2.5 flex items-center gap-1.5">
@@ -137,6 +186,23 @@ export function MobileRatingField({
               </div>
             )}
           </>
+        ) : isFirmView ? (
+          // The firm's stance is the most-held rating, not a blank. Routing the
+          // firm view down the single-analyst branch printed "No rating from
+          // this analyst" over a name the whole desk had rated.
+          consensus.length > 0 ? (
+            <div className="flex items-baseline gap-2">
+              <span className="text-lg font-bold text-gray-900 dark:text-white">
+                {labelFor(topConsensus!.value, scale.values)}
+              </span>
+              <span className="text-xs text-gray-500">
+                {topConsensus!.count} of {ratings.length}
+              </span>
+              <span className="ml-auto text-[11px] text-gray-400">Firm view · read-only</span>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">Nobody has rated this name yet.</p>
+          )
         ) : shown ? (
           <div className="flex items-baseline gap-2">
             <span className="text-lg font-bold text-gray-900 dark:text-white">
@@ -150,7 +216,7 @@ export function MobileRatingField({
           <p className="text-sm text-gray-400">No rating from this analyst.</p>
         )}
 
-        {viewFilter === 'aggregated' && consensus.length > 0 && (
+        {isFirmView && consensus.length > 0 && (
           <div className="mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-800 space-y-1">
             {consensus.map(c => (
               <div key={c.value} className="flex items-center gap-2">

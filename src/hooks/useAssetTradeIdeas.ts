@@ -17,6 +17,10 @@ export interface AssetTradeIdea {
   urgency: string
   proposed_weight: number | null
   proposed_shares: number | null
+  /** The price the idea is argued to, distinct from any analyst price target. */
+  target_price: number | null
+  conviction: string | null
+  time_horizon: string | null
   created_by: string | null
   updated_at: string
   portfolio: { id: string; name: string } | null
@@ -42,6 +46,9 @@ export function useAssetTradeIdeas({ assetId, limit = 5 }: UseAssetTradeIdeasOpt
           urgency,
           proposed_weight,
           proposed_shares,
+          target_price,
+          conviction,
+          time_horizon,
           created_by,
           updated_at,
           portfolios:portfolio_id (id, name),
@@ -63,6 +70,9 @@ export function useAssetTradeIdeas({ assetId, limit = 5 }: UseAssetTradeIdeasOpt
         urgency: row.urgency,
         proposed_weight: row.proposed_weight,
         proposed_shares: row.proposed_shares,
+        target_price: row.target_price,
+        conviction: row.conviction,
+        time_horizon: row.time_horizon,
         created_by: row.created_by,
         updated_at: row.updated_at,
         portfolio: row.portfolios || null,

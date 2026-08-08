@@ -57,14 +57,21 @@ export function CaseFieldHistory({ contributionId }: CaseFieldHistoryProps) {
 function Diff({ before, after }: { before: string | null; after: string }) {
   const parts = useMemo(() => diffWords(before ?? '', after), [before, after])
 
+  // Case prose is authored in markdown, so a revision is usually a bulleted
+  // list. Rendered into a plain <p> the browser collapsed every newline and the
+  // list arrived as one run-on paragraph with literal "-" scattered through it.
+  // Whitespace is preserved and list markers are drawn as bullets, so a diff of
+  // a list still reads as a list.
+  const BODY = 'text-[13px] leading-relaxed text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words'
+
   // A first draft has nothing to compare against; showing every word as an
   // addition is noise, so it reads as plain new text.
   if (!before) {
-    return <p className="text-[13px] leading-relaxed text-gray-700 dark:text-gray-300">{after}</p>
+    return <p className={BODY}>{prettifyMarkers(after)}</p>
   }
 
   return (
-    <p className="text-[13px] leading-relaxed text-gray-700 dark:text-gray-300">
+    <p className={BODY}>
       {parts.map((part, i) => (
         <span
           key={i}
@@ -73,11 +80,27 @@ function Diff({ before, after }: { before: string | null; after: string }) {
             part.kind === 'removed' && 'bg-red-100 text-red-900 line-through dark:bg-red-900/40 dark:text-red-200'
           )}
         >
-          {part.text}
+          {prettifyMarkers(part.text)}
         </span>
       ))}
     </p>
   )
+}
+
+/**
+ * Markdown list markers as bullets, and emphasis markers dropped.
+ *
+ * The diff is word-level over the raw source, so it cannot be handed to a
+ * markdown renderer without losing the added/removed spans. Rewriting just the
+ * markers keeps the diff intact while making the text read as prose rather than
+ * as source. Ordered lists keep their numbers, which carry meaning.
+ */
+function prettifyMarkers(text: string): string {
+  return text
+    .replace(/(^|\n)[ \t]*[-*+][ \t]+/g, '$1• ')
+    .replace(/(^|\n)[ \t]*(#{1,6})[ \t]+/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/(^|[^*])\*(?!\s)([^*\n]+?)\*/g, '$1$2')
 }
 
 type DiffPart = { kind: 'same' | 'added' | 'removed'; text: string }

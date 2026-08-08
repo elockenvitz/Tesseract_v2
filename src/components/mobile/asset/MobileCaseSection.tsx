@@ -70,8 +70,15 @@ export function MobileCaseSection({
     return viewFilter === 'aggregated' || c.created_by === viewFilter
   })
 
-  // Reading someone else's view means reading theirs, not editing yours.
-  const isOwnView = viewFilter === 'aggregated' || viewFilter === user?.id
+  // Firm view is the summary of everyone's work, so it is read-only: an edit
+  // made from it has no unambiguous author and would silently be attributed to
+  // whoever happened to be looking. Editing lives in "My view", which is one
+  // tap away in the picker above. Only your own view is writable — reading
+  // someone else's means reading theirs, not editing yours.
+  const isFirmView = viewFilter === 'aggregated'
+  const canEdit = !!user && viewFilter === user.id
+  // Your own prose still appears on the firm view; it is part of the summary.
+  const showsMine = isFirmView || viewFilter === user?.id
 
   const [editing, setEditing] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -142,40 +149,57 @@ export function MobileCaseSection({
 
   return (
     <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-        <h3 className="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-          {title}
-        </h3>
-        {isOwnView && hasDraft && !editing && (
-          <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-            Draft
-          </span>
-        )}
-        {!editing && myContribution && (
-          <button
-            type="button"
-            onClick={() => setShowHistory(v => !v)}
-            aria-expanded={showHistory}
-            className={clsx(
-              'shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold no-touch-target',
-              showHistory
-                ? 'text-primary-700 bg-primary-50 dark:text-primary-300 dark:bg-primary-900/30'
-                : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
+      {/* Title and actions are separate rows rather than one. Field names come
+          from the organisation's template and run long ("Where we are different
+          from consensus"); sharing a row with two buttons truncated most of
+          them to a few words, which is exactly the part that identifies the
+          field. The title now wraps and the actions sit under it. */}
+      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-start gap-2">
+          <h3 className="flex-1 min-w-0 text-sm font-semibold leading-snug text-gray-900 dark:text-gray-100">
+            {title}
+          </h3>
+          {canEdit && hasDraft && !editing && (
+            <span className="mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              Draft
+            </span>
+          )}
+        </div>
+
+        {!editing && (myContribution || canEdit) && (
+          <div className="mt-1.5 flex items-center gap-1">
+            {myContribution && (
+              <button
+                type="button"
+                onClick={() => setShowHistory(v => !v)}
+                aria-expanded={showHistory}
+                className={clsx(
+                  'inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold no-touch-target',
+                  showHistory
+                    ? 'text-primary-700 bg-primary-50 dark:text-primary-300 dark:bg-primary-900/30'
+                    : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
+                )}
+              >
+                <History className="h-3.5 w-3.5" />
+                Changes
+              </button>
             )}
-          >
-            <History className="h-3.5 w-3.5" />
-            Changes
-          </button>
-        )}
-        {!editing && user && isOwnView && (
-          <button
-            type="button"
-            onClick={beginEdit}
-            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-primary-600 dark:text-primary-400 active:bg-primary-50 dark:active:bg-primary-900/30 no-touch-target"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            {published || draft ? 'Edit' : 'Add'}
-          </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={beginEdit}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-primary-600 dark:text-primary-400 active:bg-primary-50 dark:active:bg-primary-900/30 no-touch-target"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {published || draft ? 'Edit' : 'Add'}
+              </button>
+            )}
+            {isFirmView && (
+              <span className="ml-auto text-[11px] text-gray-400">
+                Firm view · read-only
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -219,7 +243,7 @@ export function MobileCaseSection({
           <div className="h-4 w-2/3 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
         ) : (
           <>
-            {isOwnView && hasDraft && (
+            {canEdit && hasDraft && (
               <div className="mb-2 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
@@ -237,7 +261,7 @@ export function MobileCaseSection({
               </div>
             )}
 
-            {isOwnView && published ? (
+            {showsMine && published ? (
               <ExpandableText text={published} lines={6} markdown />
             ) : !hasDraft && otherContributions.length === 0 ? (
               <p className="text-sm text-gray-400 dark:text-gray-500">{emptyHint}</p>
@@ -252,7 +276,7 @@ export function MobileCaseSection({
             {otherContributions.length > 0 && (
               <div className={clsx(
                 'space-y-3',
-                (isOwnView && (published || hasDraft)) &&
+                (showsMine && (published || hasDraft)) &&
                   'mt-3 pt-3 border-t border-gray-100 dark:border-gray-800'
               )}>
                 {otherContributions.map(c => (
