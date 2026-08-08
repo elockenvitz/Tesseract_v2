@@ -5345,7 +5345,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             <h1 className="hidden sm:block text-lg font-semibold text-gray-900 dark:text-white">
               {isSharedView ? 'Shared Simulation' : 'Trade Lab'}
             </h1>
-            <OrgBadge />
+            <span className="hidden sm:inline-flex"><OrgBadge /></span>
             {isSharedView && sharedSimData && (
               <>
                 <span className="text-gray-300 dark:text-gray-600">|</span>
@@ -5354,11 +5354,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             )}
             {!isSharedView && <span className="text-gray-300 dark:text-gray-600">|</span>}
             {/* Portfolio Selector - Searchable Dropdown — hidden in shared view */}
-            {!isSharedView && <div className="relative" ref={portfolioDropdownRef}>
+            {!isSharedView && <div className="relative flex-1 min-w-0 sm:flex-none" ref={portfolioDropdownRef}>
               <button
                 onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
                 className={clsx(
-                  "flex items-center gap-2 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors min-w-[200px]",
+                  "flex items-center gap-2 px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors w-full sm:w-auto sm:min-w-[200px]",
                   portfolioDropdownOpen
                     ? "border-primary-500 ring-2 ring-primary-500/20"
                     : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
@@ -5481,8 +5481,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     : 'Save a snapshot of this simulation'
                 }
               >
-                <FileText className="h-4 w-4 mr-1.5" />
-                Save Snapshot
+                <FileText className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Save Snapshot</span>
+                <span className="sr-only sm:hidden">Save Snapshot</span>
               </Button>
             )}
             {/* Exit shared view button */}
@@ -5813,6 +5814,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
 
                 {showIdeasPanel && isMobileViewport && (
                   <MobileIdeasDrawer
+                    currentPortfolioId={selectedPortfolioId}
                     items={[...filteredItems.ideas] as any}
                     proposals={filteredItems.proposals as any}
                     search={leftPaneSearch}
