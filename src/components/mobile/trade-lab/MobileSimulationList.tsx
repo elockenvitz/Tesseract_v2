@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { AlertTriangle, ArrowDownUp, Lock, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp, Layers, Lock, Plus, Search, X } from 'lucide-react'
 import type { SimulationRow, SimulationRowSummary } from '../../../hooks/useSimulationRows'
+import { useAssetGroupingMeta } from '../../../hooks/useAssetGroupingMeta'
 import type { TradeAction } from '../../../types/trading'
 import { BottomSheet } from '../BottomSheet'
 import { MobileSizingSheet } from './MobileSizingSheet'
@@ -20,35 +21,29 @@ interface MobileSimulationListProps {
   onAddPosition?: () => void
 }
 
-type Filter = 'all' | 'changed' | 'new'
-
-/**
- * Named for what the list contains, not for a state a position is in.
- * "Trading / All positions / New" made the reader work out that the first was a
- * subset of the second, and defaulting to it showed an empty screen on any lab
- * where nothing had been sized yet.
- */
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'Holdings' },
-  { key: 'changed', label: 'Changed' },
-  { key: 'new', label: 'New' },
-]
-
 /**
  * Which measure the numeric columns are expressed in.
  *
- * All eleven desktop columns at once means ~11 columns of horizontal travel to
- * reach the deltas, and the deltas are what you look at. Splitting by measure
- * keeps the shape that matters — Now / Sim / Δ — and drops the count to four or
- * seven, which fits a phone without dragging. Nothing is lost; the same figures
- * are one tap away instead of one scroll.
+ * All eleven desktop columns at once means roughly eleven columns of horizontal
+ * travel to reach the deltas, and the deltas are what you look at. Splitting by
+ * measure keeps the shape that matters — Now / Sim / Δ — and drops the count to
+ * three or six, which fits without dragging.
  */
 type Measure = 'weight' | 'shares' | 'value'
 
 const MEASURES: { key: Measure; label: string }[] = [
   { key: 'weight', label: 'Weight' },
   { key: 'shares', label: 'Shares' },
-  { key: 'value', label: 'Dollars' },
+  { key: 'value', label: '$' },
+]
+
+type GroupBy = 'none' | 'sector' | 'country' | 'industry'
+
+const GROUPS: { key: GroupBy; label: string }[] = [
+  { key: 'none', label: 'No grouping' },
+  { key: 'sector', label: 'Sector' },
+  { key: 'country', label: 'Country' },
+  { key: 'industry', label: 'Industry' },
 ]
 
 interface Col {
@@ -57,10 +52,12 @@ interface Col {
   /** Simulated columns are tinted so "what it becomes" reads as a group. */
   accent?: boolean
   strong?: boolean
-  /** Rendered as an em dash on rows with no sizing, rather than repeating the
-   *  current figure under a simulated heading. */
+  /** Em dash on rows with no sizing, rather than repeating the current figure
+   *  under a simulated heading. */
   simOnly?: boolean
   value: (r: SimulationRow) => string
+  /** Sort key. Absent means the column is not sortable. */
+  sortBy?: (r: SimulationRow) => number | string
   tone?: (r: SimulationRow) => 'up' | 'down' | undefined
 }
 
@@ -70,86 +67,71 @@ const signTone = (n: number | null | undefined) =>
 /** Current market value of the position; the baseline carries it directly. */
 const curValue = (r: SimulationRow) => r.baseline?.value ?? 0
 
-function columnsFor(measure: Measure, hasBenchmark: boolean): Col[] {
+function columnsFor(measure: Measure): Col[] {
   if (measure === 'shares') {
     return [
-      { key: 'shs', label: 'Shares', value: r => fmtShares(r.currentShares) },
-      { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => fmtShares(r.simShares) },
-      { key: 'd', label: 'Δ Shares', simOnly: true, value: r => signedShares(r.deltaShares), tone: r => signTone(r.deltaShares) },
+      { key: 'shs', label: 'Shares', value: r => fmtShares(r.currentShares), sortBy: r => r.currentShares },
+      { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => fmtShares(r.simShares), sortBy: r => r.simShares },
+      { key: 'd', label: 'Δ Shs', simOnly: true, value: r => signedShares(r.deltaShares), sortBy: r => Math.abs(r.deltaShares), tone: r => signTone(r.deltaShares) },
     ]
   }
   if (measure === 'value') {
     return [
-      { key: 'val', label: 'Value', value: r => formatCompactUsd(curValue(r)) },
-      { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => formatCompactUsd(r.simNotional) },
+      { key: 'val', label: 'Value', value: r => formatCompactUsd(curValue(r)), sortBy: r => curValue(r) },
+      { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => formatCompactUsd(r.simNotional), sortBy: r => r.simNotional },
       {
         key: 'd', label: 'Δ $', simOnly: true,
         value: r => `${r.notional >= 0 ? '+' : '−'}${formatCompactUsd(Math.abs(r.notional))}`,
+        sortBy: r => Math.abs(r.notional),
         tone: r => signTone(r.notional),
       },
     ]
   }
   // Weight. Benchmark and active live here because they are weight-space
-  // figures — a share count has no benchmark to be active against.
-  const cols: Col[] = [
-    { key: 'wt', label: 'Wt%', value: r => r.currentWeight.toFixed(2) },
-    { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => r.simWeight.toFixed(2) },
-    { key: 'd', label: 'Δ Wt', simOnly: true, value: r => signed(r.deltaWeight, 2), tone: r => signTone(r.deltaWeight) },
+  // figures — a share count has no benchmark to be active against. They are
+  // shown whether or not a benchmark is configured: an em-dash column says
+  // "no benchmark on this portfolio", where a hidden one says nothing at all.
+  return [
+    { key: 'wt', label: 'Wt%', value: r => r.currentWeight.toFixed(2), sortBy: r => r.currentWeight },
+    { key: 'sim', label: 'Sim', accent: true, strong: true, simOnly: true, value: r => r.simWeight.toFixed(2), sortBy: r => r.simWeight },
+    { key: 'd', label: 'Δ Wt', simOnly: true, value: r => signed(r.deltaWeight, 2), sortBy: r => Math.abs(r.deltaWeight), tone: r => signTone(r.deltaWeight) },
+    { key: 'bench', label: 'Bench', value: r => (r.benchWeight != null ? r.benchWeight.toFixed(2) : '—'), sortBy: r => r.benchWeight ?? -Infinity },
+    {
+      key: 'act', label: 'Act',
+      value: r => (r.activeWeight != null ? signed(r.activeWeight, 2) : '—'),
+      sortBy: r => r.activeWeight ?? -Infinity,
+      tone: r => signTone(r.activeWeight),
+    },
+    {
+      key: 'simact', label: 'Sim Act', accent: true, strong: true, simOnly: true,
+      value: r => (r.benchWeight != null ? signed(r.simWeight - r.benchWeight, 2) : '—'),
+      sortBy: r => (r.benchWeight != null ? r.simWeight - r.benchWeight : -Infinity),
+      tone: r => (r.benchWeight != null ? signTone(r.simWeight - r.benchWeight) : undefined),
+    },
   ]
-  if (hasBenchmark) {
-    cols.push(
-      { key: 'bench', label: 'Bench', value: r => (r.benchWeight != null ? r.benchWeight.toFixed(2) : '—') },
-      {
-        key: 'act', label: 'Act',
-        value: r => (r.activeWeight != null ? signed(r.activeWeight, 2) : '—'),
-        tone: r => signTone(r.activeWeight),
-      },
-      {
-        key: 'simact', label: 'Sim Act', accent: true, strong: true, simOnly: true,
-        value: r => (r.benchWeight != null ? signed(r.simWeight - r.benchWeight, 2) : '—'),
-        tone: r => (r.benchWeight != null ? signTone(r.simWeight - r.benchWeight) : undefined),
-      },
-    )
-  }
-  return cols
 }
 
 /**
- * The desktop sorts by clicking a column header. These headers are too narrow
- * to carry a sort affordance as well as a label, so the sort is its own control.
- */
-type Sort = 'weight' | 'delta' | 'active' | 'symbol'
-
-const SORTS: { key: Sort; label: string }[] = [
-  { key: 'weight', label: 'Weight' },
-  { key: 'delta', label: 'Change' },
-  { key: 'active', label: 'Active' },
-  { key: 'symbol', label: 'Symbol' },
-]
-
-/**
- * The holdings simulation, as a table, on a phone.
+ * The holdings simulation table, on a phone.
  *
- * An earlier version stacked each position's figures into labelled rows. That
- * made one position legible on its own and made comparing twenty of them
- * impossible — which is the entire job of a simulation table. It is a table
- * again.
+ * The chrome above it was five bands deep — a summary card, a Holdings/Changed/
+ * New filter, a search field, a sort control and a measure toggle — which left
+ * the table itself a third of the screen. Most of it was redundant. The filter
+ * duplicated a distinction the Simulation/Impact/Trades tabs already draw, and
+ * "changed" is what sorting by Δ tells you. The sort control existed only
+ * because the headers were not clickable, which is where a table's sort belongs.
  *
- * What makes a wide table work on a narrow screen is not fewer columns, it is
- * anchoring: the symbol column is frozen to the left and the header row is
- * stuck to the top, so you drag the numbers sideways and both the name of the
- * row and the name of the column stay on screen. Nothing is hidden, nothing is
- * behind a mode, and the column order matches the desktop board so the same
- * figures sit in the same relative places.
+ * What is left is one toolbar row and a one-line summary. Sorting is by tapping
+ * a column header, grouping and search are behind icons, and the measure toggle
+ * stays because it is the thing that decides what the table is about.
  *
- * Editing is the one thing that does not happen in the grid: a cell at this
- * width cannot hold a text field plus a keyboard without covering the numbers
- * the edit is being judged against. Tapping a row opens the sizing sheet, where
- * the before/after has room to be shown.
+ * The symbol column is frozen and the header row is sticky, which is what makes
+ * a wide table usable on a narrow screen: the numbers move, the name of the row
+ * and the name of the column do not.
  *
  * Every write goes back through the props the desktop table already receives,
  * so the sync, convergence and ordering machinery in SimulationPage is
- * untouched and both surfaces stay one implementation deep.
+ * untouched.
  */
 export function MobileSimulationList({
   rows,
@@ -162,39 +144,70 @@ export function MobileSimulationList({
   onDeleteVariant,
   onAddPosition,
 }: MobileSimulationListProps) {
-  const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
-  const [sort, setSort] = useState<Sort>('weight')
-  const [sortOpen, setSortOpen] = useState(false)
   const [measure, setMeasure] = useState<Measure>('weight')
+  const [groupBy, setGroupBy] = useState<GroupBy>('none')
+  const [groupOpen, setGroupOpen] = useState(false)
+  const [sortKey, setSortKey] = useState<string>('wt')
+  const [sortDesc, setSortDesc] = useState(true)
 
-  const cols = useMemo(() => columnsFor(measure, hasBenchmark), [measure, hasBenchmark])
+  const cols = useMemo(() => columnsFor(measure), [measure])
+
+  const assetIds = useMemo(() => rows.filter(r => !r.isCash).map(r => r.asset_id), [rows])
+  // Only fetched when a grouping actually needs a field the row does not carry.
+  const { data: meta } = useAssetGroupingMeta(
+    groupBy === 'country' || groupBy === 'industry' ? assetIds : []
+  )
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return rows.filter(r => {
       if (r.isCash) return false
-      if (filter === 'changed' && !r.variant?.sizing_input) return false
-      if (filter === 'new' && !r.isNew) return false
       if (q && !`${r.symbol} ${r.company_name}`.toLowerCase().includes(q)) return false
       return true
     })
-  }, [rows, filter, search])
+  }, [rows, search])
 
   const sorted = useMemo(() => {
     const list = [...visible]
-    switch (sort) {
-      case 'symbol':
-        return list.sort((a, b) => a.symbol.localeCompare(b.symbol))
-      case 'delta':
-        return list.sort((a, b) => Math.abs(b.deltaWeight) - Math.abs(a.deltaWeight))
-      case 'active':
-        return list.sort((a, b) => Math.abs(b.activeWeight ?? 0) - Math.abs(a.activeWeight ?? 0))
-      default:
-        return list.sort((a, b) => b.simWeight - a.simWeight)
+    if (sortKey === 'symbol') {
+      list.sort((a, b) => a.symbol.localeCompare(b.symbol))
+    } else {
+      const col = cols.find(c => c.key === sortKey)
+      const get = col?.sortBy
+      if (get) {
+        list.sort((a, b) => {
+          const av = get(a)
+          const bv = get(b)
+          return typeof av === 'string' || typeof bv === 'string'
+            ? String(av).localeCompare(String(bv))
+            : (av as number) - (bv as number)
+        })
+      }
     }
-  }, [visible, sort])
+    return sortDesc ? list.reverse() : list
+  }, [visible, sortKey, sortDesc, cols])
+
+  /** Rows under their group heading, or a single unnamed group. */
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return [{ name: null as string | null, rows: sorted }]
+    const buckets = new Map<string, SimulationRow[]>()
+    for (const r of sorted) {
+      const name =
+        groupBy === 'sector'
+          ? r.sector || 'Unclassified'
+          : (meta?.[r.asset_id]?.[groupBy] ?? null) || 'Unclassified'
+      if (!buckets.has(name)) buckets.set(name, [])
+      buckets.get(name)!.push(r)
+    }
+    // Largest group first — a sector holding a third of the book should not sit
+    // below one holding a single name because of alphabetical order.
+    return [...buckets.entries()]
+      .map(([name, rs]) => ({ name, rows: rs }))
+      .sort((a, b) => b.rows.length - a.rows.length)
+  }, [sorted, groupBy, meta])
 
   // Resolved from `rows` rather than captured: the row is recomputed on every
   // variant change, and a captured copy would show the sheet the pre-edit
@@ -207,146 +220,159 @@ export function MobileSimulationList({
     setEditing(row.asset_id)
   }
 
+  const toggleSort = (key: string) => {
+    if (sortKey === key) setSortDesc(d => !d)
+    else {
+      setSortKey(key)
+      setSortDesc(true)
+    }
+  }
+
+  const colCount = 1 + cols.length
+
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
-      {/* What this simulation does, in three numbers. On the desktop these are
-          a table footer; a footer is a scroll away from what it summarises and
-          is the first question, not the last. */}
-      <div className="flex-shrink-0 px-3 pt-3">
-        <div className="grid grid-cols-3 gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
-          <Stat label="Trades" value={String(summary.tradedCount)} />
-          <Stat
-            label="Net Δ wt"
-            value={`${summary.netDeltaWeight >= 0 ? '+' : ''}${summary.netDeltaWeight.toFixed(2)}%`}
-            tone={summary.netDeltaWeight >= 0 ? 'up' : 'down'}
-          />
-          <Stat label="Turnover" value={formatCompactUsd(Math.abs(summary.totalNotional))} />
-        </div>
-
+      {/* One line, not a card. Four figures do not need 64px and a border. */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+        <span className="tabular-nums">
+          <span className="font-semibold text-gray-900 dark:text-white">{summary.tradedCount}</span> trades
+        </span>
+        <span className="text-gray-300">·</span>
+        <span
+          className={clsx(
+            'tabular-nums font-semibold',
+            summary.netDeltaWeight >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-red-600 dark:text-red-400'
+          )}
+        >
+          {summary.netDeltaWeight >= 0 ? '+' : ''}
+          {summary.netDeltaWeight.toFixed(2)}%
+        </span>
+        <span className="text-gray-300">·</span>
+        <span className="tabular-nums">{formatCompactUsd(Math.abs(summary.totalNotional))}</span>
         {summary.conflictCount > 0 && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <p className="text-[12px] text-amber-800 dark:text-amber-200">
-              {summary.conflictCount} {summary.conflictCount === 1 ? 'position conflicts' : 'positions conflict'} with the idea behind them.
-            </p>
-          </div>
+          <span className="ml-auto inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="h-3 w-3" />
+            {summary.conflictCount}
+          </span>
         )}
       </div>
 
-      <div className="flex-shrink-0 px-3 pt-2 pb-2 space-y-2">
-        <div className="flex gap-1">
-          {FILTERS.map(f => {
-            const count = rows.filter(r => {
-              if (r.isCash) return false
-              if (f.key === 'changed') return !!r.variant?.sizing_input
-              if (f.key === 'new') return r.isNew
-              return true
-            }).length
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                aria-current={filter === f.key}
-                className={clsx(
-                  'flex-1 h-9 rounded-lg text-sm font-medium transition-colors no-touch-target',
-                  filter === f.key
-                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-                    : 'text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-800'
-                )}
-              >
-                {f.label}
-                <span className="ml-1 text-[11px] tabular-nums opacity-70">{count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="flex items-center gap-1.5">
+      {/* The only toolbar. Measure decides what the table is about; grouping and
+          search are occasional, so they are icons. */}
+      <div className="flex-shrink-0 flex items-center gap-1.5 px-3 pb-2">
+        {searchOpen ? (
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
+              autoFocus
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Find a position"
               className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-gray-400"
-                aria-label="Clear"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setSortOpen(true)}
-            className="shrink-0 h-9 px-2.5 inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 text-[12px] font-medium text-gray-600 dark:text-gray-300 no-touch-target"
-          >
-            <ArrowDownUp className="h-3.5 w-3.5" />
-            {SORTS.find(x => x.key === sort)?.label}
-          </button>
-        </div>
-
-        {/* Which measure the columns speak in. Sits directly above the table it
-            governs, so the relationship needs no explaining. */}
-        <div className="flex items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800">
-          {MEASURES.map(m => (
             <button
-              key={m.key}
               type="button"
-              onClick={() => setMeasure(m.key)}
-              aria-current={measure === m.key}
+              onClick={() => { setSearch(''); setSearchOpen(false) }}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-gray-400"
+              aria-label="Close search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-1 min-w-0 items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800">
+              {MEASURES.map(m => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => {
+                    setMeasure(m.key)
+                    // The old sort key belongs to columns that no longer exist.
+                    setSortKey(m.key === 'weight' ? 'wt' : m.key === 'shares' ? 'shs' : 'val')
+                    setSortDesc(true)
+                  }}
+                  aria-current={measure === m.key}
+                  className={clsx(
+                    'flex-1 h-8 rounded-md text-[12px] font-semibold transition-colors no-touch-target',
+                    measure === m.key
+                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400'
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setGroupOpen(true)}
+              aria-label="Group positions"
               className={clsx(
-                'flex-1 h-8 rounded-md text-[12px] font-semibold transition-colors no-touch-target',
-                measure === m.key
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400'
+                'shrink-0 h-9 px-2.5 inline-flex items-center gap-1 rounded-lg border text-[12px] font-medium no-touch-target',
+                groupBy === 'none'
+                  ? 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'
+                  : 'border-primary-300 dark:border-primary-800 text-primary-700 dark:text-primary-300'
               )}
             >
-              {m.label}
+              <Layers className="h-3.5 w-3.5" />
+              {groupBy !== 'none' && GROUPS.find(g => g.key === groupBy)?.label}
             </button>
-          ))}
-        </div>
+
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Find a position"
+              className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 no-touch-target"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          </>
+        )}
       </div>
 
-      {/* The table. Frozen symbol column, sticky header, everything else scrolls
-          sideways as one. */}
       <div className="flex-1 min-h-0 overflow-auto overscroll-contain pb-24">
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 px-3 text-gray-400">
             <p className="text-sm text-center">
-              {search
-                ? 'No position matches that.'
-                : filter === 'changed'
-                  ? 'Nothing changed yet. Tap a holding to size it.'
-                  : filter === 'new'
-                    ? 'No new positions in this simulation.'
-                    : 'This portfolio has no holdings.'}
+              {search ? 'No position matches that.' : 'This portfolio has no holdings.'}
             </p>
           </div>
         ) : (
           <table className="w-max min-w-full border-separate border-spacing-0 text-[11px] tabular-nums">
             <thead>
               <tr>
-                <Th sticky>Sym</Th>
+                <Th
+                  sticky
+                  sorted={sortKey === 'symbol' ? (sortDesc ? 'desc' : 'asc') : undefined}
+                  onClick={() => toggleSort('symbol')}
+                >
+                  Sym
+                </Th>
                 {cols.map(c => (
-                  <Th key={c.key} accent={c.accent}>{c.label}</Th>
+                  <Th
+                    key={c.key}
+                    accent={c.accent}
+                    sorted={sortKey === c.key ? (sortDesc ? 'desc' : 'asc') : undefined}
+                    onClick={c.sortBy ? () => toggleSort(c.key) : undefined}
+                  >
+                    {c.label}
+                  </Th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {sorted.map((row, i) => (
-                <Row
-                  key={row.asset_id}
-                  row={row}
+              {groups.map(group => (
+                <GroupBlock
+                  key={group.name ?? '__all__'}
+                  name={group.name}
+                  rows={group.rows}
                   cols={cols}
-                  even={i % 2 === 1}
-                  onOpen={() => openRow(row)}
+                  colCount={colCount}
+                  onOpen={openRow}
                 />
               ))}
             </tbody>
@@ -365,24 +391,21 @@ export function MobileSimulationList({
         </button>
       )}
 
-      <BottomSheet open={sortOpen} onClose={() => setSortOpen(false)} title="Sort by" fitContent>
+      <BottomSheet open={groupOpen} onClose={() => setGroupOpen(false)} title="Group by" fitContent>
         <div className="px-3 pb-3 space-y-1">
-          {SORTS.map(o => (
+          {GROUPS.map(g => (
             <button
-              key={o.key}
+              key={g.key}
               type="button"
-              onClick={() => { setSort(o.key); setSortOpen(false) }}
+              onClick={() => { setGroupBy(g.key); setGroupOpen(false) }}
               className={clsx(
-                'w-full flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm no-touch-target',
-                sort === o.key
+                'w-full flex items-center rounded-xl px-3 py-3 text-left text-sm no-touch-target',
+                groupBy === g.key
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300 font-semibold'
                   : 'text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800'
               )}
             >
-              {o.label}
-              <span className="ml-auto text-[11px] text-gray-400">
-                {o.key === 'symbol' ? 'A–Z' : 'largest first'}
-              </span>
+              {g.label}
             </button>
           ))}
         </div>
@@ -412,54 +435,93 @@ export function MobileSimulationList({
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
+/**
+ * A group heading plus its rows.
+ *
+ * The heading spans the table and carries the group's share of the book, since
+ * "Technology" is only useful next to how much of the portfolio it is.
+ */
+function GroupBlock({
+  name, rows, cols, colCount, onOpen,
+}: {
+  name: string | null
+  rows: SimulationRow[]
+  cols: Col[]
+  colCount: number
+  onOpen: (r: SimulationRow) => void
+}) {
+  const weight = rows.reduce((s, r) => s + r.simWeight, 0)
+  const delta = rows.reduce((s, r) => s + r.deltaWeight, 0)
+
   return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</div>
-      <div
-        className={clsx(
-          'mt-0.5 text-base font-bold tabular-nums',
-          tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
-            : tone === 'down' ? 'text-red-600 dark:text-red-400'
-            : 'text-gray-900 dark:text-white'
-        )}
-      >
-        {value}
-      </div>
-    </div>
+    <>
+      {name && (
+        <tr>
+          <td
+            colSpan={colCount}
+            className="sticky left-0 px-2 py-1 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+          >
+            <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              {name}
+              <span className="tabular-nums text-gray-400">{weight.toFixed(1)}%</span>
+              {Math.abs(delta) >= 0.005 && (
+                <span
+                  className={clsx(
+                    'tabular-nums',
+                    delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                  )}
+                >
+                  {delta >= 0 ? '+' : ''}{delta.toFixed(2)}
+                </span>
+              )}
+              <span className="text-gray-400">{rows.length}</span>
+            </span>
+          </td>
+        </tr>
+      )}
+      {rows.map((row, i) => (
+        <Row key={row.asset_id} row={row} cols={cols} even={i % 2 === 1} onOpen={() => onOpen(row)} />
+      ))}
+    </>
   )
 }
 
-/** Header cell. `sticky` freezes the symbol column; `accent` marks simulated values. */
+/** Header cell. `sticky` freezes the symbol column; tapping sorts. */
 function Th({
-  children, sticky, accent,
+  children, sticky, accent, sorted, onClick,
 }: {
   children: React.ReactNode
   sticky?: boolean
   accent?: boolean
+  sorted?: 'asc' | 'desc'
+  onClick?: () => void
 }) {
   return (
     <th
+      onClick={onClick}
       className={clsx(
         'sticky top-0 whitespace-nowrap px-2 py-1.5 font-semibold uppercase tracking-wider text-[9px]',
         'bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700',
-        accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400',
+        onClick && 'cursor-pointer active:bg-gray-200 dark:active:bg-gray-700',
+        sorted ? 'text-gray-900 dark:text-white' : accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400',
         // The corner cell has to outrank both the sticky row and the sticky
-        // column, or the scrolling headers slide underneath or over it.
+        // column, or the scrolling headers slide over it.
         sticky ? 'left-0 z-30 text-left border-r border-gray-200 dark:border-gray-700' : 'z-20 text-right'
       )}
     >
-      {children}
+      <span className={clsx('inline-flex items-center gap-0.5', !sticky && 'justify-end')}>
+        {children}
+        {sorted === 'desc' && <ChevronDown className="h-2.5 w-2.5" />}
+        {sorted === 'asc' && <ChevronUp className="h-2.5 w-2.5" />}
+      </span>
     </th>
   )
 }
 
 /**
- * One position.
- *
- * The whole row is the tap target. There is no in-cell editing: a cell this
- * narrow cannot hold a text field and its keyboard without covering the numbers
- * the edit is being judged against.
+ * One position. The whole row is the tap target — a cell this narrow cannot
+ * hold a text field and its keyboard without covering the numbers the edit is
+ * being judged against, so editing happens in the sheet.
  */
 function Row({
   row, cols, even, onOpen,

@@ -5581,7 +5581,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                     )}
                   >
                     <BarChart3 className="h-3.5 w-3.5" />
-                    Portfolio Impact
+                    {/* "Portfolio Impact" alongside Simulation and Trades made one
+                        of three equal tabs twice the width of the others; the
+                        portfolio is already established by the picker above. */}
+                    <span className="sm:hidden">Impact</span>
+                    <span className="hidden sm:inline">Portfolio Impact</span>
                   </button>
                   <button
                     onClick={() => setImpactView('trades')}
