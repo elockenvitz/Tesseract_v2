@@ -18,7 +18,7 @@ import { supabase } from '../supabase'
 // Types
 // ============================================================
 
-export type SnapshotType = 'approval' | 'rejection' | 'cancellation'
+export type SnapshotType = 'approval' | 'rejection' | 'cancellation' | 'deferral'
 export type PriceSource = 'db_cached' | 'live_quote' | 'manual' | 'backfill'
 
 export interface DecisionPriceSnapshot {
@@ -68,6 +68,32 @@ export async function captureDecisionPriceSnapshot(params: {
   } = params
 
   try {
+    // Preserve-first types (deferral) must not be overwritten by a later
+    // occurrence of the same outcome. Checked before the price fetch so a
+    // repeat deferral costs one indexed lookup and nothing else.
+    if (snapshotTypePreservesFirst(snapshotType)) {
+      const { data: existingRow } = await supabase
+        .from('decision_price_snapshots')
+        .select('*')
+        .eq('trade_queue_item_id', tradeQueueItemId)
+        .eq('snapshot_type', snapshotType)
+        .maybeSingle()
+
+      // Cast through unknown: the generated client types resolve this table's
+      // row to `never`, same as everywhere else in this file.
+      const existing = existingRow as unknown as DecisionPriceSnapshot | null
+
+      if (existing) {
+        return {
+          success: true,
+          snapshot: {
+            ...existing,
+            snapshot_price: Number(existing.snapshot_price),
+          } as DecisionPriceSnapshot,
+        }
+      }
+    }
+
     // Get the price
     let price: number
     let priceSource: PriceSource
@@ -169,7 +195,7 @@ export async function fetchDecisionSnapshots(
 
 /**
  * Map a trade outcome to the appropriate snapshot type.
- * Returns null for outcomes that don't need a snapshot (e.g., deferred).
+ * Returns null for outcomes that carry no decision moment to anchor to.
  */
 export function outcomeToSnapshotType(outcome: string): SnapshotType | null {
   switch (outcome) {
@@ -178,8 +204,27 @@ export function outcomeToSnapshotType(outcome: string): SnapshotType | null {
       return 'approval'
     case 'rejected':
       return 'rejection'
-    // 'deferred' doesn't need a snapshot — the decision isn't terminal
+    case 'deferred':
+      // A deferral is not terminal, which is why it used to be skipped. But
+      // "we looked at it and didn't act" is exactly the case the idea ledger
+      // needs to score, and the price at that moment is unrecoverable later.
+      // Captured with preserveExisting so the FIRST pass stays the anchor.
+      return 'deferral'
     default:
       return null
   }
+}
+
+/**
+ * Whether a snapshot type should keep its original price rather than being
+ * overwritten when the same outcome is set again.
+ *
+ * Approvals want last-write-wins: if an idea is re-approved, the price that
+ * matters is the one at the commitment that actually stood. Passes want
+ * first-write-wins: an idea deferred three times should still be measured
+ * from the first time it was passed on, otherwise repeatedly revisiting a
+ * name silently resets its scorecard and flatters the record.
+ */
+export function snapshotTypePreservesFirst(snapshotType: SnapshotType): boolean {
+  return snapshotType === 'deferral'
 }
