@@ -160,6 +160,43 @@ export function MobileSizingSheet({
               </span>
             )}
           </div>
+
+          {/* Benchmark and active weight. Without these, sizing in active space
+              is a mode with nothing to aim at — you cannot see the gap you are
+              trying to close. */}
+          {hasBenchmark && row.benchWeight != null && (
+            <dl className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 grid grid-cols-3 gap-2">
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Bench</dt>
+                <dd className="text-[13px] tabular-nums text-gray-700 dark:text-gray-200">
+                  {row.benchWeight.toFixed(2)}%
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Active now</dt>
+                <dd className={clsx(
+                  'text-[13px] tabular-nums',
+                  (row.activeWeight ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                )}>
+                  {row.activeWeight != null ? `${row.activeWeight >= 0 ? '+' : ''}${row.activeWeight.toFixed(2)}%` : '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Active after</dt>
+                <dd className={clsx(
+                  'text-[13px] font-semibold tabular-nums',
+                  ((projected ?? row.simWeight) - row.benchWeight) >= 0
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-red-600 dark:text-red-400'
+                )}>
+                  {(() => {
+                    const a = (projected ?? row.simWeight) - row.benchWeight!
+                    return `${a >= 0 ? '+' : ''}${a.toFixed(2)}%`
+                  })()}
+                </dd>
+              </div>
+            </dl>
+          )}
         </div>
 
         {!readOnly && (
