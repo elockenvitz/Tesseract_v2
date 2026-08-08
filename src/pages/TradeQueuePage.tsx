@@ -54,6 +54,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useOrgMembers } from '../hooks/useOrgMembers'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { usePipelineItems } from '../hooks/usePipelineItems'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { Button } from '../components/ui/Button'
@@ -362,39 +363,9 @@ export function TradeQueuePage() {
   // populated by a BEFORE INSERT trigger for new rows, so this single
   // filter is sufficient — no LEFT JOIN gymnastics or per-row null
   // handling.
-  const { data: tradeItems, isLoading, error } = useQuery({
-    queryKey: ['trade-queue-items', currentOrgId],
-    queryFn: async () => {
-      if (!currentOrgId) return [] as TradeQueueItemWithDetails[]
-      const { data, error } = await supabase
-        .from('trade_queue_items')
-        .select(`
-          *,
-          assets (id, symbol, company_name, sector),
-          portfolios (id, name, portfolio_id),
-          users:created_by (id, email, first_name, last_name),
-          trade_queue_comments (id),
-          trade_queue_votes (id, vote),
-          pair_trades (id, name, description, rationale, urgency, status)
-        `)
-        .eq('visibility_tier', 'active')
-        .eq('organization_id', currentOrgId)
-        .order('priority', { ascending: false })
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-
-      // Calculate vote summaries
-      return (data || []).map(item => ({
-        ...item,
-        vote_summary: {
-          approve: item.trade_queue_votes?.filter((v: any) => v.vote === 'approve').length || 0,
-          reject: item.trade_queue_votes?.filter((v: any) => v.vote === 'reject').length || 0,
-          needs_discussion: item.trade_queue_votes?.filter((v: any) => v.vote === 'needs_discussion').length || 0,
-        }
-      })) as TradeQueueItemWithDetails[]
-    },
-  })
+  // Shared with the phone's pipeline via usePipelineItems, which owns the query
+  // and its key so both surfaces read one cache entry.
+  const { data: tradeItems, isLoading, error } = usePipelineItems()
 
   // Fetch pair trades with their legs
   const { data: pairTrades } = useQuery({

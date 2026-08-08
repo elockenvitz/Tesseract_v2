@@ -204,7 +204,25 @@ export interface UpdatePortfolioTrackStageInput {
 }
 
 // UI action context for activity logging
-export type UISource = 'drag_drop' | 'dropdown' | 'bulk_action' | 'api' | 'keyboard' | 'modal'
+/**
+ * Where a mutation was initiated from, recorded on the audit event.
+ *
+ * `arrow_button` is the desktop card's step-a-stage control; the two `mobile_`
+ * values are the phone's equivalents (the inline step arrows and the move
+ * sheet). Keeping them distinct from `drag_drop` is the point — it is the only
+ * way to tell from the audit trail whether the pipeline is being worked at a
+ * desk or on a phone.
+ */
+export type UISource =
+  | 'drag_drop'
+  | 'dropdown'
+  | 'bulk_action'
+  | 'api'
+  | 'keyboard'
+  | 'modal'
+  | 'arrow_button'
+  | 'mobile_step'
+  | 'mobile_sheet'
 
 export interface ActionContext {
   actorId: string
