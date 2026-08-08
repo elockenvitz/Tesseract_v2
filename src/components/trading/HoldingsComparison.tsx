@@ -252,8 +252,58 @@ export function HoldingsComparison({ holdings, baseline }: HoldingsComparisonPro
         </div>
       </div>
 
+      {/* Card list — phones only.
+
+          The table below sits in overflow-x-auto, which on a 390px screen means
+          dragging it sideways and losing the header row that says which number
+          is which. Weight before/after, change and sector contribution are all
+          meaningless unlabelled, so the same rows are laid out as labelled
+          pairs instead. */}
+      <div className="sm:hidden divide-y divide-gray-100 dark:divide-gray-700/50">
+        {filteredAndSorted.map(holding => {
+          const baselineHolding = baselineMap.get(holding.asset_id)
+          const beforeWeight = baselineHolding?.weight || 0
+          const change = holding.weight - beforeWeight
+          return (
+            <div
+              key={holding.asset_id}
+              className={clsx(
+                'px-3 py-2.5',
+                holding.is_new && 'bg-emerald-50/50 dark:bg-emerald-900/10',
+                holding.is_removed && 'bg-red-50/50 dark:bg-red-900/10 opacity-60'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-gray-900 dark:text-white">{holding.symbol}</span>
+                {holding.is_new && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">New</span>
+                )}
+                {holding.is_removed && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Out</span>
+                )}
+                <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">{holding.company_name}</span>
+                <span
+                  className={clsx(
+                    'shrink-0 text-sm font-semibold tabular-nums',
+                    change > 0 ? 'text-emerald-600 dark:text-emerald-400'
+                      : change < 0 ? 'text-red-600 dark:text-red-400'
+                      : 'text-gray-400'
+                  )}
+                >
+                  {change > 0 ? '+' : ''}{change.toFixed(2)}%
+                </span>
+              </div>
+              <div className="mt-1 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                {beforeWeight.toFixed(2)}% → <span className="font-semibold text-gray-700 dark:text-gray-200">{holding.weight.toFixed(2)}%</span>
+                {holding.sector && <span className="ml-2 text-gray-400">{holding.sector}</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">

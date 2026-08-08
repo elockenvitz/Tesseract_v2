@@ -94,6 +94,8 @@ import { UnifiedSizingInput, type CurrentPosition as UnifiedCurrentPosition } fr
 import { InlineConflictBadge, SummaryBarConflicts, CardConflictRow } from '../components/trading/TradeCardConflictBadge'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { MobileSimulationList } from '../components/mobile/trade-lab/MobileSimulationList'
+import { MobileTradesView } from '../components/mobile/trade-lab/MobileTradesView'
+import { MobileIdeasDrawer } from '../components/mobile/trade-lab/MobileIdeasDrawer'
 import { HoldingsSimulationTable } from '../components/trading/HoldingsSimulationTable'
 import { PilotTradeLabIntroBanner } from '../components/pilot/PilotTradeLabIntroBanner'
 import { SharedSimulationBanner } from '../components/trading/SharedSimulationBanner'
@@ -5809,7 +5811,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   )}
                 </div>
 
-                {showIdeasPanel && (
+                {showIdeasPanel && isMobileViewport && (
+                  <MobileIdeasDrawer
+                    items={[...filteredItems.ideas] as any}
+                    proposals={filteredItems.proposals as any}
+                    search={leftPaneSearch}
+                    onSearchChange={setLeftPaneSearch}
+                    onToggleAsset={(idea, isAdded) => {
+                      if (isAdded) handleRemoveAsset(idea.asset_id)
+                      else handleAddAsset(idea)
+                    }}
+                    onOpenIdea={(id) => setSelectedTradeId(id)}
+                  />
+                )}
+                {showIdeasPanel && !isMobileViewport && (
                   <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
                     {(tradeIdeasLoading || tradeIdeasFetching || proposalsLoading) ? (
                       <div className="flex items-center justify-center py-8">
@@ -6590,7 +6605,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                       )}
                       </div>
                     ) : metrics ? (
-                      <div className="h-full overflow-y-auto space-y-3">
+                      <div className={clsx(
+                        "h-full overflow-y-auto space-y-3",
+                        isMobileViewport && "px-3 pb-safe"
+                      )}>
                         {impactView === 'impact' ? (
                           <PortfolioImpactView
                             metrics={metrics}
@@ -6598,6 +6616,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                             simulationRows={simulationRows.rows}
                             benchmarkWeightMap={benchmarkWeightMap || {}}
                             hasBenchmark={hasBenchmark}
+                          />
+                        ) : isMobileViewport ? (
+                          <MobileTradesView
+                            groups={(tradesGroupedByAction?.groups ?? []) as any}
+                            totalBuyValue={tradesGroupedByAction?.totalBuyValue ?? 0}
+                            totalSellValue={tradesGroupedByAction?.totalSellValue ?? 0}
+                            netCashFlow={tradesGroupedByAction?.netCashFlow ?? 0}
+                            tradeStats={tradeStats}
                           />
                         ) : (
                           /* Trades View - Grouped by Action with Cash Impact */
