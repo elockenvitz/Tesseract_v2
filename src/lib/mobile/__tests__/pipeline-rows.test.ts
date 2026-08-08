@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   groupIntoRows,
   rowSearchText,
+  missingForStage,
+  isForwardMove,
   COMMITTED_PIPELINE_STATUSES,
   ARCHIVED_PIPELINE_STATUSES,
 } from '../pipeline-rows'
@@ -161,5 +163,73 @@ describe('terminal status buckets', () => {
       expect(COMMITTED_PIPELINE_STATUSES).not.toContain(s)
       expect(ARCHIVED_PIPELINE_STATUSES).not.toContain(s)
     }
+  })
+})
+
+/**
+ * The service throws on a forward move whose requirements are unmet, and the
+ * phone used to offer the move anyway — tap, wait, refused. These mirror
+ * validateStageRequirements so the control can be disabled before it is
+ * pressed. If the service's rule changes and this does not, the UI goes back to
+ * offering moves that fail.
+ */
+describe('missingForStage', () => {
+  const withFields = (over: Record<string, any>) =>
+    groupIntoRows([leg({ id: 'a', ...over })])[0]
+
+  it('gates ready_for_decision on rationale and thesis', () => {
+    const bare = withFields({ rationale: null, thesis_text: null })
+    expect(missingForStage(bare, 'ready_for_decision')).toEqual(['Why now', 'Trade thesis'])
+  })
+
+  it('names only what is actually missing', () => {
+    const partial = withFields({ rationale: 'Capex inflecting', thesis_text: null })
+    expect(missingForStage(partial, 'ready_for_decision')).toEqual(['Trade thesis'])
+  })
+
+  it('treats whitespace as absent, as the service does', () => {
+    const blank = withFields({ rationale: '   ', thesis_text: '\n' })
+    expect(missingForStage(blank, 'ready_for_decision')).toEqual(['Why now', 'Trade thesis'])
+  })
+
+  it('allows the move once both are present', () => {
+    const complete = withFields({ rationale: 'Capex inflecting', thesis_text: 'Supply constrained' })
+    expect(missingForStage(complete, 'ready_for_decision')).toEqual([])
+  })
+
+  it('does not gate the earlier research stages', () => {
+    const bare = withFields({ rationale: null, thesis_text: null })
+    for (const s of ['aware', 'investigate', 'deep_research', 'thesis_forming']) {
+      expect(missingForStage(bare, s)).toEqual([])
+    }
+  })
+
+  it('gates a pair on its first leg rather than throwing on an empty group', () => {
+    const pair = groupIntoRows([
+      leg({ id: 'a', pair_id: 'p1', pair_leg_type: 'long', rationale: null, thesis_text: null }),
+      leg({ id: 'b', pair_id: 'p1', pair_leg_type: 'short' }),
+    ])[0]
+    expect(missingForStage(pair, 'ready_for_decision')).toContain('Trade thesis')
+  })
+})
+
+describe('isForwardMove', () => {
+  it('recognises advancing through the research stages', () => {
+    expect(isForwardMove('aware', 'investigate')).toBe(true)
+    expect(isForwardMove('investigate', 'ready_for_decision')).toBe(true)
+  })
+
+  it('does not treat going back as forward, so backward moves stay ungated', () => {
+    expect(isForwardMove('ready_for_decision', 'aware')).toBe(false)
+    expect(isForwardMove('deep_research', 'investigate')).toBe(false)
+  })
+
+  it('is false for a move to the same stage', () => {
+    expect(isForwardMove('investigate', 'investigate')).toBe(false)
+  })
+
+  it('is false when either stage is unknown, rather than gating blindly', () => {
+    expect(isForwardMove('nonsense', 'investigate')).toBe(false)
+    expect(isForwardMove('investigate', 'nonsense')).toBe(false)
   })
 })
