@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { AlertTriangle, Lock, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowDownUp, Lock, Plus, Search, X } from 'lucide-react'
 import type { SimulationRow, SimulationRowSummary } from '../../../hooks/useSimulationRows'
 import type { TradeAction } from '../../../types/trading'
+import { BottomSheet } from '../BottomSheet'
 import { MobileSizingSheet } from './MobileSizingSheet'
 
 interface MobileSimulationListProps {
@@ -20,6 +21,21 @@ interface MobileSimulationListProps {
 }
 
 type Filter = 'all' | 'changed' | 'new'
+
+/**
+ * The desktop sorts by clicking a column header. With no headers to click, the
+ * sort is an explicit control — and the defaults differ by intent: scanning
+ * holdings you want the biggest positions first, reviewing changes you want the
+ * biggest moves first.
+ */
+type Sort = 'weight' | 'delta' | 'active' | 'symbol'
+
+const SORTS: { key: Sort; label: string }[] = [
+  { key: 'weight', label: 'Weight' },
+  { key: 'delta', label: 'Change' },
+  { key: 'active', label: 'Active' },
+  { key: 'symbol', label: 'Symbol' },
+]
 
 /**
  * Named for what the list contains, not for a state a position is in.
@@ -75,6 +91,8 @@ export function MobileSimulationList({
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
+  const [sort, setSort] = useState<Sort>('weight')
+  const [sortOpen, setSortOpen] = useState(false)
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -86,6 +104,20 @@ export function MobileSimulationList({
       return true
     })
   }, [rows, filter, search])
+
+  const sorted = useMemo(() => {
+    const list = [...visible]
+    switch (sort) {
+      case 'symbol':
+        return list.sort((a, b) => a.symbol.localeCompare(b.symbol))
+      case 'delta':
+        return list.sort((a, b) => Math.abs(b.deltaWeight) - Math.abs(a.deltaWeight))
+      case 'active':
+        return list.sort((a, b) => Math.abs(b.activeWeight ?? 0) - Math.abs(a.activeWeight ?? 0))
+      default:
+        return list.sort((a, b) => b.simWeight - a.simWeight)
+    }
+  }, [visible, sort])
 
   // Kept resolved from `rows` rather than held as an object: the row is
   // recomputed on every variant change, and a captured copy would show the
@@ -147,29 +179,39 @@ export function MobileSimulationList({
           })}
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Find a position"
-            className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-gray-400"
-              aria-label="Clear"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Find a position"
+              className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-gray-400"
+                aria-label="Clear"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setSortOpen(true)}
+            className="shrink-0 h-9 px-2.5 inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 text-[12px] font-medium text-gray-600 dark:text-gray-300 no-touch-target"
+          >
+            <ArrowDownUp className="h-3.5 w-3.5" />
+            {SORTS.find(x => x.key === sort)?.label}
+          </button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-24 space-y-2">
-        {visible.length === 0 ? (
+        {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-gray-400">
             <p className="text-sm text-center">
               {search
@@ -182,10 +224,11 @@ export function MobileSimulationList({
             </p>
           </div>
         ) : (
-          visible.map(row => (
+          sorted.map(row => (
             <PositionCard
               key={row.asset_id}
               row={row}
+              hasBenchmark={hasBenchmark}
               onOpen={() => {
                 // An untraded row has no variant to edit yet. Creating it here
                 // mirrors the desktop's click-to-create, and the sheet opens on
@@ -208,6 +251,29 @@ export function MobileSimulationList({
           <Plus className="h-6 w-6" />
         </button>
       )}
+
+      <BottomSheet open={sortOpen} onClose={() => setSortOpen(false)} title="Sort by" fitContent>
+        <div className="px-3 pb-3 space-y-1">
+          {SORTS.map(o => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => { setSort(o.key); setSortOpen(false) }}
+              className={clsx(
+                'w-full flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm no-touch-target',
+                sort === o.key
+                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300 font-semibold'
+                  : 'text-gray-700 dark:text-gray-200 active:bg-gray-50 dark:active:bg-gray-800'
+              )}
+            >
+              {o.label}
+              <span className="ml-auto text-[11px] text-gray-400">
+                {o.key === 'symbol' ? 'A–Z' : 'largest first'}
+              </span>
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
 
       {editingRow && (
         <MobileSizingSheet
@@ -258,9 +324,36 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
  * portfolio has to stay reachable, because sizing a position you do not
  * currently hold starts from finding it.
  */
-function PositionCard({ row, onOpen }: { row: SimulationRow; onOpen: () => void }) {
+/**
+ * One position, with every field the desktop table carries.
+ *
+ * The earlier card showed weight, shares and notional and dropped benchmark and
+ * active weight entirely — which meant sizing against a benchmark, the reason
+ * the active column exists, could not be done from a phone at all. All eleven
+ * desktop columns are here; the difference is that they are labelled rows
+ * rather than headed columns, so nothing depends on a header that has scrolled
+ * out of view.
+ *
+ * Untraded rows show the current column only. Repeating the current figure in a
+ * "simulated" column that has not changed would imply a change that has not
+ * been made.
+ */
+function PositionCard({
+  row,
+  hasBenchmark,
+  onOpen,
+}: {
+  row: SimulationRow
+  hasBenchmark: boolean
+  onOpen: () => void
+}) {
   const traded = !!row.variant?.sizing_input
   const locked = row.isCommittedPending
+  // Active weight after the trade. The row carries the current one; the
+  // simulated one is the whole point of sizing in active space.
+  const simActive = row.benchWeight != null ? row.simWeight - row.benchWeight : null
+  const deltaActive =
+    simActive != null && row.activeWeight != null ? simActive - row.activeWeight : null
 
   return (
     <button
@@ -291,54 +384,114 @@ function PositionCard({ row, onOpen }: { row: SimulationRow; onOpen: () => void 
         {row.hasConflict && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
         {locked && <Lock className="h-3.5 w-3.5 text-gray-400" />}
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">{row.company_name}</span>
-      </div>
-
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
-          {row.currentWeight.toFixed(2)}%
-        </span>
-        {/* An unsized holding otherwise shows a single number and no hint that
-            the row does anything — the whole point of the list is that it is
-            where you change a weight. */}
-        {!traded && !locked && (
-          <span className="ml-auto text-[11px] text-primary-600 dark:text-primary-400">
-            Tap to size
-          </span>
-        )}
         {traded && (
-          <>
-            <span className="text-gray-300">→</span>
-            <span className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
-              {row.simWeight.toFixed(2)}%
-            </span>
-            <span
-              className={clsx(
-                'ml-auto text-sm font-semibold tabular-nums',
-                row.deltaWeight >= 0
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-red-600 dark:text-red-400'
-              )}
-            >
-              {row.deltaWeight >= 0 ? '+' : ''}
-              {row.deltaWeight.toFixed(2)}%
-            </span>
-          </>
-        )}
-      </div>
-
-      {traded && (
-        <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
-          <span>
-            {row.currentShares.toLocaleString()} → {row.simShares.toLocaleString()} sh
-          </span>
-          <span>
+          <span
+            className={clsx(
+              'shrink-0 text-sm font-semibold tabular-nums',
+              row.notional >= 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-red-600 dark:text-red-400'
+            )}
+          >
             {row.notional >= 0 ? '+' : '−'}
             {formatCompactUsd(Math.abs(row.notional))}
           </span>
-        </div>
-      )}
+        )}
+        {!traded && !locked && (
+          <span className="shrink-0 text-[11px] text-primary-600 dark:text-primary-400">Size</span>
+        )}
+      </div>
+
+      {/* Three columns, headed once. A grid rather than prose because these are
+          the same figures the desk reads on the board and they should line up. */}
+      <div className="mt-2 grid grid-cols-[3.25rem_1fr_1fr_1fr] gap-x-1.5 gap-y-1 items-baseline">
+        <span />
+        <Head>Now</Head>
+        <Head>{traded ? 'Sim' : ''}</Head>
+        <Head>{traded ? 'Δ' : ''}</Head>
+
+        <Label>Weight</Label>
+        <Num>{row.currentWeight.toFixed(2)}%</Num>
+        <Num strong>{traded ? `${row.simWeight.toFixed(2)}%` : ''}</Num>
+        <Num tone={row.deltaWeight >= 0 ? 'up' : 'down'}>
+          {traded ? `${row.deltaWeight >= 0 ? '+' : ''}${row.deltaWeight.toFixed(2)}` : ''}
+        </Num>
+
+        <Label>Shares</Label>
+        <Num>{formatShares(row.currentShares)}</Num>
+        <Num strong>{traded ? formatShares(row.simShares) : ''}</Num>
+        <Num tone={row.deltaShares >= 0 ? 'up' : 'down'}>
+          {traded ? `${row.deltaShares >= 0 ? '+' : ''}${formatShares(row.deltaShares)}` : ''}
+        </Num>
+
+        {hasBenchmark && (
+          <>
+            <Label>Bench</Label>
+            <Num>{row.benchWeight != null ? `${row.benchWeight.toFixed(2)}%` : '—'}</Num>
+            <Num>—</Num>
+            <Num>—</Num>
+
+            <Label>Active</Label>
+            <Num tone={(row.activeWeight ?? 0) >= 0 ? 'up' : 'down'}>
+              {row.activeWeight != null ? `${row.activeWeight >= 0 ? '+' : ''}${row.activeWeight.toFixed(2)}` : '—'}
+            </Num>
+            <Num strong tone={(simActive ?? 0) >= 0 ? 'up' : 'down'}>
+              {traded && simActive != null ? `${simActive >= 0 ? '+' : ''}${simActive.toFixed(2)}` : ''}
+            </Num>
+            <Num tone={(deltaActive ?? 0) >= 0 ? 'up' : 'down'}>
+              {traded && deltaActive != null ? `${deltaActive >= 0 ? '+' : ''}${deltaActive.toFixed(2)}` : ''}
+            </Num>
+          </>
+        )}
+      </div>
     </button>
   )
+}
+
+function Head({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 text-right">
+      {children}
+    </span>
+  )
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">{children}</span>
+  )
+}
+
+function Num({
+  children, strong, tone,
+}: {
+  children: React.ReactNode
+  strong?: boolean
+  tone?: 'up' | 'down'
+}) {
+  const empty = children === '' || children == null
+  return (
+    <span
+      className={clsx(
+        'text-[12px] tabular-nums text-right',
+        empty && 'text-transparent',
+        !empty && strong && 'font-semibold text-gray-900 dark:text-white',
+        !empty && !strong && (
+          tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
+            : tone === 'down' ? 'text-red-600 dark:text-red-400'
+            : 'text-gray-600 dark:text-gray-300'
+        )
+      )}
+    >
+      {empty ? '—' : children}
+    </span>
+  )
+}
+
+function formatShares(n: number): string {
+  const abs = Math.abs(n)
+  const body = abs >= 10_000 ? `${(abs / 1000).toFixed(1)}k` : Math.round(abs).toLocaleString()
+  return `${n < 0 ? '−' : ''}${body}`
 }
 
 function formatCompactUsd(value: number): string {

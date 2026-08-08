@@ -5701,20 +5701,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         ) : selectedViewType === 'lists' ? (
           /* Trade Sheets Section */
           <div className="flex-1 bg-white dark:bg-gray-900 overflow-auto">
-            <div className="p-6">
+            <div className="p-3 sm:p-6">
               {/* Snapshots Header + Toggle */}
-              <div className="flex items-center justify-between mb-6">
-                <div>
+              {/* Stacked on a phone: the description sitting beside the
+                  My Snapshots / Shared with me toggle squeezed both, and a
+                  sentence of explanation has no business competing with the
+                  control that switches the list. */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
+                <div className="min-w-0">
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Snapshots</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Save and revisit simulation scenarios. Snapshots do not commit trades.
                   </p>
                 </div>
-                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+                <div className="flex items-center w-full sm:w-auto shrink-0 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
                   <button
                     onClick={() => setSnapshotSubView('mine')}
                     className={clsx(
-                      'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      'flex-1 sm:flex-none px-3 py-1.5 sm:py-1 rounded-md text-xs font-medium transition-colors',
                       snapshotSubView === 'mine'
                         ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                         : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -5725,7 +5729,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   <button
                     onClick={() => setSnapshotSubView('shared')}
                     className={clsx(
-                      'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      'flex-1 sm:flex-none px-3 py-1.5 sm:py-1 rounded-md text-xs font-medium transition-colors',
                       snapshotSubView === 'shared'
                         ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                         : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
