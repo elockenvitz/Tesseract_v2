@@ -576,11 +576,11 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                     if (e.key === 'Enter') { e.preventDefault(); commitName() }
                     if (e.key === 'Escape') { setNameDraft(theme.name || ''); setIsEditingName(false) }
                   }}
-                  className="text-2xl font-bold text-gray-900 bg-white border border-primary-400 rounded px-2 py-0.5 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-white dark:bg-gray-800"
+                  className="text-lg sm:text-2xl font-bold text-gray-900 bg-white border border-primary-400 rounded px-2 py-0.5 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-white dark:bg-gray-800"
                 />
               ) : (
                 <h1
-                  className="text-2xl font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 truncate dark:hover:bg-gray-800 dark:text-white"
+                  className="text-lg sm:text-2xl font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 truncate dark:hover:bg-gray-800 dark:text-white"
                   onClick={() => setIsEditingName(true)}
                   title="Click to rename"
                 >
@@ -653,7 +653,8 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             ) : (
               <p
                 className={clsx(
-                  'text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1 dark:hover:bg-gray-800',
+                  'text-sm sm:text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1 dark:hover:bg-gray-800',
+                  'line-clamp-1 sm:line-clamp-none',
                   theme.description ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400 italic'
                 )}
                 onClick={() => setIsEditingDescription(true)}
@@ -666,7 +667,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         </div>
 
         {/* Right side: Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
           {activeTab === 'related-assets' && (
             <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
               <Plus className="h-4 w-4 mr-1" />
@@ -724,7 +725,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       <Card padding="none">
         {/* Tab Navigation */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+          <nav className="flex gap-4 sm:gap-8 px-3 sm:px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
             <button
               onClick={() => setActiveTab('thesis')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -812,7 +813,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         </div>
 
         {/* Tab Content */}
-        <div className="p-6">
+        <div className="p-3 sm:p-6">
           {activeTab === 'thesis' && (
             <ThemeResearchTab themeId={theme.id} themeIsPublic={!!theme.is_public} />
           )}
@@ -1004,7 +1005,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all dark:bg-gray-800">
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200 dark:border-gray-700">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Manage Collaborators</h3>
                   <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Share "{theme.name}" with other users</p>
@@ -1017,7 +1018,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 </button>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="p-3 sm:p-6 space-y-6">
                 {/* Public/Private Toggle */}
                 <Card>
                   <div className="p-4 bg-gray-50 rounded-lg dark:bg-gray-900">
@@ -1208,7 +1209,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
 
               {/* Footer */}
-              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex justify-end space-x-3 p-3 sm:p-6 border-t border-gray-200 dark:border-gray-700">
                 <Button variant="outline" onClick={() => setShowShareModal(false)}>
                   Done
                 </Button>
@@ -1223,7 +1224,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setDeleteConfirm({ isOpen: false, collaborationId: null, userEmail: '' })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-3 sm:p-6 dark:bg-gray-800">
               <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Remove Collaborator</h3>
               <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to remove {deleteConfirm.userEmail} from this theme? They will no longer be able to access it.
@@ -1255,7 +1256,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowDeleteConfirm(false)} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-3 sm:p-6 dark:bg-gray-800">
               <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Delete Theme</h3>
               <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Delete "{theme.name}"? This removes the theme and its asset associations. Related notes and projects are kept.
@@ -1287,7 +1288,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowBulkRemoveConfirm({ isOpen: false, assetIds: [] })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 dark:bg-gray-800">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-3 sm:p-6 dark:bg-gray-800">
               <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Remove Assets from Theme</h3>
               <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to remove {showBulkRemoveConfirm.assetIds.length} asset{showBulkRemoveConfirm.assetIds.length !== 1 ? 's' : ''} from this theme?
