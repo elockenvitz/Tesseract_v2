@@ -151,7 +151,7 @@ export function PMScorecardCard({
         {/* ── Execution ── */}
         <div>
           <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Execution</div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div className="p-3 bg-gray-50 rounded-lg text-center dark:bg-gray-900">
               <div className="text-lg font-bold text-gray-900 dark:text-white">{scorecard.totalDecisions}</div>
               <div className="text-[10px] text-gray-500 dark:text-gray-400">Decisions</div>

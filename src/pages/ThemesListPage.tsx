@@ -344,24 +344,24 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
   ].filter(Boolean).length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Themes</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            {filteredThemes ? `${filteredThemes.length} of ${themes?.length || 0} themes` : 'Loading...'}
-          </p>
+      <div className="flex items-center gap-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">All Themes</h1>
+        <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+          {filteredThemes ? `${filteredThemes.length} of ${themes?.length || 0}` : '…'}
+        </span>
+        <div className="ml-auto shrink-0">
+          <Button onClick={() => setShowCreateForm(true)}>
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">New Theme</span>
+          </Button>
         </div>
-        <Button onClick={() => setShowCreateForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Theme
-        </Button>
       </div>
 
       {/* Search and Filters */}
-      <Card>
-        <div className="space-y-4">
+      <Card padding="sm">
+        <div className="space-y-2 sm:space-y-4">
           {/* Search Bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -483,9 +483,9 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 onClick={() => handleThemeClick(theme)}
                 className="px-3 sm:px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
               >
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-12 sm:gap-4 sm:items-center">
                   {/* Theme Info */}
-                  <div className="col-span-5">
+                  <div className="col-span-2 sm:col-span-5 min-w-0">
                     <div className="flex items-center space-x-3">
                       <div 
                         className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
@@ -514,8 +514,8 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                   </div>
 
                   {/* Created Date */}
-                  <div className="col-span-5">
-                    <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                  <div className="col-span-1 sm:col-span-5 justify-self-end sm:justify-self-auto">
+                    <div className="flex items-center text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                       <Calendar className="h-3 w-3 mr-1" />
                       {formatDistanceToNow(new Date(theme.created_at || 0), { addSuffix: true })}
                     </div>

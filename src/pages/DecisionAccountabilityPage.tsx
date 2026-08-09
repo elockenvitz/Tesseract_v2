@@ -3530,15 +3530,26 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
             {/* Detail Panel */}
             {selectedRow && (
               <div className={clsx(
-                'overflow-hidden',
                 isMobileViewport
-                  ? 'fixed inset-0 z-[85] bg-white dark:bg-gray-800 pt-safe pb-safe'
-                  : 'w-[440px] shrink-0 border-l-2 border-l-primary-500'
+                  ? 'fixed inset-0 z-[85] bg-white dark:bg-gray-800 pt-safe pb-safe overflow-y-auto'
+                  : 'w-[440px] shrink-0 border-l-2 border-l-primary-500 overflow-hidden'
               )}>
                 <DetailPanel
                   row={selectedRow}
                   onClose={() => setSelectedId(null)}
                 />
+                {/* The price-and-decision chart sits beside the detail pane on
+                    desktop. Dropping it on a phone left the detail view without
+                    the one thing that answers "what happened after" — so it
+                    goes inside the overlay rather than nowhere. */}
+                {isMobileViewport && (
+                  <div className="border-t border-gray-200 dark:border-gray-700">
+                    <DeferredChartPanel
+                      row={selectedRow}
+                      onSelectDecision={(decisionId) => setSelectedId(decisionId)}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
