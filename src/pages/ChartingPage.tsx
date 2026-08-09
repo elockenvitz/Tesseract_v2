@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
@@ -237,6 +238,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
+  // The chart is the surface; on a phone the toolbar has to yield to it.
+  const isMobileViewport = useIsMobile()
   const [panels, setPanels] = useState<ChartPanel[]>(initialState.panels)
   const [activePanel, setActivePanel] = useState(initialState.activePanel)
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
@@ -642,8 +645,8 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden dark:bg-gray-800">
       {/* Header Toolbar */}
-      <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between">
+      <div className="bg-gray-50 border-b border-gray-200 px-2 sm:px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
+        <div className="flex flex-wrap items-center justify-between gap-y-2">
           {/* Left: Symbol Search & Info */}
           <div className="flex items-center space-x-4">
             <div className="relative">
@@ -808,7 +811,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             </div>
 
             {/* Custom Date Range Button */}
-            <div className="relative">
+            <div className={isMobileViewport ? "hidden" : "relative"}>
               <button
                 onClick={() => setShowCustomDatePicker(!showCustomDatePicker)}
                 className={`px-2 py-1 text-xs font-medium rounded transition-colors flex items-center space-x-1 ${
@@ -920,7 +923,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             </div>
 
             {/* Metric Selector */}
-            <div className="relative">
+            <div className={isMobileViewport ? "hidden" : "relative"}>
               <button
                 onClick={() => setShowMetricMenu(!showMetricMenu)}
                 className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
@@ -972,7 +975,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             </div>
 
             {/* Indicators */}
-            <div className="relative">
+            <div className={isMobileViewport ? "hidden" : "relative"}>
               <button
                 onClick={() => setShowIndicatorMenu(!showIndicatorMenu)}
                 className="flex items-center space-x-1 px-3 py-1.5 bg-gray-200 text-gray-600 hover:text-gray-900 rounded-lg text-sm transition-colors dark:hover:text-white dark:text-gray-400"
@@ -1015,7 +1018,7 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
             </div>
 
             {/* Compare Symbols */}
-            <div className="relative">
+            <div className={isMobileViewport ? "hidden" : "relative"}>
               <button
                 onClick={() => setShowCompareMenu(!showCompareMenu)}
                 className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${

@@ -173,8 +173,8 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'charting', title: 'Charting', icon: LineChart,
     color: 'text-blue-600', bg: 'bg-blue-50',
-    support: 'desktop-only', group: 'admin', inNav: true,
-    desktopReason: 'Multi-series charting depends on a large canvas and pointer-precise interaction.',
+    support: 'read-only', group: 'admin', inNav: true,
+    mobileNote: 'Chart and timeframe; drawing tools want a pointer',
   },
   {
     type: 'audit', title: 'Audit', icon: Shield,
