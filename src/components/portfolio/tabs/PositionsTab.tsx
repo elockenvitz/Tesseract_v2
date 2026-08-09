@@ -431,13 +431,13 @@ export function PositionsTab({
     <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown} className="outline-none flex flex-col">
 
       {/* ─── VIEW BAR ─────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
-        <div className="flex items-center gap-0.5">
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5 px-2 sm:px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-0.5 min-w-0 max-w-full overflow-x-auto no-scrollbar">
           {VIEW_PRESETS.map(v => (
             <button
               key={v.key}
               onClick={() => setActiveView(v.key)}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+              className={`shrink-0 px-2.5 h-7 rounded text-[11px] font-medium transition-colors ${
                 activeView === v.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
               }`}
             >
@@ -446,7 +446,7 @@ export function PositionsTab({
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 ml-auto">
           {/* Group by */}
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-gray-400">Group</span>
@@ -493,7 +493,7 @@ export function PositionsTab({
         />
       ) : (
       /* ─── TABLE ─────────────────────────────────────────── */
-      <div className="overflow-auto max-h-[70vh]">
+      <div className="overflow-auto max-h-[70vh] -mx-3 sm:mx-0">
           {/* A frozen symbol column and a stuck header row are what make ten
               columns usable at 390px: the numbers move, the name of the row and
               the name of the column do not. */}

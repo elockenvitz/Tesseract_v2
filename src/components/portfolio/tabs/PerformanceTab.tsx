@@ -617,7 +617,7 @@ export function PerformanceTab({
       </div>
 
       {/* ─── RISK METRICS ─────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         {/* Volatility */}
         <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Volatility (ann.)</p>
