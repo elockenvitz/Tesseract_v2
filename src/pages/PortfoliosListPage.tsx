@@ -582,7 +582,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           {portfolio.benchmark}
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400">None</span>
+                        <span className="text-xs text-gray-400">No benchmark</span>
                       )}
                     </div>
 
@@ -609,7 +609,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           </div>
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-400">None</span>
+                        <span className="text-xs text-gray-400">No teams</span>
                       )}
                     </div>
 
@@ -646,7 +646,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-400">None</span>
+                        <span className="text-xs text-gray-400">No members</span>
                       )}
                     </div>
 

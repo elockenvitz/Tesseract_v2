@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText, Settings } from 'lucide-react'
+import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText, Settings, ChevronDown } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
+import { clsx } from 'clsx'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { AddTeamMemberModal } from '../portfolios/AddTeamMemberModal'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -52,6 +54,10 @@ const TABS: { key: PortfolioTabType; label: string; icon: React.ElementType; bad
 ]
 
 export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
+  // The mandate paragraph is hidden behind the name on a phone; on desktop it
+  // has always been visible and stays that way.
+  const isMobileViewport = useIsMobile()
+  const [showDescription, setShowDescription] = useState(false)
   const [activeTab, setActiveTab] = useState<PortfolioTabType>(() => {
     if (portfolio.initialTab) return portfolio.initialTab
     const savedState = TabStateManager.loadTabState(portfolio.id)
@@ -362,21 +368,42 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6 flex-shrink-0">
-        <div className="flex items-start space-x-8 flex-1">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1 dark:text-white">
-              {portfolio.name}
-              {portfolio.portfolio_id && (
-                <span className="font-normal text-gray-600 dark:text-gray-400"> - {portfolio.portfolio_id}</span>
-              )}
-            </h1>
-            {portfolio.description && (
-              <p className="text-lg text-gray-600 mb-1 dark:text-gray-400">{portfolio.description}</p>
+      {/* Header.
+
+          The description is a mandate paragraph — several lines at text-lg,
+          which on a phone is most of the first screen for something read once.
+          The name becomes the control that reveals it, so the default is the
+          identity and the benchmark, and the prose is there when asked for. */}
+      <div className="flex items-start justify-between mb-3 sm:mb-6 flex-shrink-0">
+        <div className="flex items-start sm:space-x-8 flex-1 min-w-0">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => portfolio.description && setShowDescription(v => !v)}
+              aria-expanded={showDescription}
+              className="text-left"
+              disabled={!portfolio.description}
+            >
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                <span className="min-w-0">
+                  {portfolio.name}
+                  {portfolio.portfolio_id && (
+                    <span className="font-normal text-gray-600 dark:text-gray-400"> - {portfolio.portfolio_id}</span>
+                  )}
+                </span>
+                {portfolio.description && (
+                  <ChevronDown className={clsx(
+                    'h-4 w-4 shrink-0 text-gray-400 transition-transform',
+                    showDescription && 'rotate-180'
+                  )} />
+                )}
+              </h1>
+            </button>
+            {portfolio.description && (showDescription || !isMobileViewport) && (
+              <p className="text-sm sm:text-lg text-gray-600 mt-1 mb-1 dark:text-gray-400">{portfolio.description}</p>
             )}
             {portfolio.benchmark && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">Benchmark: {portfolio.benchmark}</p>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Benchmark: {portfolio.benchmark}</p>
             )}
           </div>
         </div>
@@ -385,7 +412,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       {/* Tabs Card */}
       <Card padding="none" className="flex-1 flex flex-col overflow-hidden min-h-0">
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+          <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
             {TABS.map(({ key, label, icon: Icon, badgeKey }) => {
               const isActive = activeTab === key
               let badge: number | null = null
@@ -397,7 +424,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                 <button
                   key={key}
                   onClick={() => setActiveTab(key)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  className={`shrink-0 py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                     isActive
                       ? 'border-primary-500 text-primary-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'

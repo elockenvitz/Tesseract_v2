@@ -143,7 +143,7 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
             Portfolio trade events and execution history
           </p>
         </div>
-        <div className="border border-dashed border-gray-200 rounded-lg py-16 px-6 dark:border-gray-700">
+        <div className="border border-dashed border-gray-200 rounded-lg py-16 px-3 sm:px-6 dark:border-gray-700">
           <div className="max-w-md mx-auto text-center">
             <BookText className="w-8 h-8 text-gray-300 mx-auto mb-3" />
             <p className="text-[13px] font-semibold text-gray-700 mb-1 dark:text-gray-300">No trade events recorded</p>
@@ -187,7 +187,7 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
 
       {/* ── SUMMARY STRIP ──────────────────────────────────────── */}
       {summary && (
-        <div className="grid grid-cols-5 gap-px bg-gray-200 rounded overflow-hidden border border-gray-200 mb-3 shrink-0 dark:border-gray-700">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-gray-200 rounded overflow-hidden border border-gray-200 mb-3 shrink-0 dark:border-gray-700">
           <SummaryTile
             label="Pending"
             value={summary.pendingRationale}
