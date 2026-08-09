@@ -153,8 +153,8 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 space-y-5">
 
         {/* ═══ HEADER ═══ */}
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">My Priorities</h1>
             {headline && (
               <p className={clsx('text-sm mt-0.5 font-medium',
@@ -166,7 +166,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             {generatedAt && (
               <span className="text-[10px] text-gray-400 dark:text-gray-500">
                 {formatDistanceToNow(new Date(generatedAt), { addSuffix: true })}
@@ -196,7 +196,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
         </div>
 
         {/* ═══ FILTER TABS ═══ */}
-        <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg w-fit">
+        <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg w-full sm:w-fit overflow-x-auto no-scrollbar">
           {FILTER_TABS.map(tab => {
             const Icon = tab.icon
             const isActive = filterType === tab.id
@@ -204,7 +204,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
             return (
               <button key={tab.id} onClick={() => setFilterType(tab.id)}
                 className={clsx(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  'flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
                   isActive ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 )}>
                 <Icon className={clsx('h-3.5 w-3.5', isActive && 'text-primary-500')} />

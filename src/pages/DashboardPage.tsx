@@ -655,6 +655,30 @@ export function DashboardPage() {
     })
   }
 
+  // Phones cap the open tab set.
+  //
+  // The nav drawer only lists the five most recent, so without this the sixth
+  // tab and beyond stay open, holding their queries and their editor state,
+  // while being invisible and unreachable from the drawer. Closing them keeps
+  // what is listed and what exists in agreement.
+  //
+  // Routed through handleTabClose rather than setTabs so the empty-note cleanup
+  // and active-tab reassignment it owns still run. Dashboard is exempt — it
+  // cannot be closed — and the active tab is exempt so a tab cannot be closed
+  // out from under the person looking at it.
+  const MOBILE_TAB_LIMIT = 5
+  useEffect(() => {
+    if (!isMobile) return
+    const closable = tabs.filter(t => t.id !== 'dashboard' && !t.isBlank)
+    if (closable.length <= MOBILE_TAB_LIMIT) return
+    const excess = closable.slice(0, closable.length - MOBILE_TAB_LIMIT)
+    for (const tab of excess) {
+      if (tab.id === activeTabId) continue
+      handleTabClose(tab.id)
+    }
+  }, [isMobile, tabs, activeTabId])
+
+
   const handleCloseTabs = (tabIds: string[]) => {
     const idsToClose = new Set(tabIds.filter(id => id !== 'dashboard'))
     if (idsToClose.size === 0) return

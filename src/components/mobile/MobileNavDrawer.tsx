@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
-import { Check, ChevronRight, Monitor, Search, X } from 'lucide-react'
+import { Check, ChevronRight, Monitor, Search, X, Lightbulb } from 'lucide-react'
 import { TesseractLogo } from '../ui/TesseractLogo'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import {
@@ -72,12 +72,20 @@ export function MobileNavDrawer({
     onSearchResult?.({ id: surface.type, title: surface.title, type: surface.type, data: null })
   }
 
-  // Open tabs accumulate without bound over a session, and an unbounded Recent
-  // list pushes the surface list — the thing the drawer is actually for —
-  // below the fold. Newest first, capped; anything older is still reachable
-  // through the tab bar.
+  // Ideas is anchored above Recent rather than sorted into it. It is the home
+  // surface, it cannot be closed, and a fixed position means the one row that
+  // is always present is always in the same place — which a most-recent
+  // ordering would take away exactly when the list is busiest.
+  const ideasTab = tabs.find(tab => tab.id === 'dashboard') ?? null
+
+  // Everything else, newest first and capped. DashboardPage closes tabs past
+  // this cap on a phone, so the list and the tab set stay in agreement rather
+  // than the drawer quietly hiding tabs that are still open.
   const RECENT_LIMIT = 5
-  const recentTabs = tabs.filter(tab => !tab.isBlank).slice(-RECENT_LIMIT).reverse()
+  const recentTabs = tabs
+    .filter(tab => !tab.isBlank && tab.id !== 'dashboard')
+    .slice(-RECENT_LIMIT)
+    .reverse()
 
   if (typeof document === 'undefined') return null
 
@@ -195,6 +203,26 @@ export function MobileNavDrawer({
             </div>
           )}
 
+          {ideasTab && (
+            <NavSection title="Home">
+              <button
+                type="button"
+                onClick={() => { onClose(); onTabChange(ideasTab.id) }}
+                className={clsx(
+                  'w-full flex items-center gap-3 h-12 px-3 rounded-xl text-left',
+                  ideasTab.id === activeTabId
+                    ? 'bg-primary-50 dark:bg-primary-900/20 font-semibold text-primary-700 dark:text-primary-300'
+                    : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                )}
+              >
+                <Lightbulb className="h-5 w-5 text-amber-500 shrink-0" />
+                {/* The home tab renders the ideas feed on phones, so it is
+                    labelled for what it shows rather than "Dashboard". */}
+                <span className="text-sm">Ideas</span>
+              </button>
+            </NavSection>
+          )}
+
           {recentTabs.length > 0 && (
             <NavSection title="Recent">
               {recentTabs.map(tab => {
@@ -229,24 +257,17 @@ export function MobileNavDrawer({
                             : 'text-gray-700 dark:text-gray-200'
                         )}
                       >
-                        {/* The home tab renders the ideas feed on phones, so
-                            label it for what it shows rather than "Dashboard". */}
-                        {tab.id === 'dashboard' ? 'Ideas' : tab.title}
+                        {tab.title}
                       </span>
                     </button>
-                    {/* The dashboard tab cannot be closed (see
-                        DashboardPage.handleTabClose), so offering an X there
-                        is a control that does nothing. */}
-                    {tab.id !== 'dashboard' && (
-                      <button
-                        type="button"
-                        onClick={() => onTabClose(tab.id)}
-                        className="flex items-center justify-center h-11 w-11 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                        aria-label={`Close ${tab.title}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onTabClose(tab.id)}
+                      className="flex items-center justify-center h-11 w-11 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                      aria-label={`Close ${tab.title}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
                 )
               })}
