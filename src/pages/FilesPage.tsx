@@ -127,7 +127,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-violet-100 rounded-lg">
@@ -227,7 +227,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
@@ -382,11 +382,11 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowUploadModal(false)} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6 dark:bg-gray-800">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-3 sm:p-6 dark:bg-gray-800">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Upload Files</h2>
 
               {/* Drop Zone */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-violet-400 transition-colors cursor-pointer dark:border-gray-600">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-8 text-center hover:border-violet-400 transition-colors cursor-pointer dark:border-gray-600">
                 <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Drag and drop files here, or click to browse

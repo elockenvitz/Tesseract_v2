@@ -1133,7 +1133,7 @@ function EventModal({
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative w-full max-w-xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl transform transition-all">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center justify-between px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-800">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               {editingEvent ? 'Edit Event' : 'New Event'}
             </h2>
@@ -1146,7 +1146,7 @@ function EventModal({
           </div>
 
           {/* Body - fixed height with scroll, stable scrollbar */}
-          <div className="px-6 py-5 space-y-6 max-h-[60vh] overflow-y-scroll" style={{ scrollbarGutter: 'stable' }}>
+          <div className="px-3 sm:px-6 py-5 space-y-6 max-h-[60vh] overflow-y-scroll" style={{ scrollbarGutter: 'stable' }}>
             {/* Title Input */}
             <div>
               <input
@@ -1438,7 +1438,7 @@ function EventModal({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+          <div className="flex items-center justify-between px-3 sm:px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
             {editingEvent && onDelete ? (
               <button
                 type="button"
