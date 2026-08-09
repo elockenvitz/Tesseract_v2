@@ -283,7 +283,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         <ListSkeleton count={8} />
       </div>
     )
@@ -291,7 +291,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
 
   if (!periods?.length) {
     return (
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         <EmptyState
           icon={PieChart}
           title="No Allocation Periods"
@@ -320,7 +320,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
   return (
     <div className="h-full flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="flex-shrink-0 px-3 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
@@ -383,7 +383,7 @@ export function AssetAllocationPage({ onOpenTab, initialPeriodId }: AssetAllocat
       </div>
 
       {/* Main Grid */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-6">
         <Card className="overflow-hidden shadow-sm">
           <div className="min-w-[900px]">
             {/* Grid Header */}

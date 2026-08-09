@@ -438,14 +438,14 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       {/* Themes List */}
       <Card padding="none">
         {!showContent || !filteredThemes ? (
-          <div className="p-6">
+          <div className="p-3 sm:p-6">
             <ListSkeleton count={5} />
           </div>
         ) : filteredThemes.length > 0 ? (
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {/* Table Header */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
-              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+            <div className="px-3 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <div className="hidden sm:grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                 <div className="col-span-5">
                   <button
                     onClick={() => handleSort('name')}
@@ -481,9 +481,9 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
               <div
                 key={theme.id}
                 onClick={() => handleThemeClick(theme)}
-                className="px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
+                className="px-3 sm:px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
               >
-                <div className="grid grid-cols-12 gap-4 items-center">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
                   {/* Theme Info */}
                   <div className="col-span-5">
                     <div className="flex items-center space-x-3">
@@ -557,7 +557,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all h-[600px] flex flex-col dark:bg-gray-800">
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
+              <div className="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Theme</h3>
                   <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Organize your investment ideas by theme</p>
@@ -570,7 +570,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 </button>
               </div>
 
-              <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+              <div className="p-3 sm:p-6 space-y-6 flex-1 overflow-y-auto">
                 {/* Theme Name with Type-ahead */}
                 <div>
                   <Input
@@ -690,7 +690,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 </div>
               </div>
               {/* Footer */}
-              <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
+              <div className="flex justify-end space-x-3 p-3 sm:p-6 border-t border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <Button
                   variant="outline"
                   onClick={() => {

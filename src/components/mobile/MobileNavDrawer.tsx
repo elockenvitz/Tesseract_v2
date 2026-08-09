@@ -72,7 +72,12 @@ export function MobileNavDrawer({
     onSearchResult?.({ id: surface.type, title: surface.title, type: surface.type, data: null })
   }
 
-  const recentTabs = tabs.filter(tab => !tab.isBlank)
+  // Open tabs accumulate without bound over a session, and an unbounded Recent
+  // list pushes the surface list — the thing the drawer is actually for —
+  // below the fold. Newest first, capped; anything older is still reachable
+  // through the tab bar.
+  const RECENT_LIMIT = 5
+  const recentTabs = tabs.filter(tab => !tab.isBlank).slice(-RECENT_LIMIT).reverse()
 
   if (typeof document === 'undefined') return null
 

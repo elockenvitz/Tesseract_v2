@@ -119,7 +119,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
   if (isLoading) {
     return (
       <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-6 space-y-4">
           <div className="h-6 w-72 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
           <div className="h-4 w-48 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
           <div className="flex gap-2">{[1, 2, 3, 4].map(i => <div key={i} className="h-10 w-28 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />)}</div>
@@ -131,9 +131,9 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
 
   if (isError) {
     return (
-      <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900 p-6">
+      <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900 p-3 sm:p-6">
         <div className="max-w-6xl mx-auto">
-          <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-900/20 p-6">
+          <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-900/20 p-3 sm:p-6">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-red-500" />
               <div>
@@ -150,7 +150,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
 
   return (
     <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-6xl mx-auto px-6 py-5 space-y-5">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 space-y-5">
 
         {/* ═══ HEADER ═══ */}
         <div className="flex items-start justify-between">

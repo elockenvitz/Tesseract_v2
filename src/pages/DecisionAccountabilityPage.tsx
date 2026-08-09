@@ -3325,9 +3325,9 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-800">
       {/* ── HEADER ─────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-5 shrink-0 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-5 shrink-0 dark:border-gray-700 dark:bg-gray-800">
         {/* Row 1: Title + Tabs */}
-        <div className="flex items-center gap-4 pt-2 pb-1.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-2 pb-1.5">
           <div className="flex items-center gap-2 shrink-0">
             <Target className="w-4 h-4 text-teal-600" />
             <h1 className="text-[15px] font-semibold text-gray-900 dark:text-white">Outcomes</h1>
@@ -3358,11 +3358,11 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
           </div>
 
           {/* Portfolio selector — shared across Decisions + Scorecards */}
-          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+          <div className="flex items-center gap-1.5 min-w-0 sm:shrink-0 sm:ml-2">
             <select
               value={selectedPortfolioId || ''}
               onChange={e => setSelectedPortfolioId(e.target.value || null)}
-              className="text-[12px] font-semibold border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 cursor-pointer dark:border-gray-600 dark:text-white dark:bg-gray-800"
+              className="min-w-0 max-w-[55vw] sm:max-w-none text-[12px] font-semibold border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 cursor-pointer dark:border-gray-600 dark:text-white dark:bg-gray-800"
             >
               <option value="">All Portfolios</option>
               {allPortfolios.map(p => (
@@ -3371,7 +3371,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
             </select>
           </div>
 
-          <div className="flex-1" />
+          <div className="hidden sm:block flex-1" />
         </div>
 
         {/* Row 2: Diagnosis banner — compact single row.

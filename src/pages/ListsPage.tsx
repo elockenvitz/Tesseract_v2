@@ -388,7 +388,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="h-full overflow-auto px-4 sm:px-6 py-4 space-y-3">
+    <div className="h-full overflow-auto px-3 sm:px-6 py-4 space-y-3">
       {/* Controls bar */}
       <div className="max-w-7xl mx-auto">
       <ListSurfaceControls
@@ -413,7 +413,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
 
       {/* Error state */}
       {listsError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950/30">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 sm:p-6 text-center dark:border-red-900 dark:bg-red-950/30">
           <List className="h-8 w-8 text-red-400 mx-auto mb-2" />
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Failed to load lists</h3>
           <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
@@ -583,7 +583,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       {editingList && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col dark:bg-gray-800">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit List</h2>
               <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">
                 <X className="h-6 w-6" />
@@ -618,7 +618,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
 
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'details' ? (
-                <div className="p-6 space-y-4">
+                <div className="p-3 sm:p-6 space-y-4">
                   <div>
                     <label htmlFor="list-name" className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">List Name</label>
                     <input
@@ -646,7 +646,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                       <Palette className="h-4 w-4 inline mr-1" />
                       Color
                     </label>
-                    <div className="grid grid-cols-6 gap-2">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                       {colorPalette.map((color) => (
                         <button
                           key={color}
@@ -662,7 +662,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
                   </div>
                 </div>
               ) : (
-                <div className="p-6 space-y-6">
+                <div className="p-3 sm:p-6 space-y-6">
                   {/* Owner */}
                   <div>
                     <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center dark:text-white">
@@ -849,7 +849,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
               )}
             </div>
 
-            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-end space-x-3 p-3 sm:p-6 border-t border-gray-200 dark:border-gray-700">
               <Button variant="outline" onClick={handleCancelEdit} disabled={updateListMutation.isPending}>Cancel</Button>
               {activeTab === 'details' && (
                 <Button onClick={handleSaveList} disabled={!editForm.name.trim() || updateListMutation.isPending}>

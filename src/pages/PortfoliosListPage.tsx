@@ -452,14 +452,14 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
       {/* Portfolios List */}
       <Card padding="none">
         {isLoading ? (
-          <div className="p-6">
+          <div className="p-3 sm:p-6">
             <ListSkeleton count={5} />
           </div>
         ) : filteredPortfolios.length > 0 ? (
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {/* Table Header */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
-              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+            <div className="px-3 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <div className="hidden sm:grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                 <div className="col-span-4">
                   <button
                     onClick={() => handleSort('name')}
@@ -519,7 +519,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                         : 'hover:bg-gray-50',
                   )}
                 >
-                  <div className="grid grid-cols-12 gap-4 items-center">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
                     {/* Portfolio Info */}
                     <div className="col-span-4">
                       <div className="flex items-center space-x-3">
