@@ -799,7 +799,52 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           </div>
         ) : filteredNotes.length > 0 ? (
           <div className="overflow-auto flex-1 min-h-0">
-            <table className="w-full">
+            {/* Card list — phones only.
+
+                The table's six columns are percentage-width, so at 390px they
+                do not overflow, they crush: a 35% title column is 136px and the
+                remaining five share 250px between them. Notes are text, not
+                figures — nothing here gains from column alignment the way a
+                price grid does — so each note becomes a card and the metadata
+                sits on one line beneath it. */}
+            <div className="sm:hidden divide-y divide-gray-100 dark:divide-gray-800">
+              {filteredNotes.map((note) => (
+                <button
+                  key={`m-${note.source_type}-${note.id}`}
+                  type="button"
+                  onClick={() => handleNoteClick(note)}
+                  className="w-full text-left px-3 py-3 active:bg-gray-50 dark:active:bg-gray-800"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-900 dark:text-white truncate">
+                        {note.title || 'Untitled'}
+                      </p>
+                      <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400 line-clamp-2">
+                        {getContentPreview(note.content || '', 120)}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-400">
+                        {note.source_name && (
+                          <span className="font-medium text-gray-500 dark:text-gray-400">{note.source_name}</span>
+                        )}
+                        {note.note_type && <span className="capitalize">{String(note.note_type).replace(/_/g, ' ')}</span>}
+                        {note.is_shared && (
+                          <span className="inline-flex items-center gap-1 text-primary-600 dark:text-primary-400">
+                            <Share2 className="h-3 w-3" />Shared
+                          </span>
+                        )}
+                        <span className="ml-auto">{formatDate(note.updated_at)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <table className="hidden sm:table w-full">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 sticky top-0 z-10 dark:border-gray-700 dark:bg-gray-900">
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%] dark:text-gray-400">
