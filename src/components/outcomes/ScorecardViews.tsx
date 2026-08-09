@@ -46,7 +46,7 @@ function ExecutiveHeader({ verdict: v, mode }: { verdict: ScorecardVerdict; mode
 
   return (
     <div className={clsx('rounded-lg border', cfg.borderColor, cfg.bgColor, isCritical && 'border-l-4')}>
-      <div className="flex items-start gap-4 p-4 pb-2.5">
+      <div className="flex flex-wrap items-start gap-3 sm:gap-4 p-3 sm:p-4 pb-2.5">
         {/* Score */}
         <div className="shrink-0">
           <div className="relative w-[60px] h-[60px]">
@@ -78,7 +78,7 @@ function ExecutiveHeader({ verdict: v, mode }: { verdict: ScorecardVerdict; mode
 
         {/* Focus */}
         {v.focus.length > 0 && (
-          <div className="shrink-0 max-w-[260px] pl-4 border-l border-black/5">
+          <div className="w-full sm:w-auto sm:shrink-0 sm:max-w-[260px] sm:pl-4 sm:border-l border-black/5 pt-2 sm:pt-0 border-t sm:border-t-0">
             <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Focus</div>
             {v.focus.map((f, i) => (
               <p key={i} className="text-[10px] text-gray-600 leading-relaxed flex items-start gap-1.5 dark:text-gray-400">

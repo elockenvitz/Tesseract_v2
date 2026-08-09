@@ -357,21 +357,21 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
 
       {/* Search and Filters */}
       <Card>
-        <div className="space-y-4">
+        <div className="space-y-2 sm:space-y-4">
           {/* Search Bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by portfolio name, description, or benchmark..."
+              placeholder="Search portfolios"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
+              className="w-full pl-10 pr-4 h-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
-          {/* Status Filter Pills */}
-          <div className="flex items-center gap-2">
+          {/* Status Filter Pills + filter toggle, one row */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             {(['active', 'archived', ...(isOrgAdmin ? ['discarded'] as const : []), 'all'] as ArchiveFilter[]).map((filter) => {
               const count = archiveCounts[filter]
               const isSelected = archiveFilter === filter
@@ -402,7 +402,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
           </div>
 
           {/* Filter Toggle */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <button
               onClick={() => setShowFilters(!showFilters)}
               className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400"
@@ -621,12 +621,18 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                               'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded',
                               isInactive ? 'bg-gray-100 text-gray-400 dark:bg-gray-800' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800',
                             )}>
-                              {counts.analysts} A
+                              {counts.analysts} An{counts.analysts > 1 ? 's' : ''}
                             </span>
                           )}
+                          {/* "+3" said nothing about what those three were.
+                              They are members holding neither the PM nor the
+                              Analyst role, so the badge now says so. */}
                           {counts.total - counts.pms - counts.analysts > 0 && (
-                            <span className="text-gray-400">
-                              +{counts.total - counts.pms - counts.analysts}
+                            <span
+                              className="text-gray-400"
+                              title={`${counts.total - counts.pms - counts.analysts} other member(s)`}
+                            >
+                              +{counts.total - counts.pms - counts.analysts} other
                             </span>
                           )}
                         </div>

@@ -86,7 +86,7 @@ export function AnalystScorecardCard({
               <div className="h-4 bg-gray-200 rounded w-1/2" />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
             {[1, 2, 3].map(i => <div key={i} className="h-14 bg-gray-200 rounded" />)}
           </div>
         </div>
@@ -195,7 +195,7 @@ export function AnalystScorecardCard({
             <span className="text-[10px] text-gray-400 ml-auto">{scorecard.priceTargets.total} total</span>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 mb-3">
+          <div className="grid grid-cols-2 gap-2 mb-3 sm:grid-cols-4">
             <StatPill icon={CheckCircle} label="Hit" value={scorecard.priceTargets.hit} iconColor="text-green-500" />
             <StatPill icon={XCircle} label="Missed" value={scorecard.priceTargets.missed} iconColor="text-red-500" />
             <StatPill icon={Clock} label="Pending" value={scorecard.priceTargets.pending} iconColor="text-amber-500" />

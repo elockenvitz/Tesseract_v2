@@ -261,7 +261,12 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         showCancelled: !!filters?.showCancelled,
       }
       if (filters?.dateRange?.start) filterPayload.dateStart = filters.dateRange.start
-      else if (!filters?.dateRange) filterPayload.dateStart = subDays(new Date(), 90).toISOString()
+      // A year, not 90 days. This page exists to show a decision against what
+      // happened afterwards, which is a question with a long tail — and a desk
+      // that decides a few times a month has almost nothing inside a quarter.
+      // On production data 3 of 21 decisions fell inside the old window, so the
+      // default answer to "show me our decisions" was a near-empty page.
+      else if (!filters?.dateRange) filterPayload.dateStart = subDays(new Date(), 365).toISOString()
       if (filters?.dateRange?.end) filterPayload.dateEnd = filters.dateRange.end
       if (filters?.portfolioIds && filters.portfolioIds.length > 0) {
         filterPayload.portfolioIds = filters.portfolioIds
@@ -399,7 +404,7 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       if (dateStart) {
         q = q.gte('created_at', dateStart)
       } else if (!filters?.dateRange) {
-        q = q.gte('created_at', subDays(new Date(), 90).toISOString())
+        q = q.gte('created_at', subDays(new Date(), 365).toISOString())
       }
       if (filters?.dateRange?.end) {
         q = q.lte('created_at', filters.dateRange.end)
