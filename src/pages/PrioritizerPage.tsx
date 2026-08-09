@@ -36,15 +36,31 @@ const SECTION_ORDER: AttentionType[] = [
   'alignment',
 ]
 
+/**
+ * Mine versus the desk's, as the first cut.
+ *
+ * Team was one of five type filters, which put "what is the desk converging
+ * on" beside "what have I been asked to decide" as if they were the same kind
+ * of question. They are not: one is a queue you are answerable for clearing,
+ * the other is context you read. Splitting them first means the count in the
+ * header is a count of your own work, and the team view stops diluting it.
+ */
+type Scope = 'mine' | 'team'
+
+/** Addressed to you, and yours to clear. */
+const MINE_TYPES: AttentionType[] = ['decision_required', 'action_required', 'informational']
+/** What the desk is converging on. Read, not owed. */
+const TEAM_TYPES: AttentionType[] = ['alignment']
+
 const FILTER_TABS: { id: AttentionType | 'all'; label: string; icon: React.ElementType }[] = [
   { id: 'all', label: 'All', icon: Filter },
   { id: 'decision_required', label: 'Decisions', icon: Scale },
   { id: 'action_required', label: 'Action Needed', icon: CheckCircle },
   { id: 'informational', label: "What's New", icon: Newspaper },
-  { id: 'alignment', label: 'Team', icon: Users },
 ]
 
 export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
+  const [scope, setScope] = useState<Scope>('mine')
   const [filterType, setFilterType] = useState<AttentionType | 'all'>('all')
 
   const {
@@ -59,7 +75,6 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
     acknowledge,
     snoozeFor,
     dismiss,
-    hasItems,
     markDeliverableDone,
     approveTradeIdea,
     rejectTradeIdea,
@@ -111,7 +126,17 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
     window.dispatchEvent(new CustomEvent('openThoughtsCapture', { detail: { contextType, contextId, contextTitle } }))
   }
 
-  const visibleSections = filterType === 'all' ? SECTION_ORDER : SECTION_ORDER.filter(t => t === filterType)
+  const scopeTypes = scope === 'mine' ? MINE_TYPES : TEAM_TYPES
+  const visibleSections = SECTION_ORDER
+    .filter(t => scopeTypes.includes(t))
+    .filter(t => scope === 'team' || filterType === 'all' || t === filterType)
+
+  // The counts that matter are the ones for the scope you are looking at; a
+  // header claiming twelve items while the list shows three is worse than no
+  // header at all.
+  const scopeCount = scopeTypes.reduce((n, t) => n + (counts[t] ?? 0), 0)
+  const mineCount = MINE_TYPES.reduce((n, t) => n + (counts[t] ?? 0), 0)
+  const teamCount = TEAM_TYPES.reduce((n, t) => n + (counts[t] ?? 0), 0)
 
   // Compute headline from counts
   const headline = generateHeadline(counts)
@@ -153,30 +178,35 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 space-y-5">
 
         {/* ═══ HEADER ═══ */}
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">My Priorities</h1>
-            {headline && (
-              <p className={clsx('text-sm mt-0.5 font-medium',
-                counts.decision_required > 0 || counts.action_required > 3
-                  ? 'text-amber-700 dark:text-amber-400'
-                  : 'text-gray-500 dark:text-gray-400'
-              )}>
-                {headline}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
+        {/* Refresh sits on the title line, not below it. Wrapping the whole
+            group moved it under a headline that runs two lines on a phone,
+            which reads as a control belonging to the headline rather than to
+            the page. */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="min-w-0 flex-1 text-lg font-bold text-gray-900 dark:text-white truncate">
+              My Priorities
+            </h1>
             {generatedAt && (
-              <span className="text-[10px] text-gray-400 dark:text-gray-500">
+              <span className="hidden sm:inline text-[10px] text-gray-400 dark:text-gray-500">
                 {formatDistanceToNow(new Date(generatedAt), { addSuffix: true })}
               </span>
             )}
             <button onClick={() => refetch()} disabled={isFetching}
-              className={clsx('p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors', isFetching && 'opacity-50')}>
+              aria-label="Refresh priorities"
+              className={clsx('shrink-0 p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors', isFetching && 'opacity-50')}>
               <RefreshCw className={clsx('w-4 h-4 text-gray-500 dark:text-gray-400', isFetching && 'animate-spin')} />
             </button>
           </div>
+          {headline && (
+            <p className={clsx('text-sm mt-0.5 font-medium',
+              counts.decision_required > 0 || counts.action_required > 3
+                ? 'text-amber-700 dark:text-amber-400'
+                : 'text-gray-500 dark:text-gray-400'
+            )}>
+              {headline}
+            </p>
+          )}
         </div>
 
         {/* ═══ SUMMARY STRIP ═══ */}
@@ -195,7 +225,34 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
           )}
         </div>
 
-        {/* ═══ FILTER TABS ═══ */}
+        {/* ═══ SCOPE ═══ */}
+        <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
+          {([
+            { id: 'mine' as Scope, label: 'Mine', icon: CheckCircle, count: mineCount },
+            { id: 'team' as Scope, label: 'Team', icon: Users, count: teamCount },
+          ]).map(s2 => {
+            const Icon = s2.icon
+            const isActive = scope === s2.id
+            return (
+              <button key={s2.id} onClick={() => setScope(s2.id)}
+                className={clsx(
+                  'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-all no-touch-target',
+                  isActive ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'
+                )}>
+                <Icon className={clsx('h-4 w-4', isActive && 'text-primary-500')} />
+                {s2.label}
+                {s2.count > 0 && (
+                  <span className={clsx('px-1.5 py-0.5 rounded-full text-[10px] font-bold',
+                    isActive ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400' : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                  )}>{s2.count}</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ═══ FILTER TABS — narrowing within Mine; Team is one kind of item ═══ */}
+        {scope === 'mine' && (
         <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg w-full sm:w-fit overflow-x-auto no-scrollbar">
           {FILTER_TABS.map(tab => {
             const Icon = tab.icon
@@ -218,16 +275,21 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
             )
           })}
         </div>
+        )}
 
         {/* ═══ SECTIONS ═══ */}
-        {!hasItems ? (
+        {scopeCount === 0 ? (
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-12 text-center">
             <div className="w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-7 h-7 text-green-500" />
             </div>
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white">All clear</h3>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+              {scope === 'mine' ? 'All clear' : 'Nothing from the team'}
+            </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
-              Nothing needs your attention right now. Decisions are resolved, work is progressing, and nothing is stale.
+              {scope === 'mine'
+                ? 'Nothing needs your attention right now. Decisions are resolved, work is progressing, and nothing is stale.'
+                : 'No names the desk is converging on, and nothing waiting on someone else.'}
             </p>
           </div>
         ) : (

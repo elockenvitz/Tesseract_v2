@@ -442,7 +442,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     count: number
     symbols: string[]
   } | null>(null)
-  const [showIdeasPanel, setShowIdeasPanel] = useState(initialState.current.showIdeasPanel)
+  // Desktop opens with the ideas column beside the simulation. On a phone that
+  // column is a full-screen overlay, so the same default opens Trade Lab onto
+  // the ideas list with the simulation hidden behind it — the wrong thing
+  // first. Phones start on the simulation and reach ideas deliberately.
+  const [showIdeasPanel, setShowIdeasPanel] = useState(
+    isMobileViewport ? false : initialState.current.showIdeasPanel
+  )
   const [editingTradeId, setEditingTradeId] = useState<string | null>(null)
   const [editingSizingMode, setEditingSizingMode] = useState<SimpleSizingMode>('weight')
   const [editingValue, setEditingValue] = useState<string>('')
