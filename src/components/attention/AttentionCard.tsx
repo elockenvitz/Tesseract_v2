@@ -848,7 +848,7 @@ export function AttentionCard({
     <div
       onClick={handleClick}
       className={clsx(
-        'relative p-4 rounded-lg border cursor-pointer transition-all duration-200',
+        'relative p-3 sm:p-4 rounded-lg border cursor-pointer transition-all duration-200',
         'hover:shadow-md hover:border-gray-300',
         item.read_state === 'unread' ? 'bg-white border-blue-200 dark:bg-gray-800' : 'bg-white border-gray-200 dark:border-gray-700 dark:bg-gray-800',
         item.severity === 'critical' && 'border-l-4 border-l-red-500',

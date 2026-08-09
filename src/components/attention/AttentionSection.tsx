@@ -134,7 +134,7 @@ export function AttentionSection({
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className={clsx(
-          'w-full flex items-center gap-3 px-4 py-3',
+          'w-full flex items-center gap-3 px-3 sm:px-4 py-3',
           config.bgColor,
           'hover:brightness-95 transition-all'
         )}
@@ -171,7 +171,7 @@ export function AttentionSection({
         <div className="bg-white dark:bg-gray-800">
           {isEmpty ? (
             // Empty state
-            <div className="px-4 py-6 text-center">
+            <div className="px-3 sm:px-4 py-6 text-center">
               <p className="text-sm text-gray-500 dark:text-gray-400">{EMPTY_MESSAGES[type]}</p>
             </div>
           ) : compact ? (
@@ -198,7 +198,7 @@ export function AttentionSection({
             </div>
           ) : (
             // Card view
-            <div className="p-4 space-y-3">
+            <div className="p-2 sm:p-4 space-y-3">
               {displayItems.map((item) => (
                 <AttentionCard
                   key={item.attention_id}
@@ -221,7 +221,7 @@ export function AttentionSection({
 
           {/* View all link */}
           {hasMore && (
-            <div className="px-4 pb-3">
+            <div className="px-3 sm:px-4 pb-3">
               <button
                 onClick={(e) => {
                   e.stopPropagation()
