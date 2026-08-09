@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Users, Plus, Edit, Trash2 } from 'lucide-react'
+import { Users, Plus, Edit, Trash2, MoreHorizontal } from 'lucide-react'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { getUserDisplayName, getUserInitials, type TeamMember } from './portfolio-tab-types'
@@ -66,6 +66,20 @@ export function TeamTab({
   onDeleteMember,
   onAddMember,
 }: TeamTabProps) {
+  // Which member's action menu is open, keyed by the row's own id.
+  const [openMemberMenu, setOpenMemberMenu] = useState<string | null>(null)
+  const memberMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!openMemberMenu) return
+    const onDown = (e: MouseEvent) => {
+      if (memberMenuRef.current && !memberMenuRef.current.contains(e.target as Node)) {
+        setOpenMemberMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [openMemberMenu])
 
   // ── Supplementary data: coverage, ideas, trades ─────────
 
@@ -291,25 +305,40 @@ export function TeamTab({
                       <div className="flex-1 min-w-0">
                         {/* Row 1: Name + role badge ··· edit/delete */}
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                             <h4 className="text-[13px] font-semibold text-gray-900 truncate dark:text-white">{displayName}</h4>
-                            <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold border shrink-0 ${badgeStyle}`}>
+                            <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold border ${badgeStyle}`}>
                               {member._role}
                             </span>
                           </div>
-                          <div className="flex gap-0.5 opacity-0 group-hover/member:opacity-100 transition-opacity">
+                          {/* Edit and remove sit behind a menu. They were bare
+                              icons revealed on hover — which on a phone means
+                              always visible and one stray tap from removing
+                              somebody from a portfolio. */}
+                          <div className="relative shrink-0" ref={openMemberMenu === `${member.id}-${idx}` ? memberMenuRef : undefined}>
                             <button
-                              onClick={() => onEditMember(member, member._role)}
-                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-primary-600 transition-colors dark:hover:bg-gray-700"
+                              onClick={(e) => { e.stopPropagation(); setOpenMemberMenu(openMemberMenu === `${member.id}-${idx}` ? null : `${member.id}-${idx}`) }}
+                              aria-label={`Actions for ${displayName}`}
+                              className="p-1.5 rounded hover:bg-gray-100 text-gray-400 transition-colors dark:hover:bg-gray-700"
                             >
-                              <Edit className="h-3.5 w-3.5" />
+                              <MoreHorizontal className="h-4 w-4" />
                             </button>
-                            <button
-                              onClick={() => onDeleteMember(member, member._role)}
-                              className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            {openMemberMenu === `${member.id}-${idx}` && (
+                              <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 dark:border-gray-700 dark:bg-gray-800">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setOpenMemberMenu(null); onEditMember(member, member._role) }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
+                                >
+                                  <Edit className="h-3.5 w-3.5" /> Edit
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setOpenMemberMenu(null); onDeleteMember(member, member._role) }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
 

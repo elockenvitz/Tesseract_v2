@@ -911,7 +911,7 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
           <span className={clsx(
             'font-bold uppercase tracking-wider px-1.5 py-px rounded shrink-0',
             compact ? 'text-[8px]' : 'text-[9px]',
@@ -919,13 +919,24 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
           )}>
             {cat.label}
           </span>
+          {/* Tickers sit with the category rather than three rows down: what
+              the entry is about is the first thing you need to place it. */}
+          {!compact && entry.assetSymbols.length > 0 && (
+            <span className="flex items-center gap-1 shrink-0 sm:hidden">
+              {entry.assetSymbols.map(sym => (
+                <span key={sym} className="inline-flex items-center px-1.5 py-px rounded bg-gray-100 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">
+                  {sym}
+                </span>
+              ))}
+            </span>
+          )}
           {entry.subLabel && (
             <span className={clsx('text-gray-400 dark:text-gray-500 shrink-0', compact ? 'text-[9px]' : 'text-[10px]')}>
               {entry.subLabel}
             </span>
           )}
           <span className={clsx(
-            'font-medium text-gray-900 dark:text-gray-100 truncate',
+            'w-full sm:w-auto min-w-0 font-medium text-gray-900 dark:text-gray-100 line-clamp-2 sm:truncate',
             compact ? 'text-[12px]' : 'text-[13px]',
             onNavigate && 'group-hover/row:text-primary-600 dark:group-hover/row:text-primary-400',
           )}>
@@ -938,7 +949,7 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
         </div>
 
         {showBody && (
-          <p className="text-[12px] text-gray-500 dark:text-gray-400 leading-snug mt-0.5 line-clamp-1">
+          <p className="text-[12px] text-gray-500 dark:text-gray-400 leading-snug mt-0.5 line-clamp-2 sm:line-clamp-1">
             {entry.body}
           </p>
         )}
@@ -946,7 +957,7 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
         {!compact && (
           <div className="flex items-center gap-2 mt-1">
             {entry.assetSymbols.length > 0 && (
-              <div className="flex items-center gap-1">
+              <div className="hidden sm:flex items-center gap-1">
                 {entry.assetSymbols.map(sym => (
                   <span key={sym} className="inline-flex items-center px-1.5 py-px rounded bg-gray-100 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">
                     {sym}

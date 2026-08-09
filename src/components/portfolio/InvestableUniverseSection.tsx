@@ -357,11 +357,13 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
                   <span className="font-normal text-gray-400 normal-case tracking-normal ml-2">({combined.manual.length} manual + {combined.filtered.length} from filters)</span>
                 )}
               </h4>
-              <div className={`overflow-y-auto border border-gray-200 rounded-md ${collapsible ? 'max-h-64' : 'flex-1 min-h-0'}`}>
+              {/* Scrolls both ways with a frozen symbol column, so a row can
+                  still be identified once the other columns move. */}
+              <div className={`overflow-auto border border-gray-200 rounded-md ${collapsible ? 'max-h-64' : 'flex-1 min-h-0'}`}>
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 sticky top-0 dark:bg-gray-900">
+                  <thead className="bg-gray-50 sticky top-0 z-20 dark:bg-gray-900">
                     <tr>
-                      <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Symbol</th>
+                      <th className="sticky left-0 z-30 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Symbol</th>
                       <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Company</th>
                       <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Sector</th>
                       <th className="px-3 py-1.5 text-left text-[11px] font-medium text-gray-500 uppercase dark:text-gray-400">Source</th>
@@ -371,7 +373,7 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
                   <tbody className="bg-white divide-y divide-gray-200 dark:divide-gray-700 dark:bg-gray-800">
                     {combined.manual.map((ua: any) => (
                       <tr key={`m-${ua.id}`} className="hover:bg-gray-50">
-                        <td className="px-3 py-1.5 text-sm font-medium text-gray-900 dark:text-white">{ua.asset?.symbol}</td>
+                        <td className="sticky left-0 z-10 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 px-3 py-1.5 text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">{ua.asset?.symbol}</td>
                         <td className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">{ua.asset?.company_name}</td>
                         <td className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400">{ua.asset?.sector || '-'}</td>
                         <td className="px-3 py-1.5"><span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-blue-100 text-blue-800">Manual</span></td>

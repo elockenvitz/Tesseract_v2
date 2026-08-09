@@ -379,10 +379,10 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
           <div className="min-w-0">
             <button
               type="button"
-              onClick={() => portfolio.description && setShowDescription(v => !v)}
+              onClick={() => (portfolio.description || portfolio.benchmark) && setShowDescription(v => !v)}
               aria-expanded={showDescription}
               className="text-left"
-              disabled={!portfolio.description}
+              disabled={!portfolio.description && !portfolio.benchmark}
             >
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
                 <span className="min-w-0">
@@ -391,7 +391,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
                     <span className="font-normal text-gray-600 dark:text-gray-400"> - {portfolio.portfolio_id}</span>
                   )}
                 </span>
-                {portfolio.description && (
+                {(portfolio.description || portfolio.benchmark) && (
                   <ChevronDown className={clsx(
                     'h-4 w-4 shrink-0 text-gray-400 transition-transform',
                     showDescription && 'rotate-180'
@@ -402,7 +402,7 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             {portfolio.description && (showDescription || !isMobileViewport) && (
               <p className="text-sm sm:text-lg text-gray-600 mt-1 mb-1 dark:text-gray-400">{portfolio.description}</p>
             )}
-            {portfolio.benchmark && (
+            {portfolio.benchmark && (showDescription || !isMobileViewport) && (
               <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Benchmark: {portfolio.benchmark}</p>
             )}
           </div>
