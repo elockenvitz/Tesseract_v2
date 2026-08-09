@@ -76,6 +76,9 @@ const COLUMNS: { key: ColKey; label: string; align: 'left' | 'right'; sortKey?: 
 // Split-view navigable fields (maps to ColKey for inspector reuse)
 const SPLIT_COL_KEYS: ColKey[] = ['asset', 'price', 'dailyPnl', 'weight']
 
+/** Matches the set useSimulationRows treats as cash, so the two agree. */
+const CASH_SYMBOLS = new Set(['CASH', '$CASH', 'CASH_USD'])
+
 // ---------------------------------------------------------------------------
 // Enriched row
 // ---------------------------------------------------------------------------
@@ -191,16 +194,24 @@ export function PositionsTab({
       const symbol = h.assets?.symbol || '?'
       const shares = parseFloat(h.shares) || 0
       const price = parseFloat(h.price) || 0
-      const avgCost = parseFloat(h.cost) || 0
-      const costBasis = shares * avgCost
+
+      // Cash is held at par: a dollar cost a dollar, so it cannot carry an
+      // unrealised gain. Without this the row inherits whatever is in
+      // holdings.cost — which on real data is the total balance rather than a
+      // per-share figure, so a $100m cash position reported a
+      // ten-quadrillion-dollar cost basis and a loss to match. Even with clean
+      // data, cash P&L is a category error rather than a number worth showing.
+      const isCash = CASH_SYMBOLS.has(symbol.toUpperCase())
+      const avgCost = isCash ? 1 : (parseFloat(h.cost) || 0)
+      const costBasis = isCash ? shares : shares * avgCost
       const marketValue = shares * price
-      const gainLoss = marketValue - costBasis
-      const returnPct = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0
+      const gainLoss = isCash ? 0 : marketValue - costBasis
+      const returnPct = isCash || costBasis <= 0 ? 0 : (gainLoss / costBasis) * 100
       const weightPct = totalValue > 0 ? (marketValue / totalValue) * 100 : 0
       const q = quotes.get(symbol)
       const dayChange = q?.change ?? 0
       const dayChangePct = q?.changePercent ?? 0
-      const dailyPnl = shares * dayChange
+      const dailyPnl = isCash ? 0 : shares * dayChange
       let daysAgo: number | null = null
       if (h.assets?.updated_at) {
         daysAgo = Math.floor((Date.now() - new Date(h.assets.updated_at).getTime()) / 86400000)

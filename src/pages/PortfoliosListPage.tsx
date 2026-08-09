@@ -363,7 +363,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
 
       {/* Search and Filters */}
       <Card padding="sm">
-        <div className="space-y-2 sm:space-y-4">
+        <div className="space-y-1.5 sm:space-y-4">
           {/* Search Bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -372,7 +372,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
               placeholder="Search portfolios"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 h-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
+              className="w-full pl-9 pr-4 h-9 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
@@ -576,7 +576,8 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     </div>
 
                     {/* Benchmark */}
-                    <div className="col-span-2">
+                    <div className="col-span-1 sm:col-span-2 min-w-0">
+                      <span className="sm:hidden block text-[9px] font-semibold uppercase tracking-wider text-gray-400">Benchmark</span>
                       {portfolio.benchmark ? (
                         <span className={clsx('text-sm', isInactive ? 'text-gray-400' : 'text-gray-900 dark:text-white')}>
                           {portfolio.benchmark}
@@ -587,7 +588,8 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     </div>
 
                     {/* Teams */}
-                    <div className="col-span-2">
+                    <div className="col-span-1 sm:col-span-2 min-w-0">
+                      <span className="sm:hidden block text-[9px] font-semibold uppercase tracking-wider text-gray-400">Teams</span>
                       {links.length > 0 ? (
                         <div className="relative group/teams">
                           <div className={clsx('flex items-center gap-1.5 text-sm', isInactive ? 'text-gray-400' : 'text-gray-600 dark:text-gray-400')}>
@@ -614,7 +616,8 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     </div>
 
                     {/* Members */}
-                    <div className="col-span-2">
+                    <div className="col-span-1 sm:col-span-2 min-w-0">
+                      <span className="sm:hidden block text-[9px] font-semibold uppercase tracking-wider text-gray-400">Members</span>
                       {counts.total > 0 ? (
                         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           {counts.pms > 0 && (
@@ -637,11 +640,8 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                               They are members holding neither the PM nor the
                               Analyst role, so the badge now says so. */}
                           {counts.total - counts.pms - counts.analysts > 0 && (
-                            <span
-                              className="text-gray-400"
-                              title={`${counts.total - counts.pms - counts.analysts} other member(s)`}
-                            >
-                              +{counts.total - counts.pms - counts.analysts} other
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                              {counts.total - counts.pms - counts.analysts} other
                             </span>
                           )}
                         </div>
@@ -653,7 +653,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     {/* Last Updated + Actions */}
                     <div className="col-span-2">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
+                        <div className="hidden sm:flex items-center text-xs text-gray-500 dark:text-gray-400">
                           <Calendar className="h-3 w-3 mr-1" />
                           {formatDistanceToNow(new Date(portfolio.updated_at || ''), { addSuffix: true })}
                         </div>
