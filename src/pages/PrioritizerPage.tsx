@@ -175,7 +175,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
 
   return (
     <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 space-y-5">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3 sm:py-5 space-y-2.5 sm:space-y-5">
 
         {/* ═══ HEADER ═══ */}
         {/* Refresh sits on the title line, not below it. Wrapping the whole
@@ -209,8 +209,9 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
           )}
         </div>
 
-        {/* ═══ SUMMARY STRIP ═══ */}
-        <div className="flex items-center gap-3 flex-wrap">
+        {/* ═══ SUMMARY STRIP — the counts are also on the chips below,
+            so this is desktop-only rather than a third place to read them ═══ */}
+        <div className="hidden sm:flex items-center gap-3 flex-wrap">
           {counts.decision_required > 0 && (
             <SummaryBadge icon={Scale} count={counts.decision_required} label="decisions" severity="critical" />
           )}
@@ -225,7 +226,8 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
           )}
         </div>
 
-        {/* ═══ SCOPE ═══ */}
+        {/* ═══ SCOPE + FILTERS — pinned ═══ */}
+        <div className="sticky top-0 z-20 -mx-3 sm:-mx-6 px-3 sm:px-6 py-2 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200/70 dark:border-gray-700/70 space-y-2">
         <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
           {([
             { id: 'mine' as Scope, label: 'Mine', icon: CheckCircle, count: mineCount },
@@ -276,6 +278,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
           })}
         </div>
         )}
+        </div>
 
         {/* ═══ SECTIONS ═══ */}
         {scopeCount === 0 ? (

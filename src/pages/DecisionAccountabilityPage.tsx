@@ -323,15 +323,15 @@ function FilterBar({
   }
 
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 min-w-0">
       {/* Date range */}
-      <div className="relative">
-        <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800">
+      <div className="relative min-w-0 max-w-full">
+        <div className="flex sm:inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800 max-w-full overflow-x-auto no-scrollbar">
           {(['7d', '30d', '90d', 'QTD', 'YTD', '1Y', 'ALL'] as DatePreset[]).map(p => (
             <button
               key={p}
               onClick={() => handlePreset(p)}
-              className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
+              className={`shrink-0 px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
                 activePreset === p ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
               }`}
             >
@@ -340,7 +340,7 @@ function FilterBar({
           ))}
           <button
             onClick={() => handlePreset('custom')}
-            className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
+            className={`shrink-0 px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
               showCustom || activePreset === 'custom' ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
             }`}
           >
@@ -3386,7 +3386,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
           const hasNarrative = processHealth.narrative && processHealth.narrative !== processHealth.headline
           return (
             <div className="pb-2">
-              <div className={`flex items-center gap-3 rounded ${isSevere ? `border ${hd.borderColor} ${hd.bgColor} px-3 py-1.5` : 'py-0.5'}`}>
+              <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded ${isSevere ? `border ${hd.borderColor} ${hd.bgColor} px-3 py-2` : 'py-0.5'}`}>
                 <div className="flex-1 min-w-0">
                   {/* Single-line headline — label + breakdown + headline
                       all inline so the banner reads as one strip,
@@ -3396,17 +3396,17 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                     {processHealth.primaryBreakdown && (
                       <span className={`text-[10px] font-semibold ${isSevere ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'} flex-shrink-0`}>· {processHealth.primaryBreakdown}</span>
                     )}
-                    <span className={`text-[11px] leading-snug ${isSevere ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'} truncate`}>
+                    <span className={`text-[11px] leading-snug min-w-0 ${isSevere ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'} line-clamp-2 sm:truncate`}>
                       {processHealth.headline}
                     </span>
                   </div>
                   {hasNarrative && (
-                    <p className={`text-[10px] leading-snug mt-0.5 ${isSevere ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'}`}>
+                    <p className={`hidden sm:block text-[10px] leading-snug mt-0.5 ${isSevere ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'}`}>
                       {processHealth.narrative}
                     </p>
                   )}
                 </div>
-                <div className="shrink-0">
+                <div className="w-full sm:w-auto sm:shrink-0 min-w-0">
                   <FilterBar filters={filters} onChange={setFilters} />
                 </div>
               </div>
