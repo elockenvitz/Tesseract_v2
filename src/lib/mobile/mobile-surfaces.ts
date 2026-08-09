@@ -153,8 +153,8 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'coverage', title: 'Coverage', icon: Users,
     color: 'text-sky-500', bg: 'bg-sky-50',
-    support: 'desktop-only', group: 'work', inNav: true,
-    desktopReason: 'The coverage matrix is an analyst-by-asset grid that has no meaningful phone layout.',
+    support: 'read-only', group: 'work', inNav: true,
+    mobileNote: 'Who covers what, and what nobody covers — editing stays on desktop',
   },
 
   // ---- Admin / analysis ---------------------------------------------------

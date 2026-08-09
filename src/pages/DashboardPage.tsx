@@ -9,6 +9,7 @@ import { TabStateManager } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
+import { MobileCoverage } from '../components/mobile/MobileCoverage'
 import { AssetsListPage } from './AssetsListPage'
 import { ThemesListPage } from './ThemesListPage'
 import { PortfoliosListPage } from './PortfoliosListPage'
@@ -1091,7 +1092,13 @@ export function DashboardPage() {
       case 'priorities':
         return <PrioritizerPage onItemSelect={handleSearchResult} />
       case 'coverage':
-        return <CoveragePage initialView={activeTab.data?.initialView} />
+        // The matrix genuinely has no phone layout — a grid whose axes are both
+        // unbounded cannot be shown honestly at 390px. But the matrix is a
+        // presentation, not the question: who owns this name, what does this
+        // person own, what does nobody own. Those are three lists.
+        return isMobile
+          ? <MobileCoverage onAssetSelect={handleSearchResult} />
+          : <CoveragePage initialView={activeTab.data?.initialView} />
       case 'organization':
         return <OrganizationPage onUserClick={(user) => handleSearchResult({
           id: user.id,
