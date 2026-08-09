@@ -446,22 +446,21 @@ export function PositionsTab({
           ))}
         </div>
 
-        <div className="flex items-center gap-3 ml-auto">
-          {/* Group by */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-gray-400">Group</span>
-            <select
-              value={groupBy}
-              onChange={e => setGroupBy(e.target.value as GroupBy)}
-              className="text-[10px] font-medium text-gray-600 bg-transparent border border-gray-200 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-300 appearance-none pr-4 dark:border-gray-700 dark:text-gray-400"
-              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%239ca3af' d='M2 3l2 2 2-2z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center' }}
-            >
-              <option value="none">None</option>
-              <option value="sector">Sector</option>
-              <option value="industry">Industry</option>
-              <option value="sector-industry">Sector → Industry</option>
-            </select>
-          </div>
+        <div className="flex items-center gap-2 sm:gap-3 ml-auto shrink-0">
+          {/* Group by — the select carries its own meaning, so the "Group"
+              label beside it was a word spent saying what the options say. */}
+          <select
+            value={groupBy}
+            onChange={e => setGroupBy(e.target.value as GroupBy)}
+            aria-label="Group positions"
+            className="h-7 text-[11px] font-medium text-gray-600 bg-transparent border border-gray-200 rounded px-1.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-300 appearance-none pr-5 dark:border-gray-700 dark:text-gray-400"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%239ca3af' d='M2 3l2 2 2-2z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 5px center' }}
+          >
+            <option value="none">No grouping</option>
+            <option value="sector">By sector</option>
+            <option value="industry">By industry</option>
+            <option value="sector-industry">Sector → Industry</option>
+          </select>
 
           {/* Session P&L */}
           {hasQuotes && (
@@ -493,7 +492,7 @@ export function PositionsTab({
         />
       ) : (
       /* ─── TABLE ─────────────────────────────────────────── */
-      <div className="overflow-auto max-h-[70vh] -mx-3 sm:mx-0">
+      <div className="overflow-auto max-h-[70vh]">
           {/* A frozen symbol column and a stuck header row are what make ten
               columns usable at 390px: the numbers move, the name of the row and
               the name of the column do not. */}
