@@ -331,7 +331,11 @@ export function EditorToolbar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-0.5 p-2 bg-gray-50 border border-gray-200 rounded-t-lg border-b-0 dark:border-gray-700 dark:bg-gray-900">
+      {/* Wrapping is right on a wide screen and wrong on a narrow one: forty
+          controls at 390px wrap to five or six rows, and the ribbon ends up
+          taller than the text it formats. Below sm it becomes a single row that
+          scrolls sideways — constant height, everything still reachable. */}
+      <div className="flex flex-nowrap overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-0.5 p-2 bg-gray-50 border border-gray-200 rounded-t-lg border-b-0 dark:border-gray-700 dark:bg-gray-900">
         {/* Undo/Redo */}
         <div className="flex items-center gap-0.5 mr-1">
           <ToolButton

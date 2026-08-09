@@ -204,7 +204,16 @@ export class NoteLinkList {
       trigger: 'manual',
       placement: 'bottom-start',
       animation: 'shift-away',
-      maxWidth: 'none'
+      maxWidth: 'none',
+      // A 280px popup anchored to the caret runs off a 390px screen the moment
+      // the caret passes the midpoint. Popper is told to shift it back into the
+      // viewport rather than letting it hang past the edge.
+      popperOptions: {
+        modifiers: [
+          { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8 } },
+          { name: 'flip', options: { fallbackPlacements: ['top-start', 'bottom-end', 'top-end'] } },
+        ],
+      }
     })
   }
 
@@ -317,7 +326,7 @@ function NoteLinkListComponent({ items, selectedIndex, onSelect }: NoteLinkListC
   }, items.map((item, index) =>
     React.createElement('button', {
       key: item.id,
-      className: `w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${
+      className: `w-full px-3 py-2.5 min-h-[44px] text-left flex items-center gap-3 transition-colors ${
         index === selectedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'
       }`,
       onClick: () => onSelect(item)
