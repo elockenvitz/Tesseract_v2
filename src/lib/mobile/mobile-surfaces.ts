@@ -78,7 +78,7 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     type: 'assets-list', title: 'Assets', icon: TrendingUp,
     color: 'text-blue-500', bg: 'bg-blue-50',
     support: 'read-only', group: 'core', inNav: true,
-    mobileNote: 'Search and read — the grid stays on desktop',
+    mobileNote: 'Search and open — column config stays on desktop',
   },
   {
     type: 'asset', title: 'Asset', icon: TrendingUp,

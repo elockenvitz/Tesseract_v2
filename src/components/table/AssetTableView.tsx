@@ -35,6 +35,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { clsx } from 'clsx'
 import { DENSITY_CONFIG } from '../../contexts/TableContext'
 import { DensityToggle } from './DensityToggle'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useSpreadsheetNavigation } from '../../hooks/useSpreadsheetNavigation'
 import { useAssetFlags, FLAG_COLORS, type FlagColor } from '../../hooks/useAssetFlags'
 import { MetricPopover } from './MetricPopover'
@@ -433,6 +434,14 @@ export function AssetTableView({
     return (saved as DensityMode) || 'comfortable'
   })
 
+  // Row density is a desk affordance: it trades legibility for how many rows
+  // fit, which is a choice worth having on a wide screen and not on a phone,
+  // where the only sensible height is the one you can read and hit. Wherever
+  // this grid still renders on a phone it uses one density and does not offer
+  // the switch.
+  const isMobileViewport = useIsMobile()
+  const effectiveDensity: DensityMode = isMobileViewport ? 'comfortable' : density
+
   // Listen for density changes via custom event (dispatched by DensityToggle)
   useEffect(() => {
     const handleDensityChange = (e: CustomEvent<{ density: DensityMode }>) => {
@@ -442,9 +451,9 @@ export function AssetTableView({
     return () => window.removeEventListener('density-change', handleDensityChange as EventListener)
   }, [])
 
-  const densityConfig = DENSITY_CONFIG[density]
+  const densityConfig = DENSITY_CONFIG[effectiveDensity]
   const densityRowHeight = densityConfig.rowHeight
-  const expandedRowHeight = expandedRowHeightS[density]
+  const expandedRowHeight = expandedRowHeightS[effectiveDensity]
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -2333,7 +2342,7 @@ export function AssetTableView({
         {/* Right side controls */}
         <div className="flex items-center gap-1">
           {/* Density toggle (table mode only) */}
-          {viewMode === 'table' && <DensityToggle />}
+          {viewMode === 'table' && !isMobileViewport && <DensityToggle />}
 
           {/* Divider */}
           {viewMode === 'table' && <div className="h-4 w-px bg-gray-200 mx-1" />}
@@ -3237,9 +3246,9 @@ export function AssetTableView({
                                     return <span className="pro-empty-cell">—</span>
                                   }
                                   const lead = coverage[0] // deterministically sorted: is_lead → role → updated_at → user_id
-                                  const isMicro = density === 'micro'
+                                  const isMicro = effectiveDensity === 'micro'
 
-                                  if (density === 'comfortable') {
+                                  if (effectiveDensity === 'comfortable') {
                                     return (
                                       <div className="flex items-center gap-1.5" title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
                                         <div className="min-w-0 flex-1">
@@ -3258,7 +3267,7 @@ export function AssetTableView({
                                   )
                                 })()}
                                 {col.id === 'workflows' && (() => {
-                                  const isMicro = density === 'micro'
+                                  const isMicro = effectiveDensity === 'micro'
 
                                   if (workflows.length === 0) {
                                     return (
@@ -3311,8 +3320,8 @@ export function AssetTableView({
                                   const priority = getPriorityForColumn(col, asset.id)
                                   const config = priority && priority !== 'none' ? PRIORITY_CONFIG[priority] : null
                                   const IconComponent = config?.icon
-                                  const isMicroOrUltra = density === 'ultra' || density === 'micro'
-                                  const isMicro = density === 'micro'
+                                  const isMicroOrUltra = effectiveDensity === 'ultra' || effectiveDensity === 'micro'
+                                  const isMicro = effectiveDensity === 'micro'
 
                                   // Only allow editing for user's own priority column
                                   const isEditable = col.prioritySource === 'my' || (col.id === 'priority' && !col.prioritySource)
@@ -3421,7 +3430,7 @@ export function AssetTableView({
                                     )
                                   }
 
-                                  const isMicro = density === 'micro'
+                                  const isMicro = effectiveDensity === 'micro'
 
                                   return (
                                     <div
@@ -3475,7 +3484,7 @@ export function AssetTableView({
                                     )
                                   }
 
-                                  const isMicro = density === 'micro'
+                                  const isMicro = effectiveDensity === 'micro'
 
                                   return (
                                     <div
@@ -3499,7 +3508,7 @@ export function AssetTableView({
                                 {col.id === 'updated' && (() => {
                                   if (!asset.updated_at) return <span className="pro-empty-cell">—</span>
                                   const freshness = getTimestampFreshness(asset.updated_at)
-                                  const isMicro = density === 'micro'
+                                  const isMicro = effectiveDensity === 'micro'
 
                                   return (
                                     <div className={clsx(
@@ -4103,8 +4112,8 @@ export function AssetTableView({
                                       {col.id === 'coverage' && (() => {
                                         if (coverage.length === 0) return <span className="pro-empty-cell">\u2014</span>
                                         const lead = coverage[0] // deterministically sorted: is_lead → role → updated_at → user_id
-                                        const isMicro = density === 'micro'
-                                        if (density === 'comfortable') {
+                                        const isMicro = effectiveDensity === 'micro'
+                                        if (effectiveDensity === 'comfortable') {
                                           return (
                                             <div className="flex items-center gap-1.5" title={coverage.map(c => `${c.analyst}${c.team ? ` (${c.team})` : ''}`).join('\n')}>
                                               <div className="min-w-0 flex-1">
@@ -4123,7 +4132,7 @@ export function AssetTableView({
                                         )
                                       })()}
                                       {col.id === 'workflows' && (() => {
-                                        const isMicro = density === 'micro'
+                                        const isMicro = effectiveDensity === 'micro'
                                         if (workflows.length === 0) {
                                           return (
                                             <button
@@ -4171,8 +4180,8 @@ export function AssetTableView({
                                         const priority = getPriorityForColumn(col, asset.id)
                                         const config = priority && priority !== 'none' ? PRIORITY_CONFIG[priority] : null
                                         const IconComponent = config?.icon
-                                        const isMicroOrUltra = density === 'ultra' || density === 'micro'
-                                        const isMicro = density === 'micro'
+                                        const isMicroOrUltra = effectiveDensity === 'ultra' || effectiveDensity === 'micro'
+                                        const isMicro = effectiveDensity === 'micro'
                                         const isEditable = col.prioritySource === 'my' || (col.id === 'priority' && !col.prioritySource)
 
                                         const content = config ? (
@@ -4212,7 +4221,7 @@ export function AssetTableView({
                                         )
                                       })()}
                                       {col.id === 'sector' && (
-                                        <span className={clsx('truncate text-gray-600 dark:text-gray-400', density === 'micro' && 'text-[9px]')}>
+                                        <span className={clsx('truncate text-gray-600 dark:text-gray-400', effectiveDensity === 'micro' && 'text-[9px]')}>
                                           {asset.sector || '\u2014'}
                                         </span>
                                       )}
@@ -4249,7 +4258,7 @@ export function AssetTableView({
                                       {col.id === 'notes' && (() => {
                                         const quickNote = asset.quick_note || ''
                                         const isEditing = editingNoteId === asset.id
-                                        const isMicro = density === 'micro'
+                                        const isMicro = effectiveDensity === 'micro'
 
                                         if (isEditing) {
                                           return (
@@ -4302,7 +4311,7 @@ export function AssetTableView({
                                         const listNote = (asset as any)._listNotes || ''
                                         const rowId = (asset as any)._rowId || asset.id
                                         const isEditing = editingListNoteRowId === rowId
-                                        const isMicro = density === 'micro'
+                                        const isMicro = effectiveDensity === 'micro'
 
                                         if (isEditing) {
                                           return (
@@ -4354,7 +4363,7 @@ export function AssetTableView({
                                       {col.id === 'updated' && (() => {
                                         if (!asset.updated_at) return <span className="pro-empty-cell">{'\u2014'}</span>
                                         const freshness = getTimestampFreshness(asset.updated_at)
-                                        const isMicro = density === 'micro'
+                                        const isMicro = effectiveDensity === 'micro'
                                         return (
                                           <div className={clsx(
                                             'pro-timestamp flex items-center',

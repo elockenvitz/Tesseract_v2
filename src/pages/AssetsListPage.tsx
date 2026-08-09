@@ -8,6 +8,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AssetTableView } from '../components/table/AssetTableView'
+import { MobileAssetsList } from '../components/mobile/MobileAssetsList'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
 
 interface AssetsListPageProps {
@@ -15,6 +17,11 @@ interface AssetsListPageProps {
 }
 
 export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
+  // AssetTableView is a configurable spreadsheet — user-chosen columns, AI
+  // columns, three densities, spreadsheet keyboard navigation. None of that
+  // resolves to 390px, and unlike a simulation grid this one is read to find a
+  // name rather than to compare numbers across rows, which is a list's job.
+  const isMobileViewport = useIsMobile()
   // Fetch all assets
   const { data: assets, isLoading } = useQuery({
     queryKey: ['all-assets'],
@@ -35,6 +42,16 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
       <div className="p-6">
         <ListSkeleton />
       </div>
+    )
+  }
+
+  if (isMobileViewport) {
+    return (
+      <MobileAssetsList
+        assets={assets || []}
+        isLoading={isLoading}
+        onAssetSelect={onAssetSelect}
+      />
     )
   }
 
