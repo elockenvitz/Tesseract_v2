@@ -24,6 +24,8 @@ import { TableHeader } from '@tiptap/extension-table-header'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { clsx } from 'clsx'
 import { EditorToolbar } from './EditorToolbar'
+import { MobileFormatBar } from './MobileFormatBar'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { TableControls } from './TableControls'
 import { MentionExtension, MentionList, type MentionItem } from './extensions/MentionExtension'
 import { AssetExtension, AssetList, type AssetItem } from './extensions/AssetExtension'
@@ -150,6 +152,8 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
   assetContext,
   templates = []
 }, ref) => {
+  // Phones get a compact format bar; the full ribbon moves into a sheet.
+  const isMobileViewport = useIsMobile()
   // Track if we're currently updating from parent to avoid cursor reset
   const isExternalUpdate = useRef(false)
   const lastValueRef = useRef(value)
@@ -761,7 +765,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
           'prose prose-sm max-w-none focus:outline-none',
           editorClassName
         ),
-        style: `min-height: ${minHeight}; padding: 0.5rem 1rem;`
+        style: `min-height: ${minHeight}; padding: 0.5rem ${isMobileViewport ? '0.5rem' : '1rem'};`
       },
       // Smart paste handling
       handlePaste: (view, event) => {
@@ -976,11 +980,19 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       {/* Toolbar - Sticky */}
       {!readOnly && (
         <div className="sticky top-[41px] z-10 bg-white dark:bg-gray-800">
-          <EditorToolbar
-            editor={editor}
-            onInsertEvent={onInsertEvent}
-            onInsertAttachment={onInsertAttachment}
-          />
+          {isMobileViewport ? (
+            <MobileFormatBar
+              editor={editor}
+              onInsertEvent={onInsertEvent}
+              onInsertAttachment={onInsertAttachment}
+            />
+          ) : (
+            <EditorToolbar
+              editor={editor}
+              onInsertEvent={onInsertEvent}
+              onInsertAttachment={onInsertAttachment}
+            />
+          )}
         </div>
       )}
 

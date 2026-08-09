@@ -1963,7 +1963,7 @@ export function UniversalNoteEditor({
         ) : (isLoading || isLoadingContent) && selectedNoteId ? (
           /* Loading state when we have a selected note ID but still fetching */
           <div className="flex-1 flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
+            <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
               <div className="animate-pulse flex items-center space-x-3">
                 <div className="h-6 w-20 bg-gray-200 rounded" />
                 <div className="h-4 w-px bg-gray-200" />
@@ -2331,7 +2331,7 @@ export function UniversalNoteEditor({
               </div>
 
               {/* Note Content - Rich Text Editor */}
-              <div className="px-4">
+              <div className="px-1.5 sm:px-4">
                 <RichTextEditor
                   ref={richTextEditorRef}
                   value={editingContent}
@@ -2364,9 +2364,9 @@ export function UniversalNoteEditor({
             </div>
 
             {/* Status Bar */}
-            <div className="px-6 py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center space-x-3 text-gray-400">
+            <div className="px-3 sm:px-6 py-2.5 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 text-gray-400">
                   {/* Offline Status Indicator */}
                   {!isOnline && (
                     <>
@@ -2414,15 +2414,16 @@ export function UniversalNoteEditor({
                     className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors cursor-help dark:hover:text-gray-300"
                   >
                     <HelpCircle className="w-3 h-3" />
-                    <span className="text-primary-500">@</span>mention
-                    <span className="mx-1">·</span>
-                    <span className="text-emerald-500">$</span>asset
-                    <span className="mx-1">·</span>
-                    <span className="text-amber-500">#</span>tag
-                    <span className="mx-1">·</span>
-                    <span className="text-violet-500">[[</span>notes
-                    <span className="mx-1">·</span>
-                    <span className="text-purple-500">.AI</span>
+                    <span className="sm:hidden">Shortcuts</span>
+                    <span className="hidden sm:inline"><span className="text-primary-500">@</span>mention</span>
+                    <span className="hidden sm:contents"><span className="mx-1">·</span>
+                    <span className="text-emerald-500">$</span>asset</span>
+                    <span className="hidden sm:contents"><span className="mx-1">·</span>
+                    <span className="text-amber-500">#</span>tag</span>
+                    <span className="hidden sm:contents"><span className="mx-1">·</span>
+                    <span className="text-violet-500">[[</span>notes</span>
+                    <span className="hidden sm:contents"><span className="mx-1">·</span>
+                    <span className="text-purple-500">.AI</span></span>
                   </button>
                   {lastSavedAt && (
                     <>

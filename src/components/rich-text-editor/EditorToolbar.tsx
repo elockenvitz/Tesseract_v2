@@ -13,6 +13,8 @@ import {
 
 interface EditorToolbarProps {
   editor: Editor
+  /** Rendered inside the mobile format sheet rather than above the editor. */
+  inSheet?: boolean
   onInsertEvent?: () => void
   onInsertAttachment?: () => void
   contextType?: string
@@ -68,6 +70,7 @@ const HEADING_OPTIONS = [
 
 export function EditorToolbar({
   editor,
+  inSheet,
   onInsertEvent,
   onInsertAttachment,
   contextType,
@@ -331,11 +334,18 @@ export function EditorToolbar({
 
   return (
     <>
-      {/* Wrapping is right on a wide screen and wrong on a narrow one: forty
-          controls at 390px wrap to five or six rows, and the ribbon ends up
-          taller than the text it formats. Below sm it becomes a single row that
-          scrolls sideways — constant height, everything still reachable. */}
-      <div className="flex flex-nowrap overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-0.5 p-2 bg-gray-50 border border-gray-200 rounded-t-lg border-b-0 dark:border-gray-700 dark:bg-gray-900">
+      {/* On a phone this whole ribbon lives inside a sheet (see
+          MobileFormatBar), where it has room to wrap. Here it is the desktop
+          ribbon, unchanged.
+
+          A previous attempt made this a single sideways-scrolling row. That
+          swapped a tall ribbon for a blind one: forty controls behind a swipe,
+          with no way to see what exists or where anything is. Height was not
+          the real problem — being always-present was. */}
+      <div className={clsx(
+        'flex flex-wrap items-center gap-0.5 p-2 bg-gray-50 border border-gray-200 dark:border-gray-700 dark:bg-gray-900',
+        inSheet ? 'rounded-lg border-b' : 'rounded-t-lg border-b-0'
+      )}>
         {/* Undo/Redo */}
         <div className="flex items-center gap-0.5 mr-1">
           <ToolButton
