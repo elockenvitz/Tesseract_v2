@@ -5,7 +5,6 @@ import { Check, ChevronRight, Monitor, Search, X, Lightbulb } from 'lucide-react
 import { TesseractLogo } from '../ui/TesseractLogo'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import {
-  getDesktopOnlyNavSurfaces,
   getMobileNavSurfaces,
   getMobileSurface,
   type MobileSurface,
@@ -286,14 +285,6 @@ export function MobileNavDrawer({
             ))}
           </NavSection>
 
-          <NavSection title="Desktop only">
-            <p className="px-4 pb-2 text-xs text-gray-400 dark:text-gray-500">
-              These need a larger screen. Opening one explains why.
-            </p>
-            {getDesktopOnlyNavSurfaces().map(surface => (
-              <NavRow key={surface.type} surface={surface} onSelect={openSurface} dimmed />
-            ))}
-          </NavSection>
         </div>
       </div>
     </div>,

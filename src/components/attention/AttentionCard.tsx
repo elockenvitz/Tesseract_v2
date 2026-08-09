@@ -417,6 +417,9 @@ export function AttentionCard({
   compact = false,
 }: AttentionCardProps) {
   const [showDeferMenu, setShowDeferMenu] = useState(false)
+  /** Which decision is armed, if any. Cleared on scroll-away and on the other
+   *  button, so an armed Approve cannot be committed by a stray Reject tap. */
+  const [pendingDecision, setPendingDecision] = useState<'approve' | 'reject' | null>(null)
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showNotRelevantPopover, setShowNotRelevantPopover] = useState(false)
   const [isActionPending, setIsActionPending] = useState<string | null>(null)
@@ -468,6 +471,10 @@ export function AttentionCard({
   const handleApprove = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!onApprove || isActionPending) return
+    // First tap arms, second commits. The armed state is what makes it
+    // deliberate; a confirm dialog would be dismissed by reflex just as fast.
+    if (pendingDecision !== 'approve') { setPendingDecision('approve'); return }
+    setPendingDecision(null)
     setIsActionPending('approve')
     try {
       await onApprove(item.source_id)
@@ -482,6 +489,8 @@ export function AttentionCard({
   const handleReject = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!onReject || isActionPending) return
+    if (pendingDecision !== 'reject') { setPendingDecision('reject'); return }
+    setPendingDecision(null)
     setIsActionPending('reject')
     try {
       await onReject(item.source_id)
@@ -496,6 +505,7 @@ export function AttentionCard({
   const handleDefer = async (e: React.MouseEvent, hours: number) => {
     e.stopPropagation()
     setShowDeferMenu(false)
+    setPendingDecision(null)
 
     // For trade items, use onDefer; for others, use onSnooze
     if (item.source_type === 'trade_queue_item' && onDefer) {
@@ -635,7 +645,10 @@ export function AttentionCard({
               <button
                 onClick={handleMarkDone}
                 disabled={isActionPending === 'done'}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-md shadow-sm transition-colors disabled:opacity-50"
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-md shadow-sm transition-colors disabled:opacity-50",
+                  pendingDecision === "approve" ? "bg-green-700 ring-2 ring-green-300 dark:ring-green-800" : "bg-green-600 hover:bg-green-700"
+                )}
               >
                 {isActionPending === 'done' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -713,7 +726,7 @@ export function AttentionCard({
                 ) : (
                   <ThumbsUp className="w-3.5 h-3.5" />
                 )}
-                Approve
+                {pendingDecision === 'approve' ? 'Confirm approve' : 'Approve'}
               </button>
             ) : (
               <button
@@ -730,14 +743,17 @@ export function AttentionCard({
               <button
                 onClick={handleReject}
                 disabled={isActionPending === 'reject'}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50"
+                className={clsx(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors disabled:opacity-50",
+                  pendingDecision === "reject" ? "text-white bg-red-600 ring-2 ring-red-300 dark:ring-red-800" : "text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100"
+                )}
               >
                 {isActionPending === 'reject' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <ThumbsDown className="w-3.5 h-3.5" />
                 )}
-                Reject
+                {pendingDecision === 'reject' ? 'Confirm reject' : 'Reject'}
               </button>
             )}
 
