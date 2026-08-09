@@ -4,7 +4,7 @@ import {
   Plus, Search, Share2, MoreHorizontal, Trash2, Copy, ChevronDown, Users, History, Pin,
   Save, Check, AlertCircle, ArrowUpDown, X, FileText, HelpCircle, AtSign, DollarSign, Hash, FileCode, BarChart3, Sparkles,
   WifiOff, CloudOff, RefreshCw, Download, FileDown, Loader2, Paperclip, Link2, ExternalLink, FileSpreadsheet, Image, FileVideo, File,
-  PanelLeftClose, PanelLeft, CornerDownRight
+  PanelLeftClose, PanelLeft, CornerDownRight, Menu
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -29,6 +29,7 @@ import { ObjectLinkPicker } from './ObjectLinkPicker'
 import { LinkedObjectsPanel } from './LinkedObjectsPanel'
 import { InlineReferencePopup } from './InlineReferencePopup'
 import { clsx } from 'clsx'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { stripHtml } from '../../utils/stripHtml'
 
 export type EntityType = 'asset' | 'portfolio' | 'theme'
@@ -151,6 +152,9 @@ export function UniversalNoteEditor({
   const [isExporting, setIsExporting] = useState(false)
   const [showFilesLinksDropdown, setShowFilesLinksDropdown] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  // On a phone the notes list is an overlay, not a column.
+  const isMobileViewport = useIsMobile()
+  const [mobileListOpen, setMobileListOpen] = useState(false)
   const [showLinkPicker, setShowLinkPicker] = useState(false)
   const [inlinePopup, setInlinePopup] = useState<{
     type: 'asset' | 'mention' | 'hashtag'
@@ -1648,10 +1652,17 @@ export function UniversalNoteEditor({
 
   return (
     <div className="flex h-full bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-      {/* Left Sidebar - Notes List */}
-      <div className={clsx(
+      {/* Left Sidebar - Notes List.
+
+          A w-72 flex sibling leaves ~100px for the editor at 390px, which is
+          not a narrow editor, it is no editor. On a phone it becomes a
+          full-screen overlay that is absent from the layout when closed, and
+          the header carries the way back in. */}
+      {(!isMobileViewport || mobileListOpen) && <div className={clsx(
         'bg-gray-50/50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out dark:border-gray-700',
-        isSidebarCollapsed ? 'w-12' : 'w-72'
+        isMobileViewport
+          ? 'fixed inset-0 z-[80] w-full border-r-0 bg-white dark:bg-gray-800 pt-safe pb-safe'
+          : isSidebarCollapsed ? 'w-12' : 'w-72'
       )}>
         {/* Collapsed State */}
         {isSidebarCollapsed ? (
@@ -1679,11 +1690,19 @@ export function UniversalNoteEditor({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsSidebarCollapsed(true)}
-                className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700"
-                title="Collapse sidebar"
+                onClick={() => (isMobileViewport ? setMobileListOpen(false) : setIsSidebarCollapsed(true))}
+                className={clsx(
+                  'flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-700',
+                  isMobileViewport ? 'h-9 w-9' : 'w-6 h-6'
+                )}
+                title={isMobileViewport ? 'Close' : 'Collapse sidebar'}
+                aria-label={isMobileViewport ? 'Close notes list' : 'Collapse sidebar'}
               >
-                <PanelLeftClose className="h-4 w-4" />
+                {/* A collapse-left chevron on a full-screen overlay reads as
+                    navigation rather than dismissal. */}
+                {isMobileViewport
+                  ? <X className="h-5 w-5" />
+                  : <PanelLeftClose className="h-4 w-4" />}
               </button>
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 tracking-tight dark:text-white">{entityName}</h3>
@@ -1925,10 +1944,10 @@ export function UniversalNoteEditor({
         </div>
         </>
         )}
-      </div>
+      </div>}
 
       {/* Right Side - Note Editor */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
+      <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-gray-800">
         {!selectedNote && (isLoading || isLoadingContent || createNoteMutation.isPending || (notes && notes.length > 0) || (notes?.length === 0 && !hasAutoCreatedRef.current)) ? (
           /* Loading/Creating state - show spinner whenever we don't have a selected note ready */
           <div className="flex-1 flex items-center justify-center bg-gray-50/50">
@@ -1969,9 +1988,20 @@ export function UniversalNoteEditor({
               </div>
             )}
             {/* Editor Header */}
-            <div className="px-6 py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3 flex-1">
+            <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-800">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
+                  {/* The list is an overlay on a phone, so this is the only
+                      route back to it. */}
+                  {isMobileViewport && (
+                    <button
+                      onClick={() => setMobileListOpen(true)}
+                      aria-label="All notes"
+                      className="shrink-0 h-9 w-9 -ml-1 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
+                    >
+                      <Menu className="h-5 w-5" />
+                    </button>
+                  )}
                   <div className="flex items-center space-x-3" ref={noteTypeDropdownRef}>
                     <div className="relative">
                       {/* Trigger: clean pill + separate chevron */}
