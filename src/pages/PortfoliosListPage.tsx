@@ -16,6 +16,7 @@ import { useToast } from '../components/common/Toast'
 import { logOrgActivity } from '../lib/org-activity-log'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
+import { useIsMobile } from '../hooks/useMediaQuery'
 
 type ArchiveFilter = 'active' | 'archived' | 'discarded' | 'all'
 
@@ -24,6 +25,9 @@ interface PortfoliosListPageProps {
 }
 
 export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProps) {
+  // Creating a portfolio needs team, benchmark and mandate; it is a setup act,
+  // not something to start on a phone and abandon half-configured.
+  const isMobileViewport = useIsMobile()
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
@@ -327,7 +331,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {canCreate ? (
+          {canCreate && !isMobileViewport ? (
             <button
               onClick={() => setShowNewModal(true)}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm"
@@ -335,7 +339,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
               <Plus className="w-4 h-4" />
               New Portfolio
             </button>
-          ) : (
+          ) : isMobileViewport ? null : (
             <div className="relative group">
               <button
                 disabled
@@ -380,9 +384,9 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   key={filter}
                   onClick={() => setArchiveFilter(filter)}
                   className={clsx(
-                    'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
+                    'inline-flex shrink-0 items-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-lg transition-colors',
                     isSelected
-                      ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                      ? 'bg-indigo-600 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800',
                   )}
                 >
@@ -390,9 +394,12 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   {filter === 'archived' && 'Archived'}
                   {filter === 'discarded' && 'Discarded'}
                   {filter === 'all' && 'All'}
+                  {/* The count is part of the label, not a badge inside a
+                      badge — a pill inside a pill reads as two overlapping
+                      shapes at this size. */}
                   <span className={clsx(
-                    'text-[10px] px-1.5 py-0.5 rounded-full',
-                    isSelected ? 'bg-indigo-200/70 text-indigo-800' : 'bg-gray-200 text-gray-500 dark:text-gray-400',
+                    'text-[10px] tabular-nums',
+                    isSelected ? 'text-white/80' : 'text-gray-400',
                   )}>
                     {count}
                   </span>
@@ -519,9 +526,9 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                         : 'hover:bg-gray-50',
                   )}
                 >
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
                     {/* Portfolio Info */}
-                    <div className="col-span-4">
+                    <div className="col-span-2 sm:col-span-4 min-w-0">
                       <div className="flex items-center space-x-3">
                         <div className={clsx(
                           'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
