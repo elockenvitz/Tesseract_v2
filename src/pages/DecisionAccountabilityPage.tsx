@@ -29,6 +29,9 @@ import {
   Award, Users, Link2, Unlink, Sparkles,
 } from 'lucide-react'
 import { format, subDays, parseISO } from 'date-fns'
+import { clsx } from 'clsx'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { MobileDecisionLedger } from '../components/mobile/MobileDecisionLedger'
 import {
   useDecisionAccountability,
   useDecisionStory,
@@ -458,8 +461,10 @@ function SummaryStrip({ summary }: { summary: AccountabilitySummary }) {
     },
   ]
 
+  // Eight metrics across is 48px each on a phone. Two up, then four, then the
+  // full row.
   return (
-    <div className="grid grid-cols-8 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
       {tiles.map((t, i) => {
         const Icon = t.icon
         return (
@@ -2902,7 +2907,7 @@ function ScorecardsView({ portfolioId }: { portfolioId: string | null }) {
   const [section, setSection] = useState<ScorecardSection>('analysts')
 
   return (
-    <div className="flex-1 overflow-auto p-4">
+    <div className="flex-1 overflow-auto p-3 sm:p-4">
       <div className="max-w-7xl mx-auto">
         {/* Section Toggle */}
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-4 dark:bg-gray-800">
@@ -3308,6 +3313,9 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
     return cols
   }, [selectedPortfolioId])
 
+  // The ledger, its column headers and the 440px detail column are all
+  // desktop-shaped; the phone gets a list and a full-screen detail.
+  const isMobileViewport = useIsMobile()
   const MAIN_GRID = selectedPortfolioId ? GRID_WITHOUT_PORTFOLIO : GRID_WITH_PORTFOLIO
 
   // Unique values for dropdown filters
@@ -3433,7 +3441,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
             {/* Left: Table rows + chart below */}
             <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-gray-800">
               {/* Column headers */}
-              <div className={`grid ${MAIN_GRID} bg-gray-50 border-b border-gray-200 shrink-0`}>
+              {!isMobileViewport && <div className={`grid ${MAIN_GRID} bg-gray-50 border-b border-gray-200 shrink-0`}>
                 {columnHeaders.map(col => (
                   <TableColHeader
                     key={col.id} col={col}
@@ -3450,7 +3458,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                     uniquePortfolios={uniquePortfolios} uniqueOwners={uniqueOwners}
                   />
                 ))}
-              </div>
+              </div>}
 
               {/* Rows */}
               <div className="flex-1 overflow-y-auto">
@@ -3473,6 +3481,17 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                       they will appear here with execution matching and result tracking.
                     </p>
                   </div>
+                ) : isMobileViewport ? (
+                  /* The desktop row is a twelve-track pixel grid over 1000px
+                     wide; it does not compress, it overflows. */
+                  <MobileDecisionLedger
+                    rows={displayRows.map(d => d.row)}
+                    selectedId={selectedId}
+                    onSelect={(row) => {
+                      setSelectedId(row.decision_id === selectedId ? null : row.decision_id)
+                      try { window.dispatchEvent(new CustomEvent('pilot-outcomes:result-inspected')) } catch { /* ignore */ }
+                    }}
+                  />
                 ) : (
                   displayRows.map(({ row, intel }) => (
                     <DecisionRow
@@ -3500,7 +3519,7 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
                   via the page-level prefetch, so the visual delay is
                   ~16ms — imperceptible — but it guarantees the right
                   pane wins the first paint. */}
-              {selectedRow && (
+              {selectedRow && !isMobileViewport && (
                 <DeferredChartPanel
                   row={selectedRow}
                   onSelectDecision={(decisionId) => setSelectedId(decisionId)}
@@ -3510,7 +3529,12 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
 
             {/* Detail Panel */}
             {selectedRow && (
-              <div className="w-[440px] shrink-0 border-l-2 border-l-primary-500 overflow-hidden">
+              <div className={clsx(
+                'overflow-hidden',
+                isMobileViewport
+                  ? 'fixed inset-0 z-[85] bg-white dark:bg-gray-800 pt-safe pb-safe'
+                  : 'w-[440px] shrink-0 border-l-2 border-l-primary-500'
+              )}>
                 <DetailPanel
                   row={selectedRow}
                   onClose={() => setSelectedId(null)}

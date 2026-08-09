@@ -303,7 +303,7 @@ function NavRow({
       type="button"
       onClick={() => onSelect(surface)}
       className={clsx(
-        'w-full flex items-center gap-3 min-h-[52px] px-3 rounded-xl text-left',
+        'w-full flex items-center gap-3 min-h-[48px] px-3 rounded-xl text-left',
         'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
         dimmed && 'opacity-60'
       )}
@@ -311,11 +311,13 @@ function NavRow({
       <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0', surface.bg)}>
         <Icon className={clsx('h-5 w-5', surface.color)} />
       </div>
+      {/* Name only. The per-surface note explained what a surface does before
+          you had opened it, which is a thing you need once and then never
+          again — and it doubled every row's height in a list read by scanning
+          for a name. The notes stay in mobile-surfaces.ts, where they document
+          the support level for whoever changes it. */}
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{surface.title}</div>
-        {surface.mobileNote && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{surface.mobileNote}</div>
-        )}
       </div>
       {dimmed ? (
         <Monitor className="h-4 w-4 text-gray-400 flex-shrink-0" />

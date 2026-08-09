@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { Search, TrendingUp, X } from 'lucide-react'
 import { useMarketData } from '../../hooks/useMarketData'
+import { useSparklines, type Sparkline } from '../../hooks/useSparklines'
 import { MobileAssetPreview } from './MobileAssetPreview'
 
 interface MobileAssetsListProps {
@@ -31,6 +32,15 @@ const SORTS: { key: Sort; label: string }[] = [
 const QUOTE_LIMIT = 60
 
 /**
+ * How many rows get a sparkline.
+ *
+ * One candle request per symbol, so this is tighter than the quote cap — far
+ * enough to cover the rows a thumb reaches before the next scroll, not far
+ * enough to fetch a month of history for a universe nobody has looked at.
+ */
+const SPARK_LIMIT = 30
+
+/**
  * The asset universe as a watchlist.
  *
  * Laid out like a phone brokerage watchlist because that is the shape the
@@ -40,12 +50,12 @@ const QUOTE_LIMIT = 60
  * small screen a tinted number reads as decoration until you look twice, and
  * the sign of the move is the thing being scanned for.
  *
- * There is no sparkline, deliberately. The MiniChart component this could have
- * reused builds its series with ChartDataAdapter.generateHistoricalData — a
- * seeded random walk anchored to the current quote, not price history. A drawn
- * line beside a real price reads as real, and inventing one in a finance
- * product is worse than leaving the space empty. A real sparkline needs a
- * candle request per symbol, which is a different piece of work.
+ * Sparklines are a month of real daily closes, fetched per symbol through
+ * useSparklines. MiniChart was the obvious thing to reuse and is not used here:
+ * it builds its series with ChartDataAdapter.generateHistoricalData, a seeded
+ * random walk anchored to the current quote. A drawn line beside a real price
+ * reads as real price history, so that is a correctness problem rather than a
+ * cosmetic one.
  *
  * One density. Row height that trades legibility for row count is a desk
  * affordance; here the only sensible height is the one that can be read and hit.
@@ -72,6 +82,7 @@ export function MobileAssetsList({ assets, isLoading, onAssetSelect }: MobileAss
     [filtered]
   )
   const { quotes } = useMarketData(quotedSymbols, { refreshInterval: 60_000 })
+  const sparklines = useSparklines(quotedSymbols.slice(0, SPARK_LIMIT))
 
   const visible = useMemo(() => {
     const list = [...filtered]
@@ -160,6 +171,7 @@ export function MobileAssetsList({ assets, isLoading, onAssetSelect }: MobileAss
                 key={asset.id}
                 asset={asset}
                 quote={quotes.get(String(asset.symbol).toUpperCase())}
+                spark={sparklines[asset.symbol]}
                 onSelect={() => setPreviewing(asset)}
               />
             ))}
@@ -188,10 +200,12 @@ export function MobileAssetsList({ assets, isLoading, onAssetSelect }: MobileAss
 function WatchRow({
   asset,
   quote,
+  spark,
   onSelect,
 }: {
   asset: any
   quote?: { price?: number; change?: number; changePercent?: number }
+  spark?: Sparkline
   onSelect: () => void
 }) {
   // The stored price is the fallback so a row never renders blank; it is a
@@ -216,6 +230,12 @@ function WatchRow({
         </span>
       </span>
 
+      {/* A month of real closes. Fixed width so rows stay aligned whether or
+          not a line has arrived. */}
+      <span className="shrink-0 w-16" aria-hidden>
+        {spark ? <Sparkline data={spark} /> : <span className="block h-8" />}
+      </span>
+
       <span className="shrink-0 flex flex-col items-end gap-1">
         <span className="text-[15px] font-semibold tabular-nums leading-tight text-gray-900 dark:text-white">
           {price != null ? price.toFixed(2) : '—'}
@@ -238,5 +258,43 @@ function WatchRow({
         )}
       </span>
     </button>
+  )
+}
+
+/**
+ * A month of closes as a single path.
+ *
+ * Coloured by the window's own change rather than the day's, because the line
+ * shows the month — tinting it by today would contradict the shape drawn.
+ */
+function Sparkline({ data }: { data: Sparkline }) {
+  const { closes, change } = data
+  const W = 64
+  const H = 32
+  const lo = Math.min(...closes)
+  const hi = Math.max(...closes)
+  const span = hi - lo || 1
+
+  const points = closes.map((c, i) => {
+    const x = (i / (closes.length - 1)) * W
+    // Inset by a pixel top and bottom so the extremes are not clipped by the
+    // stroke width.
+    const y = H - 1 - ((c - lo) / span) * (H - 2)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+
+  const up = (change ?? 0) >= 0
+
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+      <polyline
+        points={points.join(' ')}
+        fill="none"
+        stroke={up ? '#10b981' : '#ef4444'}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
   )
 }
