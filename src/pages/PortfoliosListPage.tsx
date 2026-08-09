@@ -321,14 +321,16 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
   const activeFiltersCount = [searchQuery, archiveFilter !== 'active' ? archiveFilter : ''].filter(Boolean).length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Portfolios</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            {filteredPortfolios.length} of {portfolios?.length || 0} portfolios
-          </p>
+        {/* The count reads as a qualifier on the title, not a second line of
+            its own — it only ever says how much of the list is showing. */}
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">All Portfolios</h1>
+          <span className="ml-auto sm:ml-0 shrink-0 text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+            {filteredPortfolios.length} of {portfolios?.length || 0}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {canCreate && !isMobileViewport ? (
@@ -360,7 +362,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
       </div>
 
       {/* Search and Filters */}
-      <Card>
+      <Card padding="sm">
         <div className="space-y-2 sm:space-y-4">
           {/* Search Bar */}
           <div className="relative">
@@ -518,7 +520,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   key={portfolio.id}
                   onClick={() => handlePortfolioClick(portfolio)}
                   className={clsx(
-                    'px-6 py-4 cursor-pointer transition-colors group/row',
+                    'px-3 py-2.5 sm:px-6 sm:py-4 cursor-pointer transition-colors group/row',
                     isDiscarded
                       ? 'bg-gray-100/60 hover:bg-gray-100 dark:hover:bg-gray-700'
                       : isArchived
@@ -531,7 +533,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                     <div className="col-span-2 sm:col-span-4 min-w-0">
                       <div className="flex items-center space-x-3">
                         <div className={clsx(
-                          'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
+                          'w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0',
                           isDiscarded
                             ? 'bg-gray-300'
                             : isArchived
@@ -539,10 +541,10 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                               : 'bg-gradient-to-br from-success-500 to-success-600',
                         )}>
                           {isDiscarded
-                            ? <Ban className="h-5 w-5 text-white" />
+                            ? <Ban className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             : isArchived
-                              ? <Archive className="h-5 w-5 text-white" />
-                              : <Briefcase className="h-5 w-5 text-white" />
+                              ? <Archive className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+                              : <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                           }
                         </div>
                         <div className="min-w-0 flex-1">
@@ -580,7 +582,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           {portfolio.benchmark}
                         </span>
                       ) : (
-                        <span className="text-sm text-gray-400">&mdash;</span>
+                        <span className="text-xs text-gray-400">No benchmark</span>
                       )}
                     </div>
 
@@ -607,7 +609,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           </div>
                         </div>
                       ) : (
-                        <span className="text-sm text-gray-400">&mdash;</span>
+                        <span className="text-xs text-gray-400">No teams</span>
                       )}
                     </div>
 
@@ -644,14 +646,14 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                           )}
                         </div>
                       ) : (
-                        <span className="text-sm text-gray-400">&mdash;</span>
+                        <span className="text-xs text-gray-400">No members</span>
                       )}
                     </div>
 
                     {/* Last Updated + Actions */}
                     <div className="col-span-2">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                        <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
                           <Calendar className="h-3 w-3 mr-1" />
                           {formatDistanceToNow(new Date(portfolio.updated_at || ''), { addSuffix: true })}
                         </div>

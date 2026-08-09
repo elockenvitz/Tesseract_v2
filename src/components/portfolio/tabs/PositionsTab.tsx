@@ -106,14 +106,19 @@ interface EnrichedRow {
 // Sort header
 // ---------------------------------------------------------------------------
 
-function SortHeader({ label, column, sortColumn, sortDirection, onSort, align = 'left' }: {
+function SortHeader({ label, column, sortColumn, sortDirection, onSort, align = 'left', sticky = false }: {
   label: string; column: string; sortColumn: string; sortDirection: 'asc' | 'desc'
   onSort: (col: string) => void; align?: 'left' | 'right'
+  /** Frozen first column. Needs a higher z than the sticky header row so the
+   *  scrolling headers pass under it rather than over. */
+  sticky?: boolean
 }) {
   const isActive = sortColumn === column
   return (
     <th
-      className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider cursor-pointer select-none group transition-colors hover:bg-gray-100/80 ${
+      className={`sticky top-0 ${sticky ? 'left-0 z-30' : 'z-20'} bg-gray-50 dark:bg-gray-900 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider cursor-pointer select-none group transition-colors hover:bg-gray-100/80 ${
+        sticky ? 'border-r border-gray-200 dark:border-gray-700' : ''
+      } ${
         isActive ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'
       }`}
       style={{ textAlign: align }}
@@ -477,9 +482,12 @@ export function PositionsTab({
         />
       ) : (
       /* ─── TABLE ─────────────────────────────────────────── */
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[70vh]">
+          {/* A frozen symbol column and a stuck header row are what make ten
+              columns usable at 390px: the numbers move, the name of the row and
+              the name of the column do not. */}
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50/80">
+            <thead>
               <tr>
                 {COLUMNS.map((col) =>
                   col.sortKey ? (
@@ -491,9 +499,10 @@ export function PositionsTab({
                       sortDirection={sortDirection}
                       onSort={handleSort}
                       align={col.align}
+                      sticky={col.key === 'asset'}
                     />
                   ) : (
-                    <th key={col.key} className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400" style={{ textAlign: col.align }}>
+                    <th key={col.key} className="sticky top-0 z-20 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400" style={{ textAlign: col.align }}>
                       {col.label}
                     </th>
                   ),
@@ -517,8 +526,8 @@ export function PositionsTab({
                   <React.Fragment key={row.holding.id}>
                     {showGroupHeader && gMeta && (
                       <tr className="bg-gray-100/70 border-t border-gray-200 dark:border-gray-700">
-                        {/* Asset: group name + count */}
-                        <td className="pl-3 pr-2 py-1.5 whitespace-nowrap">
+                        {/* Asset: group name + count — frozen with the column */}
+                        <td className="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-700 pl-3 pr-2 py-1.5 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide dark:text-gray-400">{gKey}</span>
                             <span className="text-[9px] text-gray-400 tabular-nums">{gMeta.count}</span>
@@ -571,8 +580,15 @@ export function PositionsTab({
                       data-asset-id={row.holding.asset_id}
                       className={`transition-colors cursor-pointer ${isSelected ? 'bg-primary-50/40' : 'hover:bg-gray-50/60'}`}
                     >
-                      {/* Asset */}
-                      <td className={`pl-3 pr-2 py-2 whitespace-nowrap ${cellCls(ri, 0)}`} onClick={() => handleCellClick(row.holding.asset_id, 0)}>
+                      {/* Asset — frozen. Carries its own background because a
+                          transparent sticky cell lets the columns scroll
+                          through it. */}
+                      <td
+                        className={`sticky left-0 z-10 border-r border-gray-100 dark:border-gray-800 pl-3 pr-2 py-2 whitespace-nowrap ${
+                          isSelected ? 'bg-primary-50' : 'bg-white dark:bg-gray-800'
+                        } ${cellCls(ri, 0)}`}
+                        onClick={() => handleCellClick(row.holding.asset_id, 0)}
+                      >
                         <div className="flex items-center gap-1.5">
                           <div className={`w-1 h-1 rounded-full shrink-0 ${isSelected ? 'bg-primary-500' : 'bg-transparent'}`} />
                           <div className="min-w-0">

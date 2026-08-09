@@ -325,7 +325,7 @@ export function OverviewTab({
     <div className="space-y-2.5">
 
       {/* ─── KPI STRIP ─────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
 
         {/* NAV */}
         <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
@@ -386,7 +386,7 @@ export function OverviewTab({
       </div>
 
       {/* ─── SIGNALS + MOVERS ──────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 sm:grid-cols-5 gap-2.5">
 
         {/* Portfolio Signals — single unified system, 3 cols */}
         <div className="lg:col-span-3">

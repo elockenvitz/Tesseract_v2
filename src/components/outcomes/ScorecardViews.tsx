@@ -236,7 +236,7 @@ function DiagnosticPillarsSection({ pillars }: { pillars: DiagnosticPillar[] }) 
           Diagnostic pillars · Preview
         </div>
       )}
-      <div className={clsx('grid gap-2', sorted.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 xl:grid-cols-4')}>
+      <div className={clsx('grid gap-2', sorted.length <= 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4')}>
         {sorted.map(p => <PillarCard key={p.id} pillar={p} />)}
       </div>
     </div>
@@ -244,6 +244,7 @@ function DiagnosticPillarsSection({ pillars }: { pillars: DiagnosticPillar[] }) 
 }
 
 function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
+  const [showTakeaway, setShowTakeaway] = useState(false)
   const strengthColor = {
     'Strong': 'text-emerald-700', 'Adequate': 'text-blue-700', 'Weak': 'text-amber-700',
     'Critical': 'text-red-700', 'Not yet measurable': 'text-gray-400',
@@ -252,11 +253,11 @@ function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
   return (
     <div className={clsx('rounded-lg border bg-white p-3 dark:bg-gray-800',
       pillar.measurable ? 'border-gray-200 dark:border-gray-700' : 'border-gray-100 bg-gray-50/40 dark:border-gray-800')}>
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 mb-1.5">
         <h4 className={clsx('text-[10px] font-bold uppercase tracking-wide', pillar.measurable ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400')}>
           {pillar.title}
         </h4>
-        <span className={clsx('text-[9px] font-semibold', strengthColor)}>{pillar.strength}</span>
+        <span className={clsx('text-[9px] font-semibold whitespace-nowrap', strengthColor)}>{pillar.strength}</span>
       </div>
 
       {pillar.score != null ? (
@@ -282,7 +283,23 @@ function PillarCard({ pillar }: { pillar: DiagnosticPillar }) {
         ))}
       </div>
 
-      <p className={clsx('text-[9px] leading-relaxed', pillar.measurable ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400')}>{pillar.takeaway}</p>
+      {pillar.takeaway && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowTakeaway(v => !v)}
+            aria-expanded={showTakeaway}
+            className="text-[9px] font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            {showTakeaway ? 'Hide' : 'Why'}
+          </button>
+          {showTakeaway && (
+            <p className={clsx('mt-1 text-[9px] leading-relaxed', pillar.measurable ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400')}>
+              {pillar.takeaway}
+            </p>
+          )}
+        </>
+      )}
     </div>
   )
 }

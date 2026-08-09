@@ -588,7 +588,7 @@ export function PortfolioLogTab({ portfolio, portfolioId }: PortfolioLogTabProps
     return (
       <div className="flex flex-col">
         <LogHeader count={0} />
-        <div className="border border-dashed border-gray-200 dark:border-gray-700 rounded-lg py-14 px-6 mt-4">
+        <div className="border border-dashed border-gray-200 dark:border-gray-700 rounded-lg py-14 px-3 sm:px-6 mt-4">
           <div className="max-w-sm mx-auto text-center">
             <BookOpen className="w-7 h-7 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
             <p className="text-[13px] text-gray-500 dark:text-gray-400 leading-relaxed">
