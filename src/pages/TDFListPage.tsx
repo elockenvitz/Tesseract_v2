@@ -171,7 +171,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
 
   if (tdfsLoading) {
     return (
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         <ListSkeleton count={12} />
       </div>
     )
@@ -179,7 +179,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
 
   if (!tdfs?.length) {
     return (
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         <EmptyState
           icon={Target}
           title="No Target Date Funds"
@@ -190,7 +190,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -204,7 +204,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
         </div>
 
         {/* Search */}
-        <div className="relative w-64">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             placeholder="Search funds..."
@@ -216,7 +216,7 @@ export function TDFListPage({ onTDFSelect }: TDFListPageProps) {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">

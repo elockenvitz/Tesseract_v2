@@ -555,7 +555,7 @@ export function TemplatesTab() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 px-6 py-3 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex-shrink-0 px-3 sm:px-6 py-3 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Templates</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
           Manage text snippets, investment cases, Excel templates, and your asset page layout
@@ -563,7 +563,7 @@ export function TemplatesTab() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex-shrink-0 px-6 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex-shrink-0 px-3 sm:px-6 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
         <nav className="flex space-x-4" aria-label="Tabs">
           <button
             onClick={() => setActiveSection('text')}
@@ -617,7 +617,7 @@ export function TemplatesTab() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
+      <div className="flex-1 overflow-auto px-3 sm:px-6 pt-2 pb-4 bg-gray-50 dark:bg-gray-900">
         {activeSection === 'text' && <TemplateManager />}
         {activeSection === 'excel' && <ExcelModelTemplateManager />}
         {activeSection === 'research' && <ResearchFieldsManager />}

@@ -1533,7 +1533,7 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
                 <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading activity...</span>
               </div>
             ) : filteredEvents.length === 0 && !isFetching ? (
-              <div className="p-8">
+              <div className="p-4 sm:p-8">
                 <EmptyState
                   icon={Activity}
                   title={tierFilter === 'core' ? 'No core events' : 'No activity found'}

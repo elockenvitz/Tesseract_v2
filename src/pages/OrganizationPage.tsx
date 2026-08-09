@@ -308,7 +308,7 @@ type TabType = 'teams' | 'people' | 'portfolios' | 'requests' | 'access' | 'acti
 function LoadingScreen() {
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center space-x-4">
           <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
             <Building2 className="w-6 h-6 text-indigo-600" />
@@ -3004,7 +3004,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         </div>
       )}
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
@@ -3044,7 +3044,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
                 {/* Dropdown */}
                 {showAdminBadgeDropdown && (
-                  <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="absolute left-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white rounded-lg shadow-lg border border-gray-200 z-50 dark:border-gray-700 dark:bg-gray-800">
                     <div className="p-3 border-b border-gray-100 dark:border-gray-800">
                       <h3 className="text-sm font-medium text-gray-900 dark:text-white">Your Permissions</h3>
                     </div>
@@ -3177,7 +3177,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-6 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 flex-shrink-0 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex space-x-1">
           {visibleTabs.map(tab => (
             <button
@@ -3203,7 +3203,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       {/* My Requests Banner (for non-admins) */}
       {!isOrgAdmin && myAccessRequests.length > 0 && (
-        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex-shrink-0">
+        <div className="bg-amber-50 border-b border-amber-200 px-3 sm:px-6 py-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100">
@@ -3248,7 +3248,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       {/* Search Bar (portfolios only — people tab has its own search) */}
       {activeTab === 'portfolios' && (
-        <div className="bg-white px-6 py-4 border-b border-gray-100 flex-shrink-0 dark:border-gray-800 dark:bg-gray-800">
+        <div className="bg-white px-3 sm:px-6 py-4 border-b border-gray-100 flex-shrink-0 dark:border-gray-800 dark:bg-gray-800">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -3494,7 +3494,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                   )}
 
                   {/* Root Node Card */}
-                  <div className="bg-white border-2 border-indigo-300 rounded-xl shadow-sm px-6 py-4 text-center min-w-[200px] dark:bg-gray-800">
+                  <div className="bg-white border-2 border-indigo-300 rounded-xl shadow-sm px-3 sm:px-6 py-4 text-center min-w-[200px] dark:bg-gray-800">
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-100 mb-2">
                       <Building2 className="w-6 h-6 text-indigo-600" />
                     </div>
@@ -4847,13 +4847,13 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {nodeJoinRequest && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md dark:bg-gray-800">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div className="px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-800">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request to Join</h3>
               <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
                 Request access to <span className="font-medium text-gray-700 dark:text-gray-300">{nodeJoinRequest.name}</span>
               </p>
             </div>
-            <div className="px-6 py-4">
+            <div className="px-3 sm:px-6 py-4">
               <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg mb-4 dark:bg-gray-900">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white`} style={{ backgroundColor: nodeJoinRequest.color || '#6366f1' }}>
                   {nodeJoinRequest.icon === 'users' && <Users className="w-5 h-5" />}
@@ -4877,7 +4877,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 placeholder="Why would you like to join this group?"
               />
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 dark:border-gray-800">
+            <div className="px-3 sm:px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 dark:border-gray-800">
               <button
                 onClick={() => setNodeJoinRequest(null)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-300"
@@ -4966,7 +4966,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowCoverageSettingsConfirm(false)} />
             <div className="flex min-h-full items-center justify-center p-4">
-              <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto p-6 dark:bg-gray-800">
+              <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto p-3 sm:p-6 dark:bg-gray-800">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                     <AlertTriangle className="h-5 w-5 text-amber-600" />
@@ -5156,7 +5156,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
       {teamRemovalConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 dark:bg-gray-800">
-            <div className="p-6 border-b border-gray-100 dark:border-gray-800">
+            <div className="p-3 sm:p-6 border-b border-gray-100 dark:border-gray-800">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -5164,7 +5164,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Remove from {teamRemovalConfirm.teamNodeName}</h3>
               </div>
             </div>
-            <div className="p-6 space-y-3">
+            <div className="p-3 sm:p-6 space-y-3">
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Removing <strong>{teamRemovalConfirm.memberName}</strong> from this team
                 {teamRemovalConfirm.affectedPortfolios.length > 0 ? ' will also remove access to:' : '.'}
@@ -5185,7 +5185,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
                 </p>
               )}
             </div>
-            <div className="p-6 pt-0 flex justify-end space-x-3">
+            <div className="p-3 sm:p-6 pt-0 flex justify-end space-x-3">
               <Button
                 variant="outline"
                 onClick={() => setTeamRemovalConfirm(null)}
@@ -5372,7 +5372,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 dark:bg-gray-800">
             {/* Header */}
-            <div className="p-6 border-b border-gray-100 dark:border-gray-800">
+            <div className="p-3 sm:p-6 border-b border-gray-100 dark:border-gray-800">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -5385,7 +5385,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
             </div>
 
             {/* Content */}
-            <div className="p-6">
+            <div className="p-3 sm:p-6">
               <p className="text-gray-600 mb-4 dark:text-gray-400">
                 Are you sure you want to delete <span className="font-semibold text-gray-900 dark:text-white">"{deleteNodeConfirm.node.name}"</span>?
               </p>
@@ -5406,7 +5406,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
             </div>
 
             {/* Footer */}
-            <div className="p-6 border-t border-gray-100 flex justify-end space-x-3 dark:border-gray-800">
+            <div className="p-3 sm:p-6 border-t border-gray-100 flex justify-end space-x-3 dark:border-gray-800">
               <Button
                 variant="outline"
                 onClick={() => setDeleteNodeConfirm({ isOpen: false, node: null })}
@@ -5463,7 +5463,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setDeletePortfolioTeamConfirm({ isOpen: false, member: null })} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-6 dark:bg-gray-800">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-auto transform transition-all p-3 sm:p-6 dark:bg-gray-800">
               <div className="flex items-center space-x-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -5704,7 +5704,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-end z-50">
       <div className="bg-white h-full w-full max-w-xl shadow-2xl flex flex-col animate-slide-in-right dark:bg-gray-800">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+        <div className="p-3 sm:p-6 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
               <Briefcase className="w-5 h-5 text-indigo-600" />
@@ -5730,7 +5730,7 @@ function TeamCoveragePanel({ teamId, teamName, portfolioIds, onClose }: TeamCove
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -5863,7 +5863,7 @@ function AddTeamModal({ team, onClose, onSave, isLoading }: AddTeamModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">
           {team ? 'Edit Team' : 'Add Team'}
         </h3>
@@ -5934,7 +5934,7 @@ function AddMemberModal({ team, existingMembers, availableUsers, onClose, onSave
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">
           Add Member to {team.name}
         </h3>
@@ -6022,7 +6022,7 @@ function AddNodeMemberModal({ node, existingMembers, availableUsers, onClose, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">
           Add Member to {node.name}
         </h3>
@@ -6179,7 +6179,7 @@ function RequestAccessModal({ teams, portfolios, onClose, onSubmit, isLoading }:
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Request Access</h3>
         <div className="space-y-4">
           <div>
@@ -6293,7 +6293,7 @@ function AddContactModal({ onClose, onSave, isLoading }: AddContactModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Add Contact</h3>
         <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Add a person who doesn't have platform access but may need to receive reports or communications.
@@ -6430,7 +6430,7 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
   if (showConfirmation) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
           <div className="flex items-center space-x-3 mb-4">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
               actionType === 'suspend' ? 'bg-amber-100' : 'bg-red-100'
@@ -6493,7 +6493,7 @@ function SuspendUserModal({ member, onClose, onSuspend, onRequestRemoval, isLoad
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
             <UserX className="w-5 h-5 text-amber-600" />
@@ -6595,7 +6595,7 @@ function RemovalRequestModal({ member, onClose, onSubmit, isLoading }: RemovalRe
   if (showConfirmation) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
           <div className="flex items-center space-x-3 mb-4">
             <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -6632,7 +6632,7 @@ function RemovalRequestModal({ member, onClose, onSubmit, isLoading }: RemovalRe
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
             <Send className="w-5 h-5 text-red-600" />
@@ -6761,7 +6761,7 @@ function AddNodeModal({ parentId, portfolios, childIdsToReparent, insertMode, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-3 sm:p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
             <Plus className="w-5 h-5 text-indigo-600" />
@@ -7008,7 +7008,7 @@ function EditNodeModal({ node, onClose, onSave, isLoading }: EditNodeModalProps)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-3 sm:p-6 dark:bg-gray-800">
         <div className="flex items-center space-x-3 mb-6">
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center"

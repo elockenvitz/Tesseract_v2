@@ -147,8 +147,8 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'templates', title: 'Templates', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
-    support: 'desktop-only', group: 'work', inNav: true,
-    desktopReason: 'The template editors are drag-and-drop field builders with spreadsheet-style grids.',
+    support: 'read-only', group: 'work', inNav: true,
+    mobileNote: 'Browse templates; authoring stays on desktop',
   },
   {
     type: 'coverage', title: 'Coverage', icon: Users,
@@ -161,14 +161,14 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'organization', title: 'Organization', icon: Building2,
     color: 'text-gray-500', bg: 'bg-gray-100',
-    support: 'desktop-only', group: 'admin', inNav: true,
-    desktopReason: 'Member, team, and permission management involves dense tables and bulk edits.',
+    support: 'read-only', group: 'admin', inNav: true,
+    mobileNote: 'People and teams; the org chart wants a wide screen',
   },
   {
     type: 'asset-allocation', title: 'Allocation', icon: Briefcase,
     color: 'text-emerald-600', bg: 'bg-emerald-50',
-    support: 'desktop-only', group: 'admin', inNav: true,
-    desktopReason: 'The allocation grid needs at least 900px to stay readable.',
+    support: 'read-only', group: 'admin', inNav: true,
+    mobileNote: 'Read allocation; rebalancing stays on desktop',
   },
   {
     type: 'charting', title: 'Charting', icon: LineChart,
@@ -179,19 +179,19 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'audit', title: 'Audit', icon: Shield,
     color: 'text-gray-600', bg: 'bg-gray-100',
-    support: 'desktop-only', group: 'admin', inNav: true,
-    desktopReason: 'The audit explorer is a wide event table with column-level filtering.',
+    support: 'read-only', group: 'admin', inNav: true,
+    mobileNote: 'Search and read the trail',
   },
   {
     type: 'tdf-list', title: 'Target Date', icon: Target,
     color: 'text-teal-600', bg: 'bg-teal-50',
-    support: 'desktop-only', group: 'admin', inNav: true,
-    desktopReason: 'Glide-path modelling is a wide numeric grid.',
+    support: 'read-only', group: 'admin', inNav: true,
+    mobileNote: 'Browse funds; glidepath editing stays on desktop',
   },
   {
     type: 'tdf', title: 'Target Date Fund', icon: Target, color: 'text-teal-600', bg: 'bg-teal-50',
-    support: 'desktop-only', group: 'admin',
-    desktopReason: 'Glide-path modelling is a wide numeric grid.',
+    support: 'read-only', group: 'admin',
+    mobileNote: 'Read the fund; glidepath editing stays on desktop',
   },
 ]
 
