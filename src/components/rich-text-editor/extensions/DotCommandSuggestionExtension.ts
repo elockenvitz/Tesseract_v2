@@ -357,6 +357,15 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
         placement: 'bottom-start',
         animation: 'shift-away',
         maxWidth: 'none',
+      // A 280px popup anchored to the caret runs off a 390px screen the moment
+      // the caret passes the midpoint. Popper is told to shift it back into the
+      // viewport rather than letting it hang past the edge.
+      popperOptions: {
+        modifiers: [
+          { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8 } },
+          { name: 'flip', options: { fallbackPlacements: ['top-start', 'bottom-end', 'top-end'] } },
+        ],
+      },
         offset: [0, 8]
       })
     }
@@ -712,7 +721,7 @@ function DotCommandList({ items, selectedIndex, onSelect }: DotCommandListProps)
   let globalIndex = 0
 
   return React.createElement('div', {
-    className: 'bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[280px] max-h-[320px] overflow-y-auto'
+    className: 'bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[240px] max-w-[calc(100vw-1rem)] max-h-[320px] overflow-y-auto'
   }, categories.map(category => {
     const categoryItems = items.filter(item => item.category === category)
     if (categoryItems.length === 0) return null
@@ -727,7 +736,7 @@ function DotCommandList({ items, selectedIndex, onSelect }: DotCommandListProps)
         const Icon = item.icon
         return React.createElement('button', {
           key: item.id,
-          className: `w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${
+          className: `w-full px-3 py-2.5 min-h-[44px] text-left flex items-center gap-3 transition-colors ${
             itemIndex === selectedIndex ? 'bg-primary-50' : 'hover:bg-gray-50'
           }`,
           onClick: () => onSelect(item)
@@ -767,7 +776,7 @@ interface AssetSearchListProps {
 function AssetSearchList({ items, selectedIndex, commandLabel, onSelect }: AssetSearchListProps) {
   if (items.length === 0) {
     return React.createElement('div', {
-      className: 'bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[280px]'
+      className: 'bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[240px] max-w-[calc(100vw-1rem)]'
     }, [
       React.createElement('div', {
         key: 'header',
@@ -780,7 +789,7 @@ function AssetSearchList({ items, selectedIndex, commandLabel, onSelect }: Asset
   }
 
   return React.createElement('div', {
-    className: 'bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[280px] max-h-[300px] overflow-y-auto'
+    className: 'bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[240px] max-w-[calc(100vw-1rem)] max-h-[300px] overflow-y-auto'
   }, [
     React.createElement('div', {
       key: 'header',
@@ -792,7 +801,7 @@ function AssetSearchList({ items, selectedIndex, commandLabel, onSelect }: Asset
     ...items.map((item, index) =>
       React.createElement('button', {
         key: item.id,
-        className: `w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${
+        className: `w-full px-3 py-2.5 min-h-[44px] text-left flex items-center gap-3 transition-colors ${
           index === selectedIndex ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50'
         }`,
         onClick: () => onSelect(item)
