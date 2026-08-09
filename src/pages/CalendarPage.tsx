@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar, ChevronLeft, ChevronRight, Plus,
@@ -72,7 +73,12 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   const queryClient = useQueryClient()
   const { currentOrgId } = useOrganization()
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [viewMode, setViewMode] = useState<ViewMode>('month')
+  // The month grid is seven columns of 55px at 390px — a cell too small for a
+  // date plus an event title. The agenda view already existed and is the shape
+  // a phone wants: days as a list, with what is on them underneath. Month and
+  // week remain selectable; they are just not the default where they do not fit.
+  const isMobileViewport = useIsMobile()
+  const [viewMode, setViewMode] = useState<ViewMode>(isMobileViewport ? 'agenda' : 'month')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
@@ -453,7 +459,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-6">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <Calendar className="h-6 w-6 text-primary-600" />
