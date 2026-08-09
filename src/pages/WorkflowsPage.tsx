@@ -4,7 +4,9 @@ let _workflowsHasMounted = false
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft, Square } from 'lucide-react'
+import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown, ChevronRight, GitBranch, TreeDeciduous, Network, Orbit, Archive, Play, Pause, RotateCcw, Pencil, AlertCircle, RefreshCw, ArrowLeft, Square, Menu } from 'lucide-react'
+import { clsx } from 'clsx'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -195,6 +197,9 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   const initialState = getInitialState()
 
   const [searchTerm, setSearchTerm] = useState(initialState.searchTerm || '')
+  // On a phone the process list is an overlay rather than a column.
+  const isMobileViewport = useIsMobile()
+  const [processListOpen, setProcessListOpen] = useState(false)
   const [filterBy, setFilterBy] = useState<'all' | 'my' | 'public' | 'shared' | 'favorites'>(initialWorkflowId ? 'all' : (initialState.filterBy || 'all'))
   const [sortBy, setSortBy] = useState<'name' | 'usage' | 'created' | 'updated'>(initialState.sortBy || 'usage')
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
@@ -5377,9 +5382,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
   }
 
   return (
-    <div className="fixed inset-0 top-32 flex bg-gray-50 dark:bg-gray-900">
-      {/* Left Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full dark:border-gray-700 dark:bg-gray-800">
+    <div className="fixed inset-0 top-28 sm:top-32 flex bg-gray-50 dark:bg-gray-900">
+      {/* Left Sidebar.
+
+          w-80 beside the content leaves roughly 70px for the workflow at
+          390px. On a phone it is the whole screen when open and out of the
+          layout when closed, with a button in the process header to bring it
+          back. */}
+      {(!isMobileViewport || processListOpen) && <div className={clsx(
+        'bg-white border-r border-gray-200 flex flex-col h-full dark:border-gray-700 dark:bg-gray-800',
+        isMobileViewport ? 'fixed inset-0 z-[80] w-full border-r-0 pt-safe pb-safe' : 'w-80'
+      )}>
         {/* Header */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-4">
@@ -5563,10 +5576,21 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* The list no longer occupies the layout on a phone, so this is the
+            only way back to it. */}
+        {isMobileViewport && !processListOpen && (
+          <button
+            onClick={() => setProcessListOpen(true)}
+            className="flex-shrink-0 flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+          >
+            <Menu className="h-4 w-4" />
+            All processes
+          </button>
+        )}
         {showInlineWorkflowCreator ? (
           // Inline Workflow Creator
           <div className="flex-1 flex flex-col">
@@ -5977,7 +6001,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             <div className="border-b border-gray-200 dark:border-gray-700">
               <nav className="flex items-center justify-between px-6">
                 {/* Primary tabs */}
-                <div className="flex space-x-8">
+                <div className="flex gap-4 sm:gap-8 overflow-x-auto no-scrollbar">
                   {[
                     { id: 'overview', label: 'Overview', icon: BarChart3 },
                     { id: 'branches', label: 'Runs', icon: Network },
@@ -6050,7 +6074,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             </div>
 
             {/* Tab Content */}
-            <div key={`${selectedWorkflow.id}-${activeView}`} className={`flex-1 bg-gray-50 overflow-y-auto animate-in fade-in duration-150 ${activeView === 'stages' ? '' : 'p-6'}`}>
+            <div key={`${selectedWorkflow.id}-${activeView}`} className={`flex-1 bg-gray-50 overflow-y-auto animate-in fade-in duration-150 ${activeView === 'stages' ? '' : 'p-3 sm:p-6'}`}>
               {activeView === 'overview' && isLoadingBranches ? (
                 <div className="flex items-center justify-center py-20">
                   <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin dark:border-gray-600" />

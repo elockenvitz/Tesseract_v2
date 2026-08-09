@@ -141,8 +141,8 @@ export const MOBILE_SURFACES: MobileSurface[] = [
   {
     type: 'workflows', title: 'Process', icon: Repeat,
     color: 'text-cyan-500', bg: 'bg-cyan-50',
-    support: 'desktop-only', group: 'work', inNav: true,
-    desktopReason: 'Building and running a workflow needs the multi-step wizard and side-by-side run views, which assume a wide screen.',
+    support: 'read-only', group: 'work', inNav: true,
+    mobileNote: 'Review processes and runs; building one stays on desktop',
   },
   {
     type: 'templates', title: 'Templates', icon: FileText,
