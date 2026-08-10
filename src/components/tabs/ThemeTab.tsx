@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, MessageSquare, Repeat } from 'lucide-react'
+import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, MessageSquare, Repeat, ChevronDown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -102,6 +102,9 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   const [isEditingName, setIsEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(theme.name || '')
   const [isEditingDescription, setIsEditingDescription] = useState(false)
+  // Type badge and description are revealed together from the header chevron.
+  // The name itself is click-to-edit, so it cannot double as the disclosure.
+  const [showThemeMeta, setShowThemeMeta] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState(theme.description || '')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const queryClient = useQueryClient()
@@ -589,8 +592,20 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               )}
 
               {/* Theme type: read-only badge (set at creation) */}
+              <button
+                type="button"
+                onClick={() => setShowThemeMeta(v => !v)}
+                aria-expanded={showThemeMeta}
+                aria-label="Show theme details"
+                className="sm:hidden shrink-0 h-7 w-7 flex items-center justify-center rounded-lg text-gray-400"
+              >
+                <ChevronDown className={clsx('h-4 w-4 transition-transform', showThemeMeta && 'rotate-180')} />
+              </button>
               <span
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800"
+                className={clsx(
+                  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',
+                  !showThemeMeta && 'hidden sm:inline-flex'
+                )}
                 title="Theme type (set at creation)"
               >
                 <span className={clsx('w-1.5 h-1.5 rounded-full', currentThemeType.dotColor)} />
@@ -654,7 +669,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               <p
                 className={clsx(
                   'text-sm sm:text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1 dark:hover:bg-gray-800',
-                  'line-clamp-1 sm:line-clamp-none',
+                  !showThemeMeta && 'hidden sm:block',
                   theme.description ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400 italic'
                 )}
                 onClick={() => setIsEditingDescription(true)}
@@ -725,10 +740,10 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
       <Card padding="none">
         {/* Tab Navigation */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex gap-4 sm:gap-8 px-3 sm:px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
+          <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
             <button
               onClick={() => setActiveTab('thesis')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'thesis'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -741,7 +756,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </button>
             <button
               onClick={() => setActiveTab('chart')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'chart'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -754,7 +769,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </button>
             <button
               onClick={() => setActiveTab('related-assets')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'related-assets'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -772,7 +787,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </button>
             <button
               onClick={() => setActiveTab('notes')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'notes'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -785,7 +800,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </button>
             <button
               onClick={() => setActiveTab('discussion')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'discussion'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -798,7 +813,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </button>
             <button
               onClick={() => setActiveTab('processes')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'processes'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
