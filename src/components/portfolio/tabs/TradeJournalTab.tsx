@@ -374,7 +374,7 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
           </div>
 
           {/* Rows */}
-          <div className="flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-gray-800">
+          <div className="flex-1 overflow-y-auto overscroll-none bg-white dark:bg-gray-800">
             {filteredEvents.length > 0 ? (
               filteredEvents.map((event, idx) => (
                 isMobile ? (

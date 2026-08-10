@@ -321,9 +321,9 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
   const activeFiltersCount = [searchQuery, archiveFilter !== 'active' ? archiveFilter : ''].filter(Boolean).length
 
   return (
-    <div className="space-y-3 sm:space-y-6">
+    <div className="space-y-2 sm:space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
         {/* The count reads as a qualifier on the title, not a second line of
             its own — it only ever says how much of the list is showing. */}
         <div className="flex items-baseline gap-2 min-w-0">
@@ -368,7 +368,10 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
           portfolio appeared. Search and the toggle now share one line and the
           status pills move inside the panel, so the collapsed state is one
           row tall and the list starts near the top of the page. */}
-      <Card padding="sm">
+      {/* `padding="sm"` is a flat p-4 at every width, which is most of the
+          height of a 36px search field again in empty space above and below
+          it. The phone gets half that. */}
+      <Card padding="sm" className="max-sm:p-2">
         <div className="space-y-2 sm:space-y-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1 min-w-0">

@@ -473,9 +473,13 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             // scroll as well put a second scroller around one that already
             // owned its height, and on a phone the outer one hit its end
             // first — so the last rows of the table could never be reached.
+            // `none`, not `contain`: containment only stops the gesture
+            // chaining to the page, which still leaves this pane rubber-banding
+            // under the finger — the Portfolio Log could be dragged up off its
+            // own first entry. `none` makes its edges hard stops.
             activeTab === 'universe' || activeTab === 'positions'
               ? 'flex flex-col overflow-hidden'
-              : 'overflow-y-auto overscroll-contain',
+              : 'overflow-y-auto overscroll-none',
           )}
         >
           {activeTab === 'overview' && (

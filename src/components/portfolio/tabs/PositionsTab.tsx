@@ -442,7 +442,7 @@ export function PositionsTab({
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="outline-none flex flex-col h-full min-h-0"
+      className="outline-none flex flex-col flex-1 min-h-0"
     >
 
       {/* ─── VIEW BAR ─────────────────────────────────────── */}

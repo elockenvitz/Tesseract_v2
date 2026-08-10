@@ -85,8 +85,11 @@ export function OptionPicker<T extends string>({
       aria-expanded={open}
       aria-controls={open ? menuId : undefined}
       aria-label={label}
+      // Deliberately no `no-touch-target`: h-7 is the right size beside a dense
+      // desktop toolbar, and on a touch phone the global 44px minimum should
+      // win — this is the control that now carries the whole view choice.
       className={clsx(
-        'no-touch-target inline-flex items-center gap-1 h-7 max-w-full px-2 rounded',
+        'inline-flex items-center gap-1 h-7 max-w-full px-2 rounded',
         'text-[11px] font-medium border transition-colors',
         open
           ? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white'
