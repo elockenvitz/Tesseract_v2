@@ -13,6 +13,7 @@ import { ThemeResearchTab } from '../themes/research/ThemeResearchTab'
 import { ThemeProcessesPanel } from '../themes/processes/ThemeProcessesPanel'
 import { useHeldAssetIds } from '../../hooks/useHeldAssetIds'
 import { MobileAssetsList } from '../mobile/MobileAssetsList'
+import { BottomSheet } from '../mobile/BottomSheet'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { AssetTableView } from '../table/AssetTableView'
 import { supabase } from '../../lib/supabase'
@@ -22,6 +23,44 @@ import { TabStateManager } from '../../lib/tabStateManager'
 import { getContentPreview } from '../../utils/stripHtml'
 
 type ThemeLifecycleStatus = 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
+
+/**
+ * Archive and delete, shared by the desktop popover and the mobile sheet so
+ * the two menus cannot drift apart. Row height is the only difference: 32px
+ * reads as a menu under a cursor and as a mis-tap under a thumb.
+ */
+function ThemeActions({ isArchived, onToggleArchive, onDelete, mobile }: {
+  isArchived: boolean
+  onToggleArchive: () => void
+  onDelete: () => void
+  mobile?: boolean
+}) {
+  const row = mobile
+    ? 'w-full flex items-center gap-3 px-4 py-3 text-left text-sm active:bg-gray-100 dark:active:bg-gray-800'
+    : 'w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800'
+
+  return (
+    <>
+      <button
+        onClick={onToggleArchive}
+        className={clsx(row, 'text-gray-700 dark:text-gray-300')}
+      >
+        {isArchived ? (
+          <><ArchiveRestore className="h-4 w-4 shrink-0 text-gray-400" />Unarchive</>
+        ) : (
+          <><Archive className="h-4 w-4 shrink-0 text-gray-400" />Archive</>
+        )}
+      </button>
+      <button
+        onClick={onDelete}
+        className={clsx(row, 'text-error-600 hover:bg-error-50')}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        Delete theme
+      </button>
+    </>
+  )
+}
 
 interface ThemeTabProps {
   theme: any
@@ -585,25 +624,30 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   className="text-lg sm:text-2xl font-bold text-gray-900 bg-white border border-primary-400 rounded px-2 py-0.5 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-white dark:bg-gray-800"
                 />
               ) : (
-                <h1
-                  className="text-lg sm:text-2xl font-bold text-gray-900 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 truncate dark:hover:bg-gray-800 dark:text-white"
-                  onClick={() => setIsEditingName(true)}
-                  title="Click to rename"
+                /* On a phone the name is the disclosure for the theme's
+                   details — type, status, description — which is what a tap
+                   there is reaching for. Rename lives in the overflow menu at
+                   that width; a tap-to-rename h1 is both undiscoverable and
+                   easy to trigger by accident on touch. Desktop keeps
+                   click-to-rename. */
+                <button
+                  type="button"
+                  onClick={() => isMobileViewport ? setShowThemeMeta(v => !v) : setIsEditingName(true)}
+                  aria-expanded={isMobileViewport ? showThemeMeta : undefined}
+                  title={isMobileViewport ? 'Show theme details' : 'Click to rename'}
+                  className="flex items-center gap-1.5 min-w-0 text-left rounded px-1 -mx-1 hover:bg-gray-50 dark:hover:bg-gray-800"
                 >
-                  {theme.name}
-                </h1>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate dark:text-white">
+                    {theme.name}
+                  </h1>
+                  <ChevronDown className={clsx(
+                    'sm:hidden h-4 w-4 shrink-0 text-gray-400 transition-transform',
+                    showThemeMeta && 'rotate-180',
+                  )} />
+                </button>
               )}
 
               {/* Theme type: read-only badge (set at creation) */}
-              <button
-                type="button"
-                onClick={() => setShowThemeMeta(v => !v)}
-                aria-expanded={showThemeMeta}
-                aria-label="Show theme details"
-                className="sm:hidden shrink-0 h-7 w-7 flex items-center justify-center rounded-lg text-gray-400"
-              >
-                <ChevronDown className={clsx('h-4 w-4 transition-transform', showThemeMeta && 'rotate-180')} />
-              </button>
               <span
                 className={clsx(
                   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',
@@ -615,8 +659,14 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 {currentThemeType.label}
               </span>
 
-              {/* Lifecycle status pill */}
-              <div className="relative" ref={lifecycleDropdownRef}>
+              {/* Lifecycle status pill — folded into the same reveal as the
+                  type badge and the description. On a phone the header is the
+                  theme's identity; "Active" is a status you go looking for,
+                  not something worth a permanent slot beside the name. */}
+              <div
+                className={clsx('relative', !showThemeMeta && 'hidden sm:block')}
+                ref={lifecycleDropdownRef}
+              >
                 <button
                   onClick={() => setShowLifecycleDropdown(s => !s)}
                   className={clsx(
@@ -684,18 +734,24 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           </div>
         </div>
 
-        {/* Right side: Actions */}
-        <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
-          {activeTab === 'related-assets' && (
-            <Button size="sm" onClick={() => setShowAddAssetModal(true)}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Assets
-            </Button>
-          )}
+        {/* Right side: Actions.
+
+            "Add Assets" is gone from here — it was a header button that
+            appeared and disappeared with the active tab, sat nowhere near the
+            table it added to, and pushed Share and the overflow around as it
+            came and went. Related Assets carries its own button, next to the
+            list. See the related-assets panel below.
+
+            On a phone Share collapses into the overflow rather than sitting
+            beside it as a second, differently-shaped button; the menu itself
+            becomes a sheet, because a 48px-wide popover of 32px rows anchored
+            to the screen edge is not a touch menu. */}
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             size="sm"
             variant="outline"
             onClick={() => setShowShareModal(true)}
+            className="hidden sm:inline-flex"
           >
             <Share2 className="h-4 w-4 mr-1" />
             Share
@@ -703,41 +759,58 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           <div className="relative" ref={moreMenuRef}>
             <button
               onClick={() => setShowMoreMenu(s => !s)}
-              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
-              title="More actions"
+              aria-haspopup="menu"
+              aria-expanded={showMoreMenu}
+              aria-label="More actions"
+              className="flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 dark:border-gray-700 dark:bg-gray-800"
             >
               <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400" />
             </button>
-            {showMoreMenu && (
+
+            {showMoreMenu && !isMobileViewport && (
               <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
-                <button
-                  onClick={handleToggleArchive}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
-                >
-                  {theme.is_archived ? (
-                    <>
-                      <ArchiveRestore className="h-4 w-4" />
-                      Unarchive
-                    </>
-                  ) : (
-                    <>
-                      <Archive className="h-4 w-4" />
-                      Archive
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => { setShowMoreMenu(false); setShowDeleteConfirm(true) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-error-600 hover:bg-error-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete theme
-                </button>
+                <ThemeActions
+                  isArchived={!!theme.is_archived}
+                  onToggleArchive={handleToggleArchive}
+                  onDelete={() => { setShowMoreMenu(false); setShowDeleteConfirm(true) }}
+                />
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {isMobileViewport && (
+        <BottomSheet
+          open={showMoreMenu}
+          onClose={() => setShowMoreMenu(false)}
+          title={theme.name}
+          fitContent
+        >
+          <div className="py-1 pb-safe">
+            <button
+              onClick={() => { setShowMoreMenu(false); setIsEditingName(true) }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800"
+            >
+              <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+              Rename theme
+            </button>
+            <button
+              onClick={() => { setShowMoreMenu(false); setShowShareModal(true) }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800"
+            >
+              <Share2 className="h-4 w-4 shrink-0 text-gray-400" />
+              Share
+            </button>
+            <ThemeActions
+              mobile
+              isArchived={!!theme.is_archived}
+              onToggleArchive={handleToggleArchive}
+              onDelete={() => { setShowMoreMenu(false); setShowDeleteConfirm(true) }}
+            />
+          </div>
+        </BottomSheet>
+      )}
 
       {/* Tabular System */}
       <Card padding="none">
@@ -857,6 +930,23 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 </div>
               ) : (
                 <>
+                  {/* Add lives with the lists it adds to, not in the page
+                      header. The header button was the only way in once the
+                      theme had any assets, so it moves here rather than
+                      disappearing. */}
+                  <div className="flex items-center justify-between gap-3 -mb-4">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Related Assets
+                      <span className="ml-2 text-xs font-normal text-gray-400 tabular-nums">
+                        {themeAssets.length}
+                      </span>
+                    </h3>
+                    <Button size="sm" variant="outline" onClick={() => setShowAddAssetModal(true)}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Assets
+                    </Button>
+                  </div>
+
                   {heldAssets.length > 0 && (
                     <section>
                       <div className="flex items-center gap-2 mb-3">

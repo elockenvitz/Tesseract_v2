@@ -9,6 +9,7 @@ import {
   ThemeContributionSection,
   type ThemeResearchActiveTab,
 } from './ThemeContributionSection'
+import { OptionPicker } from '../../ui/OptionPicker'
 import { ThemeFieldManagerModal } from './ThemeFieldManagerModal'
 import { ThemeThesisSummaryView } from './ThemeThesisSummaryView'
 import { ThemeThesisHistoryView } from './ThemeThesisHistoryView'
@@ -84,13 +85,36 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
 
   return (
     <div className="space-y-3">
-      {/* Filter bar */}
+      {/* Filter bar.
+
+          Two controls, both named. The whose-view control was a full-width
+          native select on a phone — 16px type in a chrome-drawn box, taller
+          than everything beside it and unable to say "Our View" without also
+          saying "(All Contributors)". The what-to-show control was four
+          unlabelled icons: a stack, a sparkle, a clock and a chain, which is
+          not a legible way to offer Summary, Changes and Links. Both are
+          pickers now, and the modes carry their names. */}
       <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
           {/* Left: analyst pills */}
           <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none flex-wrap">
             <span className="hidden sm:inline text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
-            {analysts.length <= 5 && !isMobileViewport ? (
+            {isMobileViewport ? (
+              <OptionPicker
+                label="Whose view"
+                value={viewFilter}
+                onChange={setViewFilter}
+                className="min-w-0"
+                options={[
+                  { value: 'aggregated', label: 'Our View', hint: 'All contributors' },
+                  ...analysts.map(a => ({
+                    value: a.id,
+                    label: a.name,
+                    hint: a.isSelf ? 'You' : undefined,
+                  })),
+                ]}
+              />
+            ) : analysts.length <= 5 ? (
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
                 <button
                   onClick={() => setViewFilter('aggregated')}
@@ -135,57 +159,57 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
           </div>
 
           {/* Right: view mode + manage */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
-              <button
-                onClick={() => setViewMode('all')}
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  viewMode === 'all' ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                )}
-                title="All sections"
-              >
-                <Layers className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('summary')}
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  viewMode === 'summary' ? 'bg-white text-purple-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                )}
-                title="Summary"
-              >
-                <Sparkles className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('history')}
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  viewMode === 'history' ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                )}
-                title="History timeline"
-              >
-                <HistoryIcon className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('references')}
-                className={clsx(
-                  'relative p-1.5 rounded-md transition-colors',
-                  viewMode === 'references' ? 'bg-white text-primary-600 shadow-sm dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                )}
-                title="Key references"
-              >
-                <Link2 className="w-4 h-4" />
-                {references.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                    {references.length}
-                  </span>
-                )}
-              </button>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => setShowManager(true)}>
-              <Settings2 className="w-4 h-4 mr-1" />
-              Manage
+          <div className="flex items-center gap-2 min-w-0">
+            {isMobileViewport ? (
+              <OptionPicker
+                label="Show"
+                value={viewMode}
+                onChange={setViewMode}
+                align="right"
+                className="min-w-0"
+                options={[
+                  { value: 'all',        label: 'All sections' },
+                  { value: 'summary',    label: 'Summary' },
+                  { value: 'history',    label: 'Changes' },
+                  { value: 'references', label: 'Links', count: references.length },
+                ]}
+              />
+            ) : (
+              <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
+                {([
+                  { mode: 'all',        label: 'All',      Icon: Layers,       active: 'text-primary-600' },
+                  { mode: 'summary',    label: 'Summary',  Icon: Sparkles,     active: 'text-purple-600' },
+                  { mode: 'history',    label: 'Changes',  Icon: HistoryIcon,  active: 'text-primary-600' },
+                  { mode: 'references', label: 'Links',    Icon: Link2,        active: 'text-primary-600' },
+                ] as const).map(({ mode, label, Icon, active }) => (
+                  <button
+                    key={mode}
+                    onClick={() => setViewMode(mode)}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
+                      viewMode === mode
+                        ? clsx('bg-white shadow-sm dark:bg-gray-800', active)
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {label}
+                    {mode === 'references' && references.length > 0 && (
+                      <span className="tabular-nums text-[10px] text-gray-400">{references.length}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowManager(true)}
+              className="shrink-0"
+              aria-label="Manage fields"
+            >
+              <Settings2 className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Manage</span>
             </Button>
           </div>
         </div>

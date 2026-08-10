@@ -227,12 +227,16 @@ export function ThemeContributionSection({
         {/* Toolbar — only the edit pencil, shown on hover (matches asset page) */}
         <div className="flex items-center gap-2 shrink-0">
           {showEditButton && (
+            /* Named on a phone. A bare 44px primary square with a 14px pencil
+               is the largest thing in the header and still does not say what
+               it edits; the label costs one word and removes the guess. */
             <button
               onClick={startEdit}
               title={ownContribution ? 'Edit your view' : 'Add your view'}
-              className="flex items-center justify-center p-1 text-white bg-primary-600 hover:bg-primary-700 rounded transition-colors animate-in fade-in duration-150"
+              className="flex items-center justify-center gap-1.5 px-2 py-1 sm:p-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded transition-colors animate-in fade-in duration-150"
             >
-              <Edit3 className="w-3.5 h-3.5" />
+              <Edit3 className="w-3.5 h-3.5 shrink-0" />
+              <span className="sm:hidden">{ownContribution ? 'Edit' : 'Add'}</span>
             </button>
           )}
         </div>
@@ -313,11 +317,15 @@ function InlineEditor({
         placeholder={placeholder}
         minHeight="140px"
       />
-      <div className="flex items-center justify-between">
+      {/* Visibility and the commit pair share a line at desktop width and
+          stack on a phone — "Visible to:" plus a select plus Cancel plus Save
+          is wider than 390px, and Save is not something to leave hanging off
+          the edge. */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
           {themeIsPublic ? (
             <>
-              <span>Visible to:</span>
+              <span className="shrink-0">Visible to:</span>
               <select
                 value={visibility}
                 onChange={(e) => setVisibility(e.target.value as ThemeContributionVisibility)}
@@ -333,11 +341,11 @@ function InlineEditor({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={onCancel}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" variant="outline" onClick={onCancel} className="flex-1 sm:flex-none">
             <X className="w-3.5 h-3.5 mr-1" /> Cancel
           </Button>
-          <Button size="sm" onClick={onSave} disabled={isSaving}>
+          <Button size="sm" onClick={onSave} disabled={isSaving} className="flex-1 sm:flex-none">
             <Check className="w-3.5 h-3.5 mr-1" /> Save
           </Button>
         </div>
@@ -417,6 +425,44 @@ function FocusedOwn({ own, placeholder, onStartEdit, onClear }: {
   onClear: () => void
 }) {
   const hasOwn = !!own && hasText(own.content)
+  const isMobileViewport = useIsMobile()
+
+  // Edit and Clear are a hover overlay pinned to the top-right of the prose on
+  // desktop. On touch there is no hover, and the app's base layer reveals
+  // opacity-0 hover controls outright — so these landed as two 44px buttons
+  // sitting on top of the first line of the user's own text. On a phone they
+  // become a normal labelled row underneath it instead.
+  const actions = (
+    <>
+      <button
+        onClick={(e) => { e.stopPropagation(); onStartEdit() }}
+        className={clsx(
+          'flex items-center gap-1.5 rounded transition-colors',
+          isMobileViewport
+            ? 'px-2.5 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20'
+            : 'no-touch-target p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700',
+        )}
+        title="Edit"
+      >
+        <Edit3 className="w-3.5 h-3.5 shrink-0" />
+        {isMobileViewport && 'Edit'}
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onClear() }}
+        className={clsx(
+          'flex items-center gap-1.5 rounded transition-colors',
+          isMobileViewport
+            ? 'px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:text-error-600 hover:bg-error-50 dark:text-gray-400'
+            : 'no-touch-target p-1 text-gray-400 hover:text-error-600 hover:bg-error-50',
+        )}
+        title="Clear"
+      >
+        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+        {isMobileViewport && 'Clear'}
+      </button>
+    </>
+  )
+
   return (
     <div className="group cursor-text" onClick={onStartEdit}>
       {hasOwn ? (
@@ -425,22 +471,15 @@ function FocusedOwn({ own, placeholder, onStartEdit, onClear }: {
             className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 dark:text-gray-300"
             dangerouslySetInnerHTML={{ __html: own!.content }}
           />
-          <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-            <button
-              onClick={(e) => { e.stopPropagation(); onStartEdit() }}
-              className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded dark:hover:text-gray-200 dark:hover:bg-gray-700"
-              title="Edit"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onClear() }}
-              className="p-1 text-gray-400 hover:text-error-600 hover:bg-error-50 rounded"
-              title="Clear"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {isMobileViewport ? (
+            <div className="flex items-center gap-1 mt-2 -ml-2.5 border-t border-gray-100 pt-2 dark:border-gray-800">
+              {actions}
+            </div>
+          ) : (
+            <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+              {actions}
+            </div>
+          )}
         </div>
       ) : (
         // Mirror the asset page's empty state — styled "Add your view"

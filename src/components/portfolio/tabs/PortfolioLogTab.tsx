@@ -611,59 +611,62 @@ export function PortfolioLogTab({ portfolio, portfolioId }: PortfolioLogTabProps
 
   return (
     <div className="flex flex-col">
-      <LogHeader count={allEntries.length} />
+      {/* Header and filter share a line — the filter sits at the right edge,
+          in line with the title, rather than on a row of its own below it.
 
-      {/* Filters.
+          Six categories are a tab strip at desktop width and roughly 1.5
+          screens at 390px. The strip had no scroll container, so it widened
+          the page instead of clipping, which is what made the whole log
+          pannable sideways. On a phone the same choice is a picker; the width
+          problem disappears because the control is one button wide whatever
+          the labels say. */}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <LogHeader count={allEntries.length} />
 
-          Six categories — "Observations" and "Recommendations" among them —
-          are a tab strip at desktop width and roughly 1.5 screens at 390px.
-          The strip had no scroll container, so it widened the page instead of
-          clipping, which is what made the whole log pannable sideways. On a
-          phone the same choice is a picker; the width problem disappears
-          because the control is one button wide whatever the labels say. */}
-      {isMobile ? (
-        <div className="mt-3 mb-4 self-start">
+        {isMobile ? (
           <OptionPicker
             label="Filter entries"
             value={activeFilter}
             onChange={setActiveFilter}
+            align="right"
+            className="shrink-0"
             options={visibleFilters.map(f => ({
               value: f.key,
               label: f.label,
               count: counts[f.key] ?? 0,
             }))}
           />
-        </div>
-      ) : (
-        <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg mt-3 mb-4 self-start">
-          {visibleFilters.map(f => {
-            const isActive = activeFilter === f.key
-            const count = counts[f.key] ?? 0
-            return (
-              <button
-                key={f.key}
-                onClick={() => setActiveFilter(f.key)}
-                className={clsx(
-                  'text-[11px] px-2.5 py-1 rounded-md font-medium transition-all duration-100 flex items-center gap-1.5',
-                  isActive
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
-                )}
-              >
-                {f.label}
-                {count > 0 && (
-                  <span className={clsx(
-                    'text-[10px] font-semibold tabular-nums px-1.5 py-px rounded-full',
+        ) : (
+          <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg shrink-0">
+            {visibleFilters.map(f => {
+              const isActive = activeFilter === f.key
+              const count = counts[f.key] ?? 0
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setActiveFilter(f.key)}
+                  className={clsx(
+                    'text-[11px] px-2.5 py-1 rounded-md font-medium transition-all duration-100 flex items-center gap-1.5',
                     isActive
-                      ? 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-                      : 'bg-gray-200/60 dark:bg-gray-700 text-gray-400 dark:text-gray-500',
-                  )}>{count}</span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
+                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+                  )}
+                >
+                  {f.label}
+                  {count > 0 && (
+                    <span className={clsx(
+                      'text-[10px] font-semibold tabular-nums px-1.5 py-px rounded-full',
+                      isActive
+                        ? 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                        : 'bg-gray-200/60 dark:bg-gray-700 text-gray-400 dark:text-gray-500',
+                    )}>{count}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Grouped display items */}
       {grouped.length > 0 ? (
@@ -918,11 +921,20 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
   const ts = formatTimestamp(entry.occurredAt)
   const showBody = !compact && entry.category !== 'observation' && entry.category !== 'question' && entry.body
 
+  // Three fixed lines — label row, title, footer — instead of one wrapping
+  // run of chips that the title joined at `w-full`. That arrangement put the
+  // title on its own line anyway on a phone, but as a flex-wrap sibling of the
+  // chips, so it inherited the row gap and read as an unrelated block. The
+  // tickers also moved between the label row and the footer depending on
+  // breakpoint, so the same entry had two different shapes. They live in the
+  // footer at every width now, and the timestamp stays on the label row.
+  const hasFooter = !compact && (entry.assetSymbols.length > 0 || entry.sentiment || entry.actorName)
+
   return (
     <div
       className={clsx(
-        'group/row flex items-start gap-3 border-l-[3px] bg-white dark:bg-gray-900/30',
-        compact ? 'px-3 py-2' : 'px-3.5 py-2.5',
+        'group/row flex items-start gap-2.5 border-l-[3px] bg-white dark:bg-gray-900/30',
+        compact ? 'px-3 py-1.5' : 'px-3 py-2',
         onNavigate && 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/80',
         !onNavigate && 'hover:bg-gray-50/50 dark:hover:bg-gray-800/40',
         cat.border,
@@ -931,12 +943,11 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
       onClick={onNavigate ? () => onNavigate(entry) : undefined}
       role={onNavigate ? 'button' : undefined}
     >
-      <div className={clsx('shrink-0', compact ? 'pt-px' : 'pt-0.5')}>
-        <Icon className={clsx(compact ? 'w-3 h-3' : 'w-3.5 h-3.5', cat.labelColor)} />
-      </div>
+      <Icon className={clsx('shrink-0 mt-0.5', compact ? 'w-3 h-3' : 'w-3.5 h-3.5', cat.labelColor)} />
 
       <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+        {/* Label row */}
+        <div className="flex items-center gap-2 min-w-0">
           <span className={clsx(
             'font-bold uppercase tracking-wider px-1.5 py-px rounded shrink-0',
             compact ? 'text-[8px]' : 'text-[9px]',
@@ -944,55 +955,50 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
           )}>
             {cat.label}
           </span>
-          {/* Tickers sit with the category rather than three rows down: what
-              the entry is about is the first thing you need to place it. */}
-          {!compact && entry.assetSymbols.length > 0 && (
-            <span className="flex items-center gap-1 shrink-0 sm:hidden">
-              {entry.assetSymbols.map(sym => (
-                <span key={sym} className="inline-flex items-center px-1.5 py-px rounded bg-gray-100 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">
-                  {sym}
-                </span>
-              ))}
-            </span>
-          )}
           {entry.subLabel && (
-            <span className={clsx('text-gray-400 dark:text-gray-500 shrink-0', compact ? 'text-[9px]' : 'text-[10px]')}>
+            <span className={clsx(
+              'text-gray-400 dark:text-gray-500 truncate',
+              compact ? 'text-[9px]' : 'text-[10px]',
+            )}>
               {entry.subLabel}
             </span>
           )}
           <span className={clsx(
-            'w-full sm:w-auto min-w-0 font-medium text-gray-900 dark:text-gray-100 line-clamp-2 sm:truncate',
-            compact ? 'text-[12px]' : 'text-[13px]',
-            onNavigate && 'group-hover/row:text-primary-600 dark:group-hover/row:text-primary-400',
+            'ml-auto shrink-0 text-gray-400 dark:text-gray-500 tabular-nums',
+            compact ? 'text-[9px]' : 'text-[10px]',
           )}>
-            {entry.title}
+            {ts}
           </span>
-          {/* Navigation hint */}
           {onNavigate && (
             <ArrowRight className="w-3 h-3 text-gray-300 dark:text-gray-600 shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity" />
           )}
         </div>
 
+        {/* Title */}
+        <p className={clsx(
+          'font-medium text-gray-900 dark:text-gray-100 leading-snug mt-0.5 line-clamp-2',
+          compact ? 'text-[12px]' : 'text-[13px]',
+          onNavigate && 'group-hover/row:text-primary-600 dark:group-hover/row:text-primary-400',
+        )}>
+          {entry.title}
+        </p>
+
         {showBody && (
-          <p className="text-[12px] text-gray-500 dark:text-gray-400 leading-snug mt-0.5 line-clamp-2 sm:line-clamp-1">
+          <p className="text-[12px] text-gray-500 dark:text-gray-400 leading-snug mt-0.5 line-clamp-2">
             {entry.body}
           </p>
         )}
 
-        {!compact && (
-          <div className="flex items-center gap-2 mt-1">
-            {entry.assetSymbols.length > 0 && (
-              <div className="hidden sm:flex items-center gap-1">
-                {entry.assetSymbols.map(sym => (
-                  <span key={sym} className="inline-flex items-center px-1.5 py-px rounded bg-gray-100 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">
-                    {sym}
-                  </span>
-                ))}
-              </div>
-            )}
+        {hasFooter && (
+          <div className="flex items-center gap-1.5 mt-1 min-w-0">
+            {entry.assetSymbols.map(sym => (
+              <span key={sym} className="shrink-0 inline-flex items-center px-1.5 py-px rounded bg-gray-100 dark:bg-gray-700 text-[10px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">
+                {sym}
+              </span>
+            ))}
             {entry.sentiment && (
               <span className={clsx(
-                'text-[9px] font-semibold uppercase tracking-wide px-1.5 py-px rounded',
+                'shrink-0 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-px rounded',
                 entry.sentiment === 'bullish' && 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
                 entry.sentiment === 'bearish' && 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
                 entry.sentiment === 'curious' && 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
@@ -1003,21 +1009,20 @@ function EntryRow({ entry, onNavigate, trailing, compact }: {
               </span>
             )}
             {entry.actorName && (
-              <span className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 ml-auto shrink-0">
-                <User className="w-2.5 h-2.5" />
-                {entry.actorName}
+              <span className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 ml-auto min-w-0">
+                <User className="w-2.5 h-2.5 shrink-0" />
+                <span className="truncate">{entry.actorName}</span>
               </span>
             )}
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-2 shrink-0 pt-0.5" onClick={e => e.stopPropagation()}>
-        {trailing}
-        <span className={clsx('text-gray-400 dark:text-gray-500 tabular-nums', compact ? 'text-[9px]' : 'text-[10px]')}>
-          {ts}
-        </span>
-      </div>
+      {trailing && (
+        <div className="shrink-0" onClick={e => e.stopPropagation()}>
+          {trailing}
+        </div>
+      )}
     </div>
   )
 }
