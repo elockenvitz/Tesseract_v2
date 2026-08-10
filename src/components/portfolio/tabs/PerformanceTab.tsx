@@ -384,7 +384,7 @@ export function PerformanceTab({
       {/* ─── KPI STRIP ────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         {/* Period Return */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             {timeframeLabel} Return
           </p>
@@ -397,7 +397,7 @@ export function PerformanceTab({
         </div>
 
         {/* Period P&L */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             {timeframeLabel} P&L
           </p>
@@ -410,7 +410,7 @@ export function PerformanceTab({
         </div>
 
         {/* Benchmark Return — scaffold */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             Benchmark
           </p>
@@ -419,7 +419,7 @@ export function PerformanceTab({
         </div>
 
         {/* Excess Return — scaffold */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
             Excess Return
           </p>
@@ -619,7 +619,7 @@ export function PerformanceTab({
       {/* ─── RISK METRICS ─────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         {/* Volatility */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Volatility (ann.)</p>
           {riskMetrics.volatility !== null ? (
             <p className="text-[17px] font-semibold text-gray-900 mt-1 tabular-nums leading-none dark:text-white">
@@ -634,7 +634,7 @@ export function PerformanceTab({
         </div>
 
         {/* Max Drawdown */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Max Drawdown</p>
           {riskMetrics.maxDD !== null ? (
             <p className="text-[17px] font-semibold text-red-600 mt-1 tabular-nums leading-none">
@@ -649,7 +649,7 @@ export function PerformanceTab({
         </div>
 
         {/* Sharpe Ratio */}
-        <div className="bg-white px-3.5 py-2 dark:bg-gray-800">
+        <div className="bg-white px-2 sm:px-3.5 py-2 dark:bg-gray-800">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Sharpe Ratio</p>
           {riskMetrics.sharpe !== null ? (
             <p className={`text-[17px] font-semibold mt-1 tabular-nums leading-none ${clr(riskMetrics.sharpe)}`}>

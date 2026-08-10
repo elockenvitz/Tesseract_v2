@@ -128,7 +128,7 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
             }
           }}
         />
-        <div className="mt-2 flex items-center justify-between gap-3">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
           <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             {themeIsPublic ? (
               <>
@@ -175,7 +175,7 @@ export function ThemeDiscussionPanel({ themeId, themeIsPublic }: ThemeDiscussion
             const isOwn = p.author_id === user?.id
             const isEditing = editingId === p.id
             return (
-              <div key={p.id} className={clsx('bg-white border rounded-lg p-4 dark:bg-gray-800', isOwn ? 'border-primary-200' : 'border-gray-200 dark:border-gray-700')}>
+              <div key={p.id} className={clsx('bg-white border rounded-lg p-3 sm:p-4 dark:bg-gray-800', isOwn ? 'border-primary-200' : 'border-gray-200 dark:border-gray-700')}>
                 <div className="flex items-start gap-3">
                   <div className={clsx('w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0', isOwn ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-700 dark:text-gray-300')}>
                     {authorInitials(p)}

@@ -363,19 +363,22 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
       <Card padding="sm">
         <div className="space-y-2 sm:space-y-4">
           {/* Search Bar */}
-          <div className="relative">
+          {/* Search and the filter toggle share a line — two full-width rows
+              for one search box and one disclosure was most of the card. */}
+          <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by theme name or description..."
+              placeholder="Search themes"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
+              className="w-full pl-9 pr-3 h-9 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
             />
           </div>
 
           {/* Filter Toggle */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between shrink-0">
             <button
               onClick={() => setShowFilters(!showFilters)}
               className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400"
@@ -401,6 +404,7 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                 Clear all filters
               </button>
             )}
+          </div>
           </div>
 
           {/* Filter Controls */}
@@ -481,9 +485,9 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
               <div
                 key={theme.id}
                 onClick={() => handleThemeClick(theme)}
-                className="px-3 sm:px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
+                className="px-3 sm:px-6 py-2.5 sm:py-4 hover:bg-gray-50 cursor-pointer transition-colors dark:hover:bg-gray-800"
               >
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-12 sm:gap-4 sm:items-center">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-x-3 gap-y-1.5 sm:gap-4 sm:items-center">
                   {/* Theme Info */}
                   <div className="col-span-2 sm:col-span-5 min-w-0">
                     <div className="flex items-center space-x-3">
@@ -492,29 +496,44 @@ export function ThemesListPage({ onThemeSelect }: ThemesListPageProps) {
                         style={{ backgroundColor: theme.color || '#3b82f6' }}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2">
-                          <p className="text-sm font-semibold text-gray-900 truncate dark:text-white">
+                        <div className="flex items-start gap-2">
+                          <p className="min-w-0 flex-1 text-sm font-semibold text-gray-900 truncate dark:text-white">
                             {theme.name}
                           </p>
+                          {/* Type sits with the name rather than in a column of
+                              its own — it qualifies the theme, and a column for
+                              one badge is a column spent on nothing. */}
+                          <span className="shrink-0 sm:hidden">
+                            <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
+                              {theme.theme_type || 'general'}
+                            </Badge>
+                          </span>
                         </div>
                         {theme.description && (
-                          <p className="text-sm text-gray-600 truncate dark:text-gray-400">
+                          <p className="text-xs sm:text-sm text-gray-600 truncate dark:text-gray-400">
                             {theme.description}
                           </p>
                         )}
+                        {/* Both dates on one line under the description. */}
+                        <div className="sm:hidden mt-0.5 flex items-center gap-3 text-[11px] text-gray-400">
+                          <span>Created {formatDistanceToNow(new Date(theme.created_at || 0), { addSuffix: true })}</span>
+                          {theme.updated_at && (
+                            <span>Updated {formatDistanceToNow(new Date(theme.updated_at), { addSuffix: true })}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Theme Type */}
-                  <div className="col-span-2">
+                  <div className="hidden sm:block col-span-2">
                     <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
                       {theme.theme_type || 'general'}
                     </Badge>
                   </div>
 
                   {/* Created Date */}
-                  <div className="col-span-1 sm:col-span-5 justify-self-end sm:justify-self-auto">
+                  <div className="hidden sm:block col-span-5">
                     <div className="flex items-center text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                       <Calendar className="h-3 w-3 mr-1" />
                       {formatDistanceToNow(new Date(theme.created_at || 0), { addSuffix: true })}

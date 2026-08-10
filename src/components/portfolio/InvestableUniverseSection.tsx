@@ -189,18 +189,25 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
           <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
         </button>
       ) : (
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900">
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-indigo-500" />
-            <span className="text-sm font-semibold text-gray-900 dark:text-white">Investable Universe</span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">{combined.total} assets · {(universeFilters?.length || 0)} filters</span>
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-900">
+          <Globe className="w-4 h-4 shrink-0 text-indigo-500" />
+          <div className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-gray-900 dark:text-white truncate">Investable Universe</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              {combined.total} assets · {(universeFilters?.length || 0)} filters
+            </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)}>
-              <Filter className="h-3.5 w-3.5 mr-1" /> Add Filter
+          {/* Icon-only on a phone: two labelled buttons plus a title and a
+              counts line cannot share a row at 390px, and they were wrapping
+              under a title that then had nowhere to sit. */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)} title="Add filter">
+              <Filter className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Add Filter</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowSearch(!showSearch)}>
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add Assets
+            <Button variant="outline" size="sm" onClick={() => setShowSearch(!showSearch)} title="Add assets">
+              <Plus className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Add Assets</span>
             </Button>
           </div>
         </div>
@@ -211,10 +218,10 @@ export function InvestableUniverseSection({ portfolioId, defaultExpanded = false
           {/* Actions — only when collapsible (non-collapsible puts them in header) */}
           {collapsible && (
             <div className="flex items-center gap-1.5 mb-2">
-              <Button variant="outline" size="sm" onClick={() => setShowFilterModal(true)}>
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setShowFilterModal(true)}>
                 <Filter className="h-3.5 w-3.5 mr-1" /> Add Filter
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowSearch(!showSearch)}>
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setShowSearch(!showSearch)}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> Add Assets
               </Button>
             </div>

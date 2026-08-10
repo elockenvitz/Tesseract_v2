@@ -185,13 +185,13 @@ export function ThemeIndexChart({ symbols, themeName }: ThemeIndexChartProps) {
       )}
 
       {/* Chart */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border border-gray-200 rounded-lg p-2 sm:p-4 dark:border-gray-700 dark:bg-gray-800">
         {isLoading ? (
-          <div className="h-[360px] flex items-center justify-center">
+          <div className="h-[260px] sm:h-[360px] flex items-center justify-center">
             <div className="text-sm text-gray-500 dark:text-gray-400">Loading chart…</div>
           </div>
         ) : isError || data.length === 0 ? (
-          <div className="h-[360px] flex flex-col items-center justify-center text-center">
+          <div className="h-[260px] sm:h-[360px] flex flex-col items-center justify-center text-center">
             <AlertCircle className="h-8 w-8 text-gray-400 mb-2" />
             <p className="text-sm text-gray-700 font-medium dark:text-gray-300">No price data available</p>
             <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">

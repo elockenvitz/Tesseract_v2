@@ -410,7 +410,10 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       </div>
 
       {/* Tabs Card */}
-      <Card padding="none" className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <Card
+        padding="none"
+        className="flex-1 flex flex-col overflow-hidden min-h-0 max-sm:-mx-3 max-sm:rounded-none max-sm:border-x-0 max-sm:shadow-none"
+      >
         <div className="border-b border-gray-200 dark:border-gray-700">
           <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
             {TABS.map(({ key, label, icon: Icon, badgeKey }) => {
@@ -449,7 +452,15 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         </div>
 
         {/* Tab Content */}
-        <div className={`flex-1 min-h-0 p-6 ${activeTab === 'universe' ? 'flex flex-col' : 'overflow-y-auto'}`}>
+        <div
+          className={clsx(
+            'flex-1 min-h-0 sm:p-6',
+            // These two are tables that want the full width; they carry their
+            // own padding where they need it.
+            activeTab === 'positions' || activeTab === 'universe' ? 'p-0' : 'p-3',
+            activeTab === 'universe' ? 'flex flex-col' : 'overflow-y-auto',
+          )}
+        >
           {activeTab === 'overview' && (
             <OverviewTab
               portfolio={portfolio}

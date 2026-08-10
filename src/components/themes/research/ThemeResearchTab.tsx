@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
+import { useIsMobile } from '../../../hooks/useMediaQuery'
 import {
   Settings2, Users, Layers, Sparkles, History as HistoryIcon, Link2, Star, UserPlus,
 } from 'lucide-react'
@@ -46,6 +47,9 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
   const { references } = useThemeKeyReferences(themeId)
   const [showManager, setShowManager] = useState(false)
 
+  // One control naming the current view, as on the asset case — a row of
+  // analyst pills does not survive 390px.
+  const isMobileViewport = useIsMobile()
   const [viewFilter, setViewFilter] = useState<ThemeResearchActiveTab>('aggregated')
   const [viewMode, setViewMode] = useState<ThesisViewMode>('all')
 
@@ -82,11 +86,11 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
     <div className="space-y-3">
       {/* Filter bar */}
       <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
           {/* Left: analyst pills */}
-          <div className="flex items-center gap-3 min-w-0 flex-wrap">
-            <span className="text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
-            {analysts.length <= 5 ? (
+          <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none flex-wrap">
+            <span className="hidden sm:inline text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
+            {analysts.length <= 5 && !isMobileViewport ? (
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
                 <button
                   onClick={() => setViewFilter('aggregated')}
@@ -120,7 +124,7 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
               <select
                 value={viewFilter}
                 onChange={(e) => setViewFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:text-gray-300 dark:bg-gray-800"
+                className="w-full sm:w-auto px-3 h-9 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:text-gray-300 dark:bg-gray-800"
               >
                 <option value="aggregated">Our View (All Contributors)</option>
                 {analysts.map(a => (
