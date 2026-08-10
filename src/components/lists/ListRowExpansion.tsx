@@ -54,12 +54,15 @@ export function ListRowExpansion({
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Two-column body — main (case prose) + sidebar (metadata + activity) */}
-      <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr)_280px] gap-6 overflow-hidden">
+    <div className="flex flex-col h-full max-sm:h-auto sm:overflow-hidden">
+      {/* Main (case prose) + sidebar (metadata + activity). The 280px sidebar
+          column leaves ~110px for the prose at 390px, so on a phone the two
+          stack and the section grows with its content instead of scrolling
+          two panes inside a row. */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_280px] gap-4 sm:gap-6 sm:overflow-hidden">
 
         {/* ── Main: case content as readable prose ───────────────── */}
-        <main className="min-w-0 overflow-y-auto pr-1">
+        <main className="min-w-0 sm:overflow-y-auto sm:pr-1">
           {/* Inline header: symbol + open case */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -98,7 +101,7 @@ export function ListRowExpansion({
         </main>
 
         {/* ── Sidebar: list-scoped metadata + activity ───────────── */}
-        <aside className="min-w-0 border-l border-gray-200 dark:border-gray-800 pl-6 flex flex-col overflow-hidden">
+        <aside className="min-w-0 border-t pt-4 sm:border-t-0 sm:pt-0 sm:border-l border-gray-200 dark:border-gray-800 sm:pl-6 flex flex-col sm:overflow-hidden">
           <div className="flex-shrink-0 space-y-3 pb-3">
             <SidebarRow label="Assignee">
               <ListAssigneeCell rowId={rowId} listId={listId} assignee={assignee} canEdit={canEdit} />
