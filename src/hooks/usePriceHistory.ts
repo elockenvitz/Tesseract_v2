@@ -28,13 +28,45 @@ export interface PricePoint {
 
 export interface PriceHistory {
   points: PricePoint[]
-  /** Yahoo's live figure for the symbol, when the response carried one. */
+  /**
+   * The live figure — and, after stitching, exactly the value of the last
+   * point in `points`. Render the readout from this rather than a separate
+   * quote fetch, or the number and the end of the line will disagree.
+   */
   currentPrice: number | null
   previousClose: number | null
   /** Change across the *visible window*, which is what the chart is showing. */
   windowChange: number | null
   windowChangePercent: number | null
+  /** True when the live price was merged into the series. */
+  stitched: boolean
+  /**
+   * Set when a live price was available but refused as implausible — see the
+   * sanity guard in the stitch step. Surfaced rather than swallowed so a bad
+   * upstream quote is diagnosable instead of just looking like a flat chart.
+   */
+  stitchRejected?: { last: number; live: number; deviation: number }
 }
+
+/**
+ * Bar width per interval. Used to decide whether the live price belongs to the
+ * bar already at the end of the series or starts a new one.
+ */
+const BUCKET_MS: Record<string, number> = {
+  '5m': 5 * 60_000,
+  '15m': 15 * 60_000,
+  '1d': 24 * 60 * 60_000,
+  '1wk': 7 * 24 * 60 * 60_000,
+  '1mo': 31 * 24 * 60 * 60_000,
+}
+
+/**
+ * A live price this far from the last close is treated as bad data rather than
+ * a real move — wrong currency, a stale symbol mapping, a provider glitch.
+ * Drawing it would produce exactly the "weird price activity" this guards
+ * against: a vertical spike at the right edge of an otherwise sane series.
+ */
+const MAX_STITCH_DEVIATION = 0.2
 
 /**
  * Interval/range per timeframe. Yahoo rejects mismatched pairs (a 5-minute
@@ -93,17 +125,58 @@ export function usePriceHistory(
       }
 
       const meta = result?.meta ?? {}
+      const live = typeof meta.regularMarketPrice === 'number' ? meta.regularMarketPrice : null
+      const liveTime = typeof meta.regularMarketTime === 'number' ? meta.regularMarketTime * 1000 : Date.now()
+
+      // ── Stitch the live price onto the series ───────────────────────────
+      //
+      // Two failure modes this prevents.
+      //
+      // Appending blindly: a daily bar is stamped at the session *open* but
+      // already carries the latest price, so adding a point at "now" puts two
+      // points on the same day — a visible kink at the right edge that is an
+      // artefact of the merge rather than anything the security did.
+      //
+      // Not merging at all: the last completed intraday bar can trail the live
+      // price by a whole bar, so a readout sourced separately would disagree
+      // with where the line ends. Since the readout now reads from this same
+      // object, they cannot drift apart.
+      let stitched = false
+      let stitchRejected: PriceHistory['stitchRejected']
+      const lastPoint = points[points.length - 1]
+
+      if (live != null && lastPoint) {
+        const deviation = Math.abs(live - lastPoint.value) / (lastPoint.value || 1)
+        if (deviation > MAX_STITCH_DEVIATION) {
+          stitchRejected = { last: lastPoint.value, live, deviation }
+        } else if (live !== lastPoint.value) {
+          const bucket = BUCKET_MS[spec.interval] ?? 24 * 60 * 60_000
+          if (liveTime - lastPoint.timestamp < bucket) {
+            // Same bar — update it in place rather than adding a second one.
+            points[points.length - 1] = { timestamp: lastPoint.timestamp, value: live }
+          } else {
+            points.push({ timestamp: liveTime, value: live })
+          }
+          stitched = true
+        }
+      }
+
       const first = points[0]?.value ?? null
       const last = points[points.length - 1]?.value ?? null
       const windowChange = first != null && last != null ? last - first : null
 
       return {
         points,
-        currentPrice: typeof meta.regularMarketPrice === 'number' ? meta.regularMarketPrice : last,
+        // Deliberately the series' own last value, so the number rendered and
+        // the end of the drawn line are the same figure by construction. When
+        // the live price was rejected this reports what is actually plotted.
+        currentPrice: last,
         previousClose: typeof meta.chartPreviousClose === 'number' ? meta.chartPreviousClose : null,
         windowChange,
         windowChangePercent:
           windowChange != null && first ? (windowChange / first) * 100 : null,
+        stitched,
+        stitchRejected,
       }
     },
   })

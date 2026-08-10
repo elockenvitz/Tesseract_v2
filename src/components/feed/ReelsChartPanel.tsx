@@ -1,11 +1,9 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot
 } from 'recharts'
 import { TrendingUp, TrendingDown, BarChart3, Loader2 } from 'lucide-react'
-import { financialDataService } from '../../lib/financial-data/browser-client'
 import { usePriceHistory } from '../../hooks/usePriceHistory'
 
 type Timeframe = '1D' | '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX'
@@ -45,19 +43,12 @@ export function ReelsChartPanel({
   /** Point under the finger while scrubbing; null when not scrubbing. */
   const [scrub, setScrub] = useState<{ value: number; timestamp: number } | null>(null)
 
-  // Fetch quote data
-  const { data: quote, isLoading: quoteLoading } = useQuery({
-    queryKey: ['reels-chart-quote', symbol],
-    queryFn: async () => {
-      try {
-        return await financialDataService.getQuote(symbol)
-      } catch {
-        return null
-      }
-    },
-    staleTime: 60000
-  })
-
+  // The separate getQuote fetch that used to live here is gone. It was a
+  // second round trip to the same upstream, on its own cache, feeding a price
+  // rendered next to a line drawn from different data — so the two could
+  // disagree by a tick and make a correct chart look broken. One request now
+  // supplies both.
+  //
   // Real closes from Yahoo, via the chart proxy.
   //
   // This used to call ChartDataAdapter.generateHistoricalData — a seeded
@@ -131,10 +122,13 @@ export function ReelsChartPanel({
             )}
           </div>
 
-          {quote && stats && (
+          {/* Same source as the line and the scrub readout — see the note on
+              the scrub row. A separately-fetched quote here would drift from
+              the series and look like a broken chart. */}
+          {history?.currentPrice != null && stats && (
             <div className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-gray-700">
               <span className="text-lg font-semibold text-gray-900 dark:text-white">
-                ${quote.price.toFixed(2)}
+                ${history.currentPrice.toFixed(2)}
               </span>
               <span className={clsx(
                 'flex items-center text-sm font-medium',
@@ -205,7 +199,11 @@ export function ReelsChartPanel({
         !scrub && 'text-gray-400',
       )}>
         {(() => {
-          const shown = scrub?.value ?? quote?.price ?? null
+          // At rest this is the series' own last value, not a separately
+          // fetched quote. Two fetches with independent caches drift, and the
+          // symptom is a header price that disagrees with where the line ends
+          // — which reads as the chart being wrong.
+          const shown = scrub?.value ?? history?.currentPrice ?? null
           if (shown == null) return null
           // Change is measured against the start of the visible window, so it
           // answers "what has it done over this period", which is the question
@@ -248,7 +246,7 @@ export function ReelsChartPanel({
         onTouchEnd={() => setScrub(null)}
         onTouchCancel={() => setScrub(null)}
       >
-        {quoteLoading || historyLoading ? (
+        {historyLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
           </div>
