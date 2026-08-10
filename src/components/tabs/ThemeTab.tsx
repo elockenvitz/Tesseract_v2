@@ -12,6 +12,8 @@ import { ThemeDiscussionPanel } from '../themes/ThemeDiscussionPanel'
 import { ThemeResearchTab } from '../themes/research/ThemeResearchTab'
 import { ThemeProcessesPanel } from '../themes/processes/ThemeProcessesPanel'
 import { useHeldAssetIds } from '../../hooks/useHeldAssetIds'
+import { MobileAssetsList } from '../mobile/MobileAssetsList'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { AssetTableView } from '../table/AssetTableView'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -104,6 +106,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   const [isEditingDescription, setIsEditingDescription] = useState(false)
   // Type badge and description are revealed together from the header chevron.
   // The name itself is click-to-edit, so it cannot double as the disclosure.
+  const isMobileViewport = useIsMobile()
   const [showThemeMeta, setShowThemeMeta] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState(theme.description || '')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -861,6 +864,19 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         <Badge variant="success" size="sm">{heldAssets.length}</Badge>
                         <span className="text-xs text-gray-500 dark:text-gray-400">In at least one portfolio</span>
                       </div>
+                      {/* The configurable grid does not resolve to 390px —
+                          same reasoning as the Assets page. The phone gets the
+                          watchlist list, which reads to find a name and open
+                          it. Bulk "remove from theme" stays on desktop: it is a
+                          multi-select destructive action and a list has nowhere
+                          to put it. */}
+                      {isMobileViewport ? (
+                        <MobileAssetsList
+                          assets={heldAssets}
+                          isLoading={isHeldLoading}
+                          onAssetSelect={handleOpenAsset}
+                        />
+                      ) : (
                       <AssetTableView
                         assets={heldAssets}
                         isLoading={isHeldLoading}
@@ -870,6 +886,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         bulkActionLabel="Remove from Theme"
                         bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
                       />
+                      )}
                     </section>
                   )}
 
@@ -880,6 +897,19 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         <Badge variant="default" size="sm">{watchlistAssets.length}</Badge>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Candidates to fish from</span>
                       </div>
+                      {/* The configurable grid does not resolve to 390px —
+                          same reasoning as the Assets page. The phone gets the
+                          watchlist list, which reads to find a name and open
+                          it. Bulk "remove from theme" stays on desktop: it is a
+                          multi-select destructive action and a list has nowhere
+                          to put it. */}
+                      {isMobileViewport ? (
+                        <MobileAssetsList
+                          assets={watchlistAssets}
+                          isLoading={isHeldLoading}
+                          onAssetSelect={handleOpenAsset}
+                        />
+                      ) : (
                       <AssetTableView
                         assets={watchlistAssets}
                         isLoading={isHeldLoading}
@@ -889,6 +919,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                         bulkActionLabel="Remove from Theme"
                         bulkActionIcon={<Trash2 className="h-4 w-4 mr-1" />}
                       />
+                      )}
                     </section>
                   )}
                 </>
