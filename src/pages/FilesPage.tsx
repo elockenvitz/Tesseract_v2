@@ -38,6 +38,22 @@ interface FileItem {
 type ViewMode = 'grid' | 'list'
 type CategoryFilter = 'all' | 'models' | 'documents' | 'templates' | 'reports' | 'presentations' | 'data' | 'other'
 
+/**
+ * Selected-chip styling per category, written as whole class names.
+ *
+ * Tailwind generates classes by scanning source text for literal matches, so
+ * a name assembled at runtime (`bg-${color}-50`) is never emitted. Keep these
+ * spelled out — the moment one is interpolated it silently renders as nothing.
+ */
+const CATEGORY_TONES: Record<string, { active: string; icon: string; badge: string }> = {
+  purple: { active: 'bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300', icon: 'text-purple-500', badge: 'bg-purple-100 dark:bg-purple-900/40' },
+  blue:   { active: 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300',           icon: 'text-blue-500',   badge: 'bg-blue-100 dark:bg-blue-900/40' },
+  green:  { active: 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300',     icon: 'text-green-500',  badge: 'bg-green-100 dark:bg-green-900/40' },
+  orange: { active: 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-300', icon: 'text-orange-500', badge: 'bg-orange-100 dark:bg-orange-900/40' },
+  cyan:   { active: 'bg-cyan-50 border-cyan-200 text-cyan-700 dark:bg-cyan-900/20 dark:border-cyan-800 dark:text-cyan-300',           icon: 'text-cyan-500',   badge: 'bg-cyan-100 dark:bg-cyan-900/40' },
+  gray:   { active: 'bg-gray-100 border-gray-300 text-gray-700 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300',             icon: 'text-gray-500',   badge: 'bg-gray-200 dark:bg-gray-700' },
+}
+
 export function FilesPage({ onItemSelect }: FilesPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
@@ -128,46 +144,57 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-violet-100 rounded-lg">
+        {/* Identity and actions wrap; the standing description is desktop-only
+            — it explains the page once and costs a line of every visit. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="p-2 bg-violet-100 rounded-lg shrink-0">
               <FolderOpen className="w-5 h-5 text-violet-600" />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Files</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Central repository for models, documents, and resources</p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">Files</h1>
+              <p className="hidden sm:block text-sm text-gray-500 dark:text-gray-400">Central repository for models, documents, and resources</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" onClick={() => setShowUploadModal(true)}>
-              <Upload className="w-4 h-4 mr-2" />
-              Upload
+              <Upload className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Upload</span>
             </Button>
             <Button onClick={() => setShowUploadModal(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Folder
+              <Plus className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">New Folder</span>
             </Button>
           </div>
         </div>
 
-        {/* Category Quick Stats */}
-        <div className="flex items-center space-x-3 mb-4 overflow-x-auto pb-2">
+        {/* Category Quick Stats — the primary filter on a phone, where the
+            select below is a second-class control.
+
+            The selected state used to be built as `bg-${cat.color}-50`. Tailwind
+            scans source text for complete class names, so an interpolated one
+            is never generated and the selected chip rendered with no background
+            at all — the row gave no indication of which category was active.
+            The classes are looked up whole now. */}
+        <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 overflow-x-auto no-scrollbar pb-1.5">
           {categoryStats.map(cat => {
             const Icon = cat.icon
+            const tone = CATEGORY_TONES[cat.color] ?? CATEGORY_TONES.gray
+            const isActive = categoryFilter === cat.id
             return (
               <button
                 key={cat.id}
                 onClick={() => setCategoryFilter(cat.id as CategoryFilter)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg border transition-colors flex-shrink-0 ${
-                  categoryFilter === cat.id
-                    ? `bg-${cat.color}-50 border-${cat.color}-200 text-${cat.color}-700`
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg border transition-colors flex-shrink-0 whitespace-nowrap ${
+                  isActive
+                    ? tone.active
                     : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800'
                 }`}
               >
-                <Icon className={`w-4 h-4 text-${cat.color}-500`} />
+                <Icon className={`w-4 h-4 shrink-0 ${tone.icon}`} />
                 <span className="text-sm font-medium">{cat.label}</span>
                 <span className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${
-                  categoryFilter === cat.id ? `bg-${cat.color}-100` : 'bg-gray-100 dark:bg-gray-800'
+                  isActive ? tone.badge : 'bg-gray-100 dark:bg-gray-800'
                 }`}>
                   {cat.count}
                 </span>
@@ -176,9 +203,11 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
           })}
         </div>
 
-        {/* Filters & Search */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+        {/* Filters & Search. A category select, a view switch and a 256px
+            search field come to ~470px, so search drops to its own full-width
+            line on a phone. */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {/* Category Filter */}
             <select
               value={categoryFilter}
@@ -213,14 +242,14 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
           </div>
 
           {/* Search */}
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search files..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700"
+              className="pl-10 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700"
             />
           </div>
         </div>
@@ -302,11 +331,15 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Category</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Size</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Modified</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Actions</th>
+                  {/* Category, size and modified collapse below `sm` and
+                      reappear under the file name instead — five columns of
+                      metadata do not compress to 390px, and a filename is the
+                      one thing you are actually scanning for. */}
+                  <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Name</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Category</th>
+                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Size</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Modified</th>
+                  <th className="px-3 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -316,30 +349,41 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => onItemSelect?.(file)}
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center space-x-3">
-                        {getFileIcon(file.file_type)}
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">{file.name}</p>
+                    <td className="px-3 sm:px-4 py-3">
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                        <span className="shrink-0">{getFileIcon(file.file_type)}</span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{file.name}</p>
                           {file.description && (
                             <p className="text-xs text-gray-500 truncate max-w-xs dark:text-gray-400">{file.description}</p>
                           )}
+                          {/* The collapsed columns, folded under the name */}
+                          <p className="sm:hidden mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
+                            <span className={`px-1.5 py-0.5 rounded font-medium ${getCategoryColor(file.category)}`}>
+                              {file.category}
+                            </span>
+                            <span>{formatFileSize(file.file_size)}</span>
+                            <span>·</span>
+                            <span className="truncate">
+                              {formatDistanceToNow(new Date(file.updated_at), { addSuffix: true })}
+                            </span>
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden sm:table-cell px-4 py-3">
                       <span className={`px-2 py-0.5 text-xs font-medium rounded ${getCategoryColor(file.category)}`}>
                         {file.category}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                    <td className="hidden md:table-cell px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                       {formatFileSize(file.file_size)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                    <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                       {formatDistanceToNow(new Date(file.updated_at), { addSuffix: true })}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end space-x-2">
+                    <td className="px-3 sm:px-4 py-3 text-right align-top sm:align-middle">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
