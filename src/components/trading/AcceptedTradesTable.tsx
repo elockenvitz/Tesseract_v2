@@ -586,8 +586,10 @@ export function AcceptedTradesTable({
     <div className="flex h-full min-h-0">
       {/* Main column */}
       <div className="flex-1 flex flex-col min-w-0">
-      {/* Filters */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+      {/* Filters. Two selects, a search field and the running total on one
+          non-wrapping row is well past 390px — it wraps on a phone, with the
+          search taking the second line in full. */}
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b border-gray-200 dark:border-gray-700">
         <select
           value={filterPhase}
           onChange={e => setFilterPhase(e.target.value as any)}
@@ -616,7 +618,7 @@ export function AcceptedTradesTable({
             batch-name is still searchable, and the PM can also find
             trades by ticker, reason keyword, or company without
             opening a dropdown. */}
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative w-full sm:flex-1 sm:w-auto sm:max-w-xs order-last sm:order-none">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
           <input
             type="text"
@@ -635,15 +637,24 @@ export function AcceptedTradesTable({
             </button>
           )}
         </div>
-        <div className="flex-1" />
-        <span className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="hidden sm:block flex-1" />
+        <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto sm:ml-0 shrink-0">
           {filtered.length} trade{filtered.length !== 1 ? 's' : ''}
-          {totalNotional !== 0 && ` · $${Math.abs(totalNotional).toLocaleString()} total notional`}
+          <span className="hidden sm:inline">
+            {totalNotional !== 0 && ` · $${Math.abs(totalNotional).toLocaleString()} total notional`}
+          </span>
         </span>
       </div>
 
-      {/* Table — Trade Book is the sole canonical committed-trade surface */}
-      <table className="w-full">
+      {/* Table — Trade Book is the sole canonical committed-trade surface.
+
+          Thirteen columns do not compress to 390px, and the app shell clips
+          horizontal overflow rather than scrolling it, so without its own
+          scroller the right-hand columns would be both invisible and
+          unreachable. `.mobile-scroll-x` is the project's opt-in for exactly
+          this: a wide table that scrolls independently of the page. */}
+      <div className="flex-1 min-h-0 overflow-auto overscroll-none">
+      <table className="w-full min-w-[720px] sm:min-w-0">
         <thead className="border-b border-gray-200 dark:border-gray-700">
           <tr>
             {/* expand column */}
@@ -996,11 +1007,12 @@ export function AcceptedTradesTable({
           })}
         </tbody>
       </table>
+      </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
-        <span>{trades.length} trade{trades.length !== 1 ? 's' : ''}</span>
-        <span>${Math.abs(totalNotional).toLocaleString()} total notional</span>
+      <div className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+        <span className="shrink-0">{trades.length} trade{trades.length !== 1 ? 's' : ''}</span>
+        <span className="truncate">${Math.abs(totalNotional).toLocaleString()} total notional</span>
       </div>
       </div>
 
@@ -1064,7 +1076,10 @@ function TradeDetailPane({
   onAddComment?: (tradeId: string, content: string) => void
 }) {
   return (
-    <aside className="w-96 flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex flex-col min-h-0">
+    /* A fixed 384px column cannot sit beside a 390px screen — it pushed the
+       table off the right edge. On a phone it is a full-screen layer over the
+       list instead; the close button was already there. */
+    <aside className="max-sm:fixed max-sm:inset-0 max-sm:z-[80] max-sm:pt-safe max-sm:pb-safe sm:w-96 flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex flex-col min-h-0 overscroll-none">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <div className="min-w-0">

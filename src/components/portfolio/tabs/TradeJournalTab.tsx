@@ -193,26 +193,15 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
   // ── Main ───────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
-      {/* ── HEADER ─────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-2 shrink-0">
-        <div>
-          <div className="flex items-center gap-2">
-            <BookText className="w-4 h-4 text-gray-400" />
-            <h3 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade Journal</h3>
-            <span className="text-[10px] text-gray-400 tabular-nums">{events.length} events</span>
-          </div>
-          <p className="text-[10px] text-gray-400 mt-0.5 ml-6">
-            Portfolio trade events and execution history
-          </p>
-        </div>
-      </div>
-
-      {/* Post-mortem redirect — Outcomes is the canonical review workspace */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 mb-3 shrink-0 text-[10px]">
-        <BookText className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-        <span className="text-blue-700 dark:text-blue-400">
-          Post-mortem reviews are now captured in <span className="font-semibold">Outcomes</span>. This tab shows trade event history.
-        </span>
+      {/* ── HEADER ───────────────────────────────────────────────
+          The subtitle and the standing blue notice were ~70px of fixed chrome
+          repeating the same two sentences on every visit, above a list that
+          had to fit in what was left. Both are gone; the detail panel still
+          says where post-mortems are authored, at the point that matters. */}
+      <div className="flex items-center gap-2 mb-2 shrink-0">
+        <BookText className="w-4 h-4 text-gray-400 shrink-0" />
+        <h3 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade Journal</h3>
+        <span className="text-[10px] text-gray-400 tabular-nums">{events.length} events</span>
       </div>
 
       {/* ── SUMMARY STRIP ──────────────────────────────────────────
@@ -527,12 +516,14 @@ function SummaryTile({
   highlight?: boolean
 }) {
   return (
-    <div className={`px-3 py-2 ${highlight ? 'bg-amber-50/50' : 'bg-white dark:bg-gray-800'}`}>
+    // Tighter on a phone: the strip is a glance, and every pixel it gives back
+    // is a row of the list underneath it.
+    <div className={`px-2 py-1.5 sm:px-3 sm:py-2 ${highlight ? 'bg-amber-50/50' : 'bg-white dark:bg-gray-800'}`}>
       <div className="flex items-center gap-1">
         <span className={`${color} opacity-60`}>{icon}</span>
         <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider leading-none">{label}</p>
       </div>
-      <p className={`text-[17px] font-semibold mt-1 tabular-nums leading-none ${color}`}>
+      <p className={`text-[15px] sm:text-[17px] font-semibold mt-1 tabular-nums leading-none ${color}`}>
         {value}
       </p>
     </div>

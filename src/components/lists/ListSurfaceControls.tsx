@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Search, Star, Plus, LayoutGrid, List, ChevronDown, Check, X, Layers } from 'lucide-react'
+import { Search, Star, Plus, LayoutGrid, List, ChevronDown, Check, X, Layers, SlidersHorizontal } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Button } from '../ui/Button'
+import { BottomSheet } from '../mobile/BottomSheet'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import type { ListSortKey } from '../../hooks/lists/useListSurfaces'
 
 export type ListTypeFilter = 'all' | 'mine' | 'collaborative' | 'shared'
@@ -157,6 +159,95 @@ function GroupByDropdown({ value, onChange }: {
   )
 }
 
+// ── PortfolioTreeOptions ─────────────────────────────────────────────────
+
+/**
+ * The checkbox tree itself, without the popover around it. The sheet renders
+ * this inline: a nested absolutely-positioned dropdown inside the sheet's own
+ * scroll container would be clipped by it rather than floating over the page.
+ */
+function PortfolioTreeOptions({ portfolios, selectedIds, onChange, touch }: {
+  portfolios: PortfolioOption[]
+  selectedIds: string[]
+  onChange: (ids: string[]) => void
+  touch?: boolean
+}) {
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const tree = useMemo(() => buildPortfolioTree(portfolios), [portfolios])
+  const hasMultipleGroups = tree.length > 1 || (tree.length === 1 && tree[0].teamId !== null)
+
+  const togglePortfolio = (id: string) => {
+    if (selectedSet.has(id)) onChange(selectedIds.filter(x => x !== id))
+    else onChange([...selectedIds, id])
+  }
+
+  const toggleGroup = (group: PortfolioGroup) => {
+    const groupIds = group.portfolios.map(p => p.id)
+    const allSelected = groupIds.every(id => selectedSet.has(id))
+    if (allSelected) onChange(selectedIds.filter(id => !groupIds.includes(id)))
+    else onChange(Array.from(new Set([...selectedIds, ...groupIds])))
+  }
+
+  return (
+    <>
+      {tree.map((group) => (
+        <div key={group.teamId ?? '__ungrouped'}>
+          {hasMultipleGroups && (
+            <button
+              onClick={() => toggleGroup(group)}
+              className={clsx(
+                'w-full flex items-center gap-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 border-b border-gray-50 dark:border-gray-700/50',
+                touch ? 'px-1 py-2.5' : 'px-3 py-1.5',
+              )}
+            >
+              <div className={clsx(
+                'w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0',
+                group.portfolios.every(p => selectedSet.has(p.id))
+                  ? 'bg-primary-500 border-primary-500 text-white'
+                  : group.portfolios.some(p => selectedSet.has(p.id))
+                    ? 'bg-primary-100 border-primary-300 dark:bg-primary-900/30 dark:border-primary-700'
+                    : 'border-gray-300 dark:border-gray-600',
+              )}>
+                {group.portfolios.every(p => selectedSet.has(p.id)) && (
+                  <Check className="w-2.5 h-2.5" />
+                )}
+              </div>
+              <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                {group.teamName}
+              </span>
+            </button>
+          )}
+
+          {group.portfolios.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => togglePortfolio(p.id)}
+              className={clsx(
+                'w-full flex items-center gap-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors',
+                touch
+                  ? (hasMultipleGroups ? 'pl-4 pr-1 py-2.5' : 'px-1 py-2.5')
+                  : (hasMultipleGroups ? 'px-5 py-1.5' : 'px-3 py-1.5'),
+              )}
+            >
+              <div className={clsx(
+                'w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0',
+                selectedSet.has(p.id)
+                  ? 'bg-primary-500 border-primary-500 text-white'
+                  : 'border-gray-300 dark:border-gray-600',
+              )}>
+                {selectedSet.has(p.id) && <Check className="w-2.5 h-2.5" />}
+              </div>
+              <span className={clsx('text-gray-700 dark:text-gray-200', touch ? 'text-sm' : 'text-xs')}>
+                {p.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
 // ── PortfolioTreeSelect ──────────────────────────────────────────────────
 
 function PortfolioTreeSelect({ portfolios, selectedIds, onChange }: {
@@ -175,29 +266,6 @@ function PortfolioTreeSelect({ portfolios, selectedIds, onChange }: {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
-
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
-  const tree = useMemo(() => buildPortfolioTree(portfolios), [portfolios])
-  const hasMultipleGroups = tree.length > 1 || (tree.length === 1 && tree[0].teamId !== null)
-
-  const togglePortfolio = useCallback((id: string) => {
-    if (selectedSet.has(id)) {
-      onChange(selectedIds.filter(x => x !== id))
-    } else {
-      onChange([...selectedIds, id])
-    }
-  }, [selectedIds, selectedSet, onChange])
-
-  const toggleGroup = useCallback((group: PortfolioGroup) => {
-    const groupIds = group.portfolios.map(p => p.id)
-    const allSelected = groupIds.every(id => selectedSet.has(id))
-    if (allSelected) {
-      onChange(selectedIds.filter(id => !groupIds.includes(id)))
-    } else {
-      const newIds = new Set([...selectedIds, ...groupIds])
-      onChange(Array.from(newIds))
-    }
-  }, [selectedIds, selectedSet, onChange])
 
   const clearAll = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -258,57 +326,26 @@ function PortfolioTreeSelect({ portfolios, selectedIds, onChange }: {
             )}
           </div>
 
-          {tree.map((group) => (
-            <div key={group.teamId ?? '__ungrouped'}>
-              {hasMultipleGroups && (
-                <button
-                  onClick={() => toggleGroup(group)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 border-b border-gray-50 dark:border-gray-700/50"
-                >
-                  <div className={clsx(
-                    'w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0',
-                    group.portfolios.every(p => selectedSet.has(p.id))
-                      ? 'bg-primary-500 border-primary-500 text-white'
-                      : group.portfolios.some(p => selectedSet.has(p.id))
-                        ? 'bg-primary-100 border-primary-300 dark:bg-primary-900/30 dark:border-primary-700'
-                        : 'border-gray-300 dark:border-gray-600',
-                  )}>
-                    {group.portfolios.every(p => selectedSet.has(p.id)) && (
-                      <Check className="w-2.5 h-2.5" />
-                    )}
-                  </div>
-                  <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {group.teamName}
-                  </span>
-                </button>
-              )}
-
-              {group.portfolios.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => togglePortfolio(p.id)}
-                  className={clsx(
-                    'w-full flex items-center gap-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors',
-                    hasMultipleGroups ? 'px-5 py-1.5' : 'px-3 py-1.5',
-                  )}
-                >
-                  <div className={clsx(
-                    'w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0',
-                    selectedSet.has(p.id)
-                      ? 'bg-primary-500 border-primary-500 text-white'
-                      : 'border-gray-300 dark:border-gray-600',
-                  )}>
-                    {selectedSet.has(p.id) && <Check className="w-2.5 h-2.5" />}
-                  </div>
-                  <span className="text-xs text-gray-700 dark:text-gray-200">
-                    {p.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ))}
+          <PortfolioTreeOptions
+            portfolios={portfolios}
+            selectedIds={selectedIds}
+            onChange={onChange}
+          />
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Sheet group ──────────────────────────────────────────────────────────
+
+function SheetGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+        {label}
+      </div>
+      {children}
     </div>
   )
 }
@@ -333,6 +370,163 @@ export function ListSurfaceControls({
   onViewModeChange,
   onNewList
 }: ListSurfaceControlsProps) {
+  const isMobileViewport = useIsMobile()
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  const activeFilterCount =
+    (typeFilter !== 'all' ? 1 : 0) +
+    (portfolioFilterIds.length > 0 ? 1 : 0) +
+    (favoritesOnly ? 1 : 0)
+
+  // On a phone the row was `flex-col`, so these eight controls became eight
+  // stacked rows — search, four type pills, a portfolio tree, a favourites
+  // toggle, a grouping menu, a view switch and New List — most of a screen
+  // of chrome before the first list. One line: search, one Filters button
+  // carrying everything that narrows the set, and New List.
+  if (isMobileViewport) {
+    return (
+      <>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search lists..."
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <button
+            onClick={() => setFiltersOpen(true)}
+            aria-label="Filters"
+            className={clsx(
+              'shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-xs font-medium transition-colors',
+              activeFilterCount > 0
+                ? 'bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-900/20 dark:border-primary-800/40 dark:text-primary-300'
+                : 'bg-white border-gray-200 text-gray-600 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-400'
+            )}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            {activeFilterCount > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-primary-500 text-white text-[10px] font-semibold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          <Button size="sm" onClick={onNewList} aria-label="New list" className="shrink-0">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <BottomSheet
+          open={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          title="Filter lists"
+          fitContent
+          headerAccessory={activeFilterCount > 0 ? (
+            <button
+              onClick={() => {
+                onTypeFilterChange('all')
+                onPortfolioFilterChange([])
+                onFavoritesOnlyChange(false)
+              }}
+              className="text-xs font-medium text-primary-600 dark:text-primary-400"
+            >
+              Clear
+            </button>
+          ) : undefined}
+        >
+          <div className="px-4 py-2 pb-safe space-y-4">
+            <SheetGroup label="Show">
+              <div className="flex flex-wrap gap-1.5">
+                {TYPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onTypeFilterChange(opt.value)}
+                    className={clsx(
+                      'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+                      typeFilter === opt.value
+                        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </SheetGroup>
+
+            {portfolios.length > 0 && (
+              <SheetGroup label="Portfolio">
+                <div className="max-h-56 overflow-y-auto overscroll-contain rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1">
+                  <PortfolioTreeOptions
+                    portfolios={portfolios}
+                    selectedIds={portfolioFilterIds}
+                    onChange={onPortfolioFilterChange}
+                    touch
+                  />
+                </div>
+              </SheetGroup>
+            )}
+
+            <SheetGroup label="Sort">
+              <select
+                value={viewMode === 'list' ? groupBy : sortBy}
+                onChange={(e) => viewMode === 'list'
+                  ? onGroupByChange(e.target.value as ListGroupKey)
+                  : onSortByChange(e.target.value as ListSortKey)}
+                className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+              >
+                {(viewMode === 'list' ? GROUP_OPTIONS : SORT_OPTIONS).map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </SheetGroup>
+
+            <div className="flex items-center justify-between gap-3">
+              <button
+                onClick={() => onFavoritesOnlyChange(!favoritesOnly)}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors',
+                  favoritesOnly
+                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                )}
+              >
+                <Star className={clsx('h-4 w-4', favoritesOnly && 'fill-yellow-500')} />
+                Favourites only
+              </button>
+
+              <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shrink-0">
+                <button
+                  onClick={() => onViewModeChange('grid')}
+                  aria-label="Grid view"
+                  className={clsx('p-2.5', viewMode === 'grid'
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                    : 'text-gray-400')}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => onViewModeChange('list')}
+                  aria-label="List view"
+                  className={clsx('p-2.5', viewMode === 'list'
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                    : 'text-gray-400')}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </BottomSheet>
+      </>
+    )
+  }
+
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
       {/* Search */}

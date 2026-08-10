@@ -394,7 +394,9 @@ export function ProjectCollectionsSidebar({
   }
 
   return (
-    <div className="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+    /* `h-full` so the drawer wrapper on mobile — which positions it — still
+       gets a full-height column; on desktop the flex row supplies the height. */
+    <div className="w-full sm:w-64 h-full flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Collections</h3>

@@ -28,6 +28,7 @@ import {
   ArrowUpRight,
   MessageSquare,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Pencil,
   Check as CheckIcon,
@@ -45,6 +46,7 @@ import {
 } from '../../lib/trade-book/lifecycle'
 import { TradeRationaleLog } from './AcceptedTradesTable'
 import { supabase } from '../../lib/supabase'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type {
   TradeBatch,
@@ -1019,6 +1021,8 @@ export function BatchListView({
   onViewBatchTrades,
   onAddComment,
 }: BatchListViewProps) {
+  const isMobileViewport = useIsMobile()
+
   // Pre-compute per-batch stats AND per-batch source mix. Both
   // iterate the trades array once each; keeping them separate is
   // cheap and keeps the shapes isolated.
@@ -1127,6 +1131,11 @@ export function BatchListView({
   // showing an empty right panel.
   React.useEffect(() => {
     if (batches.length === 0) return
+    // Not on a phone. There the detail replaces the list rather than filling
+    // a pane beside it, so auto-selecting would drop the user straight into
+    // the first batch — and immediately undo the "All batches" back button,
+    // since leaving the detail sets the selection back to null.
+    if (isMobileViewport) return
     const stillExists = selectedBatchId
       ? batches.some((b) => b.id === selectedBatchId)
       : false
@@ -1134,7 +1143,7 @@ export function BatchListView({
       onSelectBatch(batches[0].id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batches.length, selectedBatchId])
+  }, [batches.length, selectedBatchId, isMobileViewport])
 
   if (batches.length === 0) {
     return (
@@ -1152,9 +1161,19 @@ export function BatchListView({
   }
 
   return (
-    <div className="h-full grid grid-cols-[320px_1fr] min-h-0">
+    /* A 320px rail plus a detail pane is 320px of a 390px screen spent on the
+       list, so the pane it sits beside had nowhere to go and the grid ran off
+       the right edge. On a phone this is one column: the list, with the
+       selected batch shown as a layer over it. */
+    <div className="h-full min-h-0 flex flex-col sm:grid sm:grid-cols-[320px_1fr]">
       {/* Left rail: batch cards */}
-      <div className="border-r border-gray-200 dark:border-gray-700 overflow-auto bg-gray-50/30 dark:bg-gray-900/30">
+      <div className={clsx(
+        'border-r border-gray-200 dark:border-gray-700 overflow-auto overscroll-contain bg-gray-50/30 dark:bg-gray-900/30',
+        'flex-1 min-h-0 sm:flex-none',
+        // On a phone the detail replaces the list rather than sitting beside
+        // it; keeping both mounted preserves the list's scroll position.
+        selectedBatch && 'max-sm:hidden',
+      )}>
         <div className="px-4 py-4 space-y-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -1212,14 +1231,27 @@ export function BatchListView({
 
       {/* Right: detail panel */}
       {selectedBatch ? (
-        <BatchDetailPanel
-          batch={selectedBatch}
-          trades={selectedBatchTrades}
-          onViewInTradesView={() => onViewBatchTrades(selectedBatch.id)}
-          onAddComment={onAddComment}
-        />
+        <div className="flex-1 min-h-0 flex flex-col sm:contents">
+          {/* Back to the list — on a phone the detail replaced it, so without
+              this there is no way out of a batch. */}
+          <button
+            onClick={() => onSelectBatch(null)}
+            className="sm:hidden flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 shrink-0"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            All batches
+          </button>
+          <BatchDetailPanel
+            batch={selectedBatch}
+            trades={selectedBatchTrades}
+            onViewInTradesView={() => onViewBatchTrades(selectedBatch.id)}
+            onAddComment={onAddComment}
+          />
+        </div>
       ) : (
-        <EmptyDetail />
+        <div className="hidden sm:block">
+          <EmptyDetail />
+        </div>
       )}
     </div>
   )

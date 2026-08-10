@@ -18,6 +18,8 @@ import { Button } from '../ui/Button'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { ShareListDialog } from '../lists/ShareListDialog'
 import { ListTableView } from '../lists/ListTableView'
+import { MobileListRows } from '../lists/MobileListRows'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
 import { ListHeaderStrip } from '../lists/ListHeaderStrip'
 import { ListBrief } from '../lists/ListBrief'
@@ -100,6 +102,7 @@ interface ListItem {
 export function ListTab({ list, onAssetSelect }: ListTabProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const isMobileViewport = useIsMobile()
 
   // ── State ────────────────────────────────────────────────────────────
   const [showShareDialog, setShowShareDialog] = useState(false)
@@ -622,9 +625,14 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         </div>
       )}
 
+      {/* Progress and filters sit side by side with a rule between them at
+          desktop width. On a phone the rule and the row are dropped: the
+          progress strip is a set of status segments that needs the full
+          width to stay readable, and the filter trigger is one chip that
+          does not need a column of its own. */}
       {!isScreen && unfilteredAssets.length > 0 && (
-        <div className="flex items-center gap-3 py-1.5 flex-wrap">
-          <div className="min-w-0 flex-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-1.5">
+          <div className="min-w-0 sm:flex-1">
             <ListProgressStrip
               statuses={listStatuses}
               assets={unfilteredAssets}
@@ -632,7 +640,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
               activeStatusIds={rowFilters.statusIds}
             />
           </div>
-          <div className="flex-shrink-0 border-l border-gray-200 dark:border-gray-800 pl-3">
+          <div className="flex-shrink-0 sm:border-l sm:border-gray-200 sm:dark:border-gray-800 sm:pl-3">
             <ListFilterChipBar
               listId={list.id}
               filters={rowFilters}
@@ -722,6 +730,22 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
             ) : (
               <ListEmptyState canAdd={canAdd} listName={displayList.name} />
             )
+          ) : isMobileViewport ? (
+            /* The configurable grid does not resolve to 390px — same
+               reasoning as the Assets page and a theme's related assets.
+               MobileAssetsList is not the substitute here though: it is a
+               watchlist, and would drop the assignee, status and tags that
+               make a row belong to a list rather than to the market. The
+               reordering, grouping, kanban and bulk-remove affordances stay
+               on desktop; they need a pointer and a column to live in. */
+            <MobileListRows
+              listId={list.id}
+              assets={assets}
+              isLoading={isLoading}
+              permissions={permissions}
+              onAssetSelect={onAssetSelect}
+              hideListColumns={isScreen}
+            />
           ) : (
           <ListTableView
             listId={list.id}

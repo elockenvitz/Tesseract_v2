@@ -20,6 +20,7 @@ import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { CalendarSettings } from '../components/calendar/CalendarSettings'
+import { BottomSheet } from '../components/mobile/BottomSheet'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 import { useOrgMembers } from '../hooks/useOrgMembers'
@@ -50,15 +51,16 @@ interface CalendarPageProps {
 
 type ViewMode = 'month' | 'week' | 'agenda'
 
-const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
-  earnings_call: { label: 'Earnings Call', color: 'text-green-700', bgColor: 'bg-green-100 border-green-300', icon: <TrendingUp className="h-3 w-3" /> },
-  conference: { label: 'Conference', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-300', icon: <CalendarClock className="h-3 w-3" /> },
-  deadline: { label: 'Deadline', color: 'text-red-700', bgColor: 'bg-red-100 border-red-300', icon: <Clock className="h-3 w-3" /> },
-  meeting: { label: 'Meeting', color: 'text-blue-700', bgColor: 'bg-blue-100 border-blue-300', icon: <CalendarDays className="h-3 w-3" /> },
-  deliverable: { label: 'Deliverable', color: 'text-amber-700', bgColor: 'bg-amber-100 border-amber-300', icon: <FolderKanban className="h-3 w-3" /> },
-  task: { label: 'Task', color: 'text-slate-700', bgColor: 'bg-slate-100 border-slate-300', icon: <List className="h-3 w-3" /> },
-  reminder: { label: 'Reminder', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-300', icon: <Bell className="h-3 w-3" /> },
-  other: { label: 'Other', color: 'text-gray-700 dark:text-gray-300', bgColor: 'bg-gray-100 border-gray-300 dark:border-gray-600 dark:bg-gray-800', icon: <Calendar className="h-3 w-3" /> },
+/** `dotColor` is the phone month-view rendering — see the day cell. */
+const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; bgColor: string; dotColor: string; icon: React.ReactNode }> = {
+  earnings_call: { label: 'Earnings Call', color: 'text-green-700', bgColor: 'bg-green-100 border-green-300', dotColor: 'bg-green-500', icon: <TrendingUp className="h-3 w-3" /> },
+  conference: { label: 'Conference', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-300', dotColor: 'bg-purple-500', icon: <CalendarClock className="h-3 w-3" /> },
+  deadline: { label: 'Deadline', color: 'text-red-700', bgColor: 'bg-red-100 border-red-300', dotColor: 'bg-red-500', icon: <Clock className="h-3 w-3" /> },
+  meeting: { label: 'Meeting', color: 'text-blue-700', bgColor: 'bg-blue-100 border-blue-300', dotColor: 'bg-blue-500', icon: <CalendarDays className="h-3 w-3" /> },
+  deliverable: { label: 'Deliverable', color: 'text-amber-700', bgColor: 'bg-amber-100 border-amber-300', dotColor: 'bg-amber-500', icon: <FolderKanban className="h-3 w-3" /> },
+  task: { label: 'Task', color: 'text-slate-700', bgColor: 'bg-slate-100 border-slate-300', dotColor: 'bg-slate-500', icon: <List className="h-3 w-3" /> },
+  reminder: { label: 'Reminder', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-300', dotColor: 'bg-cyan-500', icon: <Bell className="h-3 w-3" /> },
+  other: { label: 'Other', color: 'text-gray-700 dark:text-gray-300', bgColor: 'bg-gray-100 border-gray-300 dark:border-gray-600 dark:bg-gray-800', dotColor: 'bg-gray-400', icon: <Calendar className="h-3 w-3" /> },
 }
 
 const CONTEXT_ICONS: Record<string, React.ReactNode> = {
@@ -81,6 +83,8 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileViewport ? 'agenda' : 'month')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
+  /** Phone month view: the day whose events are listed in the sheet. */
+  const [daySheetDate, setDaySheetDate] = useState<Date | null>(null)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
   const [filterEventType, setFilterEventType] = useState<string>('all')
   const [filterPriority, setFilterPriority] = useState<string>('all')
@@ -350,6 +354,15 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
       start_date: format(date, 'yyyy-MM-dd'),
       end_date: format(date, 'yyyy-MM-dd'),
     }))
+    // On a phone the month cell shows dots rather than titles, so a tap has to
+    // be able to answer "what is on this day" — going straight to the create
+    // form would make those events unreadable anywhere in the month view. The
+    // sheet lists them and offers Add; an empty day still goes straight to
+    // create, since there is nothing to read.
+    if (isMobileViewport && viewMode === 'month' && getEventsForDay(date).length > 0) {
+      setDaySheetDate(date)
+      return
+    }
     setShowEventModal(true)
   }
 
@@ -460,13 +473,18 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-6">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-6 w-6 text-primary-600" />
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Calendar</h1>
+        {/* The outer header wraps, but this inner group did not — title, three
+            nav buttons, the month heading and two fixed-width selects were
+            locked on one line well past 390px. It wraps too now, and the
+            filters lose their rule and left indent when they fall to their own
+            row. */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-primary-600 shrink-0" />
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">Calendar</h1>
           </div>
 
-          <div className="flex items-center gap-2 ml-4">
+          <div className="flex items-center gap-2 sm:ml-4 shrink-0">
             <Button variant="outline" size="sm" onClick={navigatePrevious}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -478,7 +496,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             </Button>
           </div>
 
-          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-700 dark:text-gray-300 shrink-0">
             {viewMode === 'week'
               ? `${format(dateRange.start, 'MMM d')} - ${format(dateRange.end, 'MMM d, yyyy')}`
               : format(currentDate, 'MMMM yyyy')
@@ -486,11 +504,11 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
           </h2>
 
           {/* Inline Filters */}
-          <div className="flex items-center gap-3 ml-4 pl-4 border-l border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto min-w-0 sm:ml-4 sm:pl-4 sm:border-l border-gray-200 dark:border-gray-700">
             <Select
               value={filterEventType}
               onChange={(e) => setFilterEventType(e.target.value)}
-              className="w-36 text-sm"
+              className="flex-1 min-w-0 sm:flex-none sm:w-36 text-sm"
             >
               <option value="all">All Types</option>
               {Object.entries(EVENT_TYPE_CONFIG).map(([key, config]) => (
@@ -500,7 +518,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             <Select
               value={filterPriority}
               onChange={(e) => setFilterPriority(e.target.value)}
-              className="w-28 text-sm"
+              className="flex-1 min-w-0 sm:flex-none sm:w-28 text-sm"
             >
               <option value="all">All Priority</option>
               <option value="urgent">Urgent</option>
@@ -522,9 +540,9 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* View mode toggle */}
-          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 shrink-0">
             <button
               onClick={() => setViewMode('month')}
               className={clsx(
@@ -566,8 +584,8 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             size="sm"
             onClick={() => setShowSettings(true)}
           >
-            <Settings className="h-4 w-4 mr-1" />
-            Sync
+            <Settings className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Sync</span>
           </Button>
 
           {/* Add Event */}
@@ -584,7 +602,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
             }}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add Event
+            Add<span className="hidden sm:inline"> Event</span>
           </Button>
         </div>
       </div>
@@ -720,14 +738,39 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                     )}>
                       {format(day, 'd')}
                     </div>
-                    <div className="flex-1 space-y-0.5 overflow-y-auto min-h-0">
-                      {dayEvents.slice(0, viewMode === 'week' ? 10 : 4).map(event => renderEventChip(event, true))}
-                      {dayEvents.length > (viewMode === 'week' ? 10 : 4) && (
-                        <div className="text-xs text-gray-500 px-1 dark:text-gray-400">
-                          +{dayEvents.length - (viewMode === 'week' ? 10 : 4)} more
-                        </div>
-                      )}
-                    </div>
+                    {/* A month cell is ~55px wide on a phone, so a titled chip
+                        renders as one or two clipped characters — it reads as
+                        noise rather than as an event. Phones get dots: how many
+                        events, and their type by colour. Tapping the day opens
+                        it, which is where the titles are legible. Week view has
+                        seven columns of a full screen, so it keeps the chips. */}
+                    {isMobileViewport && viewMode === 'month' ? (
+                      <div className="flex-1 min-h-0 flex flex-wrap content-start gap-0.5 pt-0.5">
+                        {dayEvents.slice(0, 6).map(event => (
+                          <span
+                            key={event.id}
+                            className={clsx(
+                              'w-1.5 h-1.5 rounded-full',
+                              (EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.other).dotColor,
+                            )}
+                          />
+                        ))}
+                        {dayEvents.length > 6 && (
+                          <span className="text-[9px] leading-none text-gray-400 tabular-nums">
+                            +{dayEvents.length - 6}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex-1 space-y-0.5 overflow-y-auto min-h-0">
+                        {dayEvents.slice(0, viewMode === 'week' ? 10 : 4).map(event => renderEventChip(event, true))}
+                        {dayEvents.length > (viewMode === 'week' ? 10 : 4) && (
+                          <div className="text-xs text-gray-500 px-1 dark:text-gray-400">
+                            +{dayEvents.length - (viewMode === 'week' ? 10 : 4)} more
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -754,6 +797,67 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
           isDeleting={deleteEventMutation.isPending}
         />
       )}
+
+      {/* Day sheet — the phone month view's way of reading a day. */}
+      <BottomSheet
+        open={!!daySheetDate}
+        onClose={() => setDaySheetDate(null)}
+        title={daySheetDate ? (isToday(daySheetDate) ? 'Today' : format(daySheetDate, 'EEEE, MMMM d')) : ''}
+        snapPoints={[0.5, 0.9]}
+        headerAccessory={
+          <button
+            onClick={() => {
+              setDaySheetDate(null)
+              setEditingEvent(null)
+              setShowEventModal(true)
+            }}
+            className="text-sm font-medium text-primary-600 dark:text-primary-400"
+          >
+            Add
+          </button>
+        }
+      >
+        <div className="px-4 py-2 pb-safe space-y-2">
+          {(daySheetDate ? getEventsForDay(daySheetDate) : []).map(event => {
+            const config = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.other
+            return (
+              <button
+                key={event.id}
+                onClick={() => {
+                  setDaySheetDate(null)
+                  if (!(event as any).isProjectDeliverable) {
+                    handleEditEvent(event as CalendarEvent)
+                  } else if (onItemSelect) {
+                    onItemSelect({
+                      id: (event as any).projectId,
+                      title: event.title,
+                      type: 'project',
+                      data: { id: (event as any).projectId },
+                    })
+                  }
+                }}
+                className="w-full text-left flex items-start gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 active:bg-gray-50 dark:active:bg-gray-800"
+              >
+                <span className={clsx('w-2 h-2 rounded-full mt-1.5 shrink-0', config.dotColor)} />
+                <span className="flex-1 min-w-0">
+                  <span className="block font-medium text-gray-900 dark:text-white truncate">
+                    {event.title}
+                  </span>
+                  <span className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    <span className={clsx('px-1.5 py-0.5 rounded-full', config.bgColor, config.color)}>
+                      {config.label}
+                    </span>
+                    {!event.all_day && (
+                      <span>{format(parseISO(event.start_date), 'h:mm a')}</span>
+                    )}
+                  </span>
+                </span>
+                <PriorityBadge priority={event.priority} size="sm" />
+              </button>
+            )
+          })}
+        </div>
+      </BottomSheet>
 
       {/* Calendar Settings Panel */}
       <CalendarSettings
@@ -1135,9 +1239,11 @@ function EventModal({
         onClick={onClose}
       />
 
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative w-full max-w-xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl transform transition-all">
+      {/* Modal. Bottom-anchored and full-bleed on a phone: a centred card with
+          p-4 around it wastes width the date and time fields need, and the
+          on-screen keyboard pushes a vertically-centred dialog off screen. */}
+      <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="relative w-full max-w-xl bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl transform transition-all max-h-[92vh] sm:max-h-none overflow-y-auto overscroll-contain pb-safe">
           {/* Header */}
           <div className="flex items-center justify-between px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-800">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1376,7 +1482,9 @@ function EventModal({
                   </div>
 
                   {/* Location & URL */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Location and a URL side by side leave ~160px each with an
+                      inset icon — a pasted link shows about four characters. */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                         Location

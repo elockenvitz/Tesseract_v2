@@ -82,7 +82,12 @@ export function ListHeaderStrip({
   const activityBtnRef = useRef<HTMLButtonElement | null>(null)
 
   return (
-    <div className="flex items-center justify-between py-2 flex-shrink-0 gap-3">
+    /* Identity and actions share a line at desktop width and stack on a
+       phone. Held on one row, the name lost to a cluster it had to sit
+       beside — colour dot, star, lifecycle pill, collaborator icon, avatar
+       stack, then activity, suggestions, share and Add Asset — and the row
+       ran past the right edge. */
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-2 flex-shrink-0 gap-2 sm:gap-3">
       {/* ── Identity cluster ─────────────────────────────────────── */}
       <div className="flex items-center gap-2 min-w-0 flex-1">
         {/* Color dot */}
@@ -136,7 +141,7 @@ export function ListHeaderStrip({
       </div>
 
       {/* ── Action cluster ───────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 flex-shrink-0">
+      <div className="flex items-center gap-1.5 flex-shrink-0 max-sm:w-full max-sm:overflow-x-auto max-sm:no-scrollbar">
         <button
           ref={activityBtnRef}
           onClick={() => setActivityOpen(o => !o)}

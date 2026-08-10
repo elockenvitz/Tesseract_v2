@@ -446,30 +446,38 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
-      {/* Header */}
-      <div className="flex items-center px-6 py-3 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-3">
+      {/* Header.
+
+          One non-wrapping row — title, portfolio selector, view toggle and
+          "View Outcomes" — came to well over 390px, which is what ran off the
+          right edge. It reflows to two lines on a phone via `order`, rather
+          than by rendering the controls twice: the portfolio dropdown owns a
+          ref and an open-state, so a second copy would break outside-click
+          detection and open both at once. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-3 sm:px-6 py-2 sm:py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-2 sm:gap-3 order-1 shrink-0">
           <BookOpen className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Trade Book</h1>
+          <h1 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Trade Book</h1>
 
           {/* Separator */}
-          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+          <div className="hidden sm:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+        </div>
 
-          {/* Portfolio selector */}
-          <div className="relative" ref={portfolioDropdownRef}>
+        {/* Portfolio selector */}
+        <div className="relative order-3 sm:order-2 min-w-0 max-sm:flex-1" ref={portfolioDropdownRef}>
             <button
               onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+              className="w-full sm:w-auto flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
             >
               <Briefcase className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span className="text-gray-900 dark:text-white font-medium">
+              <span className="text-gray-900 dark:text-white font-medium truncate min-w-0">
                 {portfolios.find((p: any) => p.id === portfolioId)?.name || 'Select portfolio'}
               </span>
-              <ChevronDown className={clsx("h-4 w-4 text-gray-400 transition-transform", portfolioDropdownOpen && "rotate-180")} />
+              <ChevronDown className={clsx("h-4 w-4 text-gray-400 transition-transform ml-auto sm:ml-0 flex-shrink-0", portfolioDropdownOpen && "rotate-180")} />
             </button>
 
             {portfolioDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+              <div className="absolute top-full left-0 mt-1 w-72 max-w-[calc(100vw-1.5rem)] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
                 {/* Search */}
                 <div className="p-2 border-b border-gray-100 dark:border-gray-700">
                   <div className="relative">
@@ -518,39 +526,38 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
                 </div>
               </div>
             )}
-          </div>
+        </div>
 
-          {/* Separator */}
-          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+        {/* Separator */}
+        <div className="hidden sm:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1 order-2" />
 
-          {/* View toggle — Batches first because it's the default
-              (reading surface), Trades second (operations surface). */}
-          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
-            <button
-              onClick={() => setView('batches')}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                view === 'batches'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              )}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Batches
-            </button>
-            <button
-              onClick={() => setView('trades')}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                view === 'trades'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              )}
-            >
-              <List className="w-3.5 h-3.5" />
-              Trades
-            </button>
-          </div>
+        {/* View toggle — Batches first because it's the default
+            (reading surface), Trades second (operations surface). */}
+        <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 order-4 sm:order-3 shrink-0">
+          <button
+            onClick={() => setView('batches')}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+              view === 'batches'
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+            )}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            Batches
+          </button>
+          <button
+            onClick={() => setView('trades')}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+              view === 'trades'
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+            )}
+          >
+            <List className="w-3.5 h-3.5" />
+            Trades
+          </button>
         </div>
 
         {/* Right side: shortcut to Outcomes — the natural next step
@@ -575,12 +582,14 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
               }))
             } catch { /* ignore */ }
           }}
-          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-lg transition-colors"
+          className="order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-lg transition-colors"
           title="See how these decisions are performing"
         >
-          <Target className="w-3.5 h-3.5" />
-          View Outcomes
-          <ArrowRight className="w-3 h-3 opacity-70" />
+          <Target className="w-3.5 h-3.5 shrink-0" />
+          {/* "View" is implied by a button on a phone; the word costs width
+              the portfolio name needs on the line below. */}
+          <span className="hidden sm:inline">View </span>Outcomes
+          <ArrowRight className="w-3 h-3 opacity-70 shrink-0" />
         </button>
       </div>
 
@@ -605,8 +614,13 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         />
       )}
 
-      {/* Content */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      {/* Content.
+
+          Both views are `h-full` and own their own scroll regions, so this
+          wrapper must not scroll as well — a second scroller around one that
+          already manages its height is what puts the end of a list out of
+          reach on a phone, since the outer one runs out first. */}
+      <div className="flex-1 min-h-0 overflow-hidden">
         {isLoading ? (
           <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
             <div className="text-center">
