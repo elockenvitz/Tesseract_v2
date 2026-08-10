@@ -29,6 +29,7 @@
  * these identically to any other provider's output.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,7 +55,43 @@ const SOURCE_TIMEOUT_MS = 6_000
 const CACHE_TTL_MS = 5 * 60 * 1000
 const MAX_SYMBOLS = 12
 
-const cache = new Map<string, { data: unknown; expiresAt: number }>()
+/**
+ * Shared cache, in Postgres rather than in memory.
+ *
+ * A module-level Map is per-isolate, and Supabase runs ephemeral instances, so
+ * a cold one starts empty. With a handful of readers the hit rate collapses
+ * and every miss is a fresh set of provider calls — which is how a 60/minute
+ * free tier gets exhausted by three people opening the feed at once. Caching
+ * here makes provider cost a function of (symbol set × TTL), not user count.
+ */
+const admin = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  { auth: { persistSession: false } },
+)
+
+async function cacheGet(key: string): Promise<unknown | null> {
+  try {
+    const { data } = await admin
+      .from('market_data_cache')
+      .select('payload, expires_at')
+      .eq('cache_key', key)
+      .maybeSingle()
+    if (!data) return null
+    if (new Date((data as any).expires_at).getTime() <= Date.now()) return null
+    return (data as any).payload
+  } catch { return null }
+}
+
+async function cacheSet(key: string, payload: unknown, ttlSeconds: number): Promise<void> {
+  try {
+    await admin.from('market_data_cache').upsert({
+      cache_key: key,
+      payload,
+      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+    })
+  } catch { /* best-effort; never fail the request over caching */ }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -237,10 +274,10 @@ serve(async (req) => {
   const limit = Math.min(Math.max(Number(body.limit) || 30, 1), 60)
   const lookbackDays = Math.min(Math.max(Number(body.lookbackDays) || 7, 1), 30)
 
-  const cacheKey = `${symbols.join(',')}|${limit}|${lookbackDays}`
-  const hit = cache.get(cacheKey)
-  if (hit && hit.expiresAt > Date.now()) {
-    return new Response(JSON.stringify(hit.data), {
+  const cacheKey = `news|${symbols.join(',')}|${limit}|${lookbackDays}`
+  const hit = await cacheGet(cacheKey)
+  if (hit) {
+    return new Response(JSON.stringify(hit), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Cache': 'HIT' },
     })
   }
@@ -281,7 +318,7 @@ serve(async (req) => {
     })),
   }
 
-  cache.set(cacheKey, { data: payload, expiresAt: Date.now() + CACHE_TTL_MS })
+  await cacheSet(cacheKey, payload, CACHE_TTL_MS / 1000)
 
   return new Response(JSON.stringify(payload), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Cache': 'MISS' },
