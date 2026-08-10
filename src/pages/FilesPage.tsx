@@ -143,7 +143,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-2.5 sm:py-4 dark:border-gray-700 dark:bg-gray-800">
         {/* Identity and actions wrap; the standing description is desktop-only
             — it explains the page once and costs a line of every visit. */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
@@ -176,7 +176,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
             is never generated and the selected chip rendered with no background
             at all — the row gave no indication of which category was active.
             The classes are looked up whole now. */}
-        <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 overflow-x-auto no-scrollbar pb-1.5">
+        <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-4 overflow-x-auto no-scrollbar pb-1">
           {categoryStats.map(cat => {
             const Icon = cat.icon
             const tone = CATEGORY_TONES[cat.color] ?? CATEGORY_TONES.gray
@@ -203,16 +203,21 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
           })}
         </div>
 
-        {/* Filters & Search. A category select, a view switch and a 256px
-            search field come to ~470px, so search drops to its own full-width
-            line on a phone. */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Category Filter */}
+        {/* Filters & Search — one row: search takes the width, the view
+            switch sits beside it. */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
+            {/* Category Filter.
+
+                Hidden on a phone: the chip row above is already the category
+                control, and two controls setting the same value — one of them
+                a chrome-drawn select listing the same seven options — is the
+                thing that made the filters read as unclear. The chips stay
+                because they also carry counts. */}
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700"
+              className="hidden sm:block px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700"
             >
               <option value="all">All Categories</option>
               <option value="models">Models</option>
@@ -242,7 +247,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
           </div>
 
           {/* Search */}
-          <div className="relative w-full sm:w-auto">
+          <div className="relative flex-1 min-w-0 sm:flex-none order-first sm:order-none">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
@@ -256,7 +261,7 @@ export function FilesPage({ onItemSelect }: FilesPageProps) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-3 sm:p-6">
+      <div className="flex-1 overflow-auto overscroll-contain p-2.5 sm:p-6">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>

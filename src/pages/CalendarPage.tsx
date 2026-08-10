@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+﻿import { useState, useMemo, useEffect, useRef } from 'react'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -20,7 +20,6 @@ import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { PriorityBadge } from '../components/ui/PriorityBadge'
 import { CalendarSettings } from '../components/calendar/CalendarSettings'
-import { BottomSheet } from '../components/mobile/BottomSheet'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { buildOrgQueryKey } from '../hooks/useOrgQueryKey'
 import { useOrgMembers } from '../hooks/useOrgMembers'
@@ -51,7 +50,7 @@ interface CalendarPageProps {
 
 type ViewMode = 'month' | 'week' | 'agenda'
 
-/** `dotColor` is the phone month-view rendering — see the day cell. */
+/** `dotColor` is the phone month-view rendering â€” see the day cell. */
 const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; bgColor: string; dotColor: string; icon: React.ReactNode }> = {
   earnings_call: { label: 'Earnings Call', color: 'text-green-700', bgColor: 'bg-green-100 border-green-300', dotColor: 'bg-green-500', icon: <TrendingUp className="h-3 w-3" /> },
   conference: { label: 'Conference', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-300', dotColor: 'bg-purple-500', icon: <CalendarClock className="h-3 w-3" /> },
@@ -75,16 +74,16 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
   const queryClient = useQueryClient()
   const { currentOrgId } = useOrganization()
   const [currentDate, setCurrentDate] = useState(new Date())
-  // The month grid is seven columns of 55px at 390px — a cell too small for a
+  // The month grid is seven columns of 55px at 390px â€” a cell too small for a
   // date plus an event title. The agenda view already existed and is the shape
   // a phone wants: days as a list, with what is on them underneath. Month and
   // week remain selectable; they are just not the default where they do not fit.
   const isMobileViewport = useIsMobile()
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileViewport ? 'agenda' : 'month')
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  // Today, so the phone month view lands on a populated list rather than
+  // "tap a day"; the desktop grid ignores the selection until you click.
+  const [selectedDate, setSelectedDate] = useState<Date | null>(() => new Date())
   const [showEventModal, setShowEventModal] = useState(false)
-  /** Phone month view: the day whose events are listed in the sheet. */
-  const [daySheetDate, setDaySheetDate] = useState<Date | null>(null)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
   const [filterEventType, setFilterEventType] = useState<string>('all')
   const [filterPriority, setFilterPriority] = useState<string>('all')
@@ -354,15 +353,6 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
       start_date: format(date, 'yyyy-MM-dd'),
       end_date: format(date, 'yyyy-MM-dd'),
     }))
-    // On a phone the month cell shows dots rather than titles, so a tap has to
-    // be able to answer "what is on this day" — going straight to the create
-    // form would make those events unreadable anywhere in the month view. The
-    // sheet lists them and offers Add; an empty day still goes straight to
-    // create, since there is nothing to read.
-    if (isMobileViewport && viewMode === 'month' && getEventsForDay(date).length > 0) {
-      setDaySheetDate(date)
-      return
-    }
     setShowEventModal(true)
   }
 
@@ -473,7 +463,7 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-6">
-        {/* The outer header wraps, but this inner group did not — title, three
+        {/* The outer header wraps, but this inner group did not â€” title, three
             nav buttons, the month heading and two fixed-width selects were
             locked on one line well past 390px. It wraps too now, and the
             filters lose their rule and left indent when they fall to their own
@@ -693,6 +683,140 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
               </div>
             )}
           </div>
+        ) : isMobileViewport && viewMode === 'month' ? (
+          /* Phone month view, laid out the way a phone calendar is: a compact
+             grid of dates carrying dots, and the selected day's events listed
+             underneath it on the same screen. Titles are unreadable inside a
+             55px cell, so the grid answers "which days have things" and the
+             list below answers "what things" â€” without a modal in between. */
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="grid grid-cols-7 px-1 pt-2 shrink-0">
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                <div key={i} className="py-1 text-center text-[11px] font-semibold text-gray-400 dark:text-gray-500">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 px-1 pb-2 shrink-0 border-b border-gray-200 dark:border-gray-700">
+              {calendarDays.map(day => {
+                const dayEvents = getEventsForDay(day)
+                const isCurrentMonth = isSameMonth(day, currentDate)
+                const isSel = selectedDate && isSameDay(day, selectedDate)
+                const today = isToday(day)
+                return (
+                  <button
+                    key={day.toISOString()}
+                    onClick={() => setSelectedDate(day)}
+                    className="no-touch-target flex flex-col items-center justify-start py-1 gap-1"
+                    aria-label={format(day, 'EEEE, MMMM d')}
+                    aria-pressed={!!isSel}
+                  >
+                    <span className={clsx(
+                      'w-8 h-8 flex items-center justify-center rounded-full text-[15px] tabular-nums',
+                      isSel && today && 'bg-primary-600 text-white font-semibold',
+                      isSel && !today && 'bg-gray-900 text-white font-semibold dark:bg-white dark:text-gray-900',
+                      !isSel && today && 'text-primary-600 font-bold',
+                      !isSel && !today && (isCurrentMonth
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-300 dark:text-gray-600'),
+                    )}>
+                      {format(day, 'd')}
+                    </span>
+                    {/* One dot per event, to three â€” the count past that is
+                        not information you act on from a grid. */}
+                    <span className="flex items-center gap-0.5 h-1">
+                      {dayEvents.slice(0, 3).map(ev => (
+                        <span
+                          key={ev.id}
+                          className={clsx(
+                            'w-1 h-1 rounded-full',
+                            (EVENT_TYPE_CONFIG[ev.event_type] || EVENT_TYPE_CONFIG.other).dotColor,
+                          )}
+                        />
+                      ))}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Selected day's events */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div className="flex items-center justify-between px-4 py-2 sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {selectedDate
+                    ? (isToday(selectedDate) ? 'Today' : format(selectedDate, 'EEEE, MMMM d'))
+                    : 'Select a day'}
+                </span>
+                <button
+                  onClick={() => {
+                    const d = selectedDate ?? new Date()
+                    setEditingEvent(null)
+                    setEventForm(prev => ({
+                      ...prev,
+                      start_date: format(d, 'yyyy-MM-dd'),
+                      end_date: format(d, 'yyyy-MM-dd'),
+                    }))
+                    setShowEventModal(true)
+                  }}
+                  className="text-sm font-medium text-primary-600 dark:text-primary-400"
+                >
+                  Add
+                </button>
+              </div>
+
+              {(() => {
+                const list = selectedDate ? getEventsForDay(selectedDate) : []
+                if (list.length === 0) {
+                  return (
+                    <p className="px-4 py-8 text-center text-sm text-gray-400">
+                      {selectedDate ? 'No events' : 'Tap a day to see its events'}
+                    </p>
+                  )
+                }
+                return (
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {list.map(event => {
+                      const config = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.other
+                      return (
+                        <button
+                          key={event.id}
+                          onClick={() => {
+                            if (!(event as any).isProjectDeliverable) {
+                              handleEditEvent(event as CalendarEvent)
+                            } else if (onItemSelect) {
+                              onItemSelect({
+                                id: (event as any).projectId,
+                                title: event.title,
+                                type: 'project',
+                                data: { id: (event as any).projectId },
+                              })
+                            }
+                          }}
+                          className="w-full text-left flex items-start gap-3 px-4 py-3 active:bg-gray-50 dark:active:bg-gray-800"
+                        >
+                          <span className={clsx('w-2 h-2 rounded-full mt-1.5 shrink-0', config.dotColor)} />
+                          <span className="flex-1 min-w-0">
+                            <span className="block font-medium text-gray-900 dark:text-white truncate">
+                              {event.title}
+                            </span>
+                            <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              {event.all_day
+                                ? 'All day'
+                                : format(parseISO(event.start_date), 'h:mm a')}
+                              {' Â· '}{config.label}
+                            </span>
+                          </span>
+                          <PriorityBadge priority={event.priority} size="sm" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
         ) : (
           /* Month/Week View */
           <div className="h-full flex flex-col overflow-hidden">
@@ -738,39 +862,17 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
                     )}>
                       {format(day, 'd')}
                     </div>
-                    {/* A month cell is ~55px wide on a phone, so a titled chip
-                        renders as one or two clipped characters — it reads as
-                        noise rather than as an event. Phones get dots: how many
-                        events, and their type by colour. Tapping the day opens
-                        it, which is where the titles are legible. Week view has
-                        seven columns of a full screen, so it keeps the chips. */}
-                    {isMobileViewport && viewMode === 'month' ? (
-                      <div className="flex-1 min-h-0 flex flex-wrap content-start gap-0.5 pt-0.5">
-                        {dayEvents.slice(0, 6).map(event => (
-                          <span
-                            key={event.id}
-                            className={clsx(
-                              'w-1.5 h-1.5 rounded-full',
-                              (EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.other).dotColor,
-                            )}
-                          />
-                        ))}
-                        {dayEvents.length > 6 && (
-                          <span className="text-[9px] leading-none text-gray-400 tabular-nums">
-                            +{dayEvents.length - 6}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex-1 space-y-0.5 overflow-y-auto min-h-0">
-                        {dayEvents.slice(0, viewMode === 'week' ? 10 : 4).map(event => renderEventChip(event, true))}
-                        {dayEvents.length > (viewMode === 'week' ? 10 : 4) && (
-                          <div className="text-xs text-gray-500 px-1 dark:text-gray-400">
-                            +{dayEvents.length - (viewMode === 'week' ? 10 : 4)} more
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {/* This path is desktop, plus week view on a phone â€” seven
+                        columns of a full screen is enough for titles. The phone
+                        month view is its own branch above. */}
+                    <div className="flex-1 space-y-0.5 overflow-y-auto min-h-0">
+                      {dayEvents.slice(0, viewMode === 'week' ? 10 : 4).map(event => renderEventChip(event, true))}
+                      {dayEvents.length > (viewMode === 'week' ? 10 : 4) && (
+                        <div className="text-xs text-gray-500 px-1 dark:text-gray-400">
+                          +{dayEvents.length - (viewMode === 'week' ? 10 : 4)} more
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -797,67 +899,6 @@ export function CalendarPage({ onItemSelect }: CalendarPageProps) {
           isDeleting={deleteEventMutation.isPending}
         />
       )}
-
-      {/* Day sheet — the phone month view's way of reading a day. */}
-      <BottomSheet
-        open={!!daySheetDate}
-        onClose={() => setDaySheetDate(null)}
-        title={daySheetDate ? (isToday(daySheetDate) ? 'Today' : format(daySheetDate, 'EEEE, MMMM d')) : ''}
-        snapPoints={[0.5, 0.9]}
-        headerAccessory={
-          <button
-            onClick={() => {
-              setDaySheetDate(null)
-              setEditingEvent(null)
-              setShowEventModal(true)
-            }}
-            className="text-sm font-medium text-primary-600 dark:text-primary-400"
-          >
-            Add
-          </button>
-        }
-      >
-        <div className="px-4 py-2 pb-safe space-y-2">
-          {(daySheetDate ? getEventsForDay(daySheetDate) : []).map(event => {
-            const config = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.other
-            return (
-              <button
-                key={event.id}
-                onClick={() => {
-                  setDaySheetDate(null)
-                  if (!(event as any).isProjectDeliverable) {
-                    handleEditEvent(event as CalendarEvent)
-                  } else if (onItemSelect) {
-                    onItemSelect({
-                      id: (event as any).projectId,
-                      title: event.title,
-                      type: 'project',
-                      data: { id: (event as any).projectId },
-                    })
-                  }
-                }}
-                className="w-full text-left flex items-start gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 active:bg-gray-50 dark:active:bg-gray-800"
-              >
-                <span className={clsx('w-2 h-2 rounded-full mt-1.5 shrink-0', config.dotColor)} />
-                <span className="flex-1 min-w-0">
-                  <span className="block font-medium text-gray-900 dark:text-white truncate">
-                    {event.title}
-                  </span>
-                  <span className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    <span className={clsx('px-1.5 py-0.5 rounded-full', config.bgColor, config.color)}>
-                      {config.label}
-                    </span>
-                    {!event.all_day && (
-                      <span>{format(parseISO(event.start_date), 'h:mm a')}</span>
-                    )}
-                  </span>
-                </span>
-                <PriorityBadge priority={event.priority} size="sm" />
-              </button>
-            )
-          })}
-        </div>
-      </BottomSheet>
 
       {/* Calendar Settings Panel */}
       <CalendarSettings
@@ -1191,7 +1232,7 @@ function EventModal({
   const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
 
-  // Attendees picker — org-scoped. Previously queried users globally.
+  // Attendees picker â€” org-scoped. Previously queried users globally.
   // Same defense-in-depth swap as the other pickers in commit 868ee2f.
   const { data: users = [] } = useOrgMembers({ enabled: isOpen })
 
@@ -1483,7 +1524,7 @@ function EventModal({
 
                   {/* Location & URL */}
                   {/* Location and a URL side by side leave ~160px each with an
-                      inset icon — a pasted link shows about four characters. */}
+                      inset icon â€” a pasted link shows about four characters. */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">

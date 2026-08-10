@@ -463,8 +463,13 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
           <div className="hidden sm:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
         </div>
 
-        {/* Portfolio selector */}
-        <div className="relative order-3 sm:order-2 min-w-0 max-sm:flex-1" ref={portfolioDropdownRef}>
+        {/* Portfolio selector and the view toggle share a line. The selector
+            had `flex-1`, so on a phone it consumed the whole row and pushed
+            the toggle onto a third one; grouping them guarantees they stay
+            together, with the selector giving up width and the toggle keeping
+            its natural size. */}
+        <div className="order-3 sm:order-2 flex items-center gap-2 w-full sm:w-auto min-w-0">
+        <div className="relative min-w-0 flex-1 sm:flex-none" ref={portfolioDropdownRef}>
             <button
               onClick={() => setPortfolioDropdownOpen(!portfolioDropdownOpen)}
               className="w-full sm:w-auto flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
@@ -529,11 +534,11 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
         </div>
 
         {/* Separator */}
-        <div className="hidden sm:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1 order-2" />
+        <div className="hidden sm:block h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
 
         {/* View toggle — Batches first because it's the default
             (reading surface), Trades second (operations surface). */}
-        <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 order-4 sm:order-3 shrink-0">
+        <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 shrink-0">
           <button
             onClick={() => setView('batches')}
             className={clsx(
@@ -559,6 +564,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
             Trades
           </button>
         </div>
+        </div>
 
         {/* Right side: shortcut to Outcomes — the natural next step
             after looking at committed trades. Reuses the existing
@@ -582,14 +588,15 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
               }))
             } catch { /* ignore */ }
           }}
-          className="order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-lg transition-colors"
+          className="order-2 sm:order-4 ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60 rounded-md transition-colors"
           title="See how these decisions are performing"
         >
-          <Target className="w-3.5 h-3.5 shrink-0" />
-          {/* "View" is implied by a button on a phone; the word costs width
-              the portfolio name needs on the line below. */}
-          <span className="hidden sm:inline">View </span>Outcomes
-          <ArrowRight className="w-3 h-3 opacity-70 shrink-0" />
+          {/* A quiet shortcut in the corner, not a call to action — it is the
+              step after this page, not the reason you are on it. "View" is
+              implied by a button. */}
+          <Target className="w-3 h-3 shrink-0" />
+          Outcomes
+          <ArrowRight className="w-2.5 h-2.5 opacity-70 shrink-0" />
         </button>
       </div>
 
