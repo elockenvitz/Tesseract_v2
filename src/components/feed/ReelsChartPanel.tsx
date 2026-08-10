@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { TrendingUp, TrendingDown, BarChart3, Loader2 } from 'lucide-react'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from '../charts/utils/dataAdapter'
+import { usePriceHistory } from '../../hooks/usePriceHistory'
 
 type Timeframe = '1D' | '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX'
 
@@ -58,18 +58,17 @@ export function ReelsChartPanel({
     staleTime: 60000
   })
 
-  // Generate chart data based on timeframe
-  const chartData = useMemo(() => {
-    if (!quote) return []
-
-    const days = timeframes.find(t => t.value === selectedTimeframe)?.days || 365
-
-    if (selectedTimeframe === '1D') {
-      return ChartDataAdapter.generateIntradayData(quote, 24)
-    }
-
-    return ChartDataAdapter.generateHistoricalData(symbol, quote, days)
-  }, [symbol, quote, selectedTimeframe])
+  // Real closes from Yahoo, via the chart proxy.
+  //
+  // This used to call ChartDataAdapter.generateHistoricalData — a seeded
+  // random walk anchored to the current quote — and generateIntradayData,
+  // which is a plain Math.random() walk. The line looked plausible and had
+  // never had anything to do with the security. That is a correctness problem
+  // in a finance product rather than a cosmetic one, and the scrub readout
+  // made it worse by turning an ambiguous squiggle into a precise claim about
+  // a price nobody ever traded at.
+  const { data: history, isLoading: historyLoading } = usePriceHistory(symbol, selectedTimeframe)
+  const chartData = history?.points ?? []
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -249,7 +248,7 @@ export function ReelsChartPanel({
         onTouchEnd={() => setScrub(null)}
         onTouchCancel={() => setScrub(null)}
       >
-        {quoteLoading ? (
+        {quoteLoading || historyLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
           </div>
