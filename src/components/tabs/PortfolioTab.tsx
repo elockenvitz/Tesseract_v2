@@ -145,9 +145,20 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
           )
         `)
         .eq('portfolio_id', portfolio.id)
-        .order('date', { ascending: false })
+        .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      return data || []
+
+      // `portfolio_holdings` is a dated snapshot table — UNIQUE is
+      // (portfolio_id, asset_id, date), so a portfolio that has been uploaded
+      // more than once carries one row per asset *per upload*. The current
+      // position is the newest row for each asset; the older ones are history.
+      // Summing the raw result counted every past snapshot as a live position,
+      // which showed a portfolio uploaded twice at double its real NAV.
+      const currentByAsset = new Map<string, any>()
+      for (const row of data || []) {
+        if (!currentByAsset.has(row.asset_id)) currentByAsset.set(row.asset_id, row)
+      }
+      return [...currentByAsset.values()]
     },
   })
 
@@ -458,7 +469,13 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
             // These two are tables that want the full width; they carry their
             // own padding where they need it.
             activeTab === 'positions' || activeTab === 'universe' ? 'p-0' : 'p-3',
-            activeTab === 'universe' ? 'flex flex-col' : 'overflow-y-auto',
+            // Positions and Universe scroll internally. Letting this wrapper
+            // scroll as well put a second scroller around one that already
+            // owned its height, and on a phone the outer one hit its end
+            // first — so the last rows of the table could never be reached.
+            activeTab === 'universe' || activeTab === 'positions'
+              ? 'flex flex-col overflow-hidden'
+              : 'overflow-y-auto overscroll-contain',
           )}
         >
           {activeTab === 'overview' && (

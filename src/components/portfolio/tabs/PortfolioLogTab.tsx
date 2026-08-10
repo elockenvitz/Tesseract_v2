@@ -8,6 +8,8 @@ import {
   ChevronRight, ChevronDown, ArrowRight, Plus,
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import { useIsMobile } from '../../../hooks/useMediaQuery'
+import { OptionPicker } from '../../ui/OptionPicker'
 import { usePortfolioLogChains, SOURCE_TO_LINKABLE } from '../../../hooks/usePortfolioLogChains'
 import type { SourceObjectType } from '../../../hooks/usePortfolioLogChains'
 import { usePendingLineageStore } from '../../../stores/pendingLineageStore'
@@ -330,6 +332,7 @@ interface PortfolioLogTabProps {
 export function PortfolioLogTab({ portfolio, portfolioId }: PortfolioLogTabProps) {
   const [activeFilter, setActiveFilter] = useState('all')
   const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set())
+  const isMobile = useIsMobile()
 
   const { data: allEntries, isLoading: entriesLoading } = useQuery({
     queryKey: ['portfolio-log', portfolioId],
@@ -610,35 +613,57 @@ export function PortfolioLogTab({ portfolio, portfolioId }: PortfolioLogTabProps
     <div className="flex flex-col">
       <LogHeader count={allEntries.length} />
 
-      {/* Filters */}
-      <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg mt-3 mb-4 self-start">
-        {visibleFilters.map(f => {
-          const isActive = activeFilter === f.key
-          const count = counts[f.key] ?? 0
-          return (
-            <button
-              key={f.key}
-              onClick={() => setActiveFilter(f.key)}
-              className={clsx(
-                'text-[11px] px-2.5 py-1 rounded-md font-medium transition-all duration-100 flex items-center gap-1.5',
-                isActive
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
-              )}
-            >
-              {f.label}
-              {count > 0 && (
-                <span className={clsx(
-                  'text-[10px] font-semibold tabular-nums px-1.5 py-px rounded-full',
+      {/* Filters.
+
+          Six categories — "Observations" and "Recommendations" among them —
+          are a tab strip at desktop width and roughly 1.5 screens at 390px.
+          The strip had no scroll container, so it widened the page instead of
+          clipping, which is what made the whole log pannable sideways. On a
+          phone the same choice is a picker; the width problem disappears
+          because the control is one button wide whatever the labels say. */}
+      {isMobile ? (
+        <div className="mt-3 mb-4 self-start">
+          <OptionPicker
+            label="Filter entries"
+            value={activeFilter}
+            onChange={setActiveFilter}
+            options={visibleFilters.map(f => ({
+              value: f.key,
+              label: f.label,
+              count: counts[f.key] ?? 0,
+            }))}
+          />
+        </div>
+      ) : (
+        <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg mt-3 mb-4 self-start">
+          {visibleFilters.map(f => {
+            const isActive = activeFilter === f.key
+            const count = counts[f.key] ?? 0
+            return (
+              <button
+                key={f.key}
+                onClick={() => setActiveFilter(f.key)}
+                className={clsx(
+                  'text-[11px] px-2.5 py-1 rounded-md font-medium transition-all duration-100 flex items-center gap-1.5',
                   isActive
-                    ? 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-                    : 'bg-gray-200/60 dark:bg-gray-700 text-gray-400 dark:text-gray-500',
-                )}>{count}</span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+                )}
+              >
+                {f.label}
+                {count > 0 && (
+                  <span className={clsx(
+                    'text-[10px] font-semibold tabular-nums px-1.5 py-px rounded-full',
+                    isActive
+                      ? 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                      : 'bg-gray-200/60 dark:bg-gray-700 text-gray-400 dark:text-gray-500',
+                  )}>{count}</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Grouped display items */}
       {grouped.length > 0 ? (

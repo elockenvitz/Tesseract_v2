@@ -361,63 +361,39 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
         </div>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search and Filters.
+
+          Search, the status pills and the filter toggle used to be three
+          stacked rows, which cost most of the first screen before a single
+          portfolio appeared. Search and the toggle now share one line and the
+          status pills move inside the panel, so the collapsed state is one
+          row tall and the list starts near the top of the page. */}
       <Card padding="sm">
-        <div className="space-y-1.5 sm:space-y-4">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search portfolios"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 h-9 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
-            />
-          </div>
+        <div className="space-y-2 sm:space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search portfolios"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 h-9 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
+              />
+            </div>
 
-          {/* Status Filter Pills + filter toggle, one row */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            {(['active', 'archived', ...(isOrgAdmin ? ['discarded'] as const : []), 'all'] as ArchiveFilter[]).map((filter) => {
-              const count = archiveCounts[filter]
-              const isSelected = archiveFilter === filter
-              return (
-                <button
-                  key={filter}
-                  onClick={() => setArchiveFilter(filter)}
-                  className={clsx(
-                    'inline-flex shrink-0 items-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-lg transition-colors',
-                    isSelected
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800',
-                  )}
-                >
-                  {filter === 'active' && 'Active'}
-                  {filter === 'archived' && 'Archived'}
-                  {filter === 'discarded' && 'Discarded'}
-                  {filter === 'all' && 'All'}
-                  {/* The count is part of the label, not a badge inside a
-                      badge — a pill inside a pill reads as two overlapping
-                      shapes at this size. */}
-                  <span className={clsx(
-                    'text-[10px] tabular-nums',
-                    isSelected ? 'text-white/80' : 'text-gray-400',
-                  )}>
-                    {count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Filter Toggle */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:text-gray-400"
+              aria-expanded={showFilters}
+              className={clsx(
+                'shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm transition-colors',
+                showFilters
+                  ? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white'
+                  : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800',
+              )}
             >
               <Filter className="h-4 w-4" />
-              <span>Filters</span>
+              <span className="hidden sm:inline">Filters</span>
               {activeFiltersCount > 0 && (
                 <Badge variant="primary" size="sm">
                   {activeFiltersCount}
@@ -427,32 +403,67 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                 className={clsx('h-4 w-4 transition-transform', showFilters && 'rotate-180')}
               />
             </button>
-
-            {activeFiltersCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-sm text-primary-600 hover:text-primary-700 transition-colors"
-              >
-                Clear all filters
-              </button>
-            )}
           </div>
 
           {/* Filter Controls */}
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <Select
-                label="Sort by"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                options={[
-                  { value: 'updated_at', label: 'Last Updated' },
-                  { value: 'created_at', label: 'Date Created' },
-                  { value: 'name', label: 'Portfolio Name' },
-                  { value: 'benchmark', label: 'Benchmark' },
-                  { value: 'holdings_count', label: 'Holdings Count' },
-                ]}
-              />
+            <div className="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                {(['active', 'archived', ...(isOrgAdmin ? ['discarded'] as const : []), 'all'] as ArchiveFilter[]).map((filter) => {
+                  const count = archiveCounts[filter]
+                  const isSelected = archiveFilter === filter
+                  return (
+                    <button
+                      key={filter}
+                      onClick={() => setArchiveFilter(filter)}
+                      className={clsx(
+                        'inline-flex shrink-0 items-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-lg transition-colors',
+                        isSelected
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800',
+                      )}
+                    >
+                      {filter === 'active' && 'Active'}
+                      {filter === 'archived' && 'Archived'}
+                      {filter === 'discarded' && 'Discarded'}
+                      {filter === 'all' && 'All'}
+                      {/* The count is part of the label, not a badge inside a
+                          badge — a pill inside a pill reads as two overlapping
+                          shapes at this size. */}
+                      <span className={clsx(
+                        'text-[10px] tabular-nums',
+                        isSelected ? 'text-white/80' : 'text-gray-400',
+                      )}>
+                        {count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Select
+                  label="Sort by"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  options={[
+                    { value: 'updated_at', label: 'Last Updated' },
+                    { value: 'created_at', label: 'Date Created' },
+                    { value: 'name', label: 'Portfolio Name' },
+                    { value: 'benchmark', label: 'Benchmark' },
+                    { value: 'holdings_count', label: 'Holdings Count' },
+                  ]}
+                />
+              </div>
+
+              {activeFiltersCount > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="text-sm text-primary-600 hover:text-primary-700 transition-colors"
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -466,9 +477,11 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
           </div>
         ) : filteredPortfolios.length > 0 ? (
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {/* Table Header */}
-            <div className="px-3 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
-              <div className="hidden sm:grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
+            {/* Table Header. Hidden entirely on a phone — the inner grid was
+                already `sm:` only, so all this drew there was an empty grey
+                band above the first row. */}
+            <div className="hidden sm:block px-3 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+              <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-400">
                 <div className="col-span-4">
                   <button
                     onClick={() => handleSort('name')}
@@ -520,7 +533,7 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                   key={portfolio.id}
                   onClick={() => handlePortfolioClick(portfolio)}
                   className={clsx(
-                    'px-3 py-2.5 sm:px-6 sm:py-4 cursor-pointer transition-colors group/row',
+                    'px-3 py-2 sm:px-6 sm:py-4 cursor-pointer transition-colors group/row',
                     isDiscarded
                       ? 'bg-gray-100/60 hover:bg-gray-100 dark:hover:bg-gray-700'
                       : isArchived
@@ -528,7 +541,72 @@ export function PortfoliosListPage({ onPortfolioSelect }: PortfoliosListPageProp
                         : 'hover:bg-gray-50',
                   )}
                 >
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
+                  {/* Phone summary.
+
+                      The desktop columns used to reappear here as a stacked
+                      2-up grid with a caption over each cell — five labelled
+                      blocks for four short values, most of the height being
+                      the labels and the gaps between them. Benchmark, teams
+                      and members are short enough to read as one meta line
+                      under the name, so the row is two lines instead of six. */}
+                  <div className="sm:hidden flex items-center gap-2.5 min-w-0">
+                    <div className={clsx(
+                      'w-7 h-7 rounded-md flex items-center justify-center shrink-0',
+                      isInactive ? 'bg-gray-300' : 'bg-gradient-to-br from-success-500 to-success-600',
+                    )}>
+                      {isDiscarded
+                        ? <Ban className="h-3.5 w-3.5 text-white" />
+                        : isArchived
+                          ? <Archive className="h-3.5 w-3.5 text-white" />
+                          : <Briefcase className="h-3.5 w-3.5 text-white" />
+                      }
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className={clsx(
+                          'text-sm font-semibold truncate',
+                          isInactive ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white',
+                        )}>
+                          {portfolio.name}
+                        </p>
+                        {isDiscarded && (
+                          <span className="shrink-0 px-1 py-px text-[9px] font-medium bg-red-100 text-red-700 rounded">
+                            Discarded
+                          </span>
+                        )}
+                        {isArchived && (
+                          <span className="shrink-0 px-1 py-px text-[9px] font-medium bg-amber-100 text-amber-700 rounded">
+                            Archived
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                        <span className="truncate">{portfolio.benchmark || 'No benchmark'}</span>
+                        {links.length > 0 && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="shrink-0 inline-flex items-center gap-0.5">
+                              <Users className="h-3 w-3 text-gray-400" />
+                              {links.length}
+                              {leadTeam && <Star className="h-2.5 w-2.5 text-amber-400 fill-current" />}
+                            </span>
+                          </>
+                        )}
+                        {counts.total > 0 && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="shrink-0 tabular-nums">
+                              {counts.pms > 0 && `${counts.pms} PM${counts.pms > 1 ? 's' : ''}`}
+                              {counts.pms > 0 && counts.analysts > 0 && ', '}
+                              {counts.analysts > 0 && `${counts.analysts} An${counts.analysts > 1 ? 's' : ''}`}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="hidden sm:grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-12 sm:gap-4 sm:items-center">
                     {/* Portfolio Info */}
                     <div className="col-span-2 sm:col-span-4 min-w-0">
                       <div className="flex items-center space-x-3">
