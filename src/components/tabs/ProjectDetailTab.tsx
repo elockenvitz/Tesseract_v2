@@ -1570,7 +1570,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="px-6 py-4">
+        <div className="px-3 sm:px-6 py-3 sm:py-4">
           {editingProject ? (
             <div className="space-y-4">
               <Input
@@ -1585,7 +1585,9 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 rows={3}
                 placeholder="Project description"
               />
-              <div className="grid grid-cols-3 gap-4">
+              {/* Status / priority / date across three columns is ~120px each
+                  at 390px — a select cannot render its own label in that. */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status
@@ -1649,25 +1651,31 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             </div>
           ) : (
             <>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <FolderKanban className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{projectData.title || 'Loading...'}</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <FolderKanban className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400 shrink-0" />
+                  <div className="min-w-0">
+                    {/* A project title is a sentence, not a ticker — it needs
+                        to wrap rather than push the Edit button off the row. */}
+                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white break-words">
+                      {projectData.title || 'Loading...'}
+                    </h1>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                       {projectData.created_at ? `Created ${formatDistanceToNow(new Date(projectData.created_at), { addSuffix: true })}` : 'Recently created'}
                     </p>
                   </div>
                 </div>
                 {canManageProject && (
-                  <Button variant="outline" onClick={() => setEditingProject(true)}>
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit Project
+                  <Button variant="outline" onClick={() => setEditingProject(true)} className="shrink-0">
+                    <Edit className="w-4 h-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Edit Project</span>
                   </Button>
                 )}
               </div>
 
-              <div className="flex items-center gap-3 mb-4">
+              {/* Status, priority, dates and owner — a chip run that is wider
+                  than a phone, so it wraps rather than overflowing. */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
                 {/* Status - clickable dropdown for managers */}
                 {canManageProject ? (
                   <div className="relative">
@@ -1908,7 +1916,10 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
 
         {/* Tabs */}
         {!editingProject && (
-          <div className="flex border-t border-gray-200 dark:border-gray-700">
+          /* Six tabs at px-6 are ~700px. The strip scrolls sideways on a
+             phone rather than widening the page; a partly-visible tab is its
+             own affordance that more exist. */
+          <div className="flex border-t border-gray-200 dark:border-gray-700 overflow-x-auto no-scrollbar">
             {[
               { id: 'overview', label: 'Overview', icon: FolderKanban },
               { id: 'deliverables', label: 'Deliverables', icon: CheckCircle },
@@ -1921,13 +1932,13 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={clsx(
-                  'flex items-center gap-2 px-6 py-3 border-b-2 transition-colors',
+                  'shrink-0 whitespace-nowrap flex items-center gap-2 px-4 sm:px-6 py-3 border-b-2 transition-colors text-sm',
                   activeTab === tab.id
                     ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 )}
               >
-                <tab.icon className="w-4 h-4" />
+                <tab.icon className="w-4 h-4 shrink-0" />
                 {tab.label}
               </button>
             ))}
@@ -1938,8 +1949,8 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
       {/* Content */}
       {!editingProject && (
         <div className={clsx(
-          "flex-1 overflow-y-auto",
-          activeTab === 'activity' ? 'p-2' : 'p-6'
+          "flex-1 overflow-y-auto overscroll-contain",
+          activeTab === 'activity' ? 'p-2' : 'p-3 sm:p-6'
         )}>
           {activeTab === 'overview' && (() => {
             // Calculate upcoming and overdue tasks using startOfDay for consistency
@@ -1966,7 +1977,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
             return (
             <div className="space-y-6">
               {/* Overdue Tasks, Upcoming Tasks */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {/* Overdue Tasks */}
                 <Card className="p-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -2045,7 +2056,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
               </div>
 
               {/* Bottom Row: Team, Dependencies, Org Groups */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 {/* Team Members */}
                 <Card className="p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -2261,7 +2272,7 @@ export function ProjectDetailTab({ project, onNavigate }: ProjectDetailTabProps)
                     value={newDeliverable}
                     onChange={(e) => setNewDeliverable(e.target.value)}
                     placeholder="Add deliverable..."
-                    className="w-80 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none cursor-text"
+                    className="w-full sm:w-80 min-w-0 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none cursor-text"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newDeliverable.trim()) {
                         addDeliverableMutation.mutate()

@@ -44,6 +44,7 @@ import { ListSkeleton } from '../components/common/LoadingSkeleton'
 import { EmptyState } from '../components/common/EmptyState'
 import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
 import { clsx } from 'clsx'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import type { ProjectWithAssignments, ProjectStatus, ProjectPriority } from '../types/project'
 import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { DeleteProjectModal } from '../components/projects/DeleteProjectModal'
@@ -79,7 +80,16 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
   const [openDropdown, setOpenDropdown] = useState<{ projectId: string; type: 'status' | 'priority' | 'tags'; rect: DOMRect } | null>(null)
   const [tagSearchQuery, setTagSearchQuery] = useState('')
   const [newTagName, setNewTagName] = useState('')
-  const [showCollectionsSidebar, setShowCollectionsSidebar] = useState(true)
+  // Open on desktop, closed on a phone — there it covers the page rather than
+  // sitting beside it, so defaulting it open would hide the projects entirely.
+  const isMobileViewport = useIsMobile()
+  const [showCollectionsSidebar, setShowCollectionsSidebar] = useState(!isMobileViewport)
+
+  // Rotating a phone to landscape crosses the breakpoint into the desktop
+  // layout; rotating back would otherwise leave the drawer open over the page.
+  useEffect(() => {
+    if (isMobileViewport) setShowCollectionsSidebar(false)
+  }, [isMobileViewport])
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
   const [collectionFilters, setCollectionFilters] = useState<{ statuses?: ProjectStatus[]; tagIds?: string[]; userIds?: string[]; orgGroupId?: string } | null>(null)
   const [quickStatusFilter, setQuickStatusFilter] = useState<ProjectStatus | null>(null)
@@ -646,29 +656,53 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
 
   return (
     <div className="-mx-4 sm:-mx-6 lg:-mx-8 -my-6 h-[calc(100%+3rem)] flex bg-white dark:bg-gray-800">
-      {/* Collections Sidebar */}
-      {showCollectionsSidebar && (
-        <ProjectCollectionsSidebar
-          activeCollectionId={activeCollectionId}
-          onSelectCollection={(collectionId, filters) => {
-            setActiveCollectionId(collectionId)
-            setCollectionFilters(filters || null)
-          }}
-          onSelectView={setViewFilter}
-          activeView={viewFilter}
+      {/* Collections Sidebar.
+
+          A fixed 256px rail beside a 390px screen leaves ~134px for the
+          projects themselves, and it defaults to open — so a phone landed on
+          a sliver of content. On mobile it is a drawer over the page instead,
+          closed by default, opened by the same chevron in the header. */}
+      {showCollectionsSidebar && isMobileViewport && (
+        <div
+          className="sm:hidden fixed inset-0 z-[70] bg-gray-900/40"
+          onClick={() => setShowCollectionsSidebar(false)}
+          aria-hidden="true"
         />
+      )}
+      {showCollectionsSidebar && (
+        <div className={clsx(
+          isMobileViewport &&
+            'fixed inset-y-0 left-0 z-[71] w-72 max-w-[85vw] shadow-2xl pt-safe pb-safe',
+        )}>
+          <ProjectCollectionsSidebar
+            activeCollectionId={activeCollectionId}
+            onSelectCollection={(collectionId, filters) => {
+              setActiveCollectionId(collectionId)
+              setCollectionFilters(filters || null)
+              if (isMobileViewport) setShowCollectionsSidebar(false)
+            }}
+            onSelectView={(v) => {
+              setViewFilter(v)
+              if (isMobileViewport) setShowCollectionsSidebar(false)
+            }}
+            activeView={viewFilter}
+          />
+        </div>
       )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
       <div className="flex-shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+        <div className="px-3 sm:px-4 py-2 sm:py-3">
+          {/* Identity and actions wrap rather than share one non-wrapping row:
+              a chevron, an icon, a 24px title, an org badge, My Tasks, a view
+              switch and New Project do not fit 390px. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 sm:mb-3">
+            <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => setShowCollectionsSidebar(!showCollectionsSidebar)}
-                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors shrink-0"
                 title={showCollectionsSidebar ? "Hide collections" : "Show collections"}
               >
                 {showCollectionsSidebar ? (
@@ -677,11 +711,11 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                 )}
               </button>
-              <FolderKanban className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Projects</h1>
+              <FolderKanban className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400 shrink-0" />
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">Projects</h1>
               <OrgBadge />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {/* My Tasks Toggle */}
               <button
                 onClick={() => setAssignmentFilter(assignmentFilter === 'assigned' ? 'all' : 'assigned')}
@@ -693,7 +727,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 )}
                 title="Show only projects assigned to me"
               >
-                <User className="w-4 h-4" />
+                <User className="w-4 h-4 shrink-0" />
                 My Tasks
               </button>
 
@@ -738,17 +772,23 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
             </div>
           </div>
 
-          {/* Status Quick Filters - Hide in board view since columns represent status */}
+          {/* Status Quick Filters - Hide in board view since columns represent status.
+
+              Six chips plus a label plus a rule plus two more chips is roughly
+              double a phone's width. The row scrolls sideways within itself
+              rather than widening the page — the same treatment the pipeline's
+              stage chips get, and legitimate here because a partly-visible
+              chip is its own affordance. */}
           {viewMode !== 'board' && (
-          <div className="flex items-center gap-2 mb-3">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status:</span>
+          <div className="flex items-center gap-2 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">Status:</span>
               <button
                 onClick={() => {
                   setQuickStatusFilter(null)
                   setViewFilter('active')
                 }}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   !quickStatusFilter && viewFilter === 'active'
                     ? 'bg-primary-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -762,7 +802,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   setViewFilter('active')
                 }}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   quickStatusFilter === 'planning' && viewFilter === 'active'
                     ? 'bg-yellow-500 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -777,7 +817,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   setViewFilter('active')
                 }}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   quickStatusFilter === 'in_progress' && viewFilter === 'active'
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -792,7 +832,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   setViewFilter('active')
                 }}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   quickStatusFilter === 'blocked' && viewFilter === 'active'
                     ? 'bg-orange-500 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -807,7 +847,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   setViewFilter('active')
                 }}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   quickStatusFilter === 'completed' && viewFilter === 'active'
                     ? 'bg-green-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -816,14 +856,14 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                 <CheckCircle className="w-3.5 h-3.5" />
                 Completed
               </button>
-              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1 shrink-0" />
               <button
                 onClick={() => {
                   setQuickStatusFilter(null)
                   setViewFilter('archived')
                 }}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   viewFilter === 'archived'
                     ? 'bg-red-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -836,12 +876,12 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
           )}
 
           {/* Priority Quick Filters - Show in all views */}
-          <div className="flex items-center gap-2 mb-3">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Priority:</span>
+          <div className="flex items-center gap-2 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">Priority:</span>
               <button
                 onClick={() => setPriorityFilter('all')}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   priorityFilter === 'all'
                     ? 'bg-primary-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -852,7 +892,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               <button
                 onClick={() => setPriorityFilter('urgent')}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   priorityFilter === 'urgent'
                     ? 'bg-red-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -864,7 +904,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               <button
                 onClick={() => setPriorityFilter('high')}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   priorityFilter === 'high'
                     ? 'bg-orange-500 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -876,7 +916,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               <button
                 onClick={() => setPriorityFilter('medium')}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   priorityFilter === 'medium'
                     ? 'bg-yellow-500 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -888,7 +928,7 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               <button
                 onClick={() => setPriorityFilter('low')}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   priorityFilter === 'low'
                     ? 'bg-gray-500 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -899,9 +939,13 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
               </button>
             </div>
 
-          {/* Search and Filters - Show in both views */}
-          <div className="flex gap-3">
-            <div className="flex-1 relative">
+          {/* Search and Filters - Show in both views.
+
+              Stacked on a phone: the sort options are sentences ("Priority
+              (High to Low)"), so beside a search field the two fight for a
+              width neither can have. */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <div className="flex-1 relative min-w-0">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 type="text"
@@ -1041,11 +1085,14 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                   key={project.id}
                   className="p-4 hover:shadow-md transition-shadow group"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      {/* Title and its status/priority chips wrap: a project
+                          title is a sentence, and three chips beside it do
+                          not share 390px. */}
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2 min-w-0">
                         <h3
-                          className="text-lg font-semibold text-gray-900 dark:text-white cursor-pointer hover:text-primary-600"
+                          className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white cursor-pointer hover:text-primary-600 break-words min-w-0"
                           onClick={() => onProjectSelect?.({
                             id: project.id,
                             title: project.title,
@@ -1325,14 +1372,16 @@ export function ProjectsPage({ onProjectSelect }: ProjectsPageProps) {
                         </p>
                       )}
 
-                      {/* Progress Bar & Info Row */}
-                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                      {/* Progress Bar & Info Row. Wraps, and the bar gives up
+                          its fixed 160px on a phone — a progress bar can be
+                          any width, but the count beside it cannot. */}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
                         {totalDeliverables > 0 && (
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-xs font-medium flex-shrink-0 w-8 text-right">
                               {Math.round((completedDeliverables / totalDeliverables) * 100)}%
                             </span>
-                            <div className="w-40 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex-shrink-0">
+                            <div className="w-24 sm:w-40 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex-shrink-0">
                               <div
                                 className={clsx(
                                   'h-full rounded-full transition-all duration-300',
