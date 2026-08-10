@@ -87,13 +87,29 @@ function signedNotional(
 }
 
 /**
- * Format a signed notional into "$120,000" or "-$120,000". Returns "—"
- * when the value is nullish, which is how empty cells render across
- * the Trade Book.
+ * Format a signed notional for the column.
+ *
+ * Fully written out, an eight-figure trade is "$34,173,518" — thirteen
+ * characters that no sane column width accommodates, so the cell either
+ * wrapped or pushed the table wider. Millions and above are abbreviated to
+ * three significant figures; below that the exact number is short enough to
+ * print. The unabbreviated value is always available via `fmtSignedNotionalFull`
+ * on the cell's `title`, so precision is never actually lost.
  */
 function fmtSignedNotional(val: number | null): string {
   if (val == null) return '—'
-  const abs = Math.abs(val).toLocaleString()
+  const sign = val < 0 ? '-' : ''
+  const abs = Math.abs(val)
+  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(2)}B`
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 100_000) return `${sign}$${Math.round(abs / 1_000)}K`
+  return `${sign}$${abs.toLocaleString()}`
+}
+
+/** The exact figure, for the cell tooltip. */
+function fmtSignedNotionalFull(val: number | null): string {
+  if (val == null) return ''
+  const abs = Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })
   return val < 0 ? `-$${abs}` : `$${abs}`
 }
 
@@ -549,11 +565,14 @@ export function AcceptedTradesTable({
     requestId: `trade-book-${Date.now()}`,
   }), [user])
 
-  const SortHeader = ({ label, k, align }: { label: string; k: SortKey; align?: string }) => (
+  const SortHeader = ({ label, k, align, sticky }: { label: string; k: SortKey; align?: string; sticky?: boolean }) => (
     <th
       className={clsx(
         'py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none',
-        align === 'right' ? 'text-right' : 'text-left'
+        align === 'right' ? 'text-right' : 'text-left',
+        // Frozen symbol column. It carries its own background because a
+        // transparent sticky cell lets the scrolling columns show through it.
+        sticky && 'sticky left-8 z-20 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700',
       )}
       onClick={() => toggleSort(k)}
     >
@@ -657,9 +676,11 @@ export function AcceptedTradesTable({
       <table className="w-full min-w-[720px] sm:min-w-0">
         <thead className="border-b border-gray-200 dark:border-gray-700">
           <tr>
-            {/* expand column */}
-            <th className="w-8" />
-            <SortHeader label="Symbol" k="symbol" />
+            {/* expand column — frozen with the symbol so the two travel
+                together; the ticker is what identifies the row you are
+                reading numbers off, so it must not scroll away. */}
+            <th className="w-8 sticky left-0 z-20 bg-white dark:bg-gray-900" />
+            <SortHeader label="Symbol" k="symbol" sticky />
             <SortHeader label="Action" k="action" />
             {/* Sizing column merged into Tgt Wt: target weight is the
                 canonical display and the raw sizing_input is only shown
@@ -681,6 +702,14 @@ export function AcceptedTradesTable({
           {sorted.map((trade, idx) => {
             const isSelected = selectedTradeId === trade.id
             const SourceIcon = SOURCE_ICONS[trade.source] || PenLine
+            // The frozen cells need an opaque fill of their own: the row's
+            // banding is translucent, and a see-through sticky cell lets the
+            // scrolling columns slide visibly underneath the ticker.
+            const stickyBg = isSelected
+              ? 'bg-primary-50 dark:bg-primary-950'
+              : idx % 2 === 0
+                ? 'bg-gray-50 dark:bg-gray-900'
+                : 'bg-white dark:bg-gray-900'
             return (
               <React.Fragment key={trade.id}>
                 <tr
@@ -695,7 +724,7 @@ export function AcceptedTradesTable({
                       : 'hover:bg-gray-50/70 dark:hover:bg-gray-800/40',
                   )}
                 >
-                  <td className="pl-2 py-2">
+                  <td className={clsx('pl-2 py-2 sticky left-0 z-10', stickyBg)}>
                     <ChevronRight
                       className={clsx(
                         'w-3.5 h-3.5 text-gray-400 transition-transform',
@@ -703,7 +732,11 @@ export function AcceptedTradesTable({
                       )}
                     />
                   </td>
-                  <td className="py-2 px-3 text-sm font-medium text-gray-900 dark:text-white">
+                  <td className={clsx(
+                    'py-2 px-3 text-sm font-medium text-gray-900 dark:text-white',
+                    'sticky left-8 z-10 border-r border-gray-100 dark:border-gray-800',
+                    stickyBg,
+                  )}>
                     <span className="inline-flex items-center gap-1.5 flex-wrap">
                       <span>{trade.asset?.symbol || 'Unknown'}</span>
                       {pairInfoByAsset.get(trade.asset_id) && (
@@ -833,12 +866,15 @@ export function AcceptedTradesTable({
                       with a leading minus so reductions are visually
                       distinct from adds. Source magnitude comes from
                       accepted_trades.notional_value which is unsigned. */}
-                  <td className={clsx(
-                    'py-2 px-3 text-sm font-mono text-right',
-                    trade.action === 'sell' || trade.action === 'trim'
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-gray-600 dark:text-gray-300',
-                  )}>
+                  <td
+                    className={clsx(
+                      'py-2 px-3 text-sm font-mono text-right whitespace-nowrap tabular-nums',
+                      trade.action === 'sell' || trade.action === 'trim'
+                        ? 'text-red-600 dark:text-red-400'
+                        : 'text-gray-600 dark:text-gray-300',
+                    )}
+                    title={fmtSignedNotionalFull(signedNotional(trade.notional_value, trade.action))}
+                  >
                     {fmtSignedNotional(signedNotional(trade.notional_value, trade.action))}
                   </td>
                   <td className="py-2 px-3">
