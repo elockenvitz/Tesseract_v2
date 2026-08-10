@@ -53,6 +53,7 @@ import {
 } from '../hooks/useDecisionReview'
 import type { CandidateTradeEvent, Reflection } from '../hooks/useDecisionAccountability'
 import { PositionChart } from '../components/outcomes/PositionChart'
+import { OptionPicker } from '../components/ui/OptionPicker'
 import {
   inferDecisionIntelligence, buildProcessHealth, buildSmartChips,
   VERDICT_DISPLAY, VERDICT_EXPLANATIONS, HEALTH_DISPLAY,
@@ -2570,6 +2571,7 @@ function DeferredChartPanel(props: {
   row: AccountabilityRow
   onSelectDecision?: (decisionId: string) => void
 }) {
+  const isMobileViewport = useIsMobile()
   const [ready, setReady] = useState(false)
   useEffect(() => {
     setReady(false)
@@ -2588,8 +2590,13 @@ function DeferredChartPanel(props: {
   }, [props.row.decision_id])
 
   if (!ready) {
+    // Reserve the height the real panel will take, so the deferred mount does
+    // not shift the layout under the user's thumb one frame later.
     return (
-      <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" style={{ height: 260 }} />
+      <div
+        className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+        style={{ height: isMobileViewport ? 268 : 260 }}
+      />
     )
   }
   return <BottomChartPanel {...props} />
@@ -2639,6 +2646,8 @@ function BottomChartPanel({ row, onSelectDecision }: {
   // a price line nor a lifecycle yet, only then show a spinner.
   const isLoading = phLoading && lcLoading
   const hasHoldings = holdingsHistory.length > 0
+  const isMobileViewport = useIsMobile()
+  const chartHeight = isMobileViewport ? 180 : 240
   // PositionChart requires a non-null lifecycle. While the real
   // lifecycle loads, supply a minimal stub so the chart renders the
   // price line without markers; the markers fill in once the live
@@ -2657,60 +2666,110 @@ function BottomChartPanel({ row, onSelectDecision }: {
 
   return (
     <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-      <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
-            <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
-              {row.asset_symbol || 'Price'}
-            </span>
-            {row.portfolio_name && (
-              <span className="text-[10px] text-gray-400">in {row.portfolio_name}</span>
+      {/* Symbol, prices and the overlay toggle came to well over 390px on one
+          row — "Price Only / Shares / Weight / Active Wt" alone is most of a
+          phone's width, and a fixed overlay is not clipped by the shell, so
+          the excess panned the entire screen. On a phone the identity and
+          price share the first line and the toggle becomes a picker on the
+          second. Desktop keeps the single row it always had. */}
+      {isMobileViewport ? (
+        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <TrendingUp className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300 shrink-0">
+                {row.asset_symbol || 'Price'}
+              </span>
+              {row.portfolio_name && (
+                <span className="text-[10px] text-gray-400 truncate">in {row.portfolio_name}</span>
+              )}
+            </div>
+            {lifecycle && (
+              <div className="flex items-center gap-2 text-[10px] shrink-0">
+                {lifecycle.currentPrice != null && (
+                  <span className="text-gray-500 dark:text-gray-400">Now <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.currentPrice.toFixed(2)}</span></span>
+                )}
+                {lifecycle.totalReturnPct != null && (
+                  <span className={`font-semibold ${lifecycle.totalReturnPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {lifecycle.totalReturnPct >= 0 ? '+' : ''}{lifecycle.totalReturnPct.toFixed(1)}%
+                  </span>
+                )}
+              </div>
             )}
           </div>
-
-          {/* Position overlay toggle */}
-          <div className="flex items-center gap-0.5 p-0.5 bg-gray-200/60 rounded-md">
-            {([
-              { value: 'none' as PositionOverlay, label: 'Price Only' },
-              { value: 'shares' as PositionOverlay, label: 'Shares' },
-              { value: 'weight' as PositionOverlay, label: 'Weight' },
-              { value: 'active_weight' as PositionOverlay, label: 'Active Wt' },
-            ]).map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setOverlay(opt.value)}
-                className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
-                  overlay === opt.value
-                    ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
-                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div className="mt-1.5">
+            <OptionPicker
+              label="Overlay"
+              value={overlay}
+              onChange={setOverlay}
+              options={[
+                { value: 'none',          label: 'Price only' },
+                { value: 'shares',        label: 'Shares' },
+                { value: 'weight',        label: 'Weight' },
+                { value: 'active_weight', label: 'Active weight' },
+              ]}
+            />
           </div>
         </div>
-
-        {lifecycle && (
-          <div className="flex items-center gap-3 text-[10px]">
-            {lifecycle.avgEntryPrice != null && (
-              <span className="text-gray-500 dark:text-gray-400">Entry <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.avgEntryPrice.toFixed(2)}</span></span>
-            )}
-            {lifecycle.currentPrice != null && (
-              <span className="text-gray-500 dark:text-gray-400">Now <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.currentPrice.toFixed(2)}</span></span>
-            )}
-            {lifecycle.totalReturnPct != null && (
-              <span className={`font-semibold ${lifecycle.totalReturnPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {lifecycle.totalReturnPct >= 0 ? '+' : ''}{lifecycle.totalReturnPct.toFixed(1)}%
+      ) : (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
+              <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
+                {row.asset_symbol || 'Price'}
               </span>
-            )}
+              {row.portfolio_name && (
+                <span className="text-[10px] text-gray-400">in {row.portfolio_name}</span>
+              )}
+            </div>
+
+            {/* Position overlay toggle */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-gray-200/60 rounded-md">
+              {([
+                { value: 'none' as PositionOverlay, label: 'Price Only' },
+                { value: 'shares' as PositionOverlay, label: 'Shares' },
+                { value: 'weight' as PositionOverlay, label: 'Weight' },
+                { value: 'active_weight' as PositionOverlay, label: 'Active Wt' },
+              ]).map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setOverlay(opt.value)}
+                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
+                    overlay === opt.value
+                      ? 'bg-white text-gray-900 shadow-sm dark:text-white dark:bg-gray-800'
+                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+
+          {lifecycle && (
+            <div className="flex items-center gap-3 text-[10px]">
+              {lifecycle.avgEntryPrice != null && (
+                <span className="text-gray-500 dark:text-gray-400">Entry <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.avgEntryPrice.toFixed(2)}</span></span>
+              )}
+              {lifecycle.currentPrice != null && (
+                <span className="text-gray-500 dark:text-gray-400">Now <span className="font-medium text-gray-700 dark:text-gray-300">${lifecycle.currentPrice.toFixed(2)}</span></span>
+              )}
+              {lifecycle.totalReturnPct != null && (
+                <span className={`font-semibold ${lifecycle.totalReturnPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {lifecycle.totalReturnPct >= 0 ? '+' : ''}{lifecycle.totalReturnPct.toFixed(1)}%
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Shorter on a phone: the chart is pinned above the detail panel's own
+          scroll region there, so its height is taken directly out of the space
+          the story below it has to work with. */}
       <div className="px-2 py-1">
         {isLoading ? (
-          <div className="flex items-center justify-center h-[240px]">
+          <div className="flex items-center justify-center" style={{ height: chartHeight }}>
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
           </div>
         ) : priceHistory.length > 0 ? (
@@ -2728,10 +2787,13 @@ function BottomChartPanel({ row, onSelectDecision }: {
               // on fuzzy-match dots are a no-op for now.
               if (sourceType === 'trade_queue_item') onSelectDecision(sourceId)
             }}
-            height={240}
+            height={chartHeight}
           />
         ) : (
-          <div className="flex items-center justify-center h-[240px] text-[11px] text-gray-400">
+          <div
+            className="flex items-center justify-center text-[11px] text-gray-400 text-center px-3"
+            style={{ height: chartHeight }}
+          >
             No price history available for {row.asset_symbol || 'this asset'}
           </div>
         )}
@@ -3529,26 +3591,37 @@ export function DecisionAccountabilityPage({ onItemSelect }: DecisionAccountabil
 
             {/* Detail Panel */}
             {selectedRow && (
+              /* The mobile overlay is a flex column, not a scroll container.
+                 It used to be `overflow-y-auto` wrapping a DetailPanel that is
+                 `h-full` with its own `overflow-y-auto` body — so the panel
+                 filled the whole viewport, its inner scroller ate every
+                 vertical drag, and the chart stacked below it was off-screen
+                 with no reachable way to scroll to it. That is why clicking a
+                 trade appeared to show no chart at all.
+
+                 Now the panel takes the flexible region (its `h-full` resolves
+                 against the wrapper, not the viewport) and the chart is pinned
+                 under it, so it is on screen the moment a trade is opened.
+                 `overflow-hidden` clips both axes: a `position: fixed` element
+                 is not clipped by the app shell's `overflow-x: clip`, because
+                 its containing block is the viewport — which is what let the
+                 whole screen be dragged sideways. */
               <div className={clsx(
                 isMobileViewport
-                  ? 'fixed inset-0 z-[85] bg-white dark:bg-gray-800 pt-safe pb-safe overflow-y-auto'
+                  ? 'fixed inset-0 z-[85] bg-white dark:bg-gray-800 pt-safe pb-safe flex flex-col overflow-hidden overscroll-none'
                   : 'w-[440px] shrink-0 border-l-2 border-l-primary-500 overflow-hidden'
               )}>
-                <DetailPanel
-                  row={selectedRow}
-                  onClose={() => setSelectedId(null)}
-                />
-                {/* The price-and-decision chart sits beside the detail pane on
-                    desktop. Dropping it on a phone left the detail view without
-                    the one thing that answers "what happened after" — so it
-                    goes inside the overlay rather than nowhere. */}
+                <div className={clsx(isMobileViewport && 'flex-1 min-h-0')}>
+                  <DetailPanel
+                    row={selectedRow}
+                    onClose={() => setSelectedId(null)}
+                  />
+                </div>
                 {isMobileViewport && (
-                  <div className="border-t border-gray-200 dark:border-gray-700">
-                    <DeferredChartPanel
-                      row={selectedRow}
-                      onSelectDecision={(decisionId) => setSelectedId(decisionId)}
-                    />
-                  </div>
+                  <DeferredChartPanel
+                    row={selectedRow}
+                    onSelectDecision={(decisionId) => setSelectedId(decisionId)}
+                  />
                 )}
               </div>
             )}
