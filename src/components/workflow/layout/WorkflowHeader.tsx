@@ -156,14 +156,16 @@ export function WorkflowHeader({
 
       {/* Tab Navigation */}
       <div className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-        <nav className="flex space-x-8 px-6">
+        {/* The tab strip scrolls sideways on a phone rather than widening the
+            page — at space-x-8 these labels are far past 390px. */}
+        <nav className="flex gap-6 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar">
           {TABS.map((tab) => {
             const Icon = tab.icon
             return (
               <button
                 key={tab.id}
                 onClick={() => onTabChange(tab.id as any)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap flex items-center space-x-2 py-4 px-1 border-b-2 text-sm font-medium transition-colors ${
                   activeView === tab.id
                     ? 'border-primary-500 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'

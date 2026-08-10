@@ -229,8 +229,8 @@ export function RecurringProcessesHomePanel({
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <div className="bg-gray-100 px-6 py-6 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-          <div className="grid grid-cols-4 gap-3">
+        <div className="bg-gray-100 px-3 sm:px-6 py-4 sm:py-6 border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             {[1, 2, 3, 4].map(i => (
               <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
                 <div className="h-8 w-12 bg-gray-100 rounded mb-1 dark:bg-gray-800" />
@@ -253,9 +253,11 @@ export function RecurringProcessesHomePanel({
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden animate-in fade-in duration-200">
       {/* ═══ HOME HERO — completely different from process detail ═══ */}
-      <div className="bg-gray-100 dark:bg-gray-900 px-6 py-6 border-b border-gray-200 dark:border-gray-700">
-        {/* Large stat tiles — the dominant visual that says "you're at the hub" */}
-        <div className="grid grid-cols-4 gap-3">
+      <div className="bg-gray-100 dark:bg-gray-900 px-3 sm:px-6 py-4 sm:py-6 border-b border-gray-200 dark:border-gray-700">
+        {/* Large stat tiles — the dominant visual that says "you're at the hub".
+            Four across is ~85px each at 390px, and these carry a 3xl numeral
+            with a label under it; two-up keeps both legible. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-4 shadow-sm">
             <div className={`text-3xl font-extrabold tabular-nums ${activeCount > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-300 dark:text-gray-600'}`}>{activeCount}</div>
             <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">Active Runs</div>

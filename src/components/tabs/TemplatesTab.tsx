@@ -238,17 +238,17 @@ function CaseTemplatesManager() {
 
   return (
     <Card padding="sm">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Investment Case Templates</h3>
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Investment Case Templates</h3>
           <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
             Create templates for bull, base, and bear case reasoning to quickly populate price targets.
           </p>
         </div>
         {!showForm && (
-          <Button onClick={() => setShowForm(true)} size="sm">
+          <Button onClick={() => setShowForm(true)} size="sm" className="shrink-0">
             <Plus className="w-4 h-4 mr-1" />
-            New Case Template
+            New<span className="hidden sm:inline"> Case</span> Template
           </Button>
         )}
       </div>
@@ -262,7 +262,7 @@ function CaseTemplatesManager() {
             </div>
           )}
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">
                   Template Name
@@ -290,8 +290,10 @@ function CaseTemplatesManager() {
               </div>
             </div>
 
-            {/* Case Templates */}
-            <div className="grid grid-cols-3 gap-4">
+            {/* Case Templates. Three textareas across is ~110px each at 390px,
+                which is too narrow to write a sentence in, let alone read one
+                back. They stack on a phone. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div>
                 <label className="block text-sm font-medium text-green-700 mb-1 flex items-center gap-1">
                   <TrendingUp className="w-4 h-4" />
@@ -563,12 +565,15 @@ export function TemplatesTab() {
       </div>
 
       {/* Tab Navigation */}
+      {/* Four labelled tabs — "Excel Extraction" and "Asset Page Layout" among
+          them — are wider than a phone. The strip scrolls sideways rather than
+          widening the page. */}
       <div className="flex-shrink-0 px-3 sm:px-6 bg-white border-b border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-        <nav className="flex space-x-4" aria-label="Tabs">
+        <nav className="flex gap-4 overflow-x-auto no-scrollbar" aria-label="Tabs">
           <button
             onClick={() => setActiveSection('text')}
             className={clsx(
-              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'text'
                 ? 'border-primary-500 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -580,7 +585,7 @@ export function TemplatesTab() {
           <button
             onClick={() => setActiveSection('excel')}
             className={clsx(
-              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'excel'
                 ? 'border-primary-500 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -592,7 +597,7 @@ export function TemplatesTab() {
           <button
             onClick={() => setActiveSection('research')}
             className={clsx(
-              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'research'
                 ? 'border-primary-500 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
@@ -604,7 +609,7 @@ export function TemplatesTab() {
           <button
             onClick={() => setActiveSection('pdf')}
             className={clsx(
-              'py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
+              'shrink-0 whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition-colors flex items-center gap-2',
               activeSection === 'pdf'
                 ? 'border-primary-500 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'

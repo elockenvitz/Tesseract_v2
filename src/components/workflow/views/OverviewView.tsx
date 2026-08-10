@@ -383,7 +383,7 @@ export function OverviewView({
       )}
 
       {/* ═══ Quick Stats strip ═══════════════════════════════════ */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
           <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">{ItemsInScope}</p>
           {scopeCount !== undefined ? (
@@ -508,7 +508,7 @@ export function OverviewView({
             </div>
 
             {totalRuns > 0 ? (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalRuns}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">Total runs</div>

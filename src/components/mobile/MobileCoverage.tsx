@@ -95,11 +95,13 @@ export function MobileCoverage({ onAssetSelect }: MobileCoverageProps) {
           analysts: [],
         })
       }
-      const name =
-        [c.user?.first_name, c.user?.last_name].filter(Boolean).join(' ') ||
-        c.user?.email ||
-        c.user_name ||
-        'Analyst'
+      // `coverage.analyst_name` is the stored name, and what the desktop
+      // surface reads. This looked for `c.user` — never selected, because
+      // `coverage.user_id` carries no foreign key so PostgREST cannot embed
+      // through it — and then `c.user_name`, which is not a column on the
+      // table. Both were always undefined, so every analyst on this screen
+      // was labelled with the literal fallback "Analyst".
+      const name = (c.analyst_name || '').trim() || 'Unassigned'
       map.get(c.asset_id)!.analysts.push({ id: c.user_id, name, isLead: !!c.is_lead })
     }
     // Lead first, so the person answerable for the name reads first.
