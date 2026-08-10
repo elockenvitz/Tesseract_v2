@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { RichTextEditor, type RichTextEditorRef } from '../../rich-text-editor/RichTextEditor'
+import { useIsMobile } from '../../../hooks/useMediaQuery'
 import { SmartInputRenderer } from '../../smart-input'
 import { useAuth } from '../../../hooks/useAuth'
 import {
@@ -130,6 +131,7 @@ export function ThemeContributionSection({
   }
 
   // Inline edit state (used both in aggregated view and own view)
+  const isMobileViewport = useIsMobile()
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState<string>(ownContribution?.content || '')
   const [visibility, setVisibility] = useState<ThemeContributionVisibility>(ownContribution?.visibility || 'org')
@@ -181,7 +183,10 @@ export function ThemeContributionSection({
   // aggregated view is read-only by convention. Editing from the
   // aggregated view goes through the (subtle) title-click affordance.
   const canEditInline = user && isOwnView
-  const showEditButton = canEditInline && !isEditing && isHovered
+  // Hover does not exist on a phone, so gating the edit control on it made
+  // thesis fields permanently read-only there — the surface looked complete and
+  // simply could not be used. On touch the control is always present.
+  const showEditButton = !!canEditInline && !isEditing && (isHovered || isMobileViewport)
 
   return (
     <div
