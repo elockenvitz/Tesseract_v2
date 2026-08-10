@@ -18,6 +18,8 @@ import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
+import { NewsFeedTile } from './NewsFeedTile'
+import { useMarketNews } from '../../hooks/useMarketNews'
 import { useDerivedInsights } from '../../hooks/mobile/useDerivedInsights'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
 import { FeedCaptureSheet } from './FeedCaptureSheet'
@@ -239,6 +241,41 @@ export function MobileDashboard({
     return () => clearTimeout(timer)
   }, [userId, visibleItems])
 
+  // News for the names already in front of the reader. Deliberately derived
+  // from what the feed is showing rather than the whole book: each symbol
+  // costs a provider call, and a story about a name you are not looking at is
+  // not why you opened this.
+  const newsSymbols = useMemo(() => {
+    const out: string[] = []
+    for (const item of visibleItems) {
+      const sym = ('asset' in item && item.asset ? item.asset.symbol : null) as string | null
+      if (sym) out.push(sym)
+    }
+    for (const sig of realSignals) {
+      const sym = sig.relatedAssets?.[0]?.symbol
+      if (sym) out.push(sym)
+    }
+    return Array.from(new Set(out)).slice(0, 12)
+  }, [visibleItems, realSignals])
+
+  const { data: news } = useMarketNews(newsSymbols)
+  const newsItems = news?.items ?? []
+
+  /** Symbol → asset, for turning a story's tickers into things you can open. */
+  const assetBySymbol = useMemo(() => {
+    const map = new Map<string, { id: string; symbol: string }>()
+    for (const item of visibleItems) {
+      const a = ('asset' in item ? item.asset : null) as { id: string; symbol: string } | null
+      if (a?.symbol) map.set(a.symbol.toUpperCase(), { id: a.id, symbol: a.symbol })
+    }
+    for (const sig of realSignals) {
+      for (const a of sig.relatedAssets ?? []) {
+        if (a?.symbol) map.set(a.symbol.toUpperCase(), { id: a.id, symbol: a.symbol })
+      }
+    }
+    return map
+  }, [visibleItems, realSignals])
+
   // One card per pair. The highest-priority leg is kept — the list is already
   // ordered by attention priority — and the rest are dropped rather than
   // rendered as separate screens for what is one decision.
@@ -301,12 +338,26 @@ export function MobileDashboard({
         round,
       }))
     )
-    return interleaveByKind<any>([...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries], {
-      maxRun: 1,
-      leadWith: 'attention',
-      seed: shuffleSeed,
-    })
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, cycle, interestAtMount, shuffleSeed])
+
+    // News is the only source that brings genuinely new material between
+    // visits — everything else is the book restated. Ranked on the provider's
+    // own relevance where there is one, recency otherwise, then normalised to
+    // the same positional scale as every other kind.
+    const newsEntries = (newsItems ?? []).map((n, idx) => ({
+      kind: 'news' as const,
+      score: newsItems.length - idx,
+      news: n,
+    }))
+
+    return interleaveByKind<any>(
+      [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries],
+      {
+        maxRun: 1,
+        leadWith: 'attention',
+        seed: shuffleSeed,
+      }
+    )
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, cycle, interestAtMount, shuffleSeed])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -488,6 +539,27 @@ export function MobileDashboard({
                     assetId: entry.signal.asset?.id ?? null,
                     symbol: entry.signal.asset?.symbol ?? null,
                     name: entry.signal.asset?.company_name ?? null,
+                  })}
+                />
+              </section>
+            )
+          }
+
+          if (entry.kind === 'news') {
+            const n = entry.news
+            const linked = n.symbols
+              .map((s: string) => assetBySymbol.get(s.toUpperCase()) ?? null)
+              .find(Boolean) ?? null
+            return (
+              <section key={n.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+                <NewsFeedTile
+                  item={n}
+                  assetForSymbol={(sym) => assetBySymbol.get(sym.toUpperCase()) ?? null}
+                  onAssetClick={openAsset}
+                  onCapture={() => setCaptureCtx({
+                    assetId: linked?.id ?? null,
+                    symbol: linked?.symbol ?? null,
+                    name: null,
                   })}
                 />
               </section>
