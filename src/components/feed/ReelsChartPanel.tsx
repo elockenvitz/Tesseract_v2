@@ -42,6 +42,8 @@ export function ReelsChartPanel({
   eventLabel
 }: ReelsChartPanelProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1Y')
+  /** Point under the finger while scrubbing; null when not scrubbing. */
+  const [scrub, setScrub] = useState<{ value: number; timestamp: number } | null>(null)
 
   // Fetch quote data
   const { data: quote, isLoading: quoteLoading } = useQuery({
@@ -188,8 +190,65 @@ export function ReelsChartPanel({
         ))}
       </div>
 
-      {/* Chart container */}
-      <div className="flex-1 relative bg-white rounded-b-xl overflow-hidden border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+      {/* Scrub readout.
+
+          Yahoo's behaviour: dragging the chart changes the price *above* it
+          rather than raising a tooltip box over the series. A floating box is
+          the worst possible place to put this — it sits exactly where your
+          finger is, covering the part of the line you are interrogating, and
+          it moves while you read it.
+
+          The row is always rendered, so revealing a value costs no layout
+          shift; it shows the live quote at rest and the point under the finger
+          while scrubbing. */}
+      <div className={clsx(
+        'flex-shrink-0 flex items-baseline gap-2 px-2.5 h-7 bg-white border-x border-gray-200 dark:border-gray-700 dark:bg-gray-800',
+        !scrub && 'text-gray-400',
+      )}>
+        {(() => {
+          const shown = scrub?.value ?? quote?.price ?? null
+          if (shown == null) return null
+          // Change is measured against the start of the visible window, so it
+          // answers "what has it done over this period", which is the question
+          // the chart is already asking.
+          const base = chartData[0]?.value
+          const delta = base ? ((shown - base) / base) * 100 : null
+          return (
+            <>
+              <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                ${shown.toFixed(2)}
+              </span>
+              {delta != null && (
+                <span className={clsx(
+                  'text-[11px] font-medium tabular-nums',
+                  delta >= 0 ? 'text-green-600' : 'text-red-600',
+                )}>
+                  {delta >= 0 ? '+' : ''}{delta.toFixed(2)}%
+                </span>
+              )}
+              <span className="ml-auto text-[10px] text-gray-400 tabular-nums">
+                {scrub
+                  ? new Date(scrub.timestamp).toLocaleDateString([], {
+                      month: 'short', day: 'numeric',
+                      ...(selectedTimeframe === '1D' ? { hour: 'numeric', minute: '2-digit' } : {}),
+                    })
+                  : selectedTimeframe}
+              </span>
+            </>
+          )
+        })()}
+      </div>
+
+      {/* Chart container.
+
+          Touch-end lives here rather than on the chart: Recharts' categorical
+          charts expose mouse handlers but not touch ones, so without this the
+          readout stayed frozen on the last point after the finger lifted. */}
+      <div
+        className="flex-1 relative bg-white rounded-b-xl overflow-hidden border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
+        onTouchEnd={() => setScrub(null)}
+        onTouchCancel={() => setScrub(null)}
+      >
         {quoteLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
@@ -200,7 +259,17 @@ export function ReelsChartPanel({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>
+            <AreaChart
+              data={chartData}
+              margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
+              onMouseMove={(state: any) => {
+                const p = state?.activePayload?.[0]?.payload
+                if (p && typeof p.value === 'number') {
+                  setScrub({ value: p.value, timestamp: p.timestamp })
+                }
+              }}
+              onMouseLeave={() => setScrub(null)}
+            >
               <defs>
                 <linearGradient id={`gradient-${symbol}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
@@ -230,22 +299,14 @@ export function ReelsChartPanel({
                     width — which is what makes the shape readable at this
                     size. Still auto-scales to the data. */}
                 <YAxis domain={['auto', 'auto']} hide />
+              {/* Crosshair only — the readout lives above the plot. Recharts
+                  still needs a Tooltip mounted to compute the active point and
+                  draw the cursor; rendering null content is what removes the
+                  box without losing either. */}
               <Tooltip
-                formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
-                labelFormatter={(timestamp) => new Date(timestamp).toLocaleDateString([], {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric'
-                })}
-                contentStyle={{
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                  color: '#1f2937',
-                  fontSize: '12px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                }}
+                cursor={{ stroke: '#9ca3af', strokeWidth: 1, strokeDasharray: '3 3' }}
+                content={() => null}
+                isAnimationActive={false}
               />
               {stats && (
                 <ReferenceLine
@@ -289,6 +350,21 @@ export function ReelsChartPanel({
                     strokeWidth={2}
                   />
                 </>
+              )}
+
+              {/* The point under the finger. Without it the crosshair says
+                  which x you are on but not where the series actually sits at
+                  that x, which is the number the readout above is quoting. */}
+              {scrub && (
+                <ReferenceDot
+                  x={scrub.timestamp}
+                  y={scrub.value}
+                  r={4}
+                  fill={chartColor}
+                  stroke="#fff"
+                  strokeWidth={2}
+                  isFront
+                />
               )}
             </AreaChart>
           </ResponsiveContainer>
