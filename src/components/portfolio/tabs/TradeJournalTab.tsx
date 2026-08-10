@@ -4,6 +4,9 @@ import {
   ChevronDown, Search, Clock,
   ArrowUpRight, ArrowDownRight, Link2, X, Minus,
 } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useMediaQuery'
+import { OptionPicker } from '../../ui/OptionPicker'
+import { BottomSheet } from '../../mobile/BottomSheet'
 import {
   useTradeJournalEvents,
   useTradeJournalSummary,
@@ -76,9 +79,10 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
+  const isMobile = useIsMobile()
 
   // Data
-  const { data: events, isLoading } = useTradeJournalEvents({ portfolioId })
+  const { data: events, isLoading, error } = useTradeJournalEvents({ portfolioId })
   const { data: summary } = useTradeJournalSummary(portfolioId)
   const updateStatusMutation = useUpdateTradeEventStatus(portfolioId)
 
@@ -126,6 +130,32 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
     return (
       <div className="py-12 text-center">
         <p className="text-[11px] text-gray-400">Loading trade journal...</p>
+      </div>
+    )
+  }
+
+  // ── Failed ─────────────────────────────────────────────────
+  // A failed fetch used to fall through to the empty state below, so a broken
+  // query was indistinguishable from a portfolio that had never traded — and
+  // the tab badge, which counts separately, kept insisting events existed.
+  if (error) {
+    return (
+      <div className="flex flex-col">
+        <div className="flex items-center gap-2">
+          <BookText className="w-4 h-4 text-gray-400" />
+          <h3 className="text-[13px] font-semibold text-gray-900 dark:text-white">Trade Journal</h3>
+        </div>
+        <div className="border border-dashed border-red-200 dark:border-red-900/50 rounded-lg py-12 px-3 sm:px-6 mt-4">
+          <div className="max-w-md mx-auto text-center">
+            <AlertCircle className="w-8 h-8 text-red-300 mx-auto mb-3" />
+            <p className="text-[13px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+              Couldn't load trade events
+            </p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              {(error as any)?.message || 'The request failed.'}
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
@@ -185,9 +215,11 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
         </span>
       </div>
 
-      {/* ── SUMMARY STRIP ──────────────────────────────────────── */}
+      {/* ── SUMMARY STRIP ──────────────────────────────────────────
+          Three across on a phone: five tiles over two columns left a
+          half-width orphan on a third row for no gain. */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-gray-200 rounded overflow-hidden border border-gray-200 mb-3 shrink-0 dark:border-gray-700">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-px bg-gray-200 rounded overflow-hidden border border-gray-200 mb-3 shrink-0 dark:border-gray-700">
           <SummaryTile
             label="Pending"
             value={summary.pendingRationale}
@@ -224,6 +256,33 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
 
       {/* ── FILTERS ────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 mb-2 shrink-0">
+        {/* Five status pills plus an action select plus a search box do not
+            fit on one phone line; as pickers they do. */}
+        {isMobile ? (
+          <>
+            <OptionPicker
+              label="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={STATUS_FILTERS.map(f => ({
+                value: f.key,
+                label: f.label,
+                count: f.key === 'pending' ? summary?.pendingRationale
+                  : f.key === 'draft' ? summary?.draftRationale
+                  : f.key === 'complete' ? summary?.complete
+                  : f.key === 'reviewed' ? summary?.reviewed
+                  : undefined,
+              }))}
+            />
+            <OptionPicker
+              label="Action"
+              value={actionFilter}
+              onChange={setActionFilter}
+              options={ACTION_FILTERS.map(f => ({ value: f.key, label: f.label }))}
+            />
+          </>
+        ) : (
+        <>
         {/* Status filter pills */}
         <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg dark:bg-gray-800">
           {STATUS_FILTERS.map(f => {
@@ -266,6 +325,8 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
           </select>
           <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
         </div>
+        </>
+        )}
 
         {/* Search toggle */}
         <button
@@ -298,8 +359,11 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
       <div className="flex-1 min-h-0 flex border border-gray-200 rounded overflow-hidden dark:border-gray-700">
         {/* Table */}
         <div className={`flex-1 min-w-0 overflow-hidden flex flex-col`}>
-          {/* Column headers */}
-          <div className="grid grid-cols-[88px_1fr_72px_110px_80px_76px_68px] bg-gray-50 border-b border-gray-200 shrink-0 dark:border-gray-700 dark:bg-gray-900">
+          {/* Column headers. The seven fixed columns come to ~560px, so on a
+              phone the grid is replaced by stacked cards rather than made
+              pannable \u2014 a seven-column row read two columns at a time is not
+              a table. */}
+          <div className="hidden sm:grid grid-cols-[88px_1fr_72px_110px_80px_76px_68px] bg-gray-50 border-b border-gray-200 shrink-0 dark:border-gray-700 dark:bg-gray-900">
             <ColHeader>Date</ColHeader>
             <ColHeader>Asset</ColHeader>
             <ColHeader>Action</ColHeader>
@@ -310,17 +374,26 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
           </div>
 
           {/* Rows */}
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
+          <div className="flex-1 overflow-y-auto overscroll-none bg-white dark:bg-gray-800">
             {filteredEvents.length > 0 ? (
               filteredEvents.map((event, idx) => (
-                <TradeEventRow
-                  key={event.id}
-                  event={event}
-                  isSelected={event.id === selectedEventId}
-                  isEven={idx % 2 === 0}
-                  onSelect={() => setSelectedEventId(event.id === selectedEventId ? null : event.id)}
-                  onIgnore={() => updateStatusMutation.mutate({ eventId: event.id, status: 'ignored' })}
-                />
+                isMobile ? (
+                  <TradeEventCard
+                    key={event.id}
+                    event={event}
+                    isSelected={event.id === selectedEventId}
+                    onSelect={() => setSelectedEventId(event.id === selectedEventId ? null : event.id)}
+                  />
+                ) : (
+                  <TradeEventRow
+                    key={event.id}
+                    event={event}
+                    isSelected={event.id === selectedEventId}
+                    isEven={idx % 2 === 0}
+                    onSelect={() => setSelectedEventId(event.id === selectedEventId ? null : event.id)}
+                    onIgnore={() => updateStatusMutation.mutate({ eventId: event.id, status: 'ignored' })}
+                  />
+                )
               ))
             ) : (
               <div className="py-10 text-center">
@@ -330,63 +403,99 @@ export function TradeJournalTab({ portfolioId, portfolio }: TradeJournalTabProps
           </div>
         </div>
 
-        {/* Event Detail Panel (read-only — post-mortem authoring is in Outcomes) */}
-        {selectedEvent && (
+        {/* Event detail (read-only — post-mortem authoring is in Outcomes).
+            A 380px side panel has nowhere to go beside a 390px screen, so the
+            same content arrives as a sheet there. */}
+        {selectedEvent && !isMobile && (
           <div className="w-[380px] shrink-0 border-l border-gray-200 flex flex-col bg-white dark:border-gray-700 dark:bg-gray-800">
             <div className="px-3 py-2.5 border-b border-gray-200 flex items-center justify-between shrink-0 dark:border-gray-700">
               <div className="flex items-center gap-2 min-w-0">
                 <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
                   ACTION_CONFIG[selectedEvent.action_type]?.color || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
                 }`}>{selectedEvent.action_type}</span>
-                <span className="text-[12px] font-semibold text-gray-900 truncate dark:text-white">{selectedEvent.asset_symbol || '?'}</span>
+                <span className="text-[12px] font-semibold text-gray-900 truncate dark:text-white">
+                  {selectedEvent.asset?.symbol || '?'}
+                </span>
               </div>
               <button onClick={() => setSelectedEventId(null)} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2.5 space-y-2.5">
-              {/* Event details */}
-              <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Date</span><span className="text-gray-700 dark:text-gray-300">{fmtDate(selectedEvent.event_date)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Source</span><span className="text-gray-700 dark:text-gray-300">{SOURCE_LABELS[selectedEvent.source_type] || selectedEvent.source_type}</span></div>
-                {selectedEvent.quantity_delta != null && (
-                  <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Shares Δ</span><span className="text-gray-700 tabular-nums dark:text-gray-300">{fmtDelta(selectedEvent.quantity_delta)}</span></div>
-                )}
-                {selectedEvent.weight_delta != null && (
-                  <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Weight Δ</span><span className="text-gray-700 tabular-nums dark:text-gray-300">{fmtDelta(selectedEvent.weight_delta, '%')}</span></div>
-                )}
-              </div>
-
-              {/* Existing rationale (read-only) */}
-              {selectedEvent.rationale ? (
-                <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Rationale</div>
-                  {selectedEvent.rationale.reason_for_action && (
-                    <div><div className="text-[9px] text-gray-400 mb-0.5">Assessment</div><p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{selectedEvent.rationale.reason_for_action}</p></div>
-                  )}
-                  {selectedEvent.rationale.what_changed && (
-                    <div><div className="text-[9px] text-gray-400 mb-0.5">What changed</div><p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{selectedEvent.rationale.what_changed}</p></div>
-                  )}
-                  {selectedEvent.rationale.risk_context && (
-                    <div><div className="text-[9px] text-gray-400 mb-0.5">Lessons</div><p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{selectedEvent.rationale.risk_context}</p></div>
-                  )}
-                  <div className="text-[10px] text-gray-400 capitalize">{selectedEvent.rationale.status}</div>
-                </div>
-              ) : (
-                <div className="pt-2 border-t border-gray-100 text-center py-4 dark:border-gray-800">
-                  <p className="text-[10px] text-gray-400">No rationale captured for this event.</p>
-                </div>
-              )}
-
-              {/* Direct to Outcomes */}
-              <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-                <p className="text-[10px] text-gray-400 mb-1.5">Post-mortem reviews are authored in Outcomes.</p>
-              </div>
+              <EventDetailBody event={selectedEvent} />
             </div>
           </div>
         )}
       </div>
+
+      {selectedEvent && isMobile && (
+        <BottomSheet
+          open
+          onClose={() => setSelectedEventId(null)}
+          snapPoints={[0.55, 0.9]}
+          title={
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                ACTION_CONFIG[selectedEvent.action_type]?.color || 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
+              }`}>{selectedEvent.action_type}</span>
+              <span className="text-base font-semibold text-gray-900 truncate dark:text-white">
+                {selectedEvent.asset?.symbol || '?'}
+              </span>
+            </div>
+          }
+        >
+          <div className="px-4 py-3 space-y-2.5">
+            <EventDetailBody event={selectedEvent} />
+          </div>
+        </BottomSheet>
+      )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Event detail body — shared by the desktop panel and the mobile sheet
+// ---------------------------------------------------------------------------
+
+function EventDetailBody({ event }: { event: TradeEventWithDetails }) {
+  const rationale = event.latest_rationale
+  return (
+    <>
+      <div className="space-y-1 text-[11px] sm:text-[11px]">
+        <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Date</span><span className="text-gray-700 dark:text-gray-300">{fmtDate(event.event_date)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Source</span><span className="text-gray-700 dark:text-gray-300">{SOURCE_LABELS[event.source_type] || event.source_type}</span></div>
+        {event.quantity_delta != null && (
+          <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Shares Δ</span><span className="text-gray-700 tabular-nums dark:text-gray-300">{fmtDelta(event.quantity_delta)}</span></div>
+        )}
+        {event.weight_delta != null && (
+          <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Weight Δ</span><span className="text-gray-700 tabular-nums dark:text-gray-300">{fmtDelta(event.weight_delta, '%')}</span></div>
+        )}
+      </div>
+
+      {rationale ? (
+        <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Rationale</div>
+          {rationale.reason_for_action && (
+            <div><div className="text-[9px] text-gray-400 mb-0.5">Assessment</div><p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{rationale.reason_for_action}</p></div>
+          )}
+          {rationale.what_changed && (
+            <div><div className="text-[9px] text-gray-400 mb-0.5">What changed</div><p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{rationale.what_changed}</p></div>
+          )}
+          {rationale.risk_context && (
+            <div><div className="text-[9px] text-gray-400 mb-0.5">Lessons</div><p className="text-[11px] text-gray-600 leading-relaxed dark:text-gray-400">{rationale.risk_context}</p></div>
+          )}
+          <div className="text-[10px] text-gray-400 capitalize">{rationale.status}</div>
+        </div>
+      ) : (
+        <div className="pt-2 border-t border-gray-100 text-center py-4 dark:border-gray-800">
+          <p className="text-[10px] text-gray-400">No rationale captured for this event.</p>
+        </div>
+      )}
+
+      <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-[10px] text-gray-400 mb-1.5">Post-mortem reviews are authored in Outcomes.</p>
+      </div>
+    </>
   )
 }
 
@@ -427,6 +536,92 @@ function SummaryTile({
         {value}
       </p>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Trade Event Card — the phone rendering of a row
+//
+// Same five facts as the desktop row (date, asset, action, position change,
+// status) laid out in two lines that fit 390px, instead of seven columns that
+// need 560. Source and the rationale tick move into the detail sheet.
+// ---------------------------------------------------------------------------
+
+function TradeEventCard({
+  event,
+  isSelected,
+  onSelect,
+}: {
+  event: TradeEventWithDetails
+  isSelected: boolean
+  onSelect: () => void
+}) {
+  const actionCfg = ACTION_CONFIG[event.action_type]
+  const statusCfg = STATUS_CONFIG[event.status]
+  const hasRationale = !!event.latest_rationale
+  const isPending = event.status === 'pending_rationale'
+  const delta = event.quantity_delta
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full text-left px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 transition-colors ${
+        isSelected
+          ? 'bg-primary-50/60 border-l-2 border-l-primary-500'
+          : isPending
+            ? 'bg-amber-50/20 border-l-2 border-l-amber-400'
+            : 'bg-white dark:bg-gray-800 border-l-2 border-l-transparent'
+      }`}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded shrink-0 ${actionCfg.color} ${actionCfg.bgColor}`}>
+          {actionCfg.label}
+        </span>
+        <span className="text-[13px] font-semibold text-gray-900 dark:text-white shrink-0">
+          {event.asset?.symbol || '?'}
+        </span>
+        <span className="text-[11px] text-gray-400 truncate min-w-0">
+          {event.asset?.company_name || ''}
+        </span>
+        <span className="ml-auto text-[10px] text-gray-400 tabular-nums shrink-0">
+          {fmtShortDate(event.event_date)}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 mt-1.5">
+        {delta != null && delta !== 0 ? (
+          <span className="flex items-center gap-1 min-w-0">
+            {delta > 0
+              ? <ArrowUpRight className="w-3 h-3 text-emerald-500 shrink-0" />
+              : <ArrowDownRight className="w-3 h-3 text-red-500 shrink-0" />}
+            <span className="text-[11px] font-semibold text-gray-700 tabular-nums dark:text-gray-300">
+              {fmtDelta(delta)} shr
+            </span>
+            {event.weight_delta != null && (
+              <span className="text-[10px] text-gray-400 tabular-nums">
+                {fmtDelta(event.weight_delta, '%')}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-[11px] text-gray-400">
+            <Minus className="w-3 h-3 text-gray-300" /> No size change
+          </span>
+        )}
+
+        <span className="ml-auto flex items-center gap-1.5 shrink-0">
+          {hasRationale
+            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+            : isPending
+              ? <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+              : null}
+          <span className={`text-[8px] font-bold uppercase tracking-wide px-1.5 py-[3px] rounded ${statusCfg.color} ${statusCfg.bgColor}`}>
+            {statusCfg.label}
+          </span>
+        </span>
+      </div>
+    </button>
   )
 }
 

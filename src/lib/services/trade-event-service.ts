@@ -29,12 +29,18 @@ export async function getTradeEvents(
     dateTo?: string
   }
 ): Promise<TradeEventWithDetails[]> {
+  // `created_by` is NOT embeddable. Its foreign key points at `auth.users`,
+  // which PostgREST does not expose, so asking it to resolve `users` through
+  // `portfolio_trade_events_created_by_fkey` fails to find a relationship and
+  // rejects the *whole* select. That is why this tab rendered its "no trade
+  // events recorded" empty state while the tab badge — a plain count query
+  // with no embed — correctly said there was one pending event. The author is
+  // resolved below with a separate lookup against `public.users` instead.
   let query = supabase
     .from('portfolio_trade_events')
     .select(`
       *,
       asset:assets!inner(id, symbol, company_name, sector),
-      created_by_user:users!portfolio_trade_events_created_by_fkey(id, email, first_name, last_name),
       linked_trade_idea:trade_queue_items!portfolio_trade_events_linked_trade_idea_id_fkey(id, rationale, action)
     `)
     .eq('portfolio_id', portfolioId)
@@ -82,8 +88,22 @@ export async function getTradeEvents(
     }
   }
 
+  // Authors, resolved separately — see the note on the select above.
+  const authorIds = [...new Set((data || []).map((e: any) => e.created_by).filter(Boolean))]
+  const authorMap = new Map<string, any>()
+
+  if (authorIds.length > 0) {
+    const { data: authors } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name')
+      .in('id', authorIds)
+
+    for (const u of authors || []) authorMap.set(u.id, u)
+  }
+
   return (data || []).map((e: any) => ({
     ...e,
+    created_by_user: e.created_by ? authorMap.get(e.created_by) || null : null,
     latest_rationale: rationaleMap.get(e.id) || null,
   })) as TradeEventWithDetails[]
 }

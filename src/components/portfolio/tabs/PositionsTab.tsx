@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { TrendingUp, ChevronUp, ChevronDown, ArrowRight } from 'lucide-react'
 import { useMarketData } from '../../../hooks/useMarketData'
+import { useIsMobile } from '../../../hooks/useMediaQuery'
+import { OptionPicker } from '../../ui/OptionPicker'
 import type { PortfolioHolding, NavigateHandler } from './portfolio-tab-types'
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,13 @@ const VIEW_PRESETS: { key: ViewPreset; label: string }[] = [
   { key: 'big-movers',      label: 'Big Movers' },
   { key: 'gainers-losers',  label: 'Gainers / Losers' },
   { key: 'stale',           label: 'Stale Research' },
+]
+
+const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: 'none',             label: 'No grouping' },
+  { value: 'sector',           label: 'By sector' },
+  { value: 'industry',         label: 'By industry' },
+  { value: 'sector-industry',  label: 'Sector → Industry' },
 ]
 
 function rowGroupKey(row: EnrichedRow, groupBy: GroupBy): string | null {
@@ -176,6 +185,7 @@ export function PositionsTab({
   const [activeView, setActiveView] = useState<ViewPreset>('all')
   const [groupBy, setGroupBy] = useState<GroupBy>('none')
   const containerRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   const isSplitView = activeView === 'gainers-losers'
 
@@ -428,43 +438,56 @@ export function PositionsTab({
   // RENDER
   // ================================================================
   return (
-    <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown} className="outline-none flex flex-col">
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="outline-none flex flex-col flex-1 min-h-0"
+    >
 
       {/* ─── VIEW BAR ─────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-y-1.5 px-2 sm:px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
-        <div className="flex items-center gap-0.5 min-w-0 max-w-full overflow-x-auto no-scrollbar">
-          {VIEW_PRESETS.map(v => (
-            <button
-              key={v.key}
-              onClick={() => setActiveView(v.key)}
-              className={`shrink-0 px-2.5 h-7 rounded text-[11px] font-medium transition-colors ${
-                activeView === v.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
-              }`}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-2 sm:px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+        {/* Seven presets are a comfortable pill row at desktop width and a
+            page-widening pan surface at 390px, so the phone gets the same
+            choice as a picker rather than a shortened list. */}
+        {isMobile ? (
+          <OptionPicker
+            label="View"
+            value={activeView}
+            onChange={setActiveView}
+            options={VIEW_PRESETS.map(v => ({ value: v.key, label: v.label }))}
+            className="shrink"
+          />
+        ) : (
+          <div className="flex items-center gap-0.5 min-w-0 max-w-full overflow-x-auto no-scrollbar">
+            {VIEW_PRESETS.map(v => (
+              <button
+                key={v.key}
+                onClick={() => setActiveView(v.key)}
+                className={`shrink-0 px-2.5 h-7 rounded text-[11px] font-medium transition-colors ${
+                  activeView === v.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:text-gray-400'
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 sm:gap-3 ml-auto shrink-0">
-          {/* Group by — the select carries its own meaning, so the "Group"
+          {/* Group by — the control carries its own meaning, so the "Group"
               label beside it was a word spent saying what the options say. */}
-          <select
+          <OptionPicker
+            label="Group positions"
             value={groupBy}
-            onChange={e => setGroupBy(e.target.value as GroupBy)}
-            aria-label="Group positions"
-            className="h-7 text-[11px] font-medium text-gray-600 bg-transparent border border-gray-200 rounded px-1.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-300 appearance-none pr-5 dark:border-gray-700 dark:text-gray-400"
-            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%239ca3af' d='M2 3l2 2 2-2z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 5px center' }}
-          >
-            <option value="none">No grouping</option>
-            <option value="sector">By sector</option>
-            <option value="industry">By industry</option>
-            <option value="sector-industry">Sector → Industry</option>
-          </select>
+            onChange={setGroupBy}
+            options={GROUP_OPTIONS}
+            align="right"
+          />
 
           {/* Session P&L */}
           {hasQuotes && (
-            <div className="flex items-center gap-1.5 pl-3 border-l border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-1.5 pl-2 sm:pl-3 border-l border-gray-200 dark:border-gray-700">
               <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Today</span>
               <span className={`text-[11px] font-semibold tabular-nums ${clr(totalDailyPnl)}`}>
                 {fmtPnl(totalDailyPnl)}
@@ -477,6 +500,17 @@ export function PositionsTab({
         </div>
       </div>
 
+      {/* The one scroll container for the tab.
+
+          `overscroll-none` rather than `contain`: containment only stops the
+          gesture chaining to the page, which still leaves the table itself
+          rubber-banding — pulling right revealed empty space to the left of
+          the frozen ticker column, and pulling down revealed space above the
+          header. `none` removes the bounce, so the table's edges are its
+          edges. Owning the height (rather than capping at 70vh inside a second
+          scroller) is what makes the last row reachable on a phone: nested
+          scrollers meant the outer one ran out before the inner one did. */}
+      <div className="flex-1 min-h-0 overflow-auto overscroll-none">
       {/* ─── SPLIT VIEW: GAINERS / LOSERS ─────────────────── */}
       {isSplitView ? (
         <GainersLosersView
@@ -491,11 +525,9 @@ export function PositionsTab({
           onNavigate={onNavigate}
         />
       ) : (
-      /* ─── TABLE ─────────────────────────────────────────── */
-      <div className="overflow-auto max-h-[70vh]">
-          {/* A frozen symbol column and a stuck header row are what make ten
+          /* A frozen symbol column and a stuck header row are what make ten
               columns usable at 390px: the numbers move, the name of the row and
-              the name of the column do not. */}
+              the name of the column do not. */
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead>
               <tr>
@@ -713,8 +745,8 @@ export function PositionsTab({
               )}
             </tbody>
           </table>
-      </div>
       )}
+      </div>
     </div>
   )
 }
