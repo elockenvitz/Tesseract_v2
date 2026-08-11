@@ -10,7 +10,7 @@ import { clsx } from 'clsx'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { BarChart3, Maximize2 } from 'lucide-react'
 import { financialDataService } from '../../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from '../../charts/utils/dataAdapter'
+import { usePriceHistory, timeframeForDays } from '../../../hooks/usePriceHistory'
 
 type Timeframe = '1W' | '1M' | '3M' | '6M' | '1Y'
 
@@ -55,13 +55,12 @@ export const FeedChart = React.memo(function FeedChart({
   className,
 }: FeedChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe)
-  const { data: quote, isLoading } = useFeedQuote(symbol)
 
-  const chartData = useMemo(() => {
-    if (!quote) return []
-    const days = TIMEFRAMES.find(t => t.value === timeframe)?.days || 90
-    return ChartDataAdapter.generateHistoricalData(symbol, quote, days)
-  }, [symbol, quote, timeframe])
+  // Real closes. This drew ChartDataAdapter.generateHistoricalData — a seeded
+  // random walk anchored to the quote — so only the final point was ever real.
+  const days = TIMEFRAMES.find(t => t.value === timeframe)?.days || 90
+  const { data: history, isLoading } = usePriceHistory(symbol, timeframeForDays(days))
+  const chartData = history?.points ?? []
 
   const stats = useMemo(() => {
     if (chartData.length < 2) return null
@@ -74,7 +73,7 @@ export const FeedChart = React.memo(function FeedChart({
   const gradientId = `fcg-${symbol}-${timeframe}`
 
   if (isLoading) return <div className={clsx('animate-pulse bg-gray-50 rounded dark:bg-gray-900', className)} style={{ height }} />
-  if (!quote || chartData.length === 0) return <div className={className} style={{ height: 0 }} />
+  if (chartData.length === 0) return <div className={className} style={{ height: 0 }} />
 
   return (
     <div className={clsx('group/chart relative', className)}>

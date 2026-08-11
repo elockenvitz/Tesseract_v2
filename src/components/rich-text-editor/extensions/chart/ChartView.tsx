@@ -14,6 +14,7 @@ import { clsx } from 'clsx'
 import { format, subDays, subMonths, startOfYear } from 'date-fns'
 import { financialDataService } from '../../../../lib/financial-data/browser-client'
 import { ChartDataAdapter } from '../../../charts/utils/dataAdapter'
+import { usePriceHistory, timeframeForDays } from '../../../../hooks/usePriceHistory'
 import type { ChartDataPoint } from '../../../charts/types'
 import type { ChartType, ChartStyle, ChartTimeframe } from '../ChartExtension'
 
@@ -94,25 +95,29 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
     enabled: chartType === 'comparison' && comparisonSymbols?.length > 0
   })
 
-  // Generate chart data
-  const chartData = useMemo(() => {
-    if (!quoteData) return []
-
-    let days = 30
+  // Days for the selected timeframe, mapped to a real-history request.
+  const days = useMemo(() => {
     switch (localTimeframe) {
-      case '1D': days = 1; break
-      case '5D': days = 5; break
-      case '1M': days = 30; break
-      case '3M': days = 90; break
-      case '6M': days = 180; break
-      case '1Y': days = 365; break
-      case 'YTD':
+      case '1D': return 1
+      case '5D': return 5
+      case '1M': return 30
+      case '3M': return 90
+      case '6M': return 180
+      case '1Y': return 365
+      case 'YTD': {
         const now = new Date()
-        days = Math.floor((now.getTime() - startOfYear(now).getTime()) / (1000 * 60 * 60 * 24))
-        break
+        return Math.floor((now.getTime() - startOfYear(now).getTime()) / (1000 * 60 * 60 * 24))
+      }
+      default: return 30
     }
+  }, [localTimeframe])
 
-    const data = ChartDataAdapter.generateHistoricalData(symbol, quoteData, days)
+  // Real closes. A chart embedded in a note is quoted and shared, so an
+  // invented series here outlives the screen it was drawn on.
+  const { data: history } = usePriceHistory(symbol, timeframeForDays(days))
+
+  const chartData = useMemo(() => {
+    const data = history?.points ?? []
 
     // For performance chart, convert to percentage change
     if (chartType === 'performance') {
@@ -129,7 +134,7 @@ export function ChartView({ node, updateAttributes, deleteNode, selected }: Char
     }
 
     return data
-  }, [quoteData, symbol, localTimeframe, chartType])
+  }, [history, chartType])
 
   // Handle timeframe change
   const handleTimeframeChange = useCallback((tf: ChartTimeframe) => {

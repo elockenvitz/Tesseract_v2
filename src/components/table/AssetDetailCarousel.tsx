@@ -29,7 +29,7 @@ import { formatPrice, formatPriceChange, formatRelativeTime } from './tableUtils
 import { useAssetHoldings, type AssetHolding } from '../../hooks/useAssetHoldings'
 import { useAssetEvents, type AssetEvent } from '../../hooks/useAssetEvents'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from '../charts/utils/dataAdapter'
+import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 
 // Process-stage metadata — mirrored locally from AssetTableView's constant.
 // Order matters for the progression viz (left-to-right pipeline).
@@ -512,18 +512,12 @@ function PricePanel({ asset, timeframe }: PanelContext) {
  * we don't want in this inline surface.
  */
 function InteractivePriceChart({ symbol, days }: { symbol: string; days: number }) {
-  const { data: quote, isLoading } = useQuery({
-    queryKey: ['expansion-chart-quote', symbol],
-    queryFn: () => financialDataService.getQuote(symbol),
-    refetchInterval: 30_000,
-    staleTime: 15_000
-  })
+  // Real closes; a price beside the line now comes from the same request, so
+  // the two cannot disagree. This drew a seeded random walk.
+  const { data: history, isLoading } = usePriceHistory(symbol, timeframeForDays(days))
 
-  const data = useMemo(() => {
-    if (!quote) return []
-    return ChartDataAdapter.generateHistoricalData(symbol, quote, days)
-  }, [symbol, quote, days])
 
+  const data = history?.points ?? []
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center text-xs text-gray-400 dark:text-gray-500">

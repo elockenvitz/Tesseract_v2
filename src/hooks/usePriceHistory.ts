@@ -24,6 +24,15 @@ export type PriceTimeframe = '1D' | '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'M
 export interface PricePoint {
   timestamp: number
   value: number
+  /**
+   * Same field the old ChartDataAdapter emitted. Several charts key their
+   * X axis on `date` rather than `timestamp`, so keeping it makes swapping
+   * them onto real data a one-line change instead of an axis rewrite —
+   * and stops a silently blank axis being the cost of fixing the prices.
+   */
+  date: Date
+  /** Bar volume where the provider supplied it — volume charts need it. */
+  volume?: number
 }
 
 export interface PriceHistory {
@@ -90,6 +99,25 @@ const STALE_MS: Record<PriceTimeframe, number> = {
   '1Y': 60 * 60_000, '5Y': 6 * 60 * 60_000, 'MAX': 24 * 60 * 60_000,
 }
 
+/**
+ * Nearest supported timeframe for a day count.
+ *
+ * Most chart surfaces were written against `generateHistoricalData(symbol,
+ * quote, days)` and think in days. Rather than rewrite each one's timeframe
+ * model, they map through here — so the swap to real data is a one-line change
+ * per component and their existing controls keep working.
+ */
+export function timeframeForDays(days: number): PriceTimeframe {
+  if (days <= 1) return '1D'
+  if (days <= 5) return '5D'
+  if (days <= 31) return '1M'
+  if (days <= 92) return '3M'
+  if (days <= 183) return '6M'
+  if (days <= 366) return '1Y'
+  if (days <= 1826) return '5Y'
+  return 'MAX'
+}
+
 export function usePriceHistory(
   symbol: string | null | undefined,
   timeframe: PriceTimeframe,
@@ -112,6 +140,7 @@ export function usePriceHistory(
       const result = (data as any)?.chart?.result?.[0]
       const timestamps: number[] = result?.timestamp ?? []
       const closes: unknown[] = result?.indicators?.quote?.[0]?.close ?? []
+      const volumes: unknown[] = result?.indicators?.quote?.[0]?.volume ?? []
 
       // Yahoo pads gaps (holidays, halts) with nulls. Dropping the pair keeps
       // the series honest — interpolating would invent prices, which is the
@@ -120,7 +149,14 @@ export function usePriceHistory(
       for (let i = 0; i < timestamps.length; i++) {
         const c = closes[i]
         if (typeof c === 'number' && Number.isFinite(c)) {
-          points.push({ timestamp: timestamps[i] * 1000, value: c })
+          const ms = timestamps[i] * 1000
+          const v = volumes[i]
+          points.push({
+            timestamp: ms,
+            value: c,
+            date: new Date(ms),
+            volume: typeof v === 'number' && Number.isFinite(v) ? v : undefined,
+          })
         }
       }
 
@@ -153,9 +189,9 @@ export function usePriceHistory(
           const bucket = BUCKET_MS[spec.interval] ?? 24 * 60 * 60_000
           if (liveTime - lastPoint.timestamp < bucket) {
             // Same bar — update it in place rather than adding a second one.
-            points[points.length - 1] = { timestamp: lastPoint.timestamp, value: live }
+            points[points.length - 1] = { timestamp: lastPoint.timestamp, value: live, date: lastPoint.date }
           } else {
-            points.push({ timestamp: liveTime, value: live })
+            points.push({ timestamp: liveTime, value: live, date: new Date(liveTime) })
           }
           stitched = true
         }

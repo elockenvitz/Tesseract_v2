@@ -30,7 +30,7 @@ import {
   Maximize2
 } from 'lucide-react'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from './utils/dataAdapter'
+import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { TechnicalIndicators } from './utils/indicators'
 
 interface AdvancedChartProps {
@@ -233,13 +233,14 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     }
   }, [customDateRange])
 
-  // Generate chart data based on selected metric and date range
-  const rawChartData = useMemo(() => {
-    if (!currentQuote) return []
-
-    const days = getDaysFromRange(dateRange)
-    return ChartDataAdapter.generateHistoricalData(symbol, currentQuote, days)
-  }, [symbol, currentQuote, dateRange, getDaysFromRange])
+  // Real closes. This drew ChartDataAdapter.generateHistoricalData — a seeded
+  // random walk — so every analysis layered on top of it (moving averages,
+  // metric transforms) was computed over invented prices.
+  const { data: history } = usePriceHistory(symbol, timeframeForDays(getDaysFromRange(dateRange)))
+  // Cast to the adapter's point shape: downstream processing attaches derived
+  // series (SMA, RSI, MACD) as extra keys, which the narrower PricePoint type
+  // does not model.
+  const rawChartData = (history?.points ?? []) as any[]
 
   // Process data based on selected metric
   const chartData = useMemo(() => {
