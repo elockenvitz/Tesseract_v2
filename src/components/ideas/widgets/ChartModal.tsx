@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   X, TrendingUp, TrendingDown, BarChart3, Maximize2, Minimize2,
   ExternalLink
 } from 'lucide-react'
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { financialDataService } from '../../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from '../../charts/utils/dataAdapter'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { usePriceHistory, timeframeForDays } from '../../../hooks/usePriceHistory'
 
 interface ChartModalProps {
   symbol: string
@@ -40,36 +38,22 @@ export function ChartModal({
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1Y')
   const [isExpanded, setIsExpanded] = useState(false)
 
-  // Fetch quote data
-  const { data: quote, isLoading } = useQuery({
-    queryKey: ['chart-modal-quote', symbol],
-    queryFn: async () => {
-      try {
-        return await financialDataService.getQuote(symbol)
-      } catch {
-        return null
-      }
-    },
-    enabled: isOpen,
-    staleTime: 60000
-  })
+  // The separate quote fetch is gone: a price rendered beside a line drawn
+  // from different data on a different cache can disagree by a tick and make a
+  // correct chart look broken. One request supplies both.
 
   // Generate chart data based on timeframe
-  const chartData = useMemo(() => {
-    if (!quote) return []
+  // Real closes. Both branches previously synthesised: generateIntradayData is
+  // an unseeded Math.random() walk, generateHistoricalData a seeded one.
+  const days = selectedTimeframe === 'YTD'
+    ? Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (1000 * 60 * 60 * 24))
+    : (timeframes.find(t => t.value === selectedTimeframe)?.days || 365)
+  const { data: history, isLoading } = usePriceHistory(
+    symbol,
+    selectedTimeframe === '1D' ? '1D' : timeframeForDays(days),
+  )
+  const chartData = history?.points ?? []
 
-    let days: number
-    if (selectedTimeframe === 'YTD') {
-      days = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (1000 * 60 * 60 * 24))
-    } else if (selectedTimeframe === '1D') {
-      // For 1D, use intraday data
-      return ChartDataAdapter.generateIntradayData(quote, 24)
-    } else {
-      days = timeframes.find(t => t.value === selectedTimeframe)?.days || 365
-    }
-
-    return ChartDataAdapter.generateHistoricalData(symbol, quote, days)
-  }, [symbol, quote, selectedTimeframe])
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -138,9 +122,9 @@ export function ChartModal({
               )}
             </div>
 
-            {quote && (
+            {history?.currentPrice != null && (
               <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-300 dark:border-gray-600">
-                <span className="text-lg font-semibold">${quote.price.toFixed(2)}</span>
+                <span className="text-lg font-semibold">${(history?.currentPrice ?? 0).toFixed(2)}</span>
                 {stats && (
                   <span className={clsx(
                     'flex items-center text-sm font-medium',

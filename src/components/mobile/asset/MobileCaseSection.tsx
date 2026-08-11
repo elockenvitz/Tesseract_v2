@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { Check, History, Loader2, Pencil, X } from 'lucide-react'
+import { Check, FileText, History, Loader2, Pencil, X } from 'lucide-react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useContributions } from '../../../hooks/useContributions'
 import { ExpandableText } from '../ExpandableText'
@@ -148,7 +148,12 @@ export function MobileCaseSection({
   }
 
   return (
-    <section className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+    /* Same shell as a theme research field: left accent, icon badge, header
+       rule. The two surfaces ask for the same act — write your view of this
+       thing — and previously looked like different products, so moving between
+       an asset and a theme felt like a context switch rather than a
+       navigation. */
+    <section className="rounded-xl border border-l-4 border-gray-200 border-l-blue-400 dark:border-gray-700 dark:border-l-blue-500 bg-white dark:bg-gray-900 overflow-hidden">
       {/* Title and actions are separate rows rather than one. Field names come
           from the organisation's template and run long ("Where we are different
           from consensus"); sharing a row with two buttons truncated most of
@@ -156,6 +161,9 @@ export function MobileCaseSection({
           field. The title now wraps and the actions sit under it. */}
       <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-start gap-2">
+          <span className="mt-0.5 shrink-0 p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30">
+            <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+          </span>
           <h3 className="flex-1 min-w-0 text-sm font-semibold leading-snug text-gray-900 dark:text-gray-100">
             {title}
           </h3>

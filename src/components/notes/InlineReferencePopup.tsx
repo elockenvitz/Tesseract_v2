@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { Loader2, ArrowRight, X } from 'lucide-react'
 import { financialDataService, type Quote } from '../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from '../charts/utils/dataAdapter'
+import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
 
@@ -195,10 +195,9 @@ function ChartView({ symbol, quote }: { symbol: string; quote: Quote | null | un
   const isPositive = (quote?.changePercent ?? 0) >= 0
   const color = isPositive ? '#10b981' : '#ef4444'
 
-  const data = useMemo(() => {
-    return ChartDataAdapter.generateHistoricalData(symbol, quote ?? undefined, days)
-  }, [symbol, quote, days])
-
+  // Real closes rather than a seeded random walk drawn beside a live quote.
+  const { data: history } = usePriceHistory(symbol, timeframeForDays(days))
+  const data = history?.points ?? []
   return (
     <div className="px-2 pb-1">
       <div className="h-[140px]">

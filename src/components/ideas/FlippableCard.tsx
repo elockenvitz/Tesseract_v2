@@ -1,12 +1,10 @@
 import React, { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   X, TrendingUp, TrendingDown, BarChart3, RotateCcw
 } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { financialDataService } from '../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from '../charts/utils/dataAdapter'
+import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 
 interface FlippableCardProps {
   children: React.ReactNode
@@ -38,27 +36,15 @@ export function FlippableCard({
 }: FlippableCardProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1Y')
 
-  // Fetch quote data only when flipped
-  const { data: quote, isLoading } = useQuery({
-    queryKey: ['flippable-chart-quote', symbol],
-    queryFn: async () => {
-      if (!symbol) return null
-      try {
-        return await financialDataService.getQuote(symbol)
-      } catch {
-        return null
-      }
-    },
+  // Real closes, fetched only once the card is flipped. This drew
+  // ChartDataAdapter.generateHistoricalData — a seeded random walk anchored to
+  // the quote — so every point but the last was invented.
+  const days = timeframes.find(t => t.value === selectedTimeframe)?.days || 365
+  const { data: history, isLoading } = usePriceHistory(symbol, timeframeForDays(days), {
     enabled: isFlipped && !!symbol,
-    staleTime: 60000
   })
-
-  // Generate chart data
-  const chartData = useMemo(() => {
-    if (!quote || !symbol) return []
-    const days = timeframes.find(t => t.value === selectedTimeframe)?.days || 365
-    return ChartDataAdapter.generateHistoricalData(symbol, quote, days)
-  }, [symbol, quote, selectedTimeframe])
+  const chartData = history?.points ?? []
+  const quote = history?.currentPrice ?? null
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -116,7 +102,7 @@ export function FlippableCard({
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-900 dark:text-white">${symbol}</span>
             {quote && (
-              <span className="text-sm text-gray-600 dark:text-gray-400">${quote.price.toFixed(2)}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">${quote.toFixed(2)}</span>
             )}
             {stats && (
               <span className={clsx(

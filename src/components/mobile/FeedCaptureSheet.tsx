@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowLeft, Lightbulb, MessageSquareQuote, Target, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Lightbulb, List, MessageSquareQuote, Tag, Target, TrendingUp } from 'lucide-react'
 import { BottomSheet } from './BottomSheet'
+import { CaptureFilePicker } from './CaptureFilePicker'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
 import { QuickTradeIdeaCapture } from '../thoughts/QuickTradeIdeaCapture'
 import { RecommendationQuickModal } from '../thoughts/RecommendationQuickModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import type { CapturedContext } from '../thoughts/ContextSelector'
 
-type CaptureKind = 'thought' | 'trade-idea' | 'recommendation' | 'prompt'
+type CaptureKind = 'thought' | 'trade-idea' | 'recommendation' | 'prompt' | 'add-to-list' | 'add-to-theme'
 
 interface FeedCaptureSheetProps {
   open: boolean
@@ -28,6 +29,8 @@ const OPTIONS: {
   hint: string
   icon: typeof Lightbulb
   tone: string
+  /** Hidden when the tile has no asset — filing needs something to file. */
+  needsAsset?: boolean
 }[] = [
   {
     kind: 'thought',
@@ -56,6 +59,27 @@ const OPTIONS: {
     hint: 'Ask someone for work or an answer.',
     icon: MessageSquareQuote,
     tone: 'text-purple-600 bg-purple-50 dark:bg-purple-900/30',
+  },
+  // Filing, not writing. "Keep an eye on this" is the most common reaction to
+  // a feed card and every option above it produces prose, so the only way to
+  // act on it was to leave the feed and find the list — by which point the
+  // impulse has cost more than it was worth. These need an asset, so they are
+  // hidden on cards that have none.
+  {
+    kind: 'add-to-list',
+    label: 'Add to a list',
+    hint: 'File it somewhere you already watch.',
+    icon: List,
+    tone: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30',
+    needsAsset: true,
+  },
+  {
+    kind: 'add-to-theme',
+    label: 'Add to a theme',
+    hint: 'Connect it to a thesis you are building.',
+    icon: Tag,
+    tone: 'text-fuchsia-600 bg-fuchsia-50 dark:bg-fuchsia-900/30',
+    needsAsset: true,
   },
 ]
 
@@ -130,7 +154,7 @@ export function FeedCaptureSheet({
             </p>
           )}
           <div className="space-y-1">
-            {OPTIONS.map(opt => {
+            {OPTIONS.filter(opt => !opt.needsAsset || !!assetId).map(opt => {
               const Icon = opt.icon
               return (
                 <button
@@ -189,6 +213,14 @@ export function FeedCaptureSheet({
                 assetName={assetName ?? undefined}
                 onSuccess={() => done('trade-idea')}
                 onCancel={() => setKind(null)}
+              />
+            )}
+            {(kind === 'add-to-list' || kind === 'add-to-theme') && assetId && (
+              <CaptureFilePicker
+                target={kind === 'add-to-list' ? 'list' : 'theme'}
+                assetId={assetId}
+                assetSymbol={assetSymbol}
+                onDone={() => done(kind)}
               />
             )}
           </div>

@@ -227,16 +227,18 @@ export function ThemeContributionSection({
         {/* Toolbar — only the edit pencil, shown on hover (matches asset page) */}
         <div className="flex items-center gap-2 shrink-0">
           {showEditButton && (
-            /* Named on a phone. A bare 44px primary square with a 14px pencil
-               is the largest thing in the header and still does not say what
-               it edits; the label costs one word and removes the guess. */
+            /* A quiet pill, matching the asset case fields exactly — same
+               shape, same weight, same words. A filled primary block made the
+               single most emphatic thing on the page the act of starting to
+               type, and it read as a different product from the asset page
+               asking for the same thing. */
             <button
               onClick={startEdit}
               title={ownContribution ? 'Edit your view' : 'Add your view'}
-              className="flex items-center justify-center gap-1.5 px-2 py-1 sm:p-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded transition-colors animate-in fade-in duration-150"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors animate-in fade-in duration-150 no-touch-target"
             >
               <Edit3 className="w-3.5 h-3.5 shrink-0" />
-              <span className="sm:hidden">{ownContribution ? 'Edit' : 'Add'}</span>
+              {ownContribution ? 'Edit' : 'Add'}
             </button>
           )}
         </div>
@@ -482,17 +484,17 @@ function FocusedOwn({ own, placeholder, onStartEdit, onClear }: {
           )}
         </div>
       ) : (
-        // Mirror the asset page's empty state — styled "Add your view"
-        // button rather than an italic placeholder line.
-        <div className="text-center py-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); onStartEdit() }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            Add your view
-          </button>
-        </div>
+        /* The empty state is the prompt itself, left-aligned with the prose
+           that will replace it rather than centred — a centred button in an
+           otherwise left-aligned card reads as a separate element instead of
+           the absence of the content it stands in for. */
+        <button
+          onClick={(e) => { e.stopPropagation(); onStartEdit() }}
+          className="w-full flex items-center gap-2 py-1.5 text-left text-sm text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+        >
+          <Edit3 className="w-3.5 h-3.5 shrink-0" />
+          {placeholder}
+        </button>
       )}
     </div>
   )

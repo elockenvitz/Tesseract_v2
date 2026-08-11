@@ -7,12 +7,23 @@
  * either, because scores are computed per-source on different scales and one
  * source reliably wins.
  *
- * The rule here: never emit more than `maxRun` consecutive entries of the same
- * kind while any other kind still has items. Within that constraint, always
- * take the highest-scoring available entry, so relevance still drives order —
- * diversity is a tie-breaker, not a shuffle. Deliberately deterministic:
- * randomising would make the feed feel arbitrary and make bug reports
- * impossible to reproduce.
+ * Two rules:
+ *
+ *  1. Never emit more than `maxRun` consecutive entries of the same kind while
+ *     another kind still has items, so the feed never reads as "all decisions,
+ *     then all ideas".
+ *  2. Within a kind, order by weighted random draw rather than by rank — a
+ *     high-scoring item is very likely to appear early, but the deal is
+ *     different every time.
+ *
+ * Rule 2 exists because rank-ordering made the feed identical on every visit.
+ * The sources return the same rows in the same order, so sorting each by score
+ * re-deals the same hand; varying only *which kind* comes next rotates the
+ * same cards past the reader. Importance should bias position, not fix it.
+ *
+ * Randomness is seeded, not `Math.random()`: a given render is reproducible,
+ * so the order is stable while the user scrolls and a bug report can be
+ * replayed. A refresh passes a new seed and genuinely re-deals.
  */
 
 export interface InterleavableEntry {
@@ -42,6 +53,61 @@ export interface InterleaveOptions {
    * be replayed.
    */
   seed?: number
+  /**
+   * How strongly rank should determine position *within* a kind.
+   *
+   *   0    — ignore score; a uniform shuffle.
+   *   1    — probability proportional to weight.
+   *   2–3  — the top few items are very likely to lead, the tail still moves.
+   *   Infinity — strict rank order (the old behaviour).
+   *
+   * Applies only when `seed` is set. Default 2: the feed opens with something
+   * that genuinely matters most of the time, without ever being the same
+   * deal twice.
+   */
+  priorityBias?: number
+}
+
+/**
+ * Order items so higher-scoring ones are *likely* to come first without being
+ * guaranteed to — Efraimidis–Spirakis weighted sampling without replacement.
+ *
+ * Each item draws a key of `u^(1/w)`; sorting by that key descending yields a
+ * permutation where the chance of an item leading is proportional to its
+ * weight. Raising the normalised score to `bias` sharpens or flattens that
+ * preference.
+ *
+ * This is the piece that makes the feed feel alive. Sorting each source
+ * strictly by score is what made every visit identical: the sources return the
+ * same rows in the same order, so a deterministic sort re-deals exactly the
+ * same hand, and shuffling only *which kind* comes next just rotates the same
+ * cards past the reader.
+ */
+function weightedOrder<T extends InterleavableEntry>(
+  items: T[],
+  random: () => number,
+  bias: number
+): T[] {
+  if (items.length < 2) return items
+  if (!Number.isFinite(bias)) return [...items].sort((a, b) => b.score - a.score)
+
+  const scores = items.map(i => i.score)
+  const min = Math.min(...scores)
+  const max = Math.max(...scores)
+  const span = max - min
+
+  return items
+    .map(item => {
+      // Normalise into (0,1]. The floor keeps the weakest item's weight above
+      // zero so it can still surface occasionally rather than being pinned to
+      // the bottom of every deal.
+      const normalised = span > 0 ? (item.score - min) / span : 1
+      const weight = Math.pow(0.05 + 0.95 * normalised, bias)
+      const u = Math.max(random(), Number.EPSILON)
+      return { item, key: Math.pow(u, 1 / weight) }
+    })
+    .sort((a, b) => b.key - a.key)
+    .map(entry => entry.item)
 }
 
 /** Small deterministic PRNG (mulberry32). Adequate for shuffling a feed. */
@@ -57,7 +123,7 @@ function makeRandom(seed: number): () => number {
 
 export function interleaveByKind<T extends InterleavableEntry>(
   entries: T[],
-  { maxRun = 1, leadWith, seed }: InterleaveOptions = {}
+  { maxRun = 1, leadWith, seed, priorityBias = 2 }: InterleaveOptions = {}
 ): T[] {
   const random = seed == null ? null : makeRandom(seed)
   // Bucket, preserving each source's own ordering by score.
@@ -67,7 +133,14 @@ export function interleaveByKind<T extends InterleavableEntry>(
     if (bucket) bucket.push(entry)
     else buckets.set(entry.kind, [entry])
   }
-  for (const bucket of buckets.values()) bucket.sort((a, b) => b.score - a.score)
+  // Within a kind: weighted-random when seeded, strict rank otherwise. The
+  // unseeded path stays deterministic so tests and bug reports can rely on it.
+  for (const [kind, bucket] of buckets) {
+    buckets.set(
+      kind,
+      random ? weightedOrder(bucket, random, priorityBias) : bucket.sort((a, b) => b.score - a.score)
+    )
+  }
 
   const out: T[] = []
 

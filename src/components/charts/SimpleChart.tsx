@@ -1,5 +1,3 @@
-import React from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
   LineChart,
   Line,
@@ -10,8 +8,7 @@ import {
   ResponsiveContainer
 } from 'recharts'
 import { BarChart3 } from 'lucide-react'
-import { financialDataService } from '../../lib/financial-data/browser-client'
-import { ChartDataAdapter } from './utils/dataAdapter'
+import { usePriceHistory } from '../../hooks/usePriceHistory'
 
 interface SimpleChartProps {
   symbol: string
@@ -20,22 +17,11 @@ interface SimpleChartProps {
 }
 
 export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChartProps) {
-  // Fetch current quote
-  const { data: currentQuote, isLoading } = useQuery({
-    queryKey: ['simple-chart-quote', symbol],
-    queryFn: async () => {
-      const quote = await financialDataService.getQuote(symbol)
-      return quote
-    },
-    refetchInterval: 30000,
-    staleTime: 15000
-  })
-
-  // Generate chart data
-  const chartData = React.useMemo(() => {
-    if (!currentQuote) return []
-    return ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 30)
-  }, [symbol, currentQuote])
+  // Real closes, one request supplying both the line and the price beside it.
+  // This drew ChartDataAdapter.generateHistoricalData — a seeded random walk —
+  // next to a genuine quote, so the number was real and the shape invented.
+  const { data: history, isLoading } = usePriceHistory(symbol, '1M')
+  const chartData = history?.points ?? []
 
   if (isLoading) {
     return (
@@ -47,7 +33,7 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
     )
   }
 
-  if (!currentQuote || chartData.length === 0) {
+  if (chartData.length === 0) {
     return (
       <div className={`w-full ${className}`} style={{ height }}>
         <div className="bg-gray-50 rounded-lg h-full flex items-center justify-center dark:bg-gray-900">
@@ -78,11 +64,13 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
         <div className="text-sm">
           <div>
             <span className="text-gray-600 dark:text-gray-400">Current:</span>
-            <span className="ml-1 font-medium">${currentQuote.price.toFixed(2)}</span>
+            <span className="ml-1 font-medium">${(history?.currentPrice ?? 0).toFixed(2)}</span>
           </div>
-          <div className={`${currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {currentQuote.change >= 0 ? '+' : ''}${currentQuote.change.toFixed(2)}
-            ({currentQuote.change >= 0 ? '+' : ''}{currentQuote.changePercent.toFixed(2)}%)
+          {/* The move over the 30 days being drawn, so the figure and the line
+              describe the same period. */}
+          <div className={`${(history?.windowChange ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {(history?.windowChange ?? 0) >= 0 ? '+' : ''}${(history?.windowChange ?? 0).toFixed(2)}
+            ({(history?.windowChange ?? 0) >= 0 ? '+' : ''}{(history?.windowChangePercent ?? 0).toFixed(2)}%)
           </div>
         </div>
       </div>

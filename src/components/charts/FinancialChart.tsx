@@ -4,6 +4,7 @@ import { CalendarDays, TrendingUp, BarChart3, Clock, Zap } from 'lucide-react'
 import { InteractiveChart } from './InteractiveChart'
 import type { ChartDataPoint, TechnicalIndicator, ChartConfig } from './types'
 import { ChartDataAdapter } from './utils/dataAdapter'
+import { usePriceHistory, timeframeForDays, type PriceTimeframe } from '../../hooks/usePriceHistory'
 import { financialDataService, type Quote } from '../../lib/financial-data/browser-client'
 
 interface FinancialChartProps {
@@ -37,40 +38,30 @@ export function FinancialChart({
   })
 
   // Generate chart data based on timeframe
-  const chartData = useMemo(() => {
-    if (!currentQuote) return []
-
-    let data: ChartDataPoint[]
-
+  // Real closes. Every branch below synthesised: generateIntradayData is an
+  // unseeded Math.random() walk, generateHistoricalData a seeded one. The 5D
+  // case additionally spliced two independent fake series together, which
+  // produced a discontinuity at the join that looked like a genuine gap.
+  const resolvedTimeframe = useMemo<PriceTimeframe>(() => {
     switch (selectedTimeframe) {
-      case '1D':
-        data = ChartDataAdapter.generateIntradayData(currentQuote, 24)
-        break
-      case '5D':
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 5)
-        // Add more granular intraday data for last day
-        const intradayData = ChartDataAdapter.generateIntradayData(currentQuote, 8)
-        data = [...data.slice(0, -1), ...intradayData]
-        break
-      case '1M':
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 30)
-        break
-      case '3M':
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 90)
-        break
-      case '6M':
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 180)
-        break
-      case '1Y':
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 365)
-        break
-      case 'YTD':
-        const daysFromYearStart = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (1000 * 60 * 60 * 24))
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, daysFromYearStart)
-        break
-      default:
-        data = ChartDataAdapter.generateHistoricalData(symbol, currentQuote, 365)
+      case '1D': return '1D'
+      case '5D': return '5D'
+      case '1M': return '1M'
+      case '3M': return '3M'
+      case '6M': return '6M'
+      case '1Y': return '1Y'
+      case 'YTD': {
+        const days = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (1000 * 60 * 60 * 24))
+        return timeframeForDays(days)
+      }
+      default: return '1Y'
     }
+  }, [selectedTimeframe])
+
+  const { data: history } = usePriceHistory(symbol, resolvedTimeframe)
+
+  const chartData = useMemo(() => {
+    const data: ChartDataPoint[] = (history?.points ?? []) as unknown as ChartDataPoint[]
 
     // Transform data based on chart type
     switch (selectedChartType) {
@@ -81,7 +72,7 @@ export function FinancialChart({
       default:
         return data
     }
-  }, [symbol, currentQuote, selectedTimeframe, selectedChartType])
+  }, [history, selectedChartType])
 
   // Chart configuration
   const chartConfig: ChartConfig = {

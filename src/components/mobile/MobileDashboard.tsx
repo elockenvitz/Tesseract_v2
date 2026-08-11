@@ -18,6 +18,15 @@ import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
+import { NewsFeedTile } from './NewsFeedTile'
+import { TemplateFeedTile } from './TemplateFeedTile'
+import { useMarketNews } from '../../hooks/useMarketNews'
+import { useMarketEvents } from '../../hooks/useMarketEvents'
+import { useMarketData } from '../../hooks/useMarketData'
+import {
+  unusualMovers, outsizedActiveRisk, earningsAhead, earningsResult,
+  corporateActions, economicReleases,
+} from '../../lib/mobile/feed-templates'
 import { useDerivedInsights } from '../../hooks/mobile/useDerivedInsights'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
 import { FeedCaptureSheet } from './FeedCaptureSheet'
@@ -239,6 +248,124 @@ export function MobileDashboard({
     return () => clearTimeout(timer)
   }, [userId, visibleItems])
 
+  // News for the names already in front of the reader. Deliberately derived
+  // from what the feed is showing rather than the whole book: each symbol
+  // costs a provider call, and a story about a name you are not looking at is
+  // not why you opened this.
+  const newsSymbols = useMemo(() => {
+    const out: string[] = []
+    for (const item of visibleItems) {
+      const sym = ('asset' in item && item.asset ? item.asset.symbol : null) as string | null
+      if (sym) out.push(sym)
+    }
+    for (const sig of realSignals) {
+      const sym = sig.relatedAssets?.[0]?.symbol
+      if (sym) out.push(sym)
+    }
+    return Array.from(new Set(out)).slice(0, 12)
+  }, [visibleItems, realSignals])
+
+  const { data: news } = useMarketNews(newsSymbols)
+  const newsItems = news?.items ?? []
+
+  const { data: events } = useMarketEvents(newsSymbols)
+
+  /** Symbol → asset, for turning a story's tickers into things you can open. */
+  const assetBySymbol = useMemo(() => {
+    const map = new Map<string, { id: string; symbol: string; companyName?: string | null; sector?: string | null }>()
+    for (const item of visibleItems) {
+      const a = ('asset' in item ? item.asset : null) as any
+      if (a?.symbol) map.set(a.symbol.toUpperCase(), { id: a.id, symbol: a.symbol, companyName: a.company_name, sector: a.sector })
+    }
+    for (const sig of realSignals) {
+      for (const a of (sig.relatedAssets ?? []) as any[]) {
+        if (a?.symbol) map.set(a.symbol.toUpperCase(), { id: a.id, symbol: a.symbol, companyName: a.company_name, sector: a.sector })
+      }
+    }
+    return map
+  }, [visibleItems, realSignals])
+
+  // Live quotes for the names on screen — the input to the unusual-mover and
+  // earnings-reaction templates.
+  const { quotes: feedQuotes } = useMarketData(newsSymbols, { enabled: newsSymbols.length > 0 })
+
+  // Active weight needs both sides: what the book holds and what the benchmark
+  // holds. Fetched together and joined here rather than per-card, which would
+  // be a query per position.
+  const { data: activeRiskRows = [] } = useQuery({
+    queryKey: ['feed-active-risk', userId],
+    enabled: !!userId,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const { data: portfolios } = await supabase
+        .from('portfolios')
+        .select('id')
+        .eq('status', 'active')
+        .limit(1)
+      const portfolioId = (portfolios as any[])?.[0]?.id as string | undefined
+      if (!portfolioId) return []
+
+      const [{ data: holdings }, { data: bench }] = await Promise.all([
+        supabase
+          .from('portfolio_holdings')
+          .select('asset_id, shares, price, date, assets(id, symbol)')
+          .eq('portfolio_id', portfolioId)
+          .order('date', { ascending: false, nullsFirst: false }),
+        supabase
+          .from('portfolio_benchmark_weights')
+          .select('asset_id, weight')
+          .eq('portfolio_id', portfolioId),
+      ])
+
+      // Same dated-snapshot rule as the portfolio page: only the newest row
+      // per asset is a live position.
+      const current = new Map<string, any>()
+      for (const h of (holdings as any[]) ?? []) {
+        if (!current.has(h.asset_id)) current.set(h.asset_id, h)
+      }
+      const rows = [...current.values()]
+      const total = rows.reduce((s, h) => s + (Number(h.shares) || 0) * (Number(h.price) || 0), 0)
+      if (total <= 0) return []
+
+      const benchByAsset = new Map((bench ?? []).map((b: any) => [b.asset_id, Number(b.weight)]))
+      return rows
+        .map((h: any) => ({
+          assetId: h.asset_id,
+          symbol: h.assets?.symbol ?? '',
+          weight: ((Number(h.shares) || 0) * (Number(h.price) || 0)) / total * 100,
+          benchmarkWeight: benchByAsset.has(h.asset_id) ? benchByAsset.get(h.asset_id)! : null,
+        }))
+        .filter(r => r.symbol)
+    },
+  })
+
+  /**
+   * Derived content cards.
+   *
+   * Templates are pure functions over data we already hold, so this is a memo
+   * rather than a query — and each returns nothing when there is nothing worth
+   * saying, which is what keeps the feed from filling with cards that always
+   * fire.
+   */
+  const templateCards = useMemo(() => {
+    const quoteList = newsSymbols
+      .map(sym => {
+        const q = feedQuotes.get(sym)
+        return q ? { symbol: sym, price: q.price, changePercent: q.changePercent } : null
+      })
+      .filter(Boolean) as { symbol: string; price: number; changePercent: number }[]
+    const quoteMap = new Map(quoteList.map(q => [q.symbol.toUpperCase(), q]))
+
+    return [
+      ...unusualMovers(quoteList, assetBySymbol as any),
+      ...outsizedActiveRisk(activeRiskRows),
+      ...earningsAhead(events?.upcomingEarnings ?? [], assetBySymbol as any),
+      ...earningsResult(events?.recentEarnings ?? [], assetBySymbol as any, quoteMap),
+      ...corporateActions(events?.corporateActions ?? [], assetBySymbol as any, quoteMap),
+      ...economicReleases(events?.economicReleases ?? []),
+    ]
+  }, [newsSymbols, feedQuotes, assetBySymbol, events, activeRiskRows])
+
   // One card per pair. The highest-priority leg is kept — the list is already
   // ordered by attention priority — and the rest are dropped rather than
   // rendered as separate screens for what is one decision.
@@ -301,12 +428,35 @@ export function MobileDashboard({
         round,
       }))
     )
-    return interleaveByKind<any>([...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries], {
-      maxRun: 1,
-      leadWith: 'attention',
-      seed: shuffleSeed,
-    })
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, cycle, interestAtMount, shuffleSeed])
+
+    // News is the only source that brings genuinely new material between
+    // visits — everything else is the book restated. Ranked on the provider's
+    // own relevance where there is one, recency otherwise, then normalised to
+    // the same positional scale as every other kind.
+    const newsEntries = (newsItems ?? []).map((n, idx) => ({
+      kind: 'news' as const,
+      score: newsItems.length - idx,
+      news: n,
+    }))
+
+    // Derived templates share one kind so the interleaver treats them as a
+    // single stream. Grouping them per-template would let six sparse kinds
+    // dominate the rotation over the sources that actually carry the book.
+    const templateEntries = templateCards.map(c => ({
+      kind: 'template' as const,
+      score: c.score,
+      card: c,
+    }))
+
+    return interleaveByKind<any>(
+      [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries],
+      {
+        maxRun: 1,
+        leadWith: 'attention',
+        seed: shuffleSeed,
+      }
+    )
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -488,6 +638,44 @@ export function MobileDashboard({
                     assetId: entry.signal.asset?.id ?? null,
                     symbol: entry.signal.asset?.symbol ?? null,
                     name: entry.signal.asset?.company_name ?? null,
+                  })}
+                />
+              </section>
+            )
+          }
+
+          if (entry.kind === 'template') {
+            const c = entry.card
+            return (
+              <section key={c.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+                <TemplateFeedTile
+                  card={c}
+                  onAssetClick={openAsset}
+                  onCapture={() => setCaptureCtx({
+                    assetId: c.assetId ?? null,
+                    symbol: c.symbol ?? null,
+                    name: null,
+                  })}
+                />
+              </section>
+            )
+          }
+
+          if (entry.kind === 'news') {
+            const n = entry.news
+            const linked = n.symbols
+              .map((s: string) => assetBySymbol.get(s.toUpperCase()) ?? null)
+              .find(Boolean) ?? null
+            return (
+              <section key={n.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+                <NewsFeedTile
+                  item={n}
+                  assetForSymbol={(sym) => assetBySymbol.get(sym.toUpperCase()) ?? null}
+                  onAssetClick={openAsset}
+                  onCapture={() => setCaptureCtx({
+                    assetId: linked?.id ?? null,
+                    symbol: linked?.symbol ?? null,
+                    name: null,
                   })}
                 />
               </section>
