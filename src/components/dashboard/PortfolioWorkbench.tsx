@@ -28,6 +28,7 @@ import {
   Check,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { currentHoldings } from '../../lib/portfolio/currentHoldings'
 import { useAuth } from '../../hooks/useAuth'
 import { useActiveRuns, type ActiveRun } from '../../hooks/workflow/useActiveRuns'
 import type { CockpitViewModel } from '../../types/cockpit'
@@ -105,9 +106,11 @@ export function PortfolioWorkbench({
         .from('portfolio_holdings')
         .select(`*, portfolio_id, assets(id, symbol, company_name, sector, industry, thesis, process_stage, updated_at)`)
         .in('portfolio_id', queryIds)
-        .order('date', { ascending: false })
+        .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      return data || []
+      // Spans several portfolios, so the key includes portfolio_id — keying on
+      // asset alone would drop the same name held in a second portfolio.
+      return currentHoldings(data as any[], 'portfolio-asset')
     },
   })
 

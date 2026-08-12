@@ -26,6 +26,7 @@ import {
   Lightbulb,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { currentHoldings } from '../../lib/portfolio/currentHoldings'
 import type { CockpitViewModel } from '../../types/cockpit'
 import type { DashboardItem } from '../../types/dashboard-item'
 import {
@@ -85,9 +86,10 @@ export function PortfolioCommandCenter({
         .from('portfolio_holdings')
         .select(`*, assets(id, symbol, company_name, sector, industry, thesis, process_stage, updated_at)`)
         .eq('portfolio_id', portfolioId)
-        .order('date', { ascending: false })
+        .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      return data || []
+      // Newest snapshot per asset only; see currentHoldings.
+      return currentHoldings(data as any[])
     },
   })
 
