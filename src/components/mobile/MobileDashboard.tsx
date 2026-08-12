@@ -37,6 +37,16 @@ import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/fe
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
+/** Human names for the feed's internal kind keys, used by the filter banner. */
+const KIND_LABELS: Record<string, string> = {
+  attention: 'decisions',
+  idea: 'ideas',
+  signal: 'signals',
+  insight: 'insights',
+  news: 'news',
+  template: 'market events',
+}
+
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
   onShare?: (item: ScoredFeedItem) => void
@@ -113,6 +123,13 @@ export function MobileDashboard({
   // Resume the previous session if there is a recent one, so returning from an
   // asset lands where the user left. A fresh visit gets a new seed, which is
   // what makes a genuine refresh reorder the feed.
+  /**
+   * Show one kind only. Set by tapping a tile's category chip — the chip names
+   * what a card is, so it is the obvious control for "more like this", and
+   * having it do nothing was a dead affordance on every tile.
+   */
+  const [kindFilter, setKindFilter] = useState<string | null>(null)
+
   const [resumed] = useState(() => loadFeedSession())
   const [shuffleSeed, setShuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
 
@@ -448,15 +465,24 @@ export function MobileDashboard({
       card: c,
     }))
 
-    return interleaveByKind<any>(
-      [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries],
-      {
-        maxRun: 1,
-        leadWith: 'attention',
-        seed: shuffleSeed,
-      }
-    )
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed])
+    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries]
+
+    // Filtering before the interleave rather than after: interleaving exists to
+    // stop one kind running consecutively, and with a single kind selected that
+    // constraint has nothing to do — applying it first would just be a shuffle
+    // fighting a rule that can never be satisfied.
+    const pool = kindFilter
+      ? all.filter(e => (kindFilter === 'template'
+          ? e.kind === 'template'
+          : e.kind === kindFilter))
+      : all
+
+    return interleaveByKind<any>(pool, {
+      maxRun: 1,
+      leadWith: kindFilter ? undefined : 'attention',
+      seed: shuffleSeed,
+    })
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -577,6 +603,24 @@ export function MobileDashboard({
     <div className="relative h-full overflow-hidden">
       <PullToRefreshIndicator ref={indicatorRef as any} isRefreshing={isRefreshing} armed={armed} />
 
+      {/* Active filter. Sits above the scroller rather than inside it so it
+          cannot scroll away — a filter you cannot see is a feed that looks
+          broken. */}
+      {kindFilter && (
+        <div className="absolute top-0 inset-x-0 z-40 flex items-center gap-2 px-3 py-2 bg-gray-900/90 text-white backdrop-blur-sm pt-safe">
+          <span className="text-xs font-medium">
+            Showing {KIND_LABELS[kindFilter] ?? kindFilter} only
+          </span>
+          <button
+            type="button"
+            onClick={() => setKindFilter(null)}
+            className="ml-auto text-xs font-semibold underline underline-offset-2 no-touch-target"
+          >
+            Show everything
+          </button>
+        </div>
+      )}
+
       <div
         ref={setScroller}
         className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain"
@@ -651,6 +695,7 @@ export function MobileDashboard({
                 <TemplateFeedTile
                   card={c}
                   onAssetClick={openAsset}
+                  onFilterKind={() => setKindFilter('template')}
                   onCapture={() => setCaptureCtx({
                     assetId: c.assetId ?? null,
                     symbol: c.symbol ?? null,
@@ -672,6 +717,7 @@ export function MobileDashboard({
                   item={n}
                   assetForSymbol={(sym) => assetBySymbol.get(sym.toUpperCase()) ?? null}
                   onAssetClick={openAsset}
+                  onFilterKind={() => setKindFilter('news')}
                   onCapture={() => setCaptureCtx({
                     assetId: linked?.id ?? null,
                     symbol: linked?.symbol ?? null,
