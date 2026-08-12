@@ -12,6 +12,8 @@ interface TemplateFeedTileProps {
   card: TemplateCard
   onAssetClick?: (assetId: string, symbol: string) => void
   onCapture?: () => void
+  /** Tapping the category chip narrows the feed to market-event cards. */
+  onFilterKind?: () => void
 }
 
 const CONFIG: Record<TemplateKind, { icon: typeof Activity; label: string; chip: string }> = {
@@ -53,7 +55,7 @@ const CONFIG: Record<TemplateKind, { icon: typeof Activity; label: string; chip:
  * prints have no ticker, and rendering an empty chart frame under them would
  * imply one exists.
  */
-export function TemplateFeedTile({ card, onAssetClick, onCapture }: TemplateFeedTileProps) {
+export function TemplateFeedTile({ card, onAssetClick, onCapture, onFilterKind }: TemplateFeedTileProps) {
   const config = CONFIG[card.kind]
   const Icon = config.icon
   const toneClass =
@@ -65,10 +67,16 @@ export function TemplateFeedTile({ card, onAssetClick, onCapture }: TemplateFeed
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
       <FeedTileHeader
         badge={
-          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
+          <button
+            type="button"
+            onClick={onFilterKind}
+            disabled={!onFilterKind}
+            title="Show only market events"
+            className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap no-touch-target disabled:cursor-default', config.chip)}
+          >
             <Icon className="h-3.5 w-3.5 shrink-0" />
             {config.label}
-          </span>
+          </button>
         }
         headline={card.headline}
       />

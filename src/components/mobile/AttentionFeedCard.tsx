@@ -10,6 +10,7 @@ import { FeedTileHeader } from './FeedTileHeader'
 import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandablePanel } from './ExpandablePanel'
 import { CarouselControls } from './CarouselControls'
+import { useSwipe } from '../../hooks/useSwipe'
 import { useDecisionContext } from '../../hooks/mobile/useDecisionContext'
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
@@ -183,6 +184,14 @@ export function AttentionFeedCard({
 
   const activePanel = Math.min(panel, Math.max(0, panels.length - 1))
 
+  // Swipe pages the supporting panels. Axis-locked, so a vertical drag started
+  // here still pages the feed — the reason this was tap-only before.
+  const panelSwipe = useSwipe({
+    onNext: () => setPanel(i => Math.min(panels.length - 1, i + 1)),
+    onPrevious: () => setPanel(i => Math.max(0, i - 1)),
+    enabled: panels.length > 1,
+  })
+
   return (
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
       <FeedTileHeader
@@ -219,11 +228,11 @@ export function AttentionFeedCard({
       )}
 
       {/* Supporting detail, paged so the chart above keeps its height.
-          Tap-driven like the chart carousel: a horizontal scroll container
-          here absorbed the vertical drags meant to page the feed, which is
-          why swiping up over this area did nothing. */}
+          Swipe sideways to page; vertical drags pass through to the feed
+          because the gesture is axis-locked rather than owned by a scroll
+          container. */}
       <div className="flex-1 min-h-0 flex flex-col pt-2">
-        <div className="flex-1 min-h-0 px-3 flex flex-col">
+        <div className="flex-1 min-h-0 px-3 flex flex-col" {...panelSwipe}>
           <div className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
             {panels[activePanel]?.label}
           </div>

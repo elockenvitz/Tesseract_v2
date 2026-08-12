@@ -13,6 +13,7 @@
  */
 
 import { useMemo } from 'react'
+import { currentHoldings } from '../../lib/portfolio/currentHoldings'
 import { clsx } from 'clsx'
 import { useQueries } from '@tanstack/react-query'
 import { AlertTriangle, Clock } from 'lucide-react'
@@ -46,10 +47,14 @@ export function PortfolioGrid({
       queryFn: async () => {
         const { data, error } = await supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price, cost, assets(id, symbol, updated_at)')
+          .select('asset_id, shares, price, cost, date, assets(id, symbol, updated_at)')
           .eq('portfolio_id', p.id)
+          // Ordering is what makes the dedupe below meaningful — it keeps the
+          // newest snapshot per asset. This query previously had neither, so
+          // every past upload was counted as a live position.
+          .order('date', { ascending: false, nullsFirst: false })
         if (error) throw error
-        return { portfolioId: p.id, holdings: data || [] }
+        return { portfolioId: p.id, holdings: currentHoldings(data as any[]) }
       },
     })),
   })

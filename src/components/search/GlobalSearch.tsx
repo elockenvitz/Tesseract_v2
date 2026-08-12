@@ -49,6 +49,12 @@ interface SearchResult {
 }
 
 interface GlobalSearchProps {
+  /**
+   * Debounced query text, reported to the parent. The mobile overlay renders a
+   * keyword-explore feed beside these object results and needs the same term
+   * without owning a second input.
+   */
+  onQueryChange?: (query: string) => void
   onSelectResult: (result: SearchResult) => void
   placeholder?: string
   onFocusSearch?: () => void
@@ -159,7 +165,7 @@ const ResultItem = React.memo(({
 
 ResultItem.displayName = 'ResultItem'
 
-export function GlobalSearch({ onSelectResult, placeholder = "Search everything...", onFocusSearch }: GlobalSearchProps) {
+export function GlobalSearch({ onSelectResult, placeholder = "Search everything...", onFocusSearch, onQueryChange }: GlobalSearchProps) {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -176,6 +182,8 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
     }, 250)
     return () => clearTimeout(timer)
   }, [query])
+
+  useEffect(() => { onQueryChange?.(debouncedQuery) }, [debouncedQuery, onQueryChange])
 
   // Pilot users see only the pages they actually have access to
   // right now — search results expand naturally as features unlock

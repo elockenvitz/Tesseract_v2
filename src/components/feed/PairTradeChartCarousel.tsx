@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { TrendingDown, TrendingUp } from 'lucide-react'
 import { ReelsChartPanel } from './ReelsChartPanel'
 import { CarouselControls } from '../mobile/CarouselControls'
+import { useSwipe } from '../../hooks/useSwipe'
 import { TickerQuoteBadge } from '../mobile/TickerQuoteBadge'
 import type { PairTradeLeg } from '../../hooks/ideas/types'
 
@@ -65,6 +66,15 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
   const [active, setActive] = useState(0)
   const clamped = Math.min(active, Math.max(0, legs.length - 1))
 
+  // Swipe pages the legs. The chart underneath still owns horizontal drag for
+  // its crosshair, so the gesture is only claimed once it is decisively
+  // sideways — see useSwipe.
+  const swipe = useSwipe({
+    onNext: () => setActive(i => Math.min(legs.length - 1, i + 1)),
+    onPrevious: () => setActive(i => Math.max(0, i - 1)),
+    enabled: legs.length > 1,
+  })
+
   if (!legs.length) {
     return (
       <div className="w-full h-full flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -75,7 +85,7 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="flex-1 min-h-0 relative">
+      <div className="flex-1 min-h-0 relative" {...swipe}>
         {legs.map((leg, i) => {
           const isActive = i === clamped
           // Neighbours stay mounted so switching legs is instant, but only the
