@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { ArrowLeft } from 'lucide-react'
 import { GlobalSearch } from '../search/GlobalSearch'
+import { ExploreResults } from './ExploreResults'
 
 interface MobileSearchOverlayProps {
   open: boolean
@@ -23,6 +24,7 @@ interface MobileSearchOverlayProps {
  */
 export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSearchOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -99,7 +101,8 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
         </button>
         <div className="flex-1 min-w-0">
           <GlobalSearch
-            placeholder="Search…"
+            placeholder="Search or explore a topic…"
+            onQueryChange={setQuery}
             onSelectResult={result => {
               onClose()
               onSelectResult(result)
@@ -108,11 +111,19 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
         </div>
       </div>
 
-      {/* GlobalSearch renders its own absolutely-positioned results panel just
-          below the field, so this area is intentionally empty — it exists to
-          paint the rest of the screen in the surface colour rather than
-          letting the app show through behind the results. */}
-      <div className="flex-1 bg-white dark:bg-gray-900" />
+      {/* GlobalSearch renders its own absolutely-positioned panel of object
+          matches over the top of this area. Underneath it sits the topic feed:
+          the same term searched against prose rather than names, so a keyword
+          with no matching object still leads somewhere. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-white dark:bg-gray-900">
+        <ExploreResults
+          query={query}
+          onSelect={result => {
+            onClose()
+            onSelectResult(result)
+          }}
+        />
+      </div>
     </div>,
     document.body
   )
