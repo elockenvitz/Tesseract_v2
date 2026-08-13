@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Search, X, Calendar, Share2, ArrowUp, ArrowDown, TrendingUp, Briefcase, Tag, Book, SlidersHorizontal, Check, Plus, Loader2 } from 'lucide-react'
+import { FileText, Search, X, Share2, ArrowUp, ArrowDown, TrendingUp, Briefcase, Tag, Book, SlidersHorizontal, Check, Plus, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { Card } from '../components/ui/Card'
@@ -12,6 +12,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { getContentPreview } from '../utils/stripHtml'
 import { NOTE_TYPES_GROUPED, getNoteType } from '../lib/note-types'
+import { NotesFilterSheet } from '../components/mobile/NotesFilterSheet'
 
 interface NotesListPageProps {
   onNoteSelect?: (note: any) => void
@@ -67,6 +68,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
 
   // UI state
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
+  const [showFilterSheet, setShowFilterSheet] = useState(false)
 
   // New Note picker state
   const [showNewNotePicker, setShowNewNotePicker] = useState(false)
@@ -442,15 +444,27 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   const filteredNotes = useMemo(() => {
     if (!notes) return []
 
-    let filtered = notes.filter((note) => {
-      const content = (note.content ?? '').toLowerCase()
-      const title = (note.title ?? '').toLowerCase()
-      const sourceName = (note.source_name ?? '').toLowerCase()
+    // Every term must appear somewhere, not necessarily in the same field.
+    // A single `includes` over the raw string meant "nvda earnings" matched
+    // nothing unless those two words were adjacent in one field — which is how
+    // people actually search, ticker plus topic, and it always found nothing.
+    const terms = searchQuery.toLowerCase().split(/\s+/).filter(Boolean)
 
-      const matchesSearch = !searchQuery ||
-        title.includes(searchQuery.toLowerCase()) ||
-        content.includes(searchQuery.toLowerCase()) ||
-        sourceName.includes(searchQuery.toLowerCase())
+    let filtered = notes.filter((note) => {
+      const author = note.created_by_user
+      // The author's name is searchable because "whose note was this" is one of
+      // the few things you reliably remember about a note you are looking for.
+      const haystack = [
+        note.title,
+        note.content,
+        note.source_name,
+        getNoteType(note.note_type).label,
+        author?.first_name,
+        author?.last_name,
+        author?.email,
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      const matchesSearch = terms.every(t => haystack.includes(t))
 
       const matchesSource = selectedSourceTypes.length === 0 || selectedSourceTypes.includes(note.source_type)
       const matchesType = selectedNoteTypes.length === 0 || selectedNoteTypes.includes(getNoteType(note.note_type).id)
@@ -515,22 +529,26 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
   return (
     <div className="flex flex-col h-full space-y-4">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Notes</h1>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white truncate">All Notes</h1>
           <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">
             {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
             {activeFilters.length > 0 && ` (filtered)`}
           </p>
         </div>
-        <div className="relative" ref={pickerRef}>
+        <div className="relative flex-shrink-0" ref={pickerRef}>
           <Button
             variant="primary"
             size="sm"
             onClick={() => setShowNewNotePicker(!showNewNotePicker)}
+            aria-label="New note"
           >
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Note
+            <Plus className="h-4 w-4 md:mr-1.5" />
+            {/* The label is the first thing to go at 390px: the icon plus a
+                heading plus a count already fills the row, and a plus button
+                beside "All Notes" is unambiguous without it. */}
+            <span className="hidden md:inline">New Note</span>
           </Button>
 
           {showNewNotePicker && (
@@ -620,29 +638,58 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       </div>
 
       {/* Search and Filter Bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 md:gap-3">
         {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <div className="relative flex-1 min-w-0 md:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
             placeholder="Search notes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
+            // `size` sets an input's intrinsic min-content width (~20 chars by
+            // default), which no amount of flex-1/min-w-0 on the wrapper can
+            // shrink past — it is what pushes a control row off a 390px screen.
+            size={1}
+            autoCapitalize="off"
+            autoCorrect="off"
+            className="w-full min-w-0 pl-9 pr-9 py-2 text-base md:text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:border-gray-600"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              aria-label="Clear search"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 no-touch-target"
             >
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
 
+        {/* Phone: one trigger for every filter. Search keeps the row and the
+            filters keep their expressiveness, instead of four controls
+            fighting over 390px. */}
+        <button
+          type="button"
+          onClick={() => setShowFilterSheet(true)}
+          className={clsx(
+            'md:hidden flex-shrink-0 flex items-center gap-1.5 px-3 h-10 text-sm border rounded-lg',
+            activeFilters.length > 0
+              ? 'border-primary-300 bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 dark:border-primary-800'
+              : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200'
+          )}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters
+          {activeFilters.length > 0 && (
+            <span className="px-1.5 py-0.5 text-xs font-semibold bg-primary-100 dark:bg-primary-800 rounded-full tabular-nums">
+              {activeFilters.length}
+            </span>
+          )}
+        </button>
+
         {/* Source Type Filter */}
-        <div className="relative">
+        <div className="relative hidden md:block">
           <button
             onClick={() => setActiveFilter(activeFilter === 'source' ? null : 'source')}
             className={clsx(
@@ -683,7 +730,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         </div>
 
         {/* Note Type Filter */}
-        <div className="relative">
+        <div className="relative hidden md:block">
           <button
             onClick={() => setActiveFilter(activeFilter === 'type' ? null : 'type')}
             className={clsx(
@@ -731,7 +778,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
         </div>
 
         {/* Sharing Filter */}
-        <div className="relative">
+        <div className="relative hidden md:block">
           <button
             onClick={() => setActiveFilter(activeFilter === 'shared' ? null : 'shared')}
             className={clsx(
@@ -970,6 +1017,22 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
           onClick={() => setActiveFilter(null)}
         />
       )}
+
+      <NotesFilterSheet
+        open={showFilterSheet}
+        onClose={() => setShowFilterSheet(false)}
+        sourceOptions={SOURCE_TYPE_OPTIONS}
+        selectedSourceTypes={selectedSourceTypes}
+        onToggleSourceType={toggleSourceType}
+        noteTypesGrouped={NOTE_TYPES_GROUPED}
+        selectedNoteTypes={selectedNoteTypes}
+        onToggleNoteType={toggleNoteType}
+        sharedFilter={sharedFilter}
+        onSharedFilterChange={setSharedFilter}
+        matchCount={filteredNotes.length}
+        activeCount={activeFilters.length}
+        onClearAll={clearAllFilters}
+      />
     </div>
   )
 }
