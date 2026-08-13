@@ -7,6 +7,8 @@ import {
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { PairTradeChartCarousel } from '../feed/PairTradeChartCarousel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { FeedKindBadge } from './FeedKindBadge'
+import { WhenNearViewport } from './WhenNearViewport'
 import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandablePanel } from './ExpandablePanel'
 import { CarouselControls } from './CarouselControls'
@@ -29,6 +31,8 @@ interface AttentionFeedCardProps {
   onShare?: (item: AttentionItem) => void
   /** Log a thought, idea, recommendation or prompt against this item. */
   onCapture?: (item: AttentionItem) => void
+  /** Narrow the feed to this kind, set by tapping the type chip. */
+  onFilterKind?: () => void
 }
 
 const TYPE_CONFIG: Record<AttentionType, { icon: typeof Info; label: string; chip: string }> = {
@@ -74,6 +78,7 @@ const ACTION_TONE: Record<string, string> = {
  * the chart can stay large enough to actually read.
  */
 export function AttentionFeedCard({
+  onFilterKind,
   item,
   symbol,
   companyName,
@@ -196,10 +201,13 @@ export function AttentionFeedCard({
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
       <FeedTileHeader
         badge={
-          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
-            <TypeIcon className="h-3.5 w-3.5 shrink-0" />
-            {config.label}
-          </span>
+          <FeedKindBadge
+            icon={TypeIcon}
+            label={config.label}
+            chip={config.chip}
+            onFilter={onFilterKind}
+            filterLabel="Show only items needing attention"
+          />
         }
         authorName={decision?.recommendedBy}
         timestamp={item.last_activity_at || item.created_at}
@@ -219,11 +227,16 @@ export function AttentionFeedCard({
 
       {(isPair || symbol) && (
         <div className={clsx("flex-shrink-0 px-3", isPair ? "h-[42%] min-h-[230px] max-h-[380px]" : "h-[33%] min-h-[170px] max-h-[300px]")}>
-          {isPair ? (
-            <PairTradeChartCarousel longLegs={longLegs as any} shortLegs={shortLegs as any} />
-          ) : (
-            <ReelsChartPanel symbol={symbol!} hideHeader />
-          )}
+          <WhenNearViewport
+            className="w-full h-full"
+            placeholder={<div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />}
+          >
+            {isPair ? (
+              <PairTradeChartCarousel longLegs={longLegs as any} shortLegs={shortLegs as any} />
+            ) : (
+              <ReelsChartPanel symbol={symbol!} hideHeader />
+            )}
+          </WhenNearViewport>
         </div>
       )}
 
@@ -232,7 +245,7 @@ export function AttentionFeedCard({
           because the gesture is axis-locked rather than owned by a scroll
           container. */}
       <div className="flex-1 min-h-0 flex flex-col pt-2">
-        <div className="flex-1 min-h-0 px-3 flex flex-col" {...panelSwipe}>
+        <div className="flex-1 min-h-0 px-3 flex flex-col" ref={panelSwipe.ref}>
           <div className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
             {panels[activePanel]?.label}
           </div>

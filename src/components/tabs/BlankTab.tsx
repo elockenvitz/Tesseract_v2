@@ -366,10 +366,27 @@ export function BlankTab({ onSearchResult }: BlankTabProps) {
             What would you like to explore?
           </h2>
           <div className="max-w-xl mx-auto">
-            <GlobalSearch
-              onSelectResult={onSearchResult}
-              placeholder="Search for anything..."
-            />
+            {/* Phones get a button into the full-screen overlay rather than the
+                field itself. GlobalSearch renders its results as an `absolute
+                z-50` dropdown — correct on desktop, but on a phone it floats
+                over the page instead of using it, which is the behaviour the
+                header's search was already moved away from. Leaving this one
+                behind meant the new-tab page still popped a dropdown. */}
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-mobile-search'))}
+              className="md:hidden w-full flex items-center gap-2 px-4 h-11 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-400 text-sm"
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              Search for anything...
+            </button>
+
+            <div className="hidden md:block">
+              <GlobalSearch
+                onSelectResult={onSearchResult}
+                placeholder="Search for anything..."
+              />
+            </div>
           </div>
         </div>
 

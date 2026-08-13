@@ -471,11 +471,7 @@ export function MobileDashboard({
     // stop one kind running consecutively, and with a single kind selected that
     // constraint has nothing to do — applying it first would just be a shuffle
     // fighting a rule that can never be satisfied.
-    const pool = kindFilter
-      ? all.filter(e => (kindFilter === 'template'
-          ? e.kind === 'template'
-          : e.kind === kindFilter))
-      : all
+    const pool = kindFilter ? all.filter(e => e.kind === kindFilter) : all
 
     return interleaveByKind<any>(pool, {
       maxRun: 1,
@@ -633,6 +629,7 @@ export function MobileDashboard({
             return (
               <section key={a.attention_id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <AttentionFeedCard
+                  onFilterKind={() => setKindFilter('attention')}
                   item={a}
                   symbol={linked?.symbol}
                   companyName={linked?.company_name}
@@ -660,6 +657,7 @@ export function MobileDashboard({
                 className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
               >
                 <DerivedInsightTile
+                  onFilterKind={() => setKindFilter('insight')}
                   insight={entry.insight}
                   onAssetClick={openAsset}
                   onCapture={() => setCaptureCtx({
@@ -676,6 +674,7 @@ export function MobileDashboard({
             return (
               <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <SignalFeedTile
+                  onFilterKind={() => setKindFilter('signal')}
                   signal={entry.signal}
                   onAssetClick={openAsset}
                   onCapture={() => setCaptureCtx({

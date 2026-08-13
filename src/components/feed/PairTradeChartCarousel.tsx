@@ -85,7 +85,7 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="flex-1 min-h-0 relative" {...swipe}>
+      <div className="flex-1 min-h-0 relative" ref={swipe.ref}>
         {legs.map((leg, i) => {
           const isActive = i === clamped
           // Neighbours stay mounted so switching legs is instant, but only the

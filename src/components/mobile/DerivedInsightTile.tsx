@@ -1,7 +1,8 @@
-import { clsx } from 'clsx'
 import { ArrowRight, FileQuestion, PenLine, Scale, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { WhenNearViewport } from './WhenNearViewport'
+import { FeedKindBadge } from './FeedKindBadge'
 import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandableText } from './ExpandableText'
 import type { DerivedInsight, DerivedInsightKind } from '../../hooks/mobile/useDerivedInsights'
@@ -11,6 +12,8 @@ interface DerivedInsightTileProps {
   onAssetClick?: (assetId: string, symbol: string) => void
   /** Log a thought, idea, recommendation or prompt from this tile. */
   onCapture?: (insight: DerivedInsight) => void
+  /** Narrow the feed to this kind, set by tapping the type chip. */
+  onFilterKind?: () => void
 }
 
 const KIND_CONFIG: Record<DerivedInsightKind, { icon: typeof Scale; label: string; chip: string }> = {
@@ -44,7 +47,7 @@ const KIND_CONFIG: Record<DerivedInsightKind, { icon: typeof Scale; label: strin
  * statement of fact with the numbers in it, not a prompt — the user should be
  * able to check it against the book.
  */
-export function DerivedInsightTile({ insight, onAssetClick, onCapture }: DerivedInsightTileProps) {
+export function DerivedInsightTile({ insight, onAssetClick, onCapture, onFilterKind }: DerivedInsightTileProps) {
   const config = KIND_CONFIG[insight.kind] ?? KIND_CONFIG.large_unreviewed
   const Icon = config.icon
 
@@ -55,10 +58,13 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
           weight is stated in words in the body, where it has context. */}
       <FeedTileHeader
         badge={
-          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
-            <Icon className="h-3.5 w-3.5 shrink-0" />
-            {config.label}
-          </span>
+          <FeedKindBadge
+            icon={Icon}
+            label={config.label}
+            chip={config.chip}
+            onFilter={onFilterKind}
+            filterLabel="Show only insights"
+          />
         }
         // No author, so the headline takes that space and the band below
         // belongs entirely to the quote.
@@ -77,9 +83,9 @@ export function DerivedInsightTile({ insight, onAssetClick, onCapture }: Derived
         )}
       </div>
 
-      <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3">
+      <WhenNearViewport className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3" placeholder={<div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />}>
         <ReelsChartPanel symbol={insight.symbol} hideHeader />
-      </div>
+      </WhenNearViewport>
 
       <div className="flex-1 min-h-0 overflow-hidden px-3 py-2">
         <ExpandableText text={insight.body} lines={4} />
