@@ -4,6 +4,8 @@ import {
 } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { WhenNearViewport } from './WhenNearViewport'
+import { FeedKindBadge } from './FeedKindBadge'
 import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandableText } from './ExpandableText'
 import type { TemplateCard, TemplateKind } from '../../lib/mobile/feed-templates'
@@ -67,16 +69,13 @@ export function TemplateFeedTile({ card, onAssetClick, onCapture, onFilterKind }
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
       <FeedTileHeader
         badge={
-          <button
-            type="button"
-            onClick={onFilterKind}
-            disabled={!onFilterKind}
-            title="Show only market events"
-            className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap no-touch-target disabled:cursor-default', config.chip)}
-          >
-            <Icon className="h-3.5 w-3.5 shrink-0" />
-            {config.label}
-          </button>
+          <FeedKindBadge
+            icon={Icon}
+            label={config.label}
+            chip={config.chip}
+            onFilter={onFilterKind}
+            filterLabel="Show only market events"
+          />
         }
         headline={card.headline}
       />
@@ -84,9 +83,9 @@ export function TemplateFeedTile({ card, onAssetClick, onCapture, onFilterKind }
       <FeedTileTitle quoteSymbol={card.symbol ?? undefined} />
 
       {card.symbol && (
-        <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3">
+        <WhenNearViewport className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3" placeholder={<div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />}>
           <ReelsChartPanel symbol={card.symbol} hideHeader />
-        </div>
+        </WhenNearViewport>
       )}
 
       <div className="flex-1 min-h-0 overflow-hidden px-3 py-2">

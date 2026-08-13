@@ -4,6 +4,9 @@ import { useExploreSearch, type ExploreKind, type ExploreResult } from '../../ho
 
 interface ExploreResultsProps {
   query: string
+  /** The caller is still debouncing — hold the last frame rather than flashing
+   *  an empty state between keystrokes. */
+  pending?: boolean
   onSelect: (result: { id: string; title: string; type: string; data: any }) => void
 }
 
@@ -28,7 +31,7 @@ const KIND: Record<ExploreKind, { icon: typeof TrendingUp; label: string; tone: 
  * which is the difference between a search that explores and one that makes
  * you check ten things.
  */
-export function ExploreResults({ query, onSelect }: ExploreResultsProps) {
+export function ExploreResults({ query, pending, onSelect }: ExploreResultsProps) {
   const { data: results = [], isLoading } = useExploreSearch(query)
   const trimmed = query.trim()
 
@@ -42,7 +45,7 @@ export function ExploreResults({ query, onSelect }: ExploreResultsProps) {
     )
   }
 
-  if (isLoading) {
+  if (isLoading || pending) {
     return (
       <div className="py-10 flex justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
@@ -53,8 +56,10 @@ export function ExploreResults({ query, onSelect }: ExploreResultsProps) {
   if (!results.length) {
     return (
       <div className="px-4 py-10 text-center">
+        {/* Scoped to mentions, because named matches may be listed above — a
+            flat "no results" would contradict what is on screen. */}
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Nothing mentions “{trimmed}” yet.
+          Nothing else mentions “{trimmed}”.
         </p>
         <p className="mt-1 text-xs text-gray-400">
           Theses, trade rationales, notes, themes and lists are all searched.

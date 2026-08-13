@@ -7,11 +7,12 @@
  * on the server — anything in the client bundle is public, and these are
  * rate-limited credentials tied to a paid plan.
  *
- * Three sources, each independently optional:
+ * Four sources, each independently optional:
  *
  *   Finnhub        company-news        needs FINNHUB_API_KEY
  *   Alpha Vantage  NEWS_SENTIMENT      needs ALPHAVANTAGE_API_KEY
- *   Yahoo Finance  search              no key
+ *   Yahoo Finance  search              no key — headlines and thumbnails
+ *   Yahoo Finance  RSS headline feed   no key — the descriptions, see below
  *
  * Whichever are configured get used; the rest are skipped. With no keys at all
  * the function still returns Yahoo results, so the feed works out of the box
@@ -19,11 +20,22 @@
  * rather than failing the request — partial news beats no news, and one
  * provider having an outage should not empty the feed.
  *
+ * The two Yahoo sources are not redundant. The JSON search endpoint returns
+ * headlines and images but never a description; the RSS feed returns
+ * descriptions but no image. Measured live, RSS carries a real summary on
+ * 69 of 69 items, against 0 of 30 on a recent cached payload without it. They
+ * merge by normalised headline into one story with both.
+ *
  * Accepts POST JSON:
  *   { symbols: string[], limit?: number, lookbackDays?: number }
  *
  * Returns:
- *   { items: NewsItem[], sources: { name, ok, count }[] }
+ *   { items: NewsItem[], sources: { name, ok, configured, count }[] }
+ *
+ * `configured` is reported separately from `ok` because a source with no API
+ * key returns an empty list without erroring, which is indistinguishable from
+ * a working source on a quiet news day. Alpha Vantage sat dark that way and
+ * nothing in the response said so.
  *
  * `NewsItem` matches src/lib/financial-data/types.ts so the client can treat
  * these identically to any other provider's output.
@@ -138,7 +150,7 @@ async function fromFinnhub(symbols: string[], from: string, to: string): Promise
 }
 
 /**
- * Alpha Vantage is the only one of the three returning sentiment and a
+ * Alpha Vantage is the only one of the sources returning sentiment and a
  * per-ticker relevance score, which is why it is worth a key: those feed the
  * feed's ranking directly instead of news being ordered on recency alone.
  */
@@ -180,6 +192,70 @@ async function fromAlphaVantage(symbols: string[]): Promise<NewsItem[]> {
   } catch {
     return []
   }
+}
+
+/** Pull one XML tag's text out of an RSS <item> block. */
+function rssTag(block: string, name: string): string {
+  const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))
+  if (!m) return ''
+  return m[1]
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/<[^>]*>/g, ' ')          // descriptions carry markup
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Yahoo's RSS feed, purely for the prose.
+ *
+ * The JSON search endpoint below returns headlines and thumbnails but no
+ * description, and Finnhub's `summary` is usually empty — measured over the
+ * cached payloads, one batch of 30 stories had a summary on *none* of them.
+ * The result was a feed of photographs with no text, which is not a news feed.
+ *
+ * These items merge into the others by normalised headline, so in practice
+ * this contributes the missing summary to a story another source already
+ * found, rather than adding rows of its own.
+ */
+async function fromYahooRss(symbols: string[]): Promise<NewsItem[]> {
+  const out: NewsItem[] = []
+  for (const symbol of symbols) {
+    try {
+      const res = await fetch(
+        `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol)}&region=US&lang=en-US`,
+        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Tesseract/1.0)' } },
+      )
+      if (!res.ok) throw new Error(`${res.status}`)
+      const xml = await res.text()
+      for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+        const block = m[1]
+        const headline = rssTag(block, 'title')
+        const url = rssTag(block, 'link')
+        if (!headline || !url) continue
+        const summary = rssTag(block, 'description')
+        const pub = rssTag(block, 'pubDate')
+        const at = pub ? new Date(pub) : new Date()
+        out.push({
+          id: `yrss:${url}`,
+          headline,
+          // Yahoo sometimes echoes the headline as the description; that is
+          // not a summary, it is the same sentence twice.
+          summary: summary && summary !== headline ? summary : undefined,
+          url,
+          publishedAt: (isNaN(at.getTime()) ? new Date() : at).toISOString(),
+          source: 'Yahoo Finance',
+          symbols: [symbol],
+        })
+      }
+    } catch { /* skip this symbol */ }
+  }
+  return out
 }
 
 async function fromYahoo(symbols: string[]): Promise<NewsItem[]> {
@@ -286,15 +362,29 @@ serve(async (req) => {
   const from = new Date(to.getTime() - lookbackDays * 86400_000)
   const fmt = (d: Date) => d.toISOString().slice(0, 10)
 
-  // All three in parallel; a rejection becomes an empty list rather than a
+  // All four in parallel; a rejection becomes an empty list rather than a
   // failed response.
   const settled = await Promise.allSettled([
     withTimeout(fromFinnhub(symbols, fmt(from), fmt(to)), SOURCE_TIMEOUT_MS),
     withTimeout(fromAlphaVantage(symbols), SOURCE_TIMEOUT_MS),
     withTimeout(fromYahoo(symbols), SOURCE_TIMEOUT_MS),
+    withTimeout(fromYahooRss(symbols), SOURCE_TIMEOUT_MS),
   ])
-  const names = ['finnhub', 'alphavantage', 'yahoo']
+  const names = ['finnhub', 'alphavantage', 'yahoo', 'yahoo-rss']
   const lists = settled.map(s => (s.status === 'fulfilled' ? s.value : []))
+
+  // A source with no API key returned an empty array without ever making a
+  // request, which `ok: true, count: 0` reported as a healthy source with no
+  // news. Alpha Vantage sat dark that way across every cached payload — it is
+  // the only source carrying sentiment, so sentiment was absent everywhere and
+  // nothing said why. Reporting configuration separately from success makes an
+  // unset key visible instead of indistinguishable from a quiet news day.
+  const configured: Record<string, boolean> = {
+    finnhub: !!Deno.env.get('FINNHUB_API_KEY'),
+    alphavantage: !!Deno.env.get('ALPHAVANTAGE_API_KEY'),
+    yahoo: true,
+    'yahoo-rss': true,
+  }
 
   const items = merge(lists)
     .filter(i => new Date(i.publishedAt).getTime() >= from.getTime())
@@ -314,6 +404,7 @@ serve(async (req) => {
     sources: names.map((name, i) => ({
       name,
       ok: settled[i].status === 'fulfilled',
+      configured: configured[name] ?? true,
       count: lists[i].length,
     })),
   }

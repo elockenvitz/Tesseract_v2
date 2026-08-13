@@ -1,7 +1,8 @@
-import { clsx } from 'clsx'
 import { ArrowRight, CalendarClock, PenLine, Radar, Split, TimerReset } from 'lucide-react'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { FeedTileHeader } from './FeedTileHeader'
+import { WhenNearViewport } from './WhenNearViewport'
+import { FeedKindBadge } from './FeedKindBadge'
 import { FeedTileTitle } from './FeedTileTitle'
 import { ExpandableText } from './ExpandableText'
 import type { SignalCard, SignalType } from '../../hooks/ideas/useIdeasFeed'
@@ -11,6 +12,8 @@ interface SignalFeedTileProps {
   onAssetClick?: (assetId: string, symbol: string) => void
   /** Log a thought, idea, recommendation or prompt from this tile. */
   onCapture?: () => void
+  /** Narrow the feed to this kind, set by tapping the type chip. */
+  onFilterKind?: () => void
 }
 
 const SIGNAL_CONFIG: Record<SignalType, { icon: typeof Radar; label: string; chip: string }> = {
@@ -52,7 +55,7 @@ const SIGNAL_CONFIG: Record<SignalType, { icon: typeof Radar; label: string; chi
  * Signals are observations rather than requests, so the action is navigation
  * to the asset rather than an accept/dismiss verb.
  */
-export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTileProps) {
+export function SignalFeedTile({ signal, onAssetClick, onCapture, onFilterKind }: SignalFeedTileProps) {
   const config = SIGNAL_CONFIG[signal.signalType] ?? SIGNAL_CONFIG.prompt
   const Icon = config.icon
   const primary = signal.relatedAssets?.[0]
@@ -61,10 +64,13 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
     <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
       <FeedTileHeader
         badge={
-          <span className={clsx('flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap', config.chip)}>
-            <Icon className="h-3.5 w-3.5 shrink-0" />
-            {config.label}
-          </span>
+          <FeedKindBadge
+            icon={Icon}
+            label={config.label}
+            chip={config.chip}
+            onFilter={onFilterKind}
+            filterLabel="Show only signals"
+          />
         }
         // Signals are derived by the system, so the attribution slot stays
         // empty rather than naming a person who did not write this.
@@ -81,9 +87,9 @@ export function SignalFeedTile({ signal, onAssetClick, onCapture }: SignalFeedTi
       </div>
 
       {primary && (
-        <div className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3">
+        <WhenNearViewport className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3" placeholder={<div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />}>
           <ReelsChartPanel symbol={primary.symbol} hideHeader />
-        </div>
+        </WhenNearViewport>
       )}
 
       <div className="flex-1 min-h-0 overflow-hidden px-3 py-2">

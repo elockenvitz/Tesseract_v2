@@ -4,6 +4,8 @@ import { ArrowUpRight, Newspaper, TrendingDown, TrendingUp, Minus } from 'lucide
 import { formatDistanceToNow } from 'date-fns'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { ExpandableText } from './ExpandableText'
+import { FeedKindBadge } from './FeedKindBadge'
+import { WhenNearViewport } from './WhenNearViewport'
 import type { MarketNewsItem } from '../../hooks/useMarketNews'
 
 interface NewsFeedTileProps {
@@ -31,11 +33,13 @@ const SENTIMENT = {
  * characters; one clipped line of that is barely a sentence and usually stops
  * before the subject.
  *
- * The other measured reality: only 17 of 40 stories carry a summary (Yahoo
- * supplies none, Finnhub does), while 34 of 40 carry an image. So the tile
- * cannot lean on prose. It leads with the headline, shows the image when there
- * is one, and treats the summary as a bonus rather than the body — otherwise
- * more than half of all news tiles render as a headline over dead space.
+ * Summary coverage used to be the constraint: across cached payloads one batch
+ * of 30 stories carried a summary on none of them while 28 carried an image,
+ * so the tile rendered as a photograph with a caption. That was a sourcing gap
+ * rather than a design one — Yahoo's RSS feed supplies the descriptions its
+ * JSON endpoint omits, and market-news now reads both. The image went from
+ * hero height to a band to match: it is supporting material, and it was only
+ * ever dominant because there was nothing else to show.
  *
  * The sentiment chip appears only when a provider actually supplied one.
  * Inferring it from the headline would be a guess dressed as data on a screen
@@ -53,16 +57,13 @@ export function NewsFeedTile({ item, assetForSymbol, onAssetClick, onCapture, on
       {/* Provenance band. Which outlet said it, and when, are part of how much
           weight the story carries — so they lead rather than being buried. */}
       <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
-        <button
-          type="button"
-          onClick={onFilterKind}
-          disabled={!onFilterKind}
-          title="Show only news"
-          className="flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800 no-touch-target disabled:cursor-default"
-        >
-          <Newspaper className="h-3.5 w-3.5 shrink-0" />
-          News
-        </button>
+        <FeedKindBadge
+          icon={Newspaper}
+          label="News"
+          chip="bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800"
+          onFilter={onFilterKind}
+          filterLabel="Show only news"
+        />
         <span className="min-w-0 truncate text-[12px] font-medium text-gray-700 dark:text-gray-300">
           {item.source}
         </span>
@@ -124,23 +125,32 @@ export function NewsFeedTile({ item, assetForSymbol, onAssetClick, onCapture, on
               // A broken image URL should cost the picture, not leave a torn
               // frame in the middle of the story.
               onError={() => setImageFailed(true)}
-              className="w-full h-40 object-cover rounded-lg bg-gray-100 dark:bg-gray-800"
+              // Deliberately a band rather than a hero. At h-40 the picture was
+              // the tile: most stories carry an image and few carry prose, so
+              // the screen read as a photo with a caption. It is supporting
+              // material and now takes supporting height.
+              className="w-full h-24 object-cover rounded-lg bg-gray-100 dark:bg-gray-800"
             />
           </div>
         )}
 
         {item.summary && (
           <div className="px-3 pb-2">
-            <ExpandableText text={item.summary} lines={showImage ? 3 : 6} />
+            <ExpandableText text={item.summary} lines={6} />
           </div>
         )}
 
         {/* The chart answers the other half of the question — what the price
             did about it — but only for names actually in the book. */}
         {covered && (
-          <div className="px-3 pb-3 h-[220px]">
+          <WhenNearViewport
+            className="px-3 pb-3 h-[220px]"
+            placeholder={
+              <div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />
+            }
+          >
             <ReelsChartPanel symbol={covered.symbol} hideHeader />
-          </div>
+          </WhenNearViewport>
         )}
       </div>
 
