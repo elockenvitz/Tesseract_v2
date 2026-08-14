@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Lightbulb, X } from 'lucide-react'
+import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReelsFeedItem } from '../feed/ReelsFeedItem'
 import { ACTION_BAR_HEIGHT, MobileFeedActionRail } from './MobileFeedActionRail'
 import { ReadthroughSheet } from './ReadthroughSheet'
@@ -21,6 +21,8 @@ import { DerivedInsightTile } from './DerivedInsightTile'
 import { NewsFeedTile } from './NewsFeedTile'
 import { ConvictionGapTile, CrowdedNameTile, TargetBreachTile, StaleTargetTile } from './PortfolioLensTile'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
+import { FeedFilterSheet } from './FeedFilterSheet'
+import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { TemplateFeedTile } from './TemplateFeedTile'
 import { useMarketNews } from '../../hooks/useMarketNews'
 import { useMarketEvents } from '../../hooks/useMarketEvents'
@@ -138,6 +140,17 @@ export function MobileDashboard({
    * having it do nothing was a dead affordance on every tile.
    */
   const [kindFilter, setKindFilter] = useState<string | null>(null)
+
+  /**
+   * The curated view: several facets at once, intersected.
+   *
+   * kindFilter above stays as the tile chip's one-tap "more like this" — it is
+   * the right control for a glance. This is the other half: you cannot express
+   * "European industrials, news and decisions only" by tapping a chip.
+   */
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>(EMPTY_FILTER)
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  const { data: facets } = useFeedFacets()
 
   const [resumed] = useState(() => loadFeedSession())
   const [shuffleSeed, setShuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
@@ -509,14 +522,61 @@ export function MobileDashboard({
     // stop one kind running consecutively, and with a single kind selected that
     // constraint has nothing to do — applying it first would just be a shuffle
     // fighting a rule that can never be satisfied.
-    const pool = kindFilter ? all.filter(e => e.kind === kindFilter) : all
+    /**
+     * The symbol a tile is about, where it has one.
+     *
+     * Every kind stores it somewhere different, and a tile with no symbol —
+     * a macro event, an unattributed story — is *kept* when only kind filters
+     * are set and dropped when an asset facet is. Dropping it either way would
+     * silently remove whole categories from a "European only" view that the
+     * reader never meant to exclude.
+     */
+    const symbolOf = (e: any): string | null => {
+      switch (e.kind) {
+        case 'news':      return e.news?.primarySymbol ?? null
+        case 'template':  return e.card?.symbol ?? null
+        case 'insight':   return e.insight?.symbol ?? null
+        case 'lens':
+          return e.lens?.gap?.symbol ?? e.lens?.name?.symbol
+              ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol ?? null
+        case 'idea':      return (e.item as any)?.asset?.symbol ?? null
+        case 'attention': return null
+        default:          return null
+      }
+    }
+
+    const assetFacetsActive =
+      feedFilter.sectors.length > 0 || feedFilter.countries.length > 0 ||
+      feedFilter.exchanges.length > 0 || feedFilter.symbols.length > 0
+
+    const matchesFilter = (e: any): boolean => {
+      if (feedFilter.kinds.length && !feedFilter.kinds.includes(e.kind)) return false
+      if (!assetFacetsActive) return true
+
+      const sym = symbolOf(e)
+      // No symbol and an asset facet is set: this tile cannot be shown to
+      // satisfy it, so it is excluded rather than assumed to qualify.
+      if (!sym) return false
+      if (feedFilter.symbols.length && !feedFilter.symbols.includes(sym)) return false
+
+      const f = facets?.bySymbol.get(sym.toUpperCase())
+      if (feedFilter.sectors.length && !(f?.sector && feedFilter.sectors.includes(f.sector))) return false
+      if (feedFilter.countries.length && !(f?.country && feedFilter.countries.includes(f.country))) return false
+      if (feedFilter.exchanges.length && !(f?.exchange && feedFilter.exchanges.includes(f.exchange))) return false
+      return true
+    }
+
+    // Facets intersect: two sectors widen, adding a country narrows. The chip
+    // filter stays a separate one-tap override on top.
+    const curated = filterCount(feedFilter) ? all.filter(matchesFilter) : all
+    const pool = kindFilter ? curated.filter(e => e.kind === kindFilter) : curated
 
     return interleaveByKind<any>(pool, {
       maxRun: 1,
       leadWith: kindFilter ? undefined : 'attention',
       seed: shuffleSeed,
     })
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -646,12 +706,40 @@ export function MobileDashboard({
       {/* Active filter. Occupies its own row so it cannot scroll away and
           cannot cover the feed — a filter you cannot see is a feed that looks
           broken, and one that hides the tile beneath it is worse. */}
+      {/* Always-present entry point. The chip filter below only appears once
+          something is filtered, which is correct for a state indicator and
+          wrong for a control — there was no way to *start* curating. */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-2 pt-2.5 [padding-top:calc(0.625rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+        <button
+          type="button"
+          onClick={() => setFilterSheetOpen(true)}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-gray-100 dark:bg-gray-800 text-[12px] font-bold text-gray-700 dark:text-gray-200 no-touch-target"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Curate
+          {filterCount(feedFilter) > 0 && (
+            <span className="px-1.5 rounded-full bg-primary-600 text-white text-[10px]">
+              {filterCount(feedFilter)}
+            </span>
+          )}
+        </button>
+        {filterCount(feedFilter) > 0 && (
+          <button
+            type="button"
+            onClick={() => setFeedFilter(EMPTY_FILTER)}
+            className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 underline underline-offset-2 no-touch-target"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
       {kindFilter && (
         // pt-safe alone collapses to zero on a phone with no notch, which is
         // why the band read as cramped against the top edge. A real 10px floor
         // plus the inset, and more room below it, gives the row a band rather
         // than a stripe.
-        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 pb-2.5 pt-2.5 [padding-top:calc(0.625rem+env(safe-area-inset-top))] bg-gray-900 text-white dark:bg-gray-800">
+        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
             {KIND_LABELS[kindFilter] ?? kindFilter} only
           </span>
@@ -888,6 +976,14 @@ export function MobileDashboard({
           }}
         />
       )}
+
+      <FeedFilterSheet
+        open={filterSheetOpen}
+        onClose={() => setFilterSheetOpen(false)}
+        value={feedFilter}
+        onChange={setFeedFilter}
+        kindLabels={KIND_LABELS}
+      />
 
       {readthroughFor && (
         <ReadthroughSheet
