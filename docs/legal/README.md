@@ -3,6 +3,14 @@
 **Nothing here has been reviewed by a lawyer. Do not publish or sign any of it
 as-is.**
 
+**Read `LAUNCH-CHECKLIST.md` first.** Tesseract is pre-release: no legal
+entity, no domain, no paying customers, a few friendly testers, no real client
+holdings. Almost every obligation described in these documents attaches to a
+commercial service handling real customer data, and none of that exists yet.
+These are preparation, not remediation. The pages in `site/` are deliberately
+not served — a policy naming an entity that does not exist is a false
+statement, which is worse than a missing document.
+
 These were written by an engineer from the actual codebase and a live read of
 the production database on 2026-08-14, so that counsel can start from what the
 software genuinely does rather than reverse-engineering it.
