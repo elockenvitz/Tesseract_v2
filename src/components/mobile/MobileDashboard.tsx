@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Lightbulb } from 'lucide-react'
+import { Lightbulb, X } from 'lucide-react'
 import { ReelsFeedItem } from '../feed/ReelsFeedItem'
 import { ACTION_BAR_HEIGHT, MobileFeedActionRail } from './MobileFeedActionRail'
 import { ReadthroughSheet } from './ReadthroughSheet'
@@ -596,30 +596,41 @@ export function MobileDashboard({
   }
 
   return (
-    <div className="relative h-full overflow-hidden">
+    // Column, not a positioning context with an overlay in it. The filter bar
+    // below used to be `absolute top-0`, which kept it from scrolling away but
+    // also took it out of layout — so it sat on top of the first tile's header
+    // band, hiding the kind badge and attribution behind it. A flex column
+    // gives it its own height and leaves the rest to the scroller, which is
+    // what "above the scroller" was trying to express in the first place.
+    <div className="relative h-full overflow-hidden flex flex-col">
       <PullToRefreshIndicator ref={indicatorRef as any} isRefreshing={isRefreshing} armed={armed} />
 
-      {/* Active filter. Sits above the scroller rather than inside it so it
-          cannot scroll away — a filter you cannot see is a feed that looks
-          broken. */}
+      {/* Active filter. Occupies its own row so it cannot scroll away and
+          cannot cover the feed — a filter you cannot see is a feed that looks
+          broken, and one that hides the tile beneath it is worse. */}
       {kindFilter && (
-        <div className="absolute top-0 inset-x-0 z-40 flex items-center gap-2 px-3 py-2 bg-gray-900/90 text-white backdrop-blur-sm pt-safe">
-          <span className="text-xs font-medium">
-            Showing {KIND_LABELS[kindFilter] ?? kindFilter} only
+        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2 bg-gray-900 text-white pt-safe dark:bg-gray-800">
+          <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
+            {KIND_LABELS[kindFilter] ?? kindFilter} only
           </span>
           <button
             type="button"
             onClick={() => setKindFilter(null)}
-            className="ml-auto text-xs font-semibold underline underline-offset-2 no-touch-target"
+            className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
           >
-            Show everything
+            <X className="h-3 w-3" strokeWidth={2.5} />
+            Clear
           </button>
         </div>
       )}
 
+      {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
+          it grow to its content instead of scrolling, and the snap sections
+          inside are full-height by definition. Without it the scroller has no
+          bounded height and every tile spills. */}
       <div
         ref={setScroller}
-        className="h-full overflow-y-auto snap-y snap-mandatory overscroll-contain"
+        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
         {feedEntries.map(entry => {
           if (entry.kind === 'attention') {
