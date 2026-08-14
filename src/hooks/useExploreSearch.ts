@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useOrganizationOptional } from '../contexts/OrganizationContext'
 
 /**
  * Keyword search across *content*, not just object names.
@@ -70,10 +71,15 @@ function recencyBonus(iso: string | null | undefined): number {
 
 export function useExploreSearch(query: string, options?: { enabled?: boolean }) {
   const term = safe(query)
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
 
   return useQuery<ExploreResult[]>({
-    queryKey: ['explore-search', term],
-    enabled: (options?.enabled ?? true) && term.length >= 2,
+    queryKey: ['explore-search', term, currentOrgId],
+    // Gated on the org as well as the term: asset_lists and trade_queue_items
+    // have no org-aware RLS, so the filters below are the only thing keeping
+    // one workspace's lists and ideas out of another's search results. Running
+    // this before the org resolves would return everything.
+    enabled: (options?.enabled ?? true) && term.length >= 2 && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       const like = `%${term}%`
@@ -90,6 +96,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
           .limit(15),
         supabase.from('asset_lists')
           .select('id, name, description, brief, updated_at')
+          .eq('organization_id', currentOrgId!)
           .or(`name.ilike.${like},description.ilike.${like},brief.ilike.${like}`)
           .limit(15),
         supabase.from('portfolio_notes')
@@ -99,6 +106,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
           .limit(15),
         supabase.from('trade_queue_items')
           .select('id, rationale, thesis_text, updated_at, asset_id, assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .or(`rationale.ilike.${like},thesis_text.ilike.${like}`)
           .limit(15),
       ])

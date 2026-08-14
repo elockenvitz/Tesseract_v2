@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { NodeViewWrapper, NodeViewProps } from '@tiptap/react'
+import { supabase } from '../../../../lib/supabase'
 import {
   Link2, Image, Camera, ExternalLink, ChevronDown, ChevronRight,
   X, MoreHorizontal, RefreshCw, Clock, TrendingUp, Building2,
@@ -72,6 +73,50 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
     deleteNode()
   }, [deleteNode])
 
+  // Screenshot URL. The node stores the storage path, never a URL: a public
+  // URL would outlive the note it was embedded in and stay fetchable by
+  // anyone who had ever seen it. Signed URLs expire, so we mint one per
+  // mount and refresh it well before the hour is up.
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
+  const [screenshotError, setScreenshotError] = useState(false)
+
+  useEffect(() => {
+    if (!screenshotPath) {
+      setScreenshotUrl(null)
+      return
+    }
+
+    let cancelled = false
+    let refreshTimer: ReturnType<typeof setTimeout>
+
+    const sign = async () => {
+      const { data, error } = await supabase.storage
+        .from('captures')
+        .createSignedUrl(screenshotPath, 3600)
+
+      if (cancelled) return
+
+      if (error || !data?.signedUrl) {
+        setScreenshotError(true)
+        setScreenshotUrl(null)
+        return
+      }
+
+      setScreenshotError(false)
+      setScreenshotUrl(data.signedUrl)
+      // Re-sign at 50 minutes so a note left open all afternoon doesn't
+      // silently turn into a broken image.
+      refreshTimer = setTimeout(sign, 50 * 60 * 1000)
+    }
+
+    sign()
+
+    return () => {
+      cancelled = true
+      clearTimeout(refreshTimer)
+    }
+  }, [screenshotPath])
+
   // Get entity config if this is an entity capture
   const entityConfig = entityType ? ENTITY_CONFIG[entityType as CaptureEntityType] : null
   const captureConfig = CAPTURE_TYPE_CONFIG[captureType as CaptureType]
@@ -121,8 +166,7 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
   }
 
   const renderScreenshotCapture = () => {
-    // TODO: Get public URL from Supabase storage
-    const imageUrl = screenshotPath ? `${process.env.VITE_SUPABASE_URL}/storage/v1/object/public/captures/${screenshotPath}` : null
+    const imageUrl = screenshotUrl
 
     return (
       <div className="flex flex-col">
@@ -169,14 +213,30 @@ export function CaptureView({ node, updateAttributes, deleteNode, selected }: Ca
         </div>
 
         {/* Expanded content */}
-        {localExpanded && imageUrl && (
+        {localExpanded && (
           <div className="p-4 bg-white rounded-b-lg dark:bg-gray-800">
-            <img
-              src={imageUrl}
-              alt={displayTitle || 'Screenshot'}
-              className="max-w-full rounded-lg border border-gray-200 dark:border-gray-700"
-              style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
-            />
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={displayTitle || 'Screenshot'}
+                className="max-w-full rounded-lg border border-gray-200 dark:border-gray-700"
+                style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
+              />
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-6 justify-center rounded-lg border border-dashed border-gray-200 text-xs text-gray-400 dark:border-gray-700">
+                {screenshotError ? (
+                  <>
+                    <X className="h-3.5 w-3.5" />
+                    Screenshot unavailable
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Loading screenshot…
+                  </>
+                )}
+              </div>
+            )}
             {screenshotNotes && (
               <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{screenshotNotes}</p>
             )}

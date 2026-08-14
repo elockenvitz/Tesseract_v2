@@ -220,9 +220,9 @@ const FK_CHAIN_TABLES = {
   asset_team_members:             'teams chain',
 
   // --- Asset models chain ---
-  asset_models:                   'RLS via user ownership',
+  // asset_models and model_versions moved off this list in 20260814100000 —
+  // they now carry organization_id directly and are categorized by it.
   model_files:                    'asset_models chain',
-  model_versions:                 'asset_models chain',
   model_template_collaborations:  'model_templates chain',
 
   // --- Asset lists chain ---
@@ -380,6 +380,12 @@ async function run() {
   const GRANDFATHERED_NULLABLE = new Set([
     'ai_column_library', 'coverage_settings', 'investment_case_templates',
     'model_templates', 'rating_scales', 'research_fields',
+    // 20260814100000 added organization_id to both. Nullable on purpose:
+    // legacy rows whose creator belongs to more than one org cannot be
+    // attributed, and NOT NULL would force a guess. They stay NULL and
+    // invisible until an admin assigns one — see that migration's
+    // verification queries. Drop from this list once those are resolved.
+    'asset_models', 'model_versions',
   ])
   const nullableOrgId = allTables.filter(
     t => t.has_org_id && t.org_id_nullable === 'YES' && !GRANDFATHERED_NULLABLE.has(t.table_name)

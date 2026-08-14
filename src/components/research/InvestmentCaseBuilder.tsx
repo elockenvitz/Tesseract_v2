@@ -31,6 +31,8 @@ import { useAuth } from '../../hooks/useAuth'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
 import { useAnalystPriceTargets } from '../../hooks/useAnalystPriceTargets'
 import { supabase } from '../../lib/supabase'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { assetsPath } from '../../lib/storage/asset-paths'
 import { SLUG_TO_SECTION } from '../../lib/research/contribution-sections'
 import { useQueryClient } from '@tanstack/react-query'
 import { InvestmentCaseTemplateSelector, InvestmentCaseTemplateEditor } from '../investment-case-templates'
@@ -101,6 +103,10 @@ export function InvestmentCaseBuilder({
   onClose
 }: InvestmentCaseBuilderProps) {
   const { user } = useAuth()
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
   const { displayedFieldsBySection, isLoading } = useUserAssetPagePreferences(assetId)
   const { contributions } = useContributions({ assetId })
@@ -780,7 +786,7 @@ export function InvestmentCaseBuilder({
         try {
           const blob = pdf.output('blob')
           const randomId = Math.random().toString(36).substring(2, 10)
-          const storagePath = `documents/${assetId}/${Date.now()}_${randomId}.pdf`
+          const storagePath = assetsPath(currentOrgId, 'documents', assetId, `${Date.now()}_${randomId}.pdf`)
 
           const { error: uploadError } = await supabase.storage
             .from('assets')

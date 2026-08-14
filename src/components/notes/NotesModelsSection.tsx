@@ -10,6 +10,8 @@ import { BulkExcelImporter } from '../outcomes/BulkExcelImporter'
 import { useAssetModels, AssetModel } from '../../hooks/useAssetModels'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { assetsPath } from '../../lib/storage/asset-paths'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 
@@ -35,6 +37,10 @@ export function NotesModelsSection({
   onViewAllNotes
 }: NotesModelsSectionProps) {
   const { user } = useAuth()
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
 
   // Models hook
@@ -119,7 +125,7 @@ export function NotesModelsSection({
       // Generate unique file path
       const randomId = Math.random().toString(36).substring(2, 10)
       const extension = file.name.split('.').pop() || 'bin'
-      const filePath = `notes/${assetId}/${Date.now()}_${randomId}.${extension}`
+      const filePath = assetsPath(currentOrgId, 'notes', assetId, `${Date.now()}_${randomId}.${extension}`)
 
       // Upload file to Supabase Storage
       const { error: uploadError } = await supabase.storage

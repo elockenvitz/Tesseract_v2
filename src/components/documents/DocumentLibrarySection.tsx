@@ -28,6 +28,8 @@ import { BulkExcelImporter } from '../outcomes/BulkExcelImporter'
 import { useAssetModels, AssetModel } from '../../hooks/useAssetModels'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { assetsPath } from '../../lib/storage/asset-paths'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 
@@ -197,6 +199,10 @@ export function DocumentLibrarySection({
   isEmbedded = false
 }: DocumentLibrarySectionProps) {
   const { user } = useAuth()
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
 
   // Models hook
@@ -340,7 +346,7 @@ export function DocumentLibrarySection({
     try {
       const randomId = Math.random().toString(36).substring(2, 10)
       const extension = file.name.split('.').pop() || 'bin'
-      const filePath = `documents/${assetId}/${Date.now()}_${randomId}.${extension}`
+      const filePath = assetsPath(currentOrgId, 'documents', assetId, `${Date.now()}_${randomId}.${extension}`)
 
       const { error: uploadError } = await supabase.storage
         .from('assets')

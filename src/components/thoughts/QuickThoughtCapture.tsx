@@ -17,7 +17,11 @@ import type { CapturedContext } from './ContextSelector'
 
 interface Attachment {
   name: string
-  url: string
+  /** Storage path inside the `thought-attachments` bucket — never a URL.
+   *  A public URL persisted here would outlive the thought and stay
+   *  fetchable by anyone who ever saw it, including after deletion.
+   *  Callers that need to display the file sign this path on demand. */
+  path: string
   type: string
   size: number
 }
@@ -376,7 +380,7 @@ export function QuickThoughtCapture({
         const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
 
         // Upload to Supabase storage
-        const { data, error } = await supabase.storage
+        const { error } = await supabase.storage
           .from('thought-attachments')
           .upload(fileName, file)
 
@@ -385,14 +389,9 @@ export function QuickThoughtCapture({
           continue
         }
 
-        // Get public URL
-        const { data: urlData } = supabase.storage
-          .from('thought-attachments')
-          .getPublicUrl(fileName)
-
         newAttachments.push({
           name: file.name,
-          url: urlData.publicUrl,
+          path: fileName,
           type: file.type,
           size: file.size,
         })
@@ -410,8 +409,16 @@ export function QuickThoughtCapture({
     }
   }
 
-  const removeAttachment = (url: string) => {
-    setAttachments(prev => prev.filter(a => a.url !== url))
+  // Removing an attachment before the thought is posted also deletes the
+  // uploaded object. Without this the file stays in the bucket forever with
+  // nothing in the database pointing at it — invisible, undeletable, and
+  // still counted as data we hold on the user's behalf.
+  const removeAttachment = (path: string) => {
+    setAttachments(prev => prev.filter(a => a.path !== path))
+    void supabase.storage.from('thought-attachments').remove([path])
+      .then(({ error }) => {
+        if (error) console.error('Failed to remove orphaned attachment:', error)
+      })
   }
 
   const getFileIcon = (type: string) => {
@@ -763,14 +770,14 @@ export function QuickThoughtCapture({
                 const FileIcon = getFileIcon(attachment.type)
                 return (
                   <div
-                    key={attachment.url}
+                    key={attachment.path}
                     className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-200"
                   >
                     <FileIcon className="h-2.5 w-2.5" />
                     <span className="max-w-[100px] truncate">{attachment.name}</span>
                     <span className="text-blue-400">({formatFileSize(attachment.size)})</span>
                     <button
-                      onClick={() => removeAttachment(attachment.url)}
+                      onClick={() => removeAttachment(attachment.path)}
                       className="ml-0.5 hover:text-red-600"
                     >
                       <X className="h-2.5 w-2.5" />

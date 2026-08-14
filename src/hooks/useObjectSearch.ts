@@ -147,8 +147,13 @@ export function useObjectSearch(debouncedQuery: string) {
         const rpcPortfolios: any[] = data?.portfolios || []
         const rpcIds = new Set(rpcPortfolios.map((p: any) => p.id))
 
-        // Also search by portfolio_id mnemonic (RPC only searches name)
+        // Also search by portfolio_id mnemonic (RPC only searches name).
+        // An explicit .eq('organization_id') would be *narrower* than the
+        // policy and would hide legacy rows carrying team_id with a null
+        // organization_id.
         const { data: mnemonicHits } = await supabase
+          // org-scope-exempt: portfolios RLS is genuinely org-aware
+          // ("Org members can view portfolios in current org"), unlike asset_lists.
           .from('portfolios')
           .select('id, name, description, benchmark, portfolio_id')
           .ilike('portfolio_id', `%${debouncedQuery.trim()}%`)
