@@ -6,9 +6,9 @@
 > publication.
 >
 > One drafting rule was followed throughout: **it does not promise anything the
-> code does not do.** In particular the deletion section describes suspension
-> rather than erasure, because erasure does not exist yet. If you build it,
-> update this. If you shorten this document, do not shorten it by making the
+> code does not do.** The deletion section describes erasure because erasure
+> now exists; it stops short of promising a self-service data export because
+> that does not. If you shorten this document, do not shorten it by making the
 > promises broader.
 
 **Effective date:** [DATE]
@@ -122,9 +122,10 @@ required to retain.
 Audit logs are retained for a period your organization's administrators
 configure.
 
-> Note for counsel: this is the honest position. There is currently no
-> scheduled deletion of notes, research, holdings history or uploaded files.
-> Do not add a retention period here that nothing enforces.
+> Note for counsel: this is the honest position. There is no *scheduled*
+> deletion of notes, research, holdings history or uploaded files — deletion
+> happens on request, not on a timer. Do not add a retention period here that
+> nothing enforces.
 
 ## Your choices
 
@@ -134,19 +135,30 @@ You can view and correct your account information in the product.
 your firm's administrator. For your account information, contact us at [PRIVACY
 CONTACT EMAIL].
 
-**On account deletion:** when a user leaves an organization, their access is
-revoked and their account is deactivated. Their name remains attached to the
-research and decisions they authored, because those are your firm's business
-records and, for a regulated firm, records it may be legally required to keep.
-If you want your personal information removed beyond deactivation, contact us
-and we will tell you what we can remove and what your firm's obligations
-require us to keep.
+**On deleting your personal information.** On request from you or your firm's
+administrator, we will erase your personal information: your name and email
+address, your preferences, saved views and layouts, your notifications, your AI
+prompt history, and your calendar connections. Your login is removed and your
+access ends.
 
-> Note for counsel: this paragraph is written to match what the software
-> actually does — deactivate, not erase. It is defensible for a B2B
-> recordkeeping product, but it *is* the weakest point in this document and
-> the most likely to be challenged. Building an erasure path would let you
-> replace it with something stronger.
+**The work you authored stays.** Research notes, theses, ratings and investment
+decisions remain, attributed to "Former user" rather than to you. We keep them
+because they are your firm's business records — your firm, not us and not you
+individually, decides what happens to them — and because a regulated firm is
+required by law to retain them. If you want them removed, that is a request to
+make of your firm.
+
+If your firm's account ends, we delete its data and files in full on request.
+
+> Note for counsel: this now matches the software. `erase_user_personal_data()`
+> performs the erasure; `scripts/erase-organization.mjs` and its SQL companion
+> do the organization. The retention-of-authored-content split is a deliberate
+> position — see `DATA-INVENTORY.md` §4 — and is the part most worth your
+> review, because it is where an individual's erasure right meets the firm's
+> recordkeeping obligation.
+>
+> Still not built: a self-service data export. A DSAR asking for a *copy* of
+> personal data is a manual job today.
 
 **California residents.** [ADD CCPA/CPRA RIGHTS IF THRESHOLDS ARE MET. NOTE
 CCPA COVERS B2B CONTACTS.]

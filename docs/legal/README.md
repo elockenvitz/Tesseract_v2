@@ -20,11 +20,15 @@ software genuinely does rather than reverse-engineering it.
 
 **They do not promise anything the code does not do.**
 
-The clearest example is deletion. There is no account or organization erasure
-path — only suspension — so the privacy policy describes suspension, and the
-DPA flags the gap rather than papering over it. If you build erasure, the
-documents get *stronger*; if you edit them to sound better without building it,
-you have created the liability the exercise was meant to avoid.
+Deletion is the worked example. When these were first drafted there was no
+erasure path at all, so the privacy policy described suspension. Erasure now
+exists — `erase_user_personal_data()` for a person, and the two erase-organization
+scripts for a whole customer — so the policy was rewritten to describe erasure.
+It still stops short of promising a self-service data export, because that
+genuinely does not exist.
+
+That is the intended cycle: build the capability, then widen the promise. Doing
+it the other way round creates exactly the liability this exercise avoids.
 
 ## Read these first
 
