@@ -658,8 +658,15 @@ export function Header({
             </div>
 
             {/* Feedback pill — lives next to the search bar so it's
-                always reachable without floating over the page. */}
-            <div className="hidden md:block ml-3 flex-shrink-0">
+                always reachable without floating over the page.
+                Mounted at every width, not just md+: the widget owns the
+                `open-feedback-widget` listener, and MobileNavDrawer's
+                feedback row dispatches at it. Gating the mount on md meant
+                phone users had no way to report anything at all — the one
+                surface a tester most needs, missing exactly where most of
+                the testing happens. The trigger button itself is still
+                desktop-only; the component hides it below md. */}
+            <div className="ml-3 flex-shrink-0">
               <FeedbackWidget />
             </div>
 

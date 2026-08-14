@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
-import { Check, ChevronRight, Monitor, Search, X, Lightbulb } from 'lucide-react'
+import { Check, ChevronRight, Monitor, Search, X, Lightbulb, MessageSquarePlus } from 'lucide-react'
 import { TesseractLogo } from '../ui/TesseractLogo'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import {
@@ -283,6 +283,34 @@ export function MobileNavDrawer({
             {getMobileNavSurfaces('work').map(surface => (
               <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
             ))}
+          </NavSection>
+
+          {/* The only way to report anything from a phone.
+              FeedbackWidget's trigger is a labelled pill in the header, which
+              is desktop-only for want of room, so until this existed a phone
+              tester had no route to it at all. Dispatching the event the
+              widget already listens for avoids threading a ref or a prop from
+              Header down through the drawer. */}
+          <NavSection title="Help">
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                window.dispatchEvent(new CustomEvent('open-feedback-widget'))
+              }}
+              className={clsx(
+                'w-full flex items-center gap-3 min-h-[48px] px-3 rounded-xl text-left',
+                'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+              )}
+            >
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-indigo-50 dark:bg-indigo-900/30">
+                <MessageSquarePlus className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Send feedback</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+            </button>
           </NavSection>
 
         </div>

@@ -1,3 +1,9 @@
+[build]
+  # Netlify only auto-detects netlify/functions when no [build] block sets
+  # otherwise; naming it explicitly means adding a function never depends on
+  # detection behaviour.
+  functions = "netlify/functions"
+
 [build.environment]
   # Vite's source-map generation balloons memory for our 8MB bundle —
   # default 2GB heap and our first 4GB bump both OOM during chunk

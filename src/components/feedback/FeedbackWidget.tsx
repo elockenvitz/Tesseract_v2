@@ -170,8 +170,11 @@ export function FeedbackWidget() {
           window.dispatchEvent(new CustomEvent('pilot-postgrad:feedback-opened'))
         }}
         className={clsx(
-          'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-colors',
-          isOpen && 'hidden'
+          // Desktop-only trigger. On a phone the header row has no space for
+          // a labelled pill, so the entry point is a row in MobileNavDrawer
+          // which dispatches `open-feedback-widget` at this component.
+          'hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-colors',
+          isOpen && 'md:hidden'
         )}
         title="Send feedback or refer a friend"
       >
@@ -179,9 +182,17 @@ export function FeedbackWidget() {
         <span className="text-[10px] font-bold uppercase tracking-wider">Feedback</span>
       </button>
 
-      {/* Modal */}
+      {/* Modal.
+          Phone: pinned to the bottom edge, full width inside a small margin,
+          and capped in height so the form still scrolls when the keyboard
+          takes half the screen — dvh rather than vh because vh ignores the
+          keyboard on iOS. This was a fixed 380px, wider than a 375px phone,
+          so the close button and the send button sat off-screen.
+          Desktop is unchanged. */}
       {isOpen && (
-        <div className="fixed bottom-5 right-5 z-50 w-[380px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="fixed z-50 inset-x-3 bottom-3 max-h-[85dvh] overflow-y-auto overscroll-contain
+                        sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[380px] sm:max-h-none sm:overflow-hidden
+                        bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
