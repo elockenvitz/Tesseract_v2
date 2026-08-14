@@ -44,6 +44,13 @@ export interface ExploreResult {
   symbol?: string
   updatedAt?: string | null
   score: number
+  /**
+   * True when this came from the relaxed pass — it matched some of the query,
+   * not all of it. Surfaced separately so "related" never masquerades as an
+   * answer, which is the difference between a useful suggestion and a wrong
+   * result.
+   */
+  related?: boolean
   data: any
 }
 
@@ -109,6 +116,26 @@ function withTokens<T>(query: T, fields: string[], tokens: string[]): T {
   return q as T
 }
 
+/**
+ * One OR-group spanning every field *and* every token — "any word, anywhere".
+ *
+ * The counterpart to withTokens, used only when the strict pass came back
+ * near-empty. Searching "margin pressure" found nothing because no single
+ * document contained both words, which is a correct answer to the question
+ * asked and a useless one to the person asking: they want the margin
+ * discussion and the pressure discussion, and to judge the connection
+ * themselves.
+ */
+function withAnyToken<T>(query: T, fields: string[], tokens: string[]): T {
+  const clauses: string[] = []
+  for (const t of tokens) {
+    const esc = t.replace(/[%,()\\]/g, '')
+    if (!esc) continue
+    for (const f of fields) clauses.push(`${f}.ilike.%${esc}%`)
+  }
+  return (clauses.length ? (query as any).or(clauses.join(',')) : query) as T
+}
+
 /** Escape PostgREST `or` filter metacharacters so a query cannot break out. */
 function safe(term: string): string {
   return term.replace(/[%,()\\]/g, ' ').trim()
@@ -152,33 +179,38 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
       // A one-word query is its own token, so phrase and token matching agree.
       const phrase = term
 
-      const [assets, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] = await Promise.all([
-        withTokens(
+      /**
+       * Both passes hit the same sources; only the token combinator differs.
+       * `apply` is withTokens for the strict pass ("every word") and
+       * withAnyToken for the relaxed one ("any word").
+       */
+      const runPass = (apply: typeof withTokens) => Promise.all([
+        apply(
           supabase.from('assets')
             .select('id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, updated_at'),
           ['symbol', 'company_name', 'sector', 'thesis', 'where_different', 'risks_to_thesis'],
           tokens,
         ).limit(25),
-        withTokens(
+        apply(
           supabase.from('themes').select('id, name, description, updated_at'),
           ['name', 'description'],
           tokens,
         ).limit(15),
-        withTokens(
+        apply(
           supabase.from('asset_lists')
             .select('id, name, description, brief, updated_at')
             .eq('organization_id', currentOrgId!),
           ['name', 'description', 'brief'],
           tokens,
         ).limit(15),
-        withTokens(
+        apply(
           supabase.from('portfolio_notes')
             .select('id, title, content, content_preview, updated_at, portfolio_id')
             .neq('is_deleted', true),
           ['title', 'content'],
           tokens,
         ).limit(15),
-        withTokens(
+        apply(
           supabase.from('trade_queue_items')
             .select('id, rationale, thesis_text, updated_at, asset_id, assets(id, symbol, company_name)')
             .eq('organization_id', currentOrgId!),
@@ -189,7 +221,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
         // asset_notes was missing entirely, which is the single biggest gap in
         // this search: it is where the actual research is written. Everything
         // else here is a name, a rationale or a portfolio-level note.
-        withTokens(
+        apply(
           supabase.from('asset_notes')
             .select('id, title, content, content_preview, updated_at, asset_id, assets(symbol, company_name)')
             .eq('organization_id', currentOrgId!)
@@ -200,7 +232,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
 
         // Captured thoughts are half-formed by definition, which is exactly
         // what someone asking "what should I look at next" wants to find.
-        withTokens(
+        apply(
           supabase.from('quick_thoughts')
             .select('id, content, source_title, tags, updated_at, asset_id, assets(symbol, company_name)')
             .eq('organization_id', currentOrgId!)
@@ -209,6 +241,33 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
           tokens,
         ).limit(15),
       ])
+
+      let [assets, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] =
+        await runPass(withTokens)
+
+      /**
+       * Nothing matched every word — so ask for any word instead.
+       *
+       * "margin pressure" is the example the search box itself suggests, and
+       * it returned nothing because no single document contained both. That is
+       * a correct answer to the question asked and a useless one to the person
+       * asking: they want the margin discussion and the pressure discussion,
+       * and to judge the connection themselves. Only runs when the strict pass
+       * is thin, so the common case is still one round trip, and results are
+       * marked `related` so a partial match never poses as a full one.
+       */
+      let relaxed = false
+      if (tokens.length > 1) {
+        const strictCount =
+          (assets.data?.length ?? 0) + (themes.data?.length ?? 0) + (lists.data?.length ?? 0) +
+          (portfolioNotes.data?.length ?? 0) + (ideas.data?.length ?? 0) +
+          (assetNotes.data?.length ?? 0) + (thoughts.data?.length ?? 0)
+        if (strictCount < 3) {
+          relaxed = true
+          ;[assets, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] =
+            await runPass(withAnyToken)
+        }
+      }
 
       for (const a of ((assets.data as any[]) ?? [])) {
         const symbolHit = (a.symbol ?? '').toLowerCase() === term.toLowerCase()
@@ -319,6 +378,10 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
           data: t,
         })
       }
+
+      // A relaxed hit is a suggestion, not an answer, and is scored and
+      // labelled as one so it can never outrank a genuine match.
+      if (relaxed) for (const r of out) { r.related = true; r.score *= 0.5 }
 
       // Highest first. Ties on score fall back to recency so the ordering is
       // stable between renders rather than depending on which promise settled

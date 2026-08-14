@@ -130,7 +130,9 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
         key,
         kind: r.kind,
         title: r.title,
-        matchedIn: r.matchedIn,
+        // A relaxed hit says so. It matched some of the query, not all of it,
+        // and the row has to admit that or a suggestion reads as an answer.
+        matchedIn: r.related ? `related — ${r.matchedIn}` : r.matchedIn,
         excerpt: r.excerpt,
         score: r.score,
         select: () => {
@@ -219,11 +221,22 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
         ) : results.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Nothing matches “{trimmed}”.
+              Nothing written up on “{trimmed}” yet.
             </p>
             <p className="mt-1 text-xs text-gray-400">
-              Apps, assets, portfolios, themes, lists, notes and trade rationales
-              are all searched.
+              Assets, themes, lists, research notes, captured thoughts and trade
+              rationales were all searched, for any word in that phrase.
+            </p>
+            {/* An empty result is itself information: nobody has written this
+                up. That is a prompt to start, not a dead end — and telling the
+                reader where the gap is, is the whole point of a search meant
+                to help decide what to work on next. */}
+            <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              That might be the opportunity
+            </p>
+            <p className="mt-1.5 text-[13px] text-gray-500 dark:text-gray-400">
+              Capture a thought on it, or start a theme — a gap in the book is
+              worth more than another note on something already covered.
             </p>
           </div>
         ) : (

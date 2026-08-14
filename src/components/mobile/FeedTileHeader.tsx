@@ -62,7 +62,10 @@ export function FeedTileHeader({
       {badge}
 
       {headline && (
-        <span className="min-w-0 flex-1 text-[13px] font-semibold text-gray-900 dark:text-gray-100 truncate">
+        // Two lines rather than one. Anything short still occupies one, and a
+        // headline that needs two gets them instead of an ellipsis — the band
+        // grows by 16px, which is cheaper than an unreadable card.
+        <span className="min-w-0 flex-1 text-[13px] font-semibold leading-snug text-gray-900 dark:text-gray-100 line-clamp-2">
           {headline}
         </span>
       )}
