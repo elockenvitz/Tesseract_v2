@@ -1,1 +1,8 @@
+# Legal pages are plain static files, not app routes: a privacy policy has to
+# be readable by someone who is not signed in — including a regulator or a
+# prospect — and the SPA catch-all below would otherwise swallow them.
+# These must stay ABOVE the catch-all; Netlify applies the first match.
+/privacy   /legal/privacy.html   200
+/terms     /legal/terms.html     200
+
 /*  /index.html  200
