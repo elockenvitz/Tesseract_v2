@@ -19,6 +19,8 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
 import { NewsFeedTile } from './NewsFeedTile'
+import { ConvictionGapTile, CrowdedNameTile } from './PortfolioLensTile'
+import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { TemplateFeedTile } from './TemplateFeedTile'
 import { useMarketNews } from '../../hooks/useMarketNews'
 import { useMarketEvents } from '../../hooks/useMarketEvents'
@@ -45,6 +47,7 @@ const KIND_LABELS: Record<string, string> = {
   insight: 'insights',
   news: 'news',
   template: 'market events',
+  lens: 'portfolio lenses',
 }
 
 interface MobileDashboardProps {
@@ -103,6 +106,12 @@ export function MobileDashboard({
   // cards; the `prompt` type is excluded because those are canned questions
   // with no finding behind them, which is precisely the filler complained of.
   const { data: derivedInsights = [], isLoading: insightsLoading } = useDerivedInsights()
+
+  // Portfolio lenses: questions about the book that no other screen asks.
+  // Deliberately part of the feed rather than a separate destination — the
+  // whole point is that nobody goes looking for "is this position the right
+  // size", so it has to arrive unprompted.
+  const { data: lenses } = usePortfolioLenses()
   const { signals, isLoading: signalsLoading } = useSignalCards()
   const realSignals = useMemo(
     () => (signals ?? []).filter(sig => sig.signalType !== 'prompt'),
@@ -465,7 +474,23 @@ export function MobileDashboard({
       card: c,
     }))
 
-    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries]
+    // Both lenses share one kind so the interleaver treats them as a single
+    // stream, for the same reason the templates do: two sparse kinds would
+    // otherwise take two slots in every rotation.
+    const lensEntries = [
+      ...((lenses?.conviction ?? []).map((g, idx) => ({
+        kind: 'lens' as const,
+        score: 40 - idx,
+        lens: { type: 'conviction' as const, gap: g },
+      }))),
+      ...((lenses?.crowded ?? []).map((c, idx) => ({
+        kind: 'lens' as const,
+        score: 38 - idx,
+        lens: { type: 'crowded' as const, name: c },
+      }))),
+    ]
+
+    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries, ...lensEntries]
 
     // Filtering before the interleave rather than after: interleaving exists to
     // stop one kind running consecutively, and with a single kind selected that
@@ -661,6 +686,33 @@ export function MobileDashboard({
                     name: linked?.company_name ?? null,
                   })}
                 />
+              </section>
+            )
+          }
+
+          if (entry.kind === 'lens') {
+            const l = entry.lens
+            const key = l.type === 'conviction'
+              ? `lens-conv-${l.gap.assetId}-${l.gap.portfolioId}`
+              : `lens-crowd-${l.name.assetId}`
+            return (
+              <section
+                key={key}
+                className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
+              >
+                {l.type === 'conviction' ? (
+                  <ConvictionGapTile
+                    gap={l.gap}
+                    onAssetClick={openAsset}
+                    onFilterKind={() => setKindFilter('lens')}
+                  />
+                ) : (
+                  <CrowdedNameTile
+                    name={l.name}
+                    onAssetClick={openAsset}
+                    onFilterKind={() => setKindFilter('lens')}
+                  />
+                )}
               </section>
             )
           }
