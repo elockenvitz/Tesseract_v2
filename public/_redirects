@@ -1,8 +1,12 @@
-# Legal pages are plain static files, not app routes: a privacy policy has to
-# be readable by someone who is not signed in — including a regulator or a
-# prospect — and the SPA catch-all below would otherwise swallow them.
-# These must stay ABOVE the catch-all; Netlify applies the first match.
-/privacy   /legal/privacy.html   200
-/terms     /legal/terms.html     200
+# When Tesseract launches publicly, the legal pages in docs/legal/site/ move
+# back to public/legal/ and these two rules go here, ABOVE the catch-all —
+# Netlify applies the first match, and below it they never fire:
+#
+#   /privacy   /legal/privacy.html   200
+#   /terms     /legal/terms.html     200
+#
+# They are deliberately not served today. See docs/legal/LAUNCH-CHECKLIST.md:
+# publishing a policy that names a legal entity which does not exist yet is
+# worse than publishing nothing.
 
 /*  /index.html  200
