@@ -1,8 +1,8 @@
 import { clsx } from 'clsx'
-import { Scale, Layers3 } from 'lucide-react'
+import { Scale, Layers3, Target, CalendarClock } from 'lucide-react'
 import { FeedTileHeader } from './FeedTileHeader'
 import { FeedKindBadge } from './FeedKindBadge'
-import type { ConvictionGap, CrowdedName } from '../../hooks/mobile/usePortfolioLenses'
+import type { ConvictionGap, CrowdedName, TargetBreach, StaleTarget } from '../../hooks/mobile/usePortfolioLenses'
 
 interface ConvictionTileProps {
   gap: ConvictionGap
@@ -79,6 +79,13 @@ export function ConvictionGapTile({ gap, onAssetClick, onFilterKind }: Convictio
             tone={under ? 'bad' : 'good'}
             note={gap.portfolioName}
           />
+          {gap.conviction && (
+            <div className="col-span-2 -mt-1 text-[12px] text-gray-500 dark:text-gray-400">
+              Stated conviction: <strong className="text-gray-700 dark:text-gray-200">{gap.conviction}</strong>
+              {' — '}the rating and the target are separate claims, and this tile
+              fires when either one is out of step with the size.
+            </div>
+          )}
         </div>
 
         <p className="mt-6 text-[15px] leading-relaxed text-gray-700 dark:text-gray-300">
@@ -216,6 +223,147 @@ function Figure({
       {note && (
         <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 truncate">{note}</div>
       )}
+    </div>
+  )
+}
+
+interface BreachTileProps {
+  breach: TargetBreach
+  onAssetClick?: (assetId: string, symbol: string) => void
+  onFilterKind?: () => void
+}
+
+/**
+ * The price reached the target and nobody was told.
+ *
+ * This is the quietest way a book goes stale. The thesis worked, which feels
+ * like success and therefore prompts nothing — but the position is now held
+ * with no stated upside at all, and that is a decision being made by default.
+ * Either the target moves or the position does.
+ */
+export function TargetBreachTile({ breach, onAssetClick, onFilterKind }: BreachTileProps) {
+  const over = Math.round(breach.overshootPct * 100)
+
+  return (
+    <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
+      <FeedTileHeader
+        badge={
+          <FeedKindBadge
+            icon={Target}
+            label="Target hit"
+            chip="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+            onFilter={onFilterKind}
+            filterLabel="Show only target checks"
+          />
+        }
+        headline="Trading at or above the target"
+      />
+
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pt-5 pb-4">
+        <button
+          type="button"
+          onClick={() => onAssetClick?.(breach.assetId, breach.symbol)}
+          className="text-left no-touch-target"
+        >
+          <div className="text-[34px] font-black leading-none tracking-[-0.035em] text-gray-900 dark:text-white">
+            {breach.symbol}
+          </div>
+          {breach.companyName && (
+            <div className="mt-1 text-[13px] font-medium text-gray-500 dark:text-gray-400 truncate">
+              {breach.companyName}
+            </div>
+          )}
+        </button>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Figure label="Price" value={`$${breach.price.toFixed(2)}`} tone="good"
+            note={over > 0 ? `${over}% past target` : 'at target'} />
+          <Figure label="Target" value={`$${breach.target.toFixed(2)}`} tone="flat"
+            note={breach.conviction ? `${breach.conviction} conviction` : 'no rating'} />
+        </div>
+
+        <p className="mt-6 text-[15px] leading-relaxed text-gray-700 dark:text-gray-300">
+          <strong>{breach.symbol}</strong> has reached the target. The position is
+          now held with no stated upside — raise the target if the thesis has more
+          in it, or the size is being carried on a view that is finished.
+        </p>
+
+        {breach.heldIn.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {breach.heldIn.slice(0, 6).map(p => (
+              <span key={p} className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                {p}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface StaleTileProps {
+  target: StaleTarget
+  onAssetClick?: (assetId: string, symbol: string) => void
+  onFilterKind?: () => void
+}
+
+/**
+ * The view has outlived its own horizon.
+ *
+ * A 12-month target set 18 months ago is not a view any more, it is a number
+ * left on a page — and it will keep being read as current by everything that
+ * consumes it, including the sizing lens next door. Nothing else expires it,
+ * because nothing else knows the horizon was ever stated.
+ */
+export function StaleTargetTile({ target, onAssetClick, onFilterKind }: StaleTileProps) {
+  const upside = Math.round(((target.target - target.price) / target.price) * 100)
+
+  return (
+    <div className="relative w-full h-full flex flex-col bg-white dark:bg-gray-900">
+      <FeedTileHeader
+        badge={
+          <FeedKindBadge
+            icon={CalendarClock}
+            label="Expired"
+            chip="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+            onFilter={onFilterKind}
+            filterLabel="Show only target checks"
+          />
+        }
+        headline={`${target.timeframe ?? 'Target'} horizon ran out`}
+      />
+
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pt-5 pb-4">
+        <button
+          type="button"
+          onClick={() => onAssetClick?.(target.assetId, target.symbol)}
+          className="text-left no-touch-target"
+        >
+          <div className="text-[34px] font-black leading-none tracking-[-0.035em] text-gray-900 dark:text-white">
+            {target.symbol}
+          </div>
+          {target.companyName && (
+            <div className="mt-1 text-[13px] font-medium text-gray-500 dark:text-gray-400 truncate">
+              {target.companyName}
+            </div>
+          )}
+        </button>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Figure label="Set" value={`${target.ageMonths}mo ago`} tone="bad"
+            note={`${target.overdueMonths}mo past horizon`} />
+          <Figure label="Still implies" value={`${upside > 0 ? '+' : ''}${upside}%`} tone="flat"
+            note={`$${target.target.toFixed(2)} target`} />
+        </div>
+
+        <p className="mt-6 text-[15px] leading-relaxed text-gray-700 dark:text-gray-300">
+          This was a {target.timeframe ?? 'dated'} view set {target.ageMonths} months
+          ago. It is still being read as current — by the sizing check, and by
+          anyone looking at the name — {target.overdueMonths} months after the
+          horizon it was written for ended.
+        </p>
+      </div>
     </div>
   )
 }

@@ -19,7 +19,7 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { SignalFeedTile } from './SignalFeedTile'
 import { DerivedInsightTile } from './DerivedInsightTile'
 import { NewsFeedTile } from './NewsFeedTile'
-import { ConvictionGapTile, CrowdedNameTile } from './PortfolioLensTile'
+import { ConvictionGapTile, CrowdedNameTile, TargetBreachTile, StaleTargetTile } from './PortfolioLensTile'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { TemplateFeedTile } from './TemplateFeedTile'
 import { useMarketNews } from '../../hooks/useMarketNews'
@@ -488,6 +488,19 @@ export function MobileDashboard({
         score: 38 - idx,
         lens: { type: 'crowded' as const, name: c },
       }))),
+      // Scored above the other two: a target that has been hit or has expired
+      // is a decision waiting on someone, where sizing and crowding are
+      // observations. Attention should outrank interest.
+      ...((lenses?.breaches ?? []).map((b, idx) => ({
+        kind: 'lens' as const,
+        score: 60 - idx,
+        lens: { type: 'breach' as const, breach: b },
+      }))),
+      ...((lenses?.stale ?? []).map((t, idx) => ({
+        kind: 'lens' as const,
+        score: 58 - idx,
+        lens: { type: 'stale' as const, target: t },
+      }))),
     ]
 
     const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries, ...lensEntries]
@@ -692,26 +705,28 @@ export function MobileDashboard({
 
           if (entry.kind === 'lens') {
             const l = entry.lens
-            const key = l.type === 'conviction'
-              ? `lens-conv-${l.gap.assetId}-${l.gap.portfolioId}`
-              : `lens-crowd-${l.name.assetId}`
+            const key =
+              l.type === 'conviction' ? `lens-conv-${l.gap.assetId}-${l.gap.portfolioId}`
+              : l.type === 'crowded'  ? `lens-crowd-${l.name.assetId}`
+              : l.type === 'breach'   ? `lens-breach-${l.breach.assetId}`
+              :                         `lens-stale-${l.target.assetId}`
             return (
               <section
                 key={key}
                 className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
               >
                 {l.type === 'conviction' ? (
-                  <ConvictionGapTile
-                    gap={l.gap}
-                    onAssetClick={openAsset}
-                    onFilterKind={() => setKindFilter('lens')}
-                  />
+                  <ConvictionGapTile gap={l.gap} onAssetClick={openAsset}
+                    onFilterKind={() => setKindFilter('lens')} />
+                ) : l.type === 'crowded' ? (
+                  <CrowdedNameTile name={l.name} onAssetClick={openAsset}
+                    onFilterKind={() => setKindFilter('lens')} />
+                ) : l.type === 'breach' ? (
+                  <TargetBreachTile breach={l.breach} onAssetClick={openAsset}
+                    onFilterKind={() => setKindFilter('lens')} />
                 ) : (
-                  <CrowdedNameTile
-                    name={l.name}
-                    onAssetClick={openAsset}
-                    onFilterKind={() => setKindFilter('lens')}
-                  />
+                  <StaleTargetTile target={l.target} onAssetClick={openAsset}
+                    onFilterKind={() => setKindFilter('lens')} />
                 )}
               </section>
             )
