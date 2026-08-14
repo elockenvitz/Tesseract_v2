@@ -52,30 +52,37 @@ export function FeedTileTitle({
       <div className={clsx('flex-shrink-0 px-3 pt-1.5 pb-1', className)}>
         <TickerQuoteBadge symbol={quoteSymbol} companyName={quoteCompanyName} variant="lead" />
         {subtitle && (
-          <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{subtitle}</p>
+          <p className="mt-1 text-[13px] leading-snug font-medium text-gray-500 dark:text-gray-400">{subtitle}</p>
         )}
       </div>
     )
   }
 
   return (
-    <div className={clsx('flex-shrink-0 px-3 pt-1.5 pb-1', className)}>
+    <div className={clsx('flex-shrink-0 px-3 pt-2.5 pb-1.5', className)}>
       <div className="flex items-start justify-between gap-2">
-        <h2 className="min-w-0 text-2xl font-bold leading-tight">
+        {/* 30px, tight tracking, black weight.
+            This is the one element a reader should land on before deciding
+            whether to stop scrolling, and at text-2xl/bold it was only a step
+            above the 13px chrome around it. The jump from 10px badge to 30px
+            instruction is what makes the tile resolve at a glance instead of
+            asking to be read. Tight tracking keeps a long "SELL DASH" on one
+            line at the larger size. */}
+        <h2 className="min-w-0 text-[30px] font-black leading-[1.05] tracking-[-0.035em]">
           {isPair ? (
             // Both sides named and coloured. A plain "A / B vs C / D" left the
             // reader guessing which side was being bought.
-            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xl">
+            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[22px]">
               {longSymbols.length > 0 && (
-                <span className="text-emerald-600 dark:text-emerald-400">
+                <span className="text-emerald-500 dark:text-emerald-400">
                   BUY {longSymbols.join(' / ')}
                 </span>
               )}
               {longSymbols.length > 0 && shortSymbols.length > 0 && (
-                <span className="text-gray-400 text-base font-medium">vs</span>
+                <span className="text-gray-400 text-sm font-semibold uppercase tracking-wide">vs</span>
               )}
               {shortSymbols.length > 0 && (
-                <span className="text-red-600 dark:text-red-400">
+                <span className="text-rose-500 dark:text-rose-400">
                   SELL {shortSymbols.join(' / ')}
                 </span>
               )}
@@ -87,7 +94,7 @@ export function FeedTileTitle({
               {symbol && <span className="text-gray-900 dark:text-white">{symbol}</span>}
             </>
           ) : (
-            <span className="text-xl text-gray-900 dark:text-white">{headline}</span>
+            <span className="text-[22px] text-gray-900 dark:text-white">{headline}</span>
           )}
         </h2>
 
@@ -102,7 +109,7 @@ export function FeedTileTitle({
       </div>
 
       {subtitle && (
-        <p className="mt-0.5 text-sm font-medium text-gray-600 dark:text-gray-300">{subtitle}</p>
+        <p className="mt-1 text-[13px] leading-snug font-medium text-gray-500 dark:text-gray-400">{subtitle}</p>
       )}
     </div>
   )
@@ -111,7 +118,7 @@ export function FeedTileTitle({
 /** Green buys, red sells — the same mapping the rest of the app uses. */
 function actionTone(action: string): string {
   const a = action.toLowerCase()
-  if (a === 'buy' || a === 'add') return 'text-emerald-600 dark:text-emerald-400'
-  if (a === 'sell' || a === 'trim') return 'text-red-600 dark:text-red-400'
+  if (a === 'buy' || a === 'add') return 'text-emerald-500 dark:text-emerald-400'
+  if (a === 'sell' || a === 'trim') return 'text-rose-500 dark:text-rose-400'
   return 'text-gray-900 dark:text-white'
 }

@@ -33,11 +33,21 @@ export function FeedKindBadge({ icon: Icon, label, chip, onFilter, filterLabel }
   const pill = (
     <span
       className={clsx(
-        'flex shrink-0 items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border whitespace-nowrap',
+        // Filled, not outlined. The border was an untinted default grey drawn
+        // around a pale fill, which reads as a disabled control rather than a
+        // category — it muddied the one element whose job is to be instantly
+        // identifiable at a glance while scrolling.
+        //
+        // Uppercase at 10px with wide tracking rather than 11px sentence case:
+        // a label read by shape, not by reading. It ends up *smaller* and far
+        // more legible, and the size drop buys contrast against the title
+        // instead of competing with it.
+        'flex shrink-0 items-center gap-1 px-2 py-[3px] rounded-full',
+        'text-[10px] font-bold uppercase tracking-[0.06em] whitespace-nowrap',
         chip,
       )}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <Icon className="h-3 w-3 shrink-0" strokeWidth={2.5} />
       {label}
     </span>
   )

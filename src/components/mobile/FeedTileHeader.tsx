@@ -48,7 +48,14 @@ export function FeedTileHeader({
   return (
     <div
       className={clsx(
-        'flex-shrink-0 z-30 flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800',
+        // Tinted rather than white, and the divider is a real line rather than
+        // gray-100. The band used to be the same surface as the body with a
+        // near-invisible rule between them, so the tile read as one
+        // undifferentiated field — nothing said "this part is chrome, that
+        // part is the story".
+        'flex-shrink-0 z-30 flex items-center gap-2 px-3 py-2',
+        'bg-gray-50/80 dark:bg-white/[0.03]',
+        'border-b border-gray-200/80 dark:border-white/10',
         className
       )}
     >
@@ -61,19 +68,22 @@ export function FeedTileHeader({
       )}
 
       {(authorName || when) && (
-        <div className="ml-auto min-w-0 flex flex-col justify-center items-end text-right leading-tight">
+        // Name and time were 13px and 11px, two greys apart — near enough to
+        // read as one grey block. The name now carries the weight and the time
+        // recedes properly, so attribution is scannable instead of decorative.
+        <div className="ml-auto min-w-0 flex flex-col justify-center items-end text-right leading-[1.25]">
           {authorName && (
             <button
               type="button"
               onClick={onAuthorClick}
               disabled={!onAuthorClick}
-              className="text-[13px] font-medium text-gray-700 dark:text-gray-200 truncate text-right no-touch-target disabled:cursor-default"
+              className="text-[12px] font-semibold text-gray-800 dark:text-gray-100 truncate text-right no-touch-target disabled:cursor-default"
             >
-              by {authorName}
+              {authorName}
             </button>
           )}
           {when && (
-            <span className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 whitespace-nowrap">
               {when}
             </span>
           )}
