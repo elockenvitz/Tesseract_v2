@@ -567,6 +567,7 @@ interface UseModelFilesOptions {
 
 export function useModelFiles({ assetId, userId, latestOnly = true }: UseModelFilesOptions) {
   const { user } = useAuth()
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
 
   const {
@@ -647,10 +648,17 @@ export function useModelFiles({ assetId, userId, latestOnly = true }: UseModelFi
       const nextVersion = (prevFiles?.[0]?.version || 0) + 1
       const previousVersionId = prevFiles?.[0]?.id
 
-      // Upload file to storage
-      const storagePath = `models/${assetId}/${user.id}/${Date.now()}_${file.name}`
+      // Upload file to storage.
+      //
+      // This wrote to a `model-files` bucket that does not exist in the
+      // project — so did the delete and download paths — which is why
+      // model_files has zero rows: the feature has never once worked. The
+      // sibling base-template code in this same hook already reads and
+      // writes `assets`, so that is where these belong; the distinct
+      // `model-files/` prefix keeps them out of asset_models' `models/`.
+      const storagePath = assetsPath(currentOrgId, 'model-files', assetId, user.id, `${Date.now()}_${file.name}`)
       const { error: uploadError } = await supabase.storage
-        .from('model-files')
+        .from('assets')
         .upload(storagePath, file)
 
       if (uploadError) throw uploadError
@@ -738,7 +746,7 @@ export function useModelFiles({ assetId, userId, latestOnly = true }: UseModelFi
 
       if (file?.storage_path) {
         await supabase.storage
-          .from('model-files')
+          .from('assets')
           .remove([file.storage_path])
       }
 
@@ -758,7 +766,7 @@ export function useModelFiles({ assetId, userId, latestOnly = true }: UseModelFi
   // Get download URL for a file
   const getDownloadUrl = async (storagePath: string) => {
     const { data, error } = await supabase.storage
-      .from('model-files')
+      .from('assets')
       .createSignedUrl(storagePath, 60 * 60) // 1 hour
 
     if (error) throw error

@@ -225,9 +225,25 @@ export function useAssetModels(assetId: string | undefined) {
     }
   })
 
-  // Soft delete model
+  // Soft delete model.
+  //
+  // The row is kept for history, but the uploaded file is removed. Nothing in
+  // the product restores a soft-deleted model — there is no is_deleted:false
+  // path anywhere — so leaving the object behind meant a file the user
+  // believes they deleted stayed in storage indefinitely, with a row pointing
+  // at it that no screen renders. That is data we hold and cannot account for.
+  //
+  // Storage removal is best-effort and runs first: if it fails we still mark
+  // the row deleted (the user asked for it to go), and the orphan sweeper in
+  // scripts/sweep-orphaned-assets.mjs catches whatever is left behind.
   const deleteModel = useMutation({
     mutationFn: async (id: string) => {
+      const model = models.find(m => m.id === id)
+      if (model?.file_path) {
+        const { error: rmErr } = await supabase.storage.from('assets').remove([model.file_path])
+        if (rmErr) console.error('Failed to remove model file from storage:', rmErr)
+      }
+
       const { error } = await supabase
         .from('asset_models')
         .update({ is_deleted: true })
