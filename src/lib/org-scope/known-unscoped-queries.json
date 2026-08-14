@@ -34,7 +34,6 @@
   "src/components/projects/RecentProjectActivity.tsx",
   "src/components/projects/UpcomingDeadlines.tsx",
   "src/components/research/InvestmentCaseBuilder.tsx",
-  "src/components/search/GlobalSearch.tsx",
   "src/components/table/AssetTableView.tsx",
   "src/components/tabs/AssetTab.tsx",
   "src/components/tabs/ListTab.tsx",

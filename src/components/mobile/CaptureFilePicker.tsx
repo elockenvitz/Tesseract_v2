@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { Check, Loader2, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 
 interface CaptureFilePickerProps {
   target: 'list' | 'theme'
@@ -26,19 +27,23 @@ interface CaptureFilePickerProps {
  */
 export function CaptureFilePicker({ target, assetId, assetSymbol, onDone }: CaptureFilePickerProps) {
   const { user } = useAuth()
+  // created_by alone is not a tenant filter: a user in two orgs would be
+  // offered lists from both, in whichever one they happen to be capturing.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [justAdded, setJustAdded] = useState<string | null>(null)
 
   const { data: options = [], isLoading } = useQuery({
-    queryKey: ['capture-file-options', target, user?.id],
-    enabled: !!user?.id,
+    queryKey: ['capture-file-options', target, user?.id, currentOrgId],
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       if (target === 'list') {
         const { data } = await supabase
           .from('asset_lists')
           .select('id, name, color')
+          .eq('organization_id', currentOrgId!)
           .eq('created_by', user!.id)
           .order('updated_at', { ascending: false })
           .limit(50)
