@@ -7,6 +7,7 @@ import {
   PanelLeftClose, PanelLeft, CornerDownRight, Menu
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { removeNoteAttachments } from '../../lib/storage/note-attachments'
 import { useAuth } from '../../hooks/useAuth'
 import { usePendingLineageStore } from '../../stores/pendingLineageStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
@@ -724,6 +725,17 @@ export function UniversalNoteEditor({
   const softDeleteNoteMutation = useMutation({
     mutationFn: async (noteId: string) => {
       if (!user) throw new Error('User not authenticated')
+
+      // Remove the note's uploaded files before the row goes. Once the row is
+      // marked deleted nothing points at them, so they would sit in the bucket
+      // indefinitely — invisible to the user who just asked us to delete them.
+      // Best-effort: a storage failure must not block the delete the user
+      // asked for; scripts/sweep-orphaned-assets.mjs catches the remainder.
+      // `notes` resolves to never[] from the generated Supabase types, which
+      // is why this reads through any rather than the row type.
+      const doomed = (notes as any[] | undefined)?.find(n => n.id === noteId)
+      if (doomed) await removeNoteAttachments(doomed.content, doomed.file_path)
+
       const { error } = await supabase
         .from(config.tableName)
         .update({ is_deleted: true, updated_by: user.id, updated_at: new Date().toISOString() })

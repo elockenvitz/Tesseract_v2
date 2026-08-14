@@ -131,17 +131,24 @@ Be careful here: promising more than this is a policy that is not implemented.
 | Ask | Reality |
 |---|---|
 | Delete an uploaded model | Row soft-deleted **and file removed from storage** (as of this change) |
-| Delete a note | Row deleted; **an attachment inside the note body is not removed** |
-| Delete an attachment in the composer | File removed (as of this change) |
-| Delete a user account | **No path exists.** Users can only be *suspended* via `deactivate_org_member` |
-| Delete an organization and its data | **No path exists** |
-| Export my data | `org-exports` job infrastructure exists; not a user-facing DSAR flow |
+| Delete a note | Row soft-deleted **and its attachments and screenshots removed** |
+| Delete an attachment in the composer | File removed |
+| Erase a user's personal data | `erase_user_personal_data()` RPC + `scripts/erase-user.mjs` — preferences, saved views, notifications, AI history and identity erased; authored records retained as the firm's business records, attributed to "Former user" |
+| Delete an organization and its data | `scripts/sql/erase-organization-rows.sql` + `scripts/erase-organization.mjs` — all rows and all files. Operator-run, irreversible |
+| Export my data | `org-exports` job infrastructure exists; **still not a user-facing DSAR flow** |
 
 `scripts/sweep-orphaned-assets.mjs` reports (and optionally deletes) files no
 row points at. Report-only by default.
 
-**The account-erasure gap is the one that most directly contradicts a standard
-privacy policy.** Either build it or write the policy around what exists.
+Erasure is deliberately a *split*, not a wipe: the person is erased, the work
+they authored is retained. That is not evasion — the authored records belong to
+the customer firm, which is their controller, and for an SEC-registered adviser
+they are records it is required to retain under Advisers Act Rule 204-2.
+Deleting them on an individual's request would destroy the firm's compliance
+record.
+
+**Remaining gap: there is no self-service export.** A DSAR asking for a copy of
+personal data is currently a manual job.
 
 ---
 

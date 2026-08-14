@@ -94,11 +94,16 @@ Processor will provide reasonable assistance with data subject requests, data
 protection impact assessments, and consultations with supervisory authorities,
 taking into account the nature of processing and the information available.
 
-**⚠ Data subject requests:** Processor's ability to *delete* a specific
-individual's personal data is currently limited to deactivating their access
-and account. Content authored by that individual is retained as Controller's
-business record. **If Controller requires erasure-on-request, that must be
-agreed separately — the capability does not exist today.**
+**Data subject requests.** On Controller's instruction, Processor will erase an
+individual's personal data — identity, preferences, saved views, notifications,
+AI prompt history and login. Content that individual authored is **retained as
+Controller's business record** and re-attributed to a non-identifying label.
+Controller acknowledges this split is necessary for Controller's own
+recordkeeping obligations, and that a request to delete authored content is a
+matter between Controller and its personnel.
+
+**⚠ Processor has no self-service export.** A request for a *copy* of personal
+data is fulfilled manually. Do not agree to an automated-export SLA.
 
 ## 8. Audits
 
@@ -114,9 +119,11 @@ Within **[30] days** of termination, Processor will, at Controller's election,
 return Customer Data in a machine-readable format or delete it, save where
 retention is required by law.
 
-**⚠ Neither a self-service export nor a verified deletion routine exists
-today.** `org-exports` provides job infrastructure; there is no organization
-erasure path. Do not agree to a shorter window than you can perform manually.
+Organization erasure is implemented and operator-run: it removes every row
+carrying the organization's identifier and every file stored under it.
+**⚠ It is irreversible and has not yet been exercised against a real
+organization** — rehearse it on a disposable org before committing to a window.
+Export remains manual; `org-exports` provides job infrastructure only.
 
 Controller acknowledges that where Controller is subject to recordkeeping
 obligations (including SEC Advisers Act Rule 204-2), Controller is responsible

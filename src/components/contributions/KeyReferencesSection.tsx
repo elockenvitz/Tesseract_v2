@@ -55,6 +55,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { assetsPath } from '../../lib/storage/asset-paths'
+import { removeNoteAttachments } from '../../lib/storage/note-attachments'
 import { useQueryClient } from '@tanstack/react-query'
 
 // ============================================================================
@@ -742,13 +743,24 @@ export function KeyReferencesSection({
       if (doc.reference) {
         await deleteReference(doc.reference.id)
       }
-      // Delete the underlying artifact
+      // Delete the underlying artifact, and the file with it. Soft-deleting
+      // the row alone left the upload in the bucket with nothing pointing at
+      // it — undeletable through the product and invisible in it.
       if (doc.type === 'model' && doc.originalModel) {
+        if (doc.originalModel.file_path) {
+          const { error: rmErr } = await supabase.storage
+            .from('assets').remove([doc.originalModel.file_path])
+          if (rmErr) console.error('Failed to remove model file from storage:', rmErr)
+        }
         await supabase.from('asset_models')
           .update({ is_deleted: true })
           .eq('id', doc.originalModel.id)
         queryClient.invalidateQueries({ queryKey: ['asset-models', assetId] })
       } else if (doc.type === 'note' && doc.originalNote && !doc.id.startsWith('ref-')) {
+        await removeNoteAttachments(
+          (doc.originalNote as any).content,
+          doc.originalNote.file_path,
+        )
         await supabase.from('asset_notes')
           .update({ is_deleted: true })
           .eq('id', doc.originalNote.id)
