@@ -609,7 +609,11 @@ export function MobileDashboard({
           cannot cover the feed — a filter you cannot see is a feed that looks
           broken, and one that hides the tile beneath it is worse. */}
       {kindFilter && (
-        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2 bg-gray-900 text-white pt-safe dark:bg-gray-800">
+        // pt-safe alone collapses to zero on a phone with no notch, which is
+        // why the band read as cramped against the top edge. A real 10px floor
+        // plus the inset, and more room below it, gives the row a band rather
+        // than a stripe.
+        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 pb-2.5 pt-2.5 [padding-top:calc(0.625rem+env(safe-area-inset-top))] bg-gray-900 text-white dark:bg-gray-800">
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
             {KIND_LABELS[kindFilter] ?? kindFilter} only
           </span>

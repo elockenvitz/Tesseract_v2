@@ -364,6 +364,118 @@ function merge(lists: NewsItem[][]): NewsItem[] {
   return [...byKey.values()]
 }
 
+/**
+ * Re-attribute a story from its own text rather than from which query found it.
+ *
+ * Every provider here is asked "news for SYMBOL", so a story comes back tagged
+ * with whatever was queried. That answers *why we found it*, not *what it is
+ * about* — "Tiger Global cuts stake in big tech, buys into SpaceX" arrives
+ * tagged MSFT because Microsoft is one of the big-tech holdings, and the tile
+ * then draws a Microsoft chart on a story about Tiger Global.
+ *
+ * So: read the headline and summary, and only claim a ticker the story
+ * actually mentions. A story that names none of them is left unattributed —
+ * a macro or fund story with no chart is honest, and better than a confident
+ * chart of a company that appears nowhere in the text.
+ */
+
+interface AssetName {
+  symbol: string
+  name?: string | null
+}
+
+/** `(NASDAQ: AAPL)`, `(NYSE:BRK.B)`, `$AAPL`, `NASDAQ:AAPL`. */
+const EXPLICIT_TICKER =
+  /(?:\((?:NASDAQ|NYSE|AMEX|OTC|TSX|LSE)\s*:\s*([A-Z][A-Z0-9.\-]{0,9})\)|(?:NASDAQ|NYSE|AMEX|OTC)\s*:\s*([A-Z][A-Z0-9.\-]{0,9})|\$([A-Z]{1,5})\b)/g
+
+/**
+ * Company words that identify nobody.
+ *
+ * Matching a bare "Corp" or "Inc" against a headline would attribute every
+ * story to whichever company happened to be first in the list.
+ */
+const NAME_NOISE = new Set([
+  'inc', 'inc.', 'corp', 'corp.', 'corporation', 'co', 'co.', 'company',
+  'ltd', 'ltd.', 'limited', 'plc', 'holdings', 'group', 'the', 'and',
+  'technologies', 'technology', 'systems', 'international', 'industries',
+])
+
+/** The distinguishing part of a company name — "Apple" from "Apple Inc.". */
+function nameStem(name: string): string | null {
+  const first = name
+    .replace(/[.,]/g, ' ')
+    .split(/\s+/)
+    .map(w => w.trim())
+    .filter(w => w && !NAME_NOISE.has(w.toLowerCase()))[0]
+  if (!first || first.length < 3) return null
+  return first
+}
+
+function mentions(haystack: string, needle: string): boolean {
+  // Word-boundary match so "Reddit" does not hit inside "Reddit-like" noise
+  // and, more importantly, so a two-letter ticker does not match inside an
+  // ordinary word.
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?:$|[^A-Za-z0-9])`, 'i').test(haystack)
+}
+
+interface Attribution {
+  /** Tickers the story actually mentions, most confident first. */
+  symbols: string[]
+  /** The one it is most about, or undefined when the text names nobody. */
+  primarySymbol?: string
+}
+
+/**
+ * @param text     headline + summary
+ * @param queried  the symbols this story came back under
+ * @param universe symbol → company name, for name matching
+ */
+function attributeFromText(
+  text: string,
+  queried: string[],
+  universe: AssetName[],
+): Attribution {
+  const hay = text || ''
+  const scored = new Map<string, number>()
+  const bump = (sym: string, by: number) => {
+    if (!sym) return
+    scored.set(sym.toUpperCase(), Math.max(scored.get(sym.toUpperCase()) ?? 0, by))
+  }
+
+  // 1. Explicit exchange-qualified tickers are unambiguous — the publisher
+  //    is telling us who the story is about.
+  for (const m of hay.matchAll(EXPLICIT_TICKER)) {
+    bump(m[1] ?? m[2] ?? m[3] ?? '', 100)
+  }
+
+  // 2. A company from the universe named in the text.
+  for (const a of universe) {
+    if (!a.symbol) continue
+    const stem = a.name ? nameStem(a.name) : null
+    if (stem && mentions(hay, stem)) bump(a.symbol, 80)
+    // A bare ticker in prose is weaker evidence than a company name: plenty of
+    // three-letter tickers are also ordinary words.
+    else if (a.symbol.length >= 3 && mentions(hay, a.symbol)) bump(a.symbol, 60)
+  }
+
+  const ranked = [...scored.entries()]
+    .sort((x, y) => y[1] - x[1])
+    .map(([sym]) => sym)
+
+  if (ranked.length) {
+    // Queried symbols the text also mentions stay, in rank order; ones it does
+    // not mention are dropped rather than trailing along as chips.
+    return { symbols: ranked.slice(0, 6), primarySymbol: ranked[0] }
+  }
+
+  // Nothing named. Keep the queried symbols as provenance so the story is
+  // still reachable, but claim no subject — the tile shows no chart rather
+  // than the wrong one.
+  return { symbols: queried.slice(0, 6), primarySymbol: undefined }
+}
+
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') {
@@ -434,8 +546,40 @@ serve(async (req) => {
     'yahoo-rss': true,
   }
 
+  /**
+   * Company names for the queried symbols, so attribution can match "SpaceX"
+   * or "Microsoft" in a headline and not only a bare ticker. One query; the
+   * function already holds an admin client for the cache.
+   */
+  let universe: { symbol: string; name?: string | null }[] = symbols.map(s => ({ symbol: s }))
+  try {
+    const { data } = await admin
+      .from('assets')
+      .select('symbol, company_name')
+      .in('symbol', symbols)
+    if (Array.isArray(data) && data.length) {
+      universe = (data as any[]).map(a => ({ symbol: a.symbol, name: a.company_name }))
+    }
+  } catch { /* fall back to ticker-only matching */ }
+
   const items = merge(lists)
     .filter(i => new Date(i.publishedAt).getTime() >= from.getTime())
+    // Re-attribute from the story's own words. Every source here is asked
+    // "news for SYMBOL", so what comes back is tagged with whatever was
+    // queried — which answers why we found it, not what it is about. "Tiger
+    // Global cuts stake in big tech, buys into SpaceX" arrived tagged MSFT
+    // because Microsoft is one of the holdings, and the tile drew a Microsoft
+    // chart on a story about a fund. A story naming nobody now carries no
+    // subject at all, so the tile shows no chart rather than a confident wrong
+    // one.
+    .map(i => {
+      const attribution = attributeFromText(
+        `${i.headline} ${i.summary ?? ''}`,
+        i.symbols,
+        universe,
+      )
+      return { ...i, symbols: attribution.symbols, primarySymbol: attribution.primarySymbol }
+    })
     .sort((a, b) => {
       // Relevance first where a provider supplied it, recency otherwise. A
       // highly-relevant story from this morning should outrank a passing

@@ -77,10 +77,16 @@ export function TemplateFeedTile({ card, onAssetClick, onCapture, onFilterKind }
             filterLabel="Show only market events"
           />
         }
-        headline={card.headline}
       />
 
-      <FeedTileTitle quoteSymbol={card.symbol ?? undefined} />
+      {/* The headline is this tile's content, not its chrome, so it belongs in
+          the title band where it can wrap. In the header it shared one line
+          with the badge and got truncated — "Active risk in KKR is 2.4x the
+          book…" is not a sentence you can cut and still act on. */}
+      <FeedTileTitle
+        headline={card.headline}
+        quoteSymbol={card.symbol ?? undefined}
+      />
 
       {card.symbol && (
         <WhenNearViewport className="flex-shrink-0 h-[33%] min-h-[170px] max-h-[300px] px-3" placeholder={<div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />}>
