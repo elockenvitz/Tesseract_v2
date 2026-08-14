@@ -13,17 +13,25 @@
  *    column identifies a tenant. Without this column those files cannot be
  *    attributed and cannot be migrated.
  *
- * 2. The SELECT policy never scoped anything. From 20251230000002:
+ * 2. No policy on this table has ever mentioned an organization.
  *
- *      CREATE POLICY "Users can view models for accessible assets"
- *        ON asset_models FOR SELECT TO authenticated
- *        USING (EXISTS (SELECT 1 FROM assets a WHERE a.id = asset_models.asset_id));
+ *    20251230000002 shipped:
  *
- *    asset_id is NOT NULL and references assets, so that EXISTS is true for
- *    every row. The comment says "same pattern as asset_notes" but the
- *    predicate reduces to "the row exists" — every authenticated user of
- *    every org could read every model row in the instance: names,
- *    descriptions, file paths, the lot. Replaced below.
+ *      USING (EXISTS (SELECT 1 FROM assets a WHERE a.id = asset_models.asset_id))
+ *
+ *    asset_id is NOT NULL and references assets, so that predicate reduces to
+ *    "the row exists" — it granted every row to everyone.
+ *
+ *    Production no longer runs that. The live policy is
+ *
+ *      USING ((created_by = auth.uid()) OR (is_shared = true))
+ *
+ *    renamed to "Users can view own and shared models" and applied outside
+ *    the migrations directory, so the repo never recorded it. Better, but
+ *    still not tenant-scoped: is_shared = true means any authenticated user
+ *    of any of the 27 organizations can read that row. Both spellings are
+ *    dropped below and replaced with an org-scoped equivalent that keeps the
+ *    own/shared distinction the live policy was reaching for.
  *
  * ── On the backfill ───────────────────────────────────────────────────────
  *
@@ -77,7 +85,7 @@ END $$;
 UPDATE public.asset_models m
 SET organization_id = sole.organization_id
 FROM (
-  SELECT user_id, MIN(organization_id) AS organization_id
+  SELECT user_id, (array_agg(DISTINCT organization_id))[1] AS organization_id
   FROM public.organization_memberships
   WHERE status = 'active'
   GROUP BY user_id
@@ -111,7 +119,7 @@ END $$;
 UPDATE public.asset_notes n
 SET organization_id = sole.organization_id
 FROM (
-  SELECT user_id, MIN(organization_id) AS organization_id
+  SELECT user_id, (array_agg(DISTINCT organization_id))[1] AS organization_id
   FROM public.organization_memberships
   WHERE status = 'active'
   GROUP BY user_id
@@ -169,6 +177,8 @@ END $$;
 -- previous predicate simply never implemented it.
 
 DROP POLICY IF EXISTS "Users can view models for accessible assets" ON public.asset_models;
+-- Live name in production, applied outside migrations:
+DROP POLICY IF EXISTS "Users can view own and shared models" ON public.asset_models;
 
 CREATE POLICY "Org members can view models in current org"
   ON public.asset_models
@@ -182,6 +192,7 @@ CREATE POLICY "Org members can view models in current org"
 -- INSERT additionally has to prove the row lands in the caller's own org, or
 -- a user could write rows into another tenant.
 DROP POLICY IF EXISTS "Users can create models" ON public.asset_models;
+DROP POLICY IF EXISTS "Users can create own models" ON public.asset_models;
 
 CREATE POLICY "Users can create models in current org"
   ON public.asset_models

@@ -41,6 +41,14 @@ import { createClient } from '@supabase/supabase-js'
 import { writeFileSync } from 'node:fs'
 
 const BUCKET = 'assets'
+/**
+ * Objects deliberately parked because no org could be established for them.
+ * They are kept rather than deleted, and no storage policy matches this
+ * prefix, so only the service role can reach them. Distinct from
+ * "unattributable": that means *not yet decided* and blocks --apply, whereas
+ * this means decided — leave it alone.
+ */
+const QUARANTINE_PREFIX = '_unattributed/'
 const APPLY = process.argv.includes('--apply')
 const REPORT_PATH = './assets-backfill-report.json'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -249,9 +257,10 @@ async function main() {
     for (const s of skipped) console.log(`   ${s.table}: ${s.error}`)
   }
 
-  const buckets = { alreadyScoped: [], resolved: [], unattributable: [], orphan: [] }
+  const buckets = { alreadyScoped: [], resolved: [], unattributable: [], orphan: [], quarantined: [] }
 
   for (const path of objects) {
+    if (path.startsWith(QUARANTINE_PREFIX)) { buckets.quarantined.push(path); continue }
     if (isScoped(path) && index.get(path)?.resolvable !== false) {
       // Ambiguous by shape for legacy checklist evidence (<assetId>/…), so
       // trust the index when it disagrees.
@@ -275,6 +284,7 @@ async function main() {
   resolvable       ${buckets.resolved.length}
   UNATTRIBUTABLE   ${buckets.unattributable.length}   <- needs a human decision
   orphan           ${buckets.orphan.length}   <- object with no DB row
+  quarantined      ${buckets.quarantined.length}   <- parked under ${QUARANTINE_PREFIX}, no policy reaches them
 `)
 
   const byReason = {}
@@ -293,6 +303,14 @@ async function main() {
   if (!APPLY) {
     console.log('\nDry run — nothing moved. Re-run with --apply once the report looks right.')
     return
+  }
+
+  if (buckets.orphan.length > 0) {
+    console.log(`
+Refusing to apply: ${buckets.orphan.length} objects have no database row. They
+would stay on legacy paths that the Phase 3 policy denies. Move them under
+${QUARANTINE_PREFIX} (kept, unreachable) or delete them, then re-run.`)
+    process.exit(2)
   }
 
   if (buckets.unattributable.length > 0) {

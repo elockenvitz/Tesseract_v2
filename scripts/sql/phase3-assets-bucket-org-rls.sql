@@ -1,8 +1,18 @@
 -- ===========================================================================
 -- Phase 3: tenant-scope the `assets` storage bucket.
 --
--- DO NOT APPLY THIS YET, AND DO NOT MOVE IT INTO supabase/migrations/ UNTIL
--- THE PHASE 2 BACKFILL REPORTS ZERO UNATTRIBUTABLE AND ZERO LEGACY OBJECTS.
+-- STATUS: Phase 2 is DONE in production (2026-08-14). The bucket holds 6
+-- org-scoped objects and 3 quarantined ones; no database row points at a
+-- legacy path. This file is still not applied, for one reason only:
+--
+--   THE FRONTEND FIX IS NOT DEPLOYED YET. Production runs main, which still
+--   uploads to legacy paths like `documents/<assetId>/…`. The INSERT policy
+--   below would reject those, so applying this before main carries the
+--   org-scoped path helper breaks every upload in the product.
+--
+-- Apply only after the branch carrying src/lib/storage/asset-paths.ts is
+-- merged and deployed. Flip the `assets` bucket to private in the same
+-- window — it is still public, which is the remaining live exposure.
 --
 -- It lives here rather than in supabase/migrations/ specifically so that a
 -- `supabase db push` cannot pick it up by accident. Applying it before the
@@ -48,6 +58,11 @@ BEGIN
   SELECT count(*) INTO v_legacy
   FROM storage.objects
   WHERE bucket_id = 'assets'
+    -- `_unattributed/` is the quarantine prefix for objects no org could be
+    -- established for. They are kept deliberately and no policy below grants
+    -- access to them, so only the service role can reach them. Exempt from
+    -- the guard because they are a decided end state, not unfinished work.
+    AND (storage.foldername(name))[1] <> '_unattributed'
     AND (storage.foldername(name))[1] !~*
         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
