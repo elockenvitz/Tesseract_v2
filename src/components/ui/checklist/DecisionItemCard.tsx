@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { useSidebarStore } from '../../../stores/sidebarStore'
+import { useOrganizationOptional } from '../../../contexts/OrganizationContext'
+import { assetsPath } from '../../../lib/storage/asset-paths'
 import { MentionInput } from '../MentionInput'
 import { WorkRequestModal } from './WorkRequestModal'
 import {
@@ -93,6 +95,10 @@ export function DecisionItemCard({
   const attachTable = scopeType === 'portfolio' ? 'portfolio_checklist_attachments' : 'asset_checklist_attachments'
   const scopeIdField = scopeType === 'portfolio' ? 'portfolio_id' : 'asset_id'
   const qc = useQueryClient()
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const openInspector = useSidebarStore(s => s.openInspector)
   const status = item.status || (item.completed ? 'completed' : 'unchecked')
 
@@ -302,7 +308,7 @@ export function DecisionItemCard({
   const uploadEvidenceM = useMutation({
     mutationFn: async ({ file, evidenceType: et, description }: { file: File; evidenceType: EvidenceType; description: string }) => {
       if (!currentUser) throw new Error('No user')
-      const filePath = `${assetId}/${workflowId}/${stageId}/${item.id}/${Date.now()}_${file.name}`
+      const filePath = assetsPath(currentOrgId, assetId, workflowId, stageId, item.id, `${Date.now()}_${file.name}`)
       const { error: upErr } = await supabase.storage.from('assets').upload(filePath, file)
       if (upErr) throw upErr
       const insertRow: any = {

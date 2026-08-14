@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganizationOptional } from '../contexts/OrganizationContext'
+import { assetsPath } from '../lib/storage/asset-paths'
 
 export interface FieldMapping {
   field: string // tesseract field name: price_target, rating, eps_fy25, etc.
@@ -130,6 +132,10 @@ const getFullName = (user: { first_name?: string | null; last_name?: string | nu
 
 export function useModelTemplates() {
   const { user } = useAuth()
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
 
   const {
@@ -379,7 +385,7 @@ export function useModelTemplates() {
           // Generate new path for the copy
           const randomId = Math.random().toString(36).substring(2, 10)
           const extension = template.base_template_filename.split('.').pop() || 'xlsx'
-          const newStoragePath = `model-templates/${newTemplate.id}/${Date.now()}_${randomId}.${extension}`
+          const newStoragePath = assetsPath(currentOrgId, 'model-templates', newTemplate.id, `${Date.now()}_${randomId}.${extension}`)
 
           // Use Supabase's copy method to copy the file server-side
           // Note: Files are stored in the 'assets' bucket
@@ -436,7 +442,7 @@ export function useModelTemplates() {
       const extension = file.name.split('.').pop() || 'xlsx'
 
       // Use same pattern as other working uploads (models, documents, notes)
-      const storagePath = `model-templates/${templateId}/${Date.now()}_${randomId}.${extension}`
+      const storagePath = assetsPath(currentOrgId, 'model-templates', templateId, `${Date.now()}_${randomId}.${extension}`)
 
       // Get auth session for manual upload
       const { data: { session } } = await supabase.auth.getSession()

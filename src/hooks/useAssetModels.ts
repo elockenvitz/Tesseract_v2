@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganizationOptional } from '../contexts/OrganizationContext'
+import { assetsPath } from '../lib/storage/asset-paths'
 
 export type ModelSourceType = 'uploaded' | 'external_link'
 export type ExternalProvider = 'google_sheets' | 'airtable' | 'excel_online' | 'smartsheet' | 'other'
@@ -76,6 +78,10 @@ interface UpdateModelData {
 
 export function useAssetModels(assetId: string | undefined) {
   const { user } = useAuth()
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const queryClient = useQueryClient()
 
   // Fetch all models for an asset
@@ -153,7 +159,7 @@ export function useAssetModels(assetId: string | undefined) {
       // Generate unique file path
       const randomId = Math.random().toString(36).substring(2, 10)
       const extension = file.name.split('.').pop() || 'bin'
-      const filePath = `models/${assetId}/${Date.now()}_${randomId}.${extension}`
+      const filePath = assetsPath(currentOrgId, 'models', assetId, `${Date.now()}_${randomId}.${extension}`)
 
       // Upload file to Supabase Storage
       const { error: uploadError } = await supabase.storage
@@ -314,7 +320,7 @@ export function useAssetModels(assetId: string | undefined) {
       // Upload new file
       const randomId = Math.random().toString(36).substring(2, 10)
       const extension = file.name.split('.').pop() || 'bin'
-      const filePath = `models/${assetId}/${Date.now()}_${randomId}.${extension}`
+      const filePath = assetsPath(currentOrgId, 'models', assetId, `${Date.now()}_${randomId}.${extension}`)
 
       const { error: uploadError } = await supabase.storage
         .from('assets')
@@ -403,7 +409,7 @@ export function useAssetModels(assetId: string | undefined) {
       // Copy the old version file to a new path
       const randomId = Math.random().toString(36).substring(2, 10)
       const extension = version.file_name.split('.').pop() || 'bin'
-      const newFilePath = `models/${currentModel.asset_id}/${Date.now()}_${randomId}_restored.${extension}`
+      const newFilePath = assetsPath(currentOrgId, 'models', currentModel.asset_id, `${Date.now()}_${randomId}_restored.${extension}`)
 
       // Download old file and re-upload
       const { data: fileData, error: downloadError } = await supabase.storage

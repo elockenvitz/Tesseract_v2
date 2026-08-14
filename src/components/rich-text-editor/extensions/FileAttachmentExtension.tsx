@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { supabase } from '../../../lib/supabase'
+import { useOrganizationOptional } from '../../../contexts/OrganizationContext'
+import { assetsPath } from '../../../lib/storage/asset-paths'
 // XLSX is lazy loaded to reduce bundle size
 
 // Debounce helper
@@ -518,6 +520,66 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadStartedRef = useRef(false)
+  // Optional on purpose: useOrganization() throws without a provider, and
+  // a throw in a leaf like this takes the whole surface down. A null org
+  // instead fails loudly at upload time, where assetsPath() rejects it.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
+
+  // The URL used to preview, open and download this attachment.
+  //
+  // This was previously a getPublicUrl() result persisted into the node's
+  // attributes and saved inside the note. Two things were wrong with that:
+  // the `assets` bucket is private, so the URL 400'd and every preview here
+  // was dead; and had the bucket ever been made public, a permanent
+  // unauthenticated link to the file would have been sitting in the note
+  // body forever. Signed URLs cannot be persisted — they expire — which is
+  // exactly why deriving one at render from `filePath` is the correct shape.
+  const [signedUrl, setSignedUrl] = useState<string | null>(null)
+  const filePath: string | null = node.attrs.filePath ?? null
+
+  useEffect(() => {
+    if (!filePath) {
+      setSignedUrl(null)
+      return
+    }
+
+    let cancelled = false
+    let refreshTimer: ReturnType<typeof setTimeout>
+
+    const sign = async () => {
+      const { data, error: signError } = await supabase.storage
+        .from('assets')
+        .createSignedUrl(filePath, 3600)
+
+      if (cancelled) return
+
+      if (signError || !data?.signedUrl) {
+        setSignedUrl(null)
+        return
+      }
+
+      setSignedUrl(data.signedUrl)
+      // Refresh before the hour is up so a long editing session doesn't
+      // leave a stale link behind a preview iframe.
+      refreshTimer = setTimeout(sign, 50 * 60 * 1000)
+    }
+
+    sign()
+
+    return () => {
+      cancelled = true
+      clearTimeout(refreshTimer)
+    }
+  }, [filePath])
+
+  // Legacy notes stored a (broken) public URL and no filePath. Fall back to it
+  // so those nodes keep whatever behaviour they had rather than losing the
+  // download button entirely.
+  const fileUrl: string | null = signedUrl ?? node.attrs.fileUrl ?? null
+  // Upload completion is keyed on filePath, not fileUrl: fileUrl is no longer
+  // written on upload, so using it as the sentinel would leave the node stuck
+  // in its uploading state forever.
+  const hasUploadedFile = Boolean(filePath || node.attrs.fileUrl)
 
   // Local state - initialized once from node attributes, never synced back
   // This prevents save operations from resetting the UI state
@@ -581,7 +643,13 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
       const timestamp = Date.now()
       const randomId = Math.random().toString(36).substring(2, 9)
       const extension = file.name.split('.').pop() || 'bin'
-      const filePath = `attachments/${node.attrs.contextType || 'general'}/${node.attrs.contextId || 'shared'}/${timestamp}_${randomId}.${extension}`
+      const filePath = assetsPath(
+        currentOrgId,
+        'attachments',
+        node.attrs.contextType || 'general',
+        node.attrs.contextId || 'shared',
+        `${timestamp}_${randomId}.${extension}`
+      )
 
       setUploadProgress(30)
 
@@ -602,23 +670,16 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
 
       if (uploadError) throw uploadError
 
-      setUploadProgress(90)
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('assets')
-        .getPublicUrl(filePath)
-
       setUploadProgress(100)
 
-      // Update attributes
+      // Update attributes. `fileUrl` is deliberately not written — the
+      // signing effect derives a fresh URL from filePath on every mount.
       updateAttributes({
         fileId: data.path,
         fileName: file.name,
         fileSize: file.size,
         fileType: file.type || 'application/octet-stream',
         filePath: filePath,
-        fileUrl: urlData.publicUrl,
         pendingUploadId: null
       })
     } catch (err: any) {
@@ -655,7 +716,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
   useEffect(() => {
     const pendingUploadId = node.attrs.pendingUploadId
 
-    if (!pendingUploadId || node.attrs.fileUrl || uploadStartedRef.current) {
+    if (!pendingUploadId || hasUploadedFile || uploadStartedRef.current) {
       return
     }
 
@@ -681,7 +742,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
 
     // Timeout to prevent infinite spinning - if no upload starts in 5 seconds, show error
     const failsafeTimeout = setTimeout(() => {
-      if (!uploadStartedRef.current && !node.attrs.fileUrl) {
+      if (!uploadStartedRef.current && !hasUploadedFile) {
         setError('Upload timed out. Please try again.')
       }
     }, 5000)
@@ -690,7 +751,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
       clearTimeout(timeoutId)
       clearTimeout(failsafeTimeout)
     }
-  }, [node.attrs.pendingUploadId, node.attrs.fileUrl, uploadFile])
+  }, [node.attrs.pendingUploadId, hasUploadedFile, uploadFile])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -701,14 +762,14 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
 
   const handleOpenInNewTab = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (node.attrs.fileUrl) {
-      window.open(node.attrs.fileUrl, '_blank')
+    if (fileUrl) {
+      window.open(fileUrl, '_blank')
     }
   }
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!node.attrs.filePath && !node.attrs.fileUrl) return
+    if (!filePath && !fileUrl) return
 
     const fileName = node.attrs.fileName || 'download'
 
@@ -716,15 +777,15 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
       let blob: Blob
 
       // Try using Supabase storage download first
-      if (node.attrs.filePath) {
+      if (filePath) {
         const { data, error } = await supabase.storage
           .from('assets')
-          .download(node.attrs.filePath)
+          .download(filePath)
 
         if (error) throw error
         blob = data
       } else {
-        const response = await fetch(node.attrs.fileUrl, { mode: 'cors' })
+        const response = await fetch(fileUrl!, { mode: 'cors' })
         if (!response.ok) throw new Error('Fetch failed')
         blob = await response.blob()
       }
@@ -733,7 +794,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
       saveFile(blob, fileName, node.attrs.fileType)
     } catch (err) {
       console.error('Download failed:', err)
-      window.open(node.attrs.fileUrl, '_blank')
+      if (fileUrl) window.open(fileUrl, '_blank')
     }
   }
 
@@ -797,7 +858,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
   }, [handleToggleExpand])
 
   // Show uploading state
-  if (isUploading || (node.attrs.pendingUploadId && !node.attrs.fileUrl && !error)) {
+  if (isUploading || (node.attrs.pendingUploadId && !hasUploadedFile && !error)) {
     return (
       <NodeViewWrapper className="file-attachment-wrapper my-1" data-drag-handle>
         <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 border border-gray-200 max-w-md dark:border-gray-700 dark:bg-gray-900">
@@ -846,7 +907,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
   }
 
   // Show upload UI if no file attached yet
-  if (!node.attrs.fileUrl) {
+  if (!hasUploadedFile) {
     return (
       <NodeViewWrapper className="file-attachment-wrapper my-1" data-drag-handle>
         <div
@@ -959,7 +1020,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
           <>
             {category === 'spreadsheet' && (
               <ExcelPreview
-                fileUrl={node.attrs.fileUrl}
+                fileUrl={fileUrl ?? ''}
                 width={localWidth}
                 height={localHeight}
                 onSizeChange={handlePreviewSizeChange}
@@ -967,7 +1028,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
             )}
             {category === 'image' && (
               <ImagePreview
-                fileUrl={node.attrs.fileUrl}
+                fileUrl={fileUrl ?? ''}
                 fileName={node.attrs.fileName}
                 width={localWidth}
                 height={localHeight}
@@ -976,7 +1037,7 @@ function FileAttachmentView({ node, updateAttributes, deleteNode, selected }: No
             )}
             {category === 'document' && (
               <DocumentPreview
-                fileUrl={node.attrs.fileUrl}
+                fileUrl={fileUrl ?? ''}
                 fileName={node.attrs.fileName}
                 fileType={node.attrs.fileType}
                 width={localWidth}
