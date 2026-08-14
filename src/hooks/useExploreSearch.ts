@@ -12,9 +12,16 @@ import { useOrganizationOptional } from '../contexts/OrganizationContext'
  * dozen headlines are about exactly it.
  *
  * This searches the prose: theses, where-we-are-different, risks, trade
- * rationales, note bodies, theme and list descriptions. The result is a mixed
- * feed of things that *mention* the term, ranked by where the match landed,
- * which is what makes a keyword behave like a topic rather than a lookup.
+ * rationales, research notes, captured thoughts, portfolio notes, and theme
+ * and list descriptions. The result is a mixed feed of things that *mention*
+ * the term, which is what makes a keyword behave like a topic rather than a
+ * lookup.
+ *
+ * Multi-word queries match every word rather than the literal string. One
+ * OR-group per token, ANDed by PostgREST, so "AI capex" finds the note
+ * arguing about capital spending on AI — not only one containing that exact
+ * pair of words, which is what it used to do and why searching a concept
+ * instead of a name returned nothing.
  *
  * Ranking, highest first:
  *   exact symbol match          — searching "NVDA" means the company
@@ -43,6 +50,64 @@ export interface ExploreResult {
 const MATCH_NAME = 100
 const MATCH_SYMBOL = 200
 const MATCH_BODY = 40
+
+/**
+ * A scattered match is worth less than the phrase.
+ *
+ * Searching "AI capex" should surface a note arguing about AI capital
+ * spending above one that says "AI" in the first line and "capex" in the
+ * last, but it should surface both — the second is exactly the kind of
+ * adjacent thinking this search exists to turn up.
+ */
+const SCATTER_PENALTY = 0.45
+
+/** Words worth matching on. Single characters and noise words are dropped. */
+const STOP = new Set([
+  'the','a','an','and','or','of','in','on','for','to','is','are','was','were',
+  'be','by','with','at','as','it','its','that','this','from','we','our',
+])
+
+function tokenize(term: string): string[] {
+  return Array.from(new Set(
+    term.toLowerCase().split(/\s+/).map(t => t.trim()).filter(t => t.length >= 2 && !STOP.has(t))
+  )).slice(0, 6)
+}
+
+/**
+ * How well a set of fields matches, as a multiplier on the field's tier.
+ *
+ * Returns 0 when nothing matched, so a row that came back because a *different*
+ * field matched does not claim a hit it does not have.
+ */
+function strength(text: string | null | undefined, phrase: string, tokens: string[]): number {
+  const hay = (text ?? '').toLowerCase()
+  if (!hay) return 0
+  if (phrase && hay.includes(phrase.toLowerCase())) return 1
+  if (!tokens.length) return 0
+  const hits = tokens.filter(t => hay.includes(t)).length
+  if (!hits) return 0
+  // Partial token coverage still counts — "datacenter capex risk" matching two
+  // of three words is usually the thing you wanted.
+  return SCATTER_PENALTY * (hits / tokens.length)
+}
+
+/**
+ * Apply one OR-group per token, which ANDs across tokens in PostgREST.
+ *
+ * Chained .or() calls combine with AND, so this asks for "every word appears
+ * somewhere in these fields" rather than "this exact string appears". Without
+ * it a two-word query only matched documents containing that literal string,
+ * which is why searching a concept rather than a name returned nothing.
+ */
+function withTokens<T>(query: T, fields: string[], tokens: string[]): T {
+  let q: any = query
+  for (const t of tokens) {
+    const esc = t.replace(/[%,()\\]/g, '')
+    if (!esc) continue
+    q = q.or(fields.map(f => `${f}.ilike.%${esc}%`).join(','))
+  }
+  return q as T
+}
 
 /** Escape PostgREST `or` filter metacharacters so a query cannot break out. */
 function safe(term: string): string {
@@ -82,33 +147,67 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
     enabled: (options?.enabled ?? true) && term.length >= 2 && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
-      const like = `%${term}%`
       const out: ExploreResult[] = []
+      const tokens = tokenize(term)
+      // A one-word query is its own token, so phrase and token matching agree.
+      const phrase = term
 
-      const [assets, themes, lists, notes, ideas] = await Promise.all([
-        supabase.from('assets')
-          .select('id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, updated_at')
-          .or(`symbol.ilike.${like},company_name.ilike.${like},sector.ilike.${like},thesis.ilike.${like},where_different.ilike.${like},risks_to_thesis.ilike.${like}`)
-          .limit(25),
-        supabase.from('themes')
-          .select('id, name, description, updated_at')
-          .or(`name.ilike.${like},description.ilike.${like}`)
-          .limit(15),
-        supabase.from('asset_lists')
-          .select('id, name, description, brief, updated_at')
-          .eq('organization_id', currentOrgId!)
-          .or(`name.ilike.${like},description.ilike.${like},brief.ilike.${like}`)
-          .limit(15),
-        supabase.from('portfolio_notes')
-          .select('id, title, content, content_preview, updated_at, portfolio_id')
-          .or(`title.ilike.${like},content.ilike.${like}`)
-          .neq('is_deleted', true)
-          .limit(15),
-        supabase.from('trade_queue_items')
-          .select('id, rationale, thesis_text, updated_at, asset_id, assets(id, symbol, company_name)')
-          .eq('organization_id', currentOrgId!)
-          .or(`rationale.ilike.${like},thesis_text.ilike.${like}`)
-          .limit(15),
+      const [assets, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] = await Promise.all([
+        withTokens(
+          supabase.from('assets')
+            .select('id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, updated_at'),
+          ['symbol', 'company_name', 'sector', 'thesis', 'where_different', 'risks_to_thesis'],
+          tokens,
+        ).limit(25),
+        withTokens(
+          supabase.from('themes').select('id, name, description, updated_at'),
+          ['name', 'description'],
+          tokens,
+        ).limit(15),
+        withTokens(
+          supabase.from('asset_lists')
+            .select('id, name, description, brief, updated_at')
+            .eq('organization_id', currentOrgId!),
+          ['name', 'description', 'brief'],
+          tokens,
+        ).limit(15),
+        withTokens(
+          supabase.from('portfolio_notes')
+            .select('id, title, content, content_preview, updated_at, portfolio_id')
+            .neq('is_deleted', true),
+          ['title', 'content'],
+          tokens,
+        ).limit(15),
+        withTokens(
+          supabase.from('trade_queue_items')
+            .select('id, rationale, thesis_text, updated_at, asset_id, assets(id, symbol, company_name)')
+            .eq('organization_id', currentOrgId!),
+          ['rationale', 'thesis_text'],
+          tokens,
+        ).limit(15),
+
+        // asset_notes was missing entirely, which is the single biggest gap in
+        // this search: it is where the actual research is written. Everything
+        // else here is a name, a rationale or a portfolio-level note.
+        withTokens(
+          supabase.from('asset_notes')
+            .select('id, title, content, content_preview, updated_at, asset_id, assets(symbol, company_name)')
+            .eq('organization_id', currentOrgId!)
+            .neq('is_deleted', true),
+          ['title', 'content'],
+          tokens,
+        ).limit(20),
+
+        // Captured thoughts are half-formed by definition, which is exactly
+        // what someone asking "what should I look at next" wants to find.
+        withTokens(
+          supabase.from('quick_thoughts')
+            .select('id, content, source_title, tags, updated_at, asset_id, assets(symbol, company_name)')
+            .eq('organization_id', currentOrgId!)
+            .neq('is_archived', true),
+          ['content', 'source_title'],
+          tokens,
+        ).limit(15),
       ])
 
       for (const a of ((assets.data as any[]) ?? [])) {
@@ -156,7 +255,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
         })
       }
 
-      for (const n of ((notes.data as any[]) ?? [])) {
+      for (const n of ((portfolioNotes.data as any[]) ?? [])) {
         const titleHit = (n.title ?? '').toLowerCase().includes(term.toLowerCase())
         out.push({
           id: n.id, kind: 'note', title: n.title || 'Untitled note',
@@ -182,7 +281,52 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
         })
       }
 
-      return out.sort((a, b) => b.score - a.score)
+      // ── asset notes ────────────────────────────────────────────────────
+      for (const n of ((assetNotes.data as any[]) ?? [])) {
+        const asset = n.assets as any
+        const titleS = strength(n.title, phrase, tokens)
+        const bodyS = strength(n.content ?? n.content_preview, phrase, tokens)
+        if (!titleS && !bodyS) continue
+        out.push({
+          id: n.id,
+          kind: 'note',
+          title: n.title || (asset?.symbol ? `${asset.symbol} note` : 'Untitled note'),
+          matchedIn: titleS >= bodyS ? 'note title' : 'research note',
+          excerpt: excerptAround(n.content || n.content_preview, tokens[0] ?? phrase),
+          symbol: asset?.symbol,
+          updatedAt: n.updated_at,
+          score: Math.max(MATCH_NAME * titleS, MATCH_BODY * bodyS) + recencyBonus(n.updated_at),
+          data: n,
+        })
+      }
+
+      // ── captured thoughts ──────────────────────────────────────────────
+      for (const t of ((thoughts.data as any[]) ?? [])) {
+        const asset = t.assets as any
+        const bodyS = strength(t.content, phrase, tokens)
+        const tagS = strength(Array.isArray(t.tags) ? t.tags.join(' ') : '', phrase, tokens)
+        if (!bodyS && !tagS) continue
+        const firstLine = String(t.content ?? '').split(/\r?\n/)[0].trim()
+        out.push({
+          id: t.id,
+          kind: 'idea',
+          title: firstLine.slice(0, 80) || 'Captured thought',
+          matchedIn: tagS > bodyS ? 'thought tag' : 'captured thought',
+          excerpt: excerptAround(t.content, tokens[0] ?? phrase),
+          symbol: asset?.symbol,
+          updatedAt: t.updated_at,
+          score: MATCH_BODY * Math.max(bodyS, tagS) + recencyBonus(t.updated_at),
+          data: t,
+        })
+      }
+
+      // Highest first. Ties on score fall back to recency so the ordering is
+      // stable between renders rather than depending on which promise settled
+      // first — a list that reshuffles under the reader looks broken.
+      return out.sort((a, b) =>
+        b.score - a.score ||
+        new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()
+      )
     },
   })
 }
