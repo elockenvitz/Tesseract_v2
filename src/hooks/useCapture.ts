@@ -227,12 +227,15 @@ export function useCapture() {
     return path
   }
 
-  // Get public URL for screenshot
-  const getScreenshotUrl = (path: string): string => {
-    const { data } = supabase.storage
+  // Get a time-limited URL for a screenshot. Deliberately not getPublicUrl:
+  // captures contain whatever the user had on screen, so a link that works
+  // forever for anyone who has it is not an acceptable default.
+  const getScreenshotUrl = async (path: string): Promise<string | null> => {
+    const { data, error } = await supabase.storage
       .from('captures')
-      .getPublicUrl(path)
-    return data.publicUrl
+      .createSignedUrl(path, 3600)
+    if (error) return null
+    return data?.signedUrl ?? null
   }
 
   return {

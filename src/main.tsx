@@ -16,8 +16,19 @@ if (SENTRY_DSN) {
       import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
     integrations: [
       Sentry.browserTracingIntegration(),
-      Sentry.replayIntegration(),
+      // Masking is passed explicitly rather than left to the SDK default.
+      // These are Sentry's defaults today, but a replay of this app records
+      // client holdings, theses and portfolio names — that must not become
+      // readable in a third-party tool because a library changed a default
+      // in a minor release. Pinned here so the guarantee is ours, not theirs.
+      Sentry.replayIntegration({
+        maskAllText: true,
+        maskAllInputs: true,
+        blockAllMedia: true,
+      }),
     ],
+    // Never attach request headers, cookies or user IP to events.
+    sendDefaultPii: false,
     // Performance tracing — 10% in prod, 100% elsewhere (cheap on pilots).
     tracesSampleRate: import.meta.env.MODE === 'production' ? 0.1 : 1.0,
     // Session Replay — never record happy sessions (would burn quota fast);
