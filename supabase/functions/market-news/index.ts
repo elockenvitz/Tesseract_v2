@@ -270,6 +270,8 @@ async function fromYahooRss(symbols: string[]): Promise<NewsItem[]> {
           publishedAt: (isNaN(at.getTime()) ? new Date() : at).toISOString(),
           source: 'Yahoo Finance',
           symbols: [symbol],
+          // Queried per symbol, so the subject is exact.
+          primarySymbol: symbol,
         })
       }
     } catch { /* skip this symbol */ }
@@ -293,6 +295,8 @@ async function fromYahoo(symbols: string[]): Promise<NewsItem[]> {
           publishedAt: new Date((a.providerPublishTime ?? 0) * 1000).toISOString(),
           source: a.publisher || 'Yahoo Finance',
           symbols: [symbol],
+          // Queried per symbol, so the subject is exact.
+          primarySymbol: symbol,
           imageUrl: a.thumbnail?.resolutions?.[0]?.url || undefined,
         })
       }
