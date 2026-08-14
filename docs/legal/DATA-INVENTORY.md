@@ -133,7 +133,7 @@ Be careful here: promising more than this is a policy that is not implemented.
 | Delete an uploaded model | Row soft-deleted **and file removed from storage** (as of this change) |
 | Delete a note | Row soft-deleted **and its attachments and screenshots removed** |
 | Delete an attachment in the composer | File removed |
-| Erase a user's personal data | `erase_user_personal_data()` RPC + `scripts/erase-user.mjs` — preferences, saved views, notifications, AI history and identity erased; authored records retained as the firm's business records, attributed to "Former user" |
+| Erase a user's personal data | `erase_user_personal_data()` RPC + `scripts/erase-user.mjs` — preferences, saved views, notifications, **OAuth tokens**, AI history and identity erased; authored records retained as the firm's business records, attributed to "Former user". **Verified end-to-end against live fixtures 2026-08-14** |
 | Delete an organization and its data | `scripts/sql/erase-organization-rows.sql` + `scripts/erase-organization.mjs` — all rows and all files. Operator-run, irreversible |
 | Export my data | `org-exports` job infrastructure exists; **still not a user-facing DSAR flow** |
 
@@ -146,6 +146,10 @@ the customer firm, which is their controller, and for an SEC-registered adviser
 they are records it is required to retain under Advisers Act Rule 204-2.
 Deleting them on an individual's request would destroy the firm's compliance
 record.
+
+Erasure refuses, without changing anything, if the subject is the only active
+admin of an organization — that would leave the org unadministerable. The
+operator must promote another admin or erase the organization instead.
 
 **Remaining gap: there is no self-service export.** A DSAR asking for a copy of
 personal data is currently a manual job.
@@ -215,10 +219,14 @@ Facts a regulator or customer might ask about, documented rather than lost:
   `model-templates` were also public and were **empty**.
 - **Until 2026-08-14 the `assets` bucket's read policy was `bucket_id = 'assets'`**
   — any authenticated user of any organization could read any file.
-- **Until 2026-08-14 mobile explore search queried `asset_lists` and
-  `trade_queue_items` with no organization filter**, and RLS on those tables is
-  not org-aware, so results could include other organizations' lists and trade
-  ideas.
+- **Until 2026-08-14 mobile explore search queried `asset_lists` with no
+  organization filter.** `asset_lists` RLS is `created_by = auth.uid() OR
+  user_has_list_collaboration(id)` — ownership, not organization — so results
+  crossed the org boundary for lists the user already had access to: a user
+  belonging to two organizations saw org A's lists while working in org B.
+  Narrower than a stranger reading another firm's data, but still a
+  tenant-boundary violation. `trade_queue_items` was also unfiltered in the
+  client, though its RLS *is* org-scoped, so that one did not leak.
 
 All three are closed. Whether any of them requires customer notification is a
 legal judgement, not an engineering one — but the facts are here to make it.
