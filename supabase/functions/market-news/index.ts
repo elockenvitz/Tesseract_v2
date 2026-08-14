@@ -56,7 +56,22 @@ interface NewsItem {
   url: string
   publishedAt: string
   source: string
+  /**
+   * Every ticker the story touches, most relevant first.
+   *
+   * Order is load-bearing and easy to destroy: merge() used to union two
+   * sources' arrays, which mixed a passing mention into the front of the list.
+   * A Reddit story that name-checked Google rendered a Google chart, because
+   * the tile picked the first symbol the reader happened to cover.
+   */
   symbols: string[]
+  /**
+   * The ticker the story is *about*, as distinct from the ones it mentions.
+   * Finnhub knows it exactly — the story came back from a per-symbol query.
+   * Alpha Vantage gives per-ticker relevance scores, so it is the top-scoring
+   * one. Preserved through merge so the tile never has to guess.
+   */
+  primarySymbol?: string
   sentiment?: 'positive' | 'negative' | 'neutral'
   relevanceScore?: number
   imageUrl?: string
@@ -141,6 +156,9 @@ async function fromFinnhub(symbols: string[], from: string, to: string): Promise
           publishedAt: new Date((a.datetime ?? 0) * 1000).toISOString(),
           source: a.source || 'Finnhub',
           symbols: [symbol],
+          // This story came back from company-news?symbol=<symbol>, so the
+          // subject is not in doubt.
+          primarySymbol: symbol,
           imageUrl: a.image || undefined,
         })
       }
@@ -182,6 +200,7 @@ async function fromAlphaVantage(symbols: string[]): Promise<NewsItem[]> {
         publishedAt: iso,
         source: a.source || 'Alpha Vantage',
         symbols: relevant.map((ts: any) => ts.ticker),
+        primarySymbol: top?.ticker,
         sentiment: label.includes('bull') ? 'positive' as const
           : label.includes('bear') ? 'negative' as const
           : 'neutral' as const,
@@ -284,7 +303,15 @@ async function fromYahoo(symbols: string[]): Promise<NewsItem[]> {
 
 // ── Merge ──────────────────────────────────────────────────────────────────
 
-/** Normalised headline, for cross-source duplicate detection. */
+/**
+ * Normalised headline, for cross-source duplicate detection.
+ *
+ * Truncating to 80 characters is what makes this fuzzy enough to match the
+ * same story across providers, and it is also how unrelated stories collide:
+ * wire copy and "Stocks moving today" headlines share long prefixes. A false
+ * match used to union two stories' tickers, so a collision could staple one
+ * company's ticker onto another company's story.
+ */
 function dedupeKey(headline: string): string {
   return headline.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
 }
@@ -305,10 +332,27 @@ function merge(lists: NewsItem[][]): NewsItem[] {
       byKey.set(key, item)
       continue
     }
+    // Two records with the same normalised headline but different URLs are
+    // usually two different stories that merely start alike, not one story
+    // from two providers. Unioning their tickers is how a passing mention
+    // becomes a headline ticker, so leave them alone and keep the first.
+    if (existing.url !== item.url) continue
+
     const richer = (item.relevanceScore != null || item.sentiment != null) &&
       existing.relevanceScore == null && existing.sentiment == null
     const merged = richer ? { ...item } : { ...existing }
-    merged.symbols = Array.from(new Set([...existing.symbols, ...item.symbols]))
+
+    // The subject survives the merge. Finnhub's is exact (it came from a
+    // per-symbol query) so it wins over Alpha Vantage's relevance ranking.
+    const primary = existing.primarySymbol ?? item.primarySymbol
+    merged.primarySymbol = primary
+
+    // Subject first, then everything either source mentioned. Without the
+    // reorder the union's order is just whichever provider answered first,
+    // which is what put GOOGL at the front of a Reddit story.
+    const rest = [...existing.symbols, ...item.symbols].filter(sym => sym !== primary)
+    merged.symbols = Array.from(new Set(primary ? [primary, ...rest] : rest))
+
     merged.summary = merged.summary || existing.summary || item.summary
     merged.imageUrl = merged.imageUrl || existing.imageUrl || item.imageUrl
     byKey.set(key, merged)

@@ -17,7 +17,10 @@ export interface MarketNewsItem {
   url: string
   publishedAt: string
   source: string
+  /** Every ticker the story touches, most relevant first. */
   symbols: string[]
+  /** The ticker the story is *about*, as opposed to ones it merely mentions. */
+  primarySymbol?: string
   sentiment?: 'positive' | 'negative' | 'neutral'
   relevanceScore?: number
   imageUrl?: string

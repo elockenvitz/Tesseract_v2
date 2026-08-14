@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowUpRight, Newspaper, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -47,7 +47,38 @@ const SENTIMENT = {
  */
 export function NewsFeedTile({ item, assetForSymbol, onAssetClick, onCapture, onFilterKind }: NewsFeedTileProps) {
   const [imageFailed, setImageFailed] = useState(false)
-  const covered = item.symbols.map(s => assetForSymbol?.(s) ?? null).find(Boolean) ?? null
+  /**
+   * Charts to show, and in what order.
+   *
+   * This used to be a single lookup: the first symbol in `item.symbols` that
+   * we cover. That reads as "the story's chart" but is not — a Reddit story
+   * mentioning Google rendered a Google chart, because RDDT was not in the
+   * book and GOOGL was. The subject of the story and the subjects we happen
+   * to cover are different questions, and only the first one belongs at the
+   * front.
+   *
+   * `primarySymbol` is now supplied by market-news (exact from Finnhub's
+   * per-symbol query, top-relevance from Alpha Vantage), so it leads. The
+   * rest follow in relevance order, and everything we do not cover is
+   * dropped — we have no chart to draw for it.
+   */
+  const chartable = useMemo(() => {
+    const ordered = item.primarySymbol
+      ? [item.primarySymbol, ...item.symbols.filter(s => s !== item.primarySymbol)]
+      : item.symbols
+    const seen = new Set<string>()
+    return ordered
+      .map(sym => assetForSymbol?.(sym) ?? null)
+      .filter((a): a is { id: string; symbol: string } => {
+        if (!a || seen.has(a.id)) return false
+        seen.add(a.id)
+        return true
+      })
+      .slice(0, 5)
+  }, [item.primarySymbol, item.symbols, assetForSymbol])
+
+  const [chartIndex, setChartIndex] = useState(0)
+  const covered = chartable[chartIndex] ?? null
   const sentiment = item.sentiment ? SENTIMENT[item.sentiment] : null
   const SentimentIcon = sentiment?.icon
   const showImage = !!item.imageUrl && !imageFailed
@@ -143,14 +174,42 @@ export function NewsFeedTile({ item, assetForSymbol, onAssetClick, onCapture, on
         {/* The chart answers the other half of the question — what the price
             did about it — but only for names actually in the book. */}
         {covered && (
-          <WhenNearViewport
-            className="px-3 pb-3 h-[220px]"
-            placeholder={
-              <div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />
-            }
-          >
-            <ReelsChartPanel symbol={covered.symbol} hideHeader />
-          </WhenNearViewport>
+          <div className="px-3 pb-3">
+            {/* One chart at a time, swapped by the pager below, rather than a
+                horizontal scroller: this sits inside a vertically-swiped feed,
+                and a nested horizontal scroll region steals the gesture that
+                moves between stories. */}
+            <WhenNearViewport
+              className="h-[220px]"
+              placeholder={
+                <div className="w-full h-full rounded-lg bg-gray-50 dark:bg-gray-800/50 animate-pulse" />
+              }
+            >
+              <ReelsChartPanel key={covered.symbol} symbol={covered.symbol} hideHeader />
+            </WhenNearViewport>
+
+            {chartable.length > 1 && (
+              <div className="mt-2 flex items-center justify-center gap-1.5">
+                {chartable.map((a, i) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setChartIndex(i)}
+                    aria-label={`Show ${a.symbol} chart`}
+                    aria-current={i === chartIndex}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide transition-colors no-touch-target',
+                      i === chartIndex
+                        ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                        : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                    )}
+                  >
+                    {a.symbol}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
