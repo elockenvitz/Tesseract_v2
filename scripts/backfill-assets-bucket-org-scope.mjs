@@ -9,26 +9,21 @@
  *
  * ─── Read this before running ────────────────────────────────────────────
  *
- * Not every object can be attributed to an org. Two sources cannot be
- * resolved from the schema as it stands:
+ * Every source now carries an organization_id: asset_models and
+ * model_versions gained one in 20260814100000, which also backfilled
+ * asset_notes rows that 20260603140000 had left NULL.
  *
- *   asset_models / model_versions
- *     asset_models has no organization_id — only created_by and asset_id
- *     (20251230000002_add_notes_models_section.sql). Its RLS is user
- *     ownership. `assets` is the global security master, so asset_id carries
- *     no tenant either. The creator's *current* org is not the same fact as
- *     the org they uploaded in, and for a multi-org user it can be a
- *     different org entirely.
+ * A residue can still be unattributable. Both backfills only fill in rows
+ * whose creator is an active member of exactly one organization. Where a
+ * creator belongs to several there is no way to recover which one they were
+ * in at upload time — users.current_organization_id is today's answer to a
+ * question about the past.
  *
- *   asset_notes rows predating 20260603140000_notes_organization_id.sql
- *     That migration added organization_id and states plainly that these
- *     rows have "no reconstructable origin org" and stay NULL.
- *
- * Guessing here is worse than not moving the file: filing Firm A's model
- * under Firm B's prefix hands it to Firm B under the new policy. So this
- * script never guesses. Unattributable objects are reported and left alone,
- * and deciding what happens to them is a separate, human call — see the
- * summary it prints.
+ * Guessing is worse than not moving the file: filing Firm A's model under
+ * Firm B's prefix hands it to Firm B under the new policy. So this script
+ * never guesses. Unattributable objects are reported and left alone; run the
+ * verification queries at the bottom of 20260814100000 to see which rows
+ * need an admin to assign an org, do that, then re-run.
  *
  * ─── Usage ───────────────────────────────────────────────────────────────
  *
@@ -103,14 +98,19 @@ const SOURCES = [
   {
     table: 'asset_models',
     pathColumn: 'file_path',
-    resolvable: false,
-    reason: 'asset_models has no organization_id; RLS is user ownership',
+    orgColumn: 'organization_id',
+    resolvable: true,
+    // Added by 20260814100000. Backfilled only where the creator belongs to
+    // exactly one org; rows whose creator is in several stay NULL and land
+    // in the unattributable bucket below for an admin to assign.
+    note: 'creator belongs to more than one org — assign manually',
   },
   {
     table: 'model_versions',
     pathColumn: 'file_path',
-    resolvable: false,
-    reason: 'inherits asset_models, which has no organization_id',
+    orgColumn: 'organization_id',
+    resolvable: true,
+    note: 'parent asset_models row has no organization_id',
   },
 ]
 

@@ -115,6 +115,7 @@ export function useAssetModels(assetId: string | undefined) {
         .from('asset_models')
         .insert({
           asset_id: data.asset_id,
+          organization_id: currentOrgId,
           name: data.name,
           description: data.description || null,
           source_type: data.source_type,
@@ -173,6 +174,7 @@ export function useAssetModels(assetId: string | undefined) {
         .from('asset_models')
         .insert({
           asset_id: assetId,
+          organization_id: currentOrgId,
           name,
           description: description || null,
           source_type: 'uploaded',
@@ -305,6 +307,7 @@ export function useAssetModels(assetId: string | undefined) {
           .from('model_versions')
           .insert({
             model_id: modelId,
+            organization_id: currentOrgId,
             version_number: currentModel.version,
             file_path: currentModel.file_path,
             file_name: currentModel.file_name,
@@ -396,6 +399,7 @@ export function useAssetModels(assetId: string | undefined) {
           .from('model_versions')
           .insert({
             model_id: modelId,
+            organization_id: currentOrgId,
             version_number: currentModel.version,
             file_path: currentModel.file_path,
             file_name: currentModel.file_name,
