@@ -98,7 +98,10 @@ ON storage.objects FOR UPDATE TO authenticated
 USING (
   bucket_id = 'assets'
   AND (storage.foldername(name))[1] = current_org_id()::text
-  AND auth.uid()::text = owner
+  -- `owner` is uuid here, so compare uuid to uuid. 20251013115000 wrote
+  -- `auth.uid()::text = owner`, which no longer type-checks; the live policy
+  -- reads `owner = auth.uid()`, and that is what is preserved.
+  AND owner = auth.uid()
 );
 
 CREATE POLICY "assets: delete own files within current org"
@@ -106,7 +109,10 @@ ON storage.objects FOR DELETE TO authenticated
 USING (
   bucket_id = 'assets'
   AND (storage.foldername(name))[1] = current_org_id()::text
-  AND auth.uid()::text = owner
+  -- `owner` is uuid here, so compare uuid to uuid. 20251013115000 wrote
+  -- `auth.uid()::text = owner`, which no longer type-checks; the live policy
+  -- reads `owner = auth.uid()`, and that is what is preserved.
+  AND owner = auth.uid()
 );
 
 COMMIT;
