@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowUpRight, Newspaper, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { Newspaper, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ReelsChartPanel } from '../feed/ReelsChartPanel'
 import { ExpandableText } from './ExpandableText'
+import { ArticleReader } from './ArticleReader'
 import { FeedKindBadge } from './FeedKindBadge'
 import { WhenNearViewport } from './WhenNearViewport'
 import type { MarketNewsItem } from '../../hooks/useMarketNews'
@@ -78,6 +79,7 @@ export function NewsFeedTile({ item, assetForSymbol, onAssetClick, onCapture, on
   }, [item.primarySymbol, item.symbols, assetForSymbol])
 
   const [chartIndex, setChartIndex] = useState(0)
+  const [readerOpen, setReaderOpen] = useState(false)
   const covered = chartable[chartIndex] ?? null
   const sentiment = item.sentiment ? SENTIMENT[item.sentiment] : null
   const SentimentIcon = sentiment?.icon
@@ -221,16 +223,27 @@ export function NewsFeedTile({ item, assetForSymbol, onAssetClick, onCapture, on
         >
           Capture
         </button>
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Opens the in-app reader rather than leaving for the publisher.
+            It falls back to the original page by itself when the story
+            cannot be extracted, so this stays a single unambiguous action
+            instead of asking the reader to guess which stories will work. */}
+        <button
+          type="button"
+          onClick={() => setReaderOpen(true)}
           className="flex-1 flex items-center justify-center gap-2 h-10 rounded-xl bg-primary-600 text-white font-semibold no-touch-target"
         >
           Read story
-          <ArrowUpRight className="h-4 w-4" />
-        </a>
+        </button>
       </div>
+
+      <ArticleReader
+        open={readerOpen}
+        onClose={() => setReaderOpen(false)}
+        url={item.url}
+        fallbackTitle={item.headline}
+        fallbackSource={item.source}
+        fallbackImage={item.imageUrl ?? null}
+      />
     </div>
   )
 }
