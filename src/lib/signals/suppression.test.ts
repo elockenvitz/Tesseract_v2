@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   isQualityContent, isDisplayableNumber, isQuoteFresh,
   gate, readSuppressionLog, suppressionSummary, QUOTE_MAX_AGE_MS,
+  hasSufficientCoverage,
 } from './suppression'
 import { suppress, emit, type SignalCard } from './contract'
 
@@ -104,5 +105,29 @@ describe('gate', () => {
     const card = { id: 'abc' } as unknown as SignalCard
     const out = gate('news', () => emit(card))
     expect(out.ok && out.card).toBe(card)
+  })
+})
+
+describe('coverage floor for absence claims', () => {
+  it('passes when the source covers most of the book', () => {
+    expect(hasSufficientCoverage(30, 40)).toBe(true)   // 75%
+  })
+
+  it('fails when the source is sparse against a large book', () => {
+    // The case that motivated the change: 25 rows is coverage against 40
+    // names and noise against 3,000, and a row count cannot tell them apart.
+    expect(hasSufficientCoverage(25, 3000)).toBe(false)
+    expect(hasSufficientCoverage(25, 40)).toBe(true)
+  })
+
+  it('suppresses on production reality', () => {
+    // analyst_ratings: 10 rows against ~400 distinct held names.
+    expect(hasSufficientCoverage(10, 400)).toBe(false)
+  })
+
+  it('refuses to claim anything with no holdings', () => {
+    // No denominator, no claim — not "vacuously true".
+    expect(hasSufficientCoverage(0, 0)).toBe(false)
+    expect(hasSufficientCoverage(5, 0)).toBe(false)
   })
 })

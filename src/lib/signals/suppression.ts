@@ -18,15 +18,37 @@ import { suppress, type CardResult, type SuppressionReason } from './contract'
 export const QUOTE_MAX_AGE_MS = 15 * 60 * 1000
 
 /**
- * Below this many rows in a source table, absence means nothing.
+ * Coverage floor for any card whose claim is *absence*.
  *
- * `analyst_ratings` holds 10 rows across 911 assets. A card reading "no
- * rating" off that fires on almost every name and communicates the sparsity
- * of the table rather than anything about the position. Any card whose claim
- * is *absence* needs a coverage floor or it is noise wearing a finding's
- * clothes.
+ * A ratio, not a row count: 25 rows across 40 held names is coverage, 25
+ * across 3,000 is noise, and a fixed count cannot tell them apart. Defined as
+ * the share of names *currently held across the org's portfolios* that the
+ * source table covers — held names, not all 911 assets, because absence on a
+ * name nobody owns is not a finding.
+ *
+ * 60% because absence is only informative when presence is the norm. Below a
+ * clear majority, "no rating" describes the team's process rather than the
+ * position, and a card firing on most of the book is a filter wearing a
+ * finding's clothes. Above it, the unrated name is genuinely the exception
+ * and worth surfacing.
+ *
+ * Measured today: analyst_ratings holds 10 rows against ~1,086 holdings, so
+ * every absence-based claim on it is suppressed — correctly.
  */
-export const MIN_COVERAGE = 25
+export const MIN_COVERAGE_RATIO = 0.6
+
+/**
+ * Does a source table cover enough of the book for its absence to mean
+ * something?
+ *
+ * @param covered  distinct held names present in the source
+ * @param held     distinct names held across the org
+ */
+export function hasSufficientCoverage(covered: number, held: number): boolean {
+  // No holdings means no denominator and no claim to make either way.
+  if (held <= 0) return false
+  return covered / held >= MIN_COVERAGE_RATIO
+}
 
 /** Placeholder and keyboard-mash patterns seen in the live feed. */
 const PLACEHOLDER = [

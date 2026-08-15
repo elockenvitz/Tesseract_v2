@@ -63,15 +63,31 @@ card contract's rule-2 split.
 days" is exactly the kind of thing this feed exists to say, and it is the
 cheapest possible fix for the invisibility.
 
+## Decided: carry-forward does NOT re-mark prices
+
+Ruled out 2026-08-15. Recording the reasoning because it is the obvious
+suggestion and will be proposed again by whoever picks this up next.
+
+Re-marking would pair **stale shares with live prices**: positions that may no
+longer exist, priced as of today, producing weights that are simply wrong —
+and wrong with no visible tell, because every number on screen would look
+current.
+
+A snapshot is internally consistent and datable. Every position was marked at
+the same moment, so ratios hold and the whole thing can be labelled "as of
+31 Jul". A half-refreshed book is neither: it cannot be dated, because it has
+two dates, and its errors are invisible rather than merely old.
+
+**Incoherent-but-fresh is worse than coherent-but-old.** The fix is
+visibility, not partial refresh.
+
 ## Open questions
 
-- Should carry-forward re-mark prices from the quote provider rather than
-  copying them? That turns a stale book into a *partially* live one —
-  positions old, prices current — which may be more misleading, not less.
-  Probably not, but it is the obvious suggestion and deserves an explicit no.
-- What is the threshold? It is a business answer, not an engineering one.
+- What is the threshold past which a book is marked stale? A business answer,
+  not an engineering one, and probably per-org: a daily-fed institutional book
+  and a manually-maintained model portfolio have different tolerances.
 - Does a stale book suppress its cards entirely, or render them marked? The
-  contract currently says marked; a genuinely abandoned book may deserve
+  card contract currently says marked; a genuinely abandoned book may deserve
   silence.
 
 ## Not in scope here
