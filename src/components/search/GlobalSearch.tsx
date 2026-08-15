@@ -24,10 +24,10 @@ const STATIC_PAGES = [
   { id: 'trade-queue', title: 'Trade Queue', type: 'page' as const, subtitle: 'Pending trades', keywords: ['orders', 'execution', 'trading'] },
   { id: 'charting', title: 'Charting', type: 'page' as const, subtitle: 'Technical charts', keywords: ['charts', 'technical', 'graphs', 'price'] },
   { id: 'asset-allocation', title: 'Asset Allocation', type: 'page' as const, subtitle: 'Portfolio allocation analysis', keywords: ['allocation', 'weights', 'rebalance'] },
-  { id: 'prioritizer', title: 'Prioritizer', type: 'page' as const, subtitle: 'Asset prioritization', keywords: ['ranking', 'priority', 'scoring'] },
+  // Prioritizer removed - consolidated into All Priorities
   { id: 'idea-generator', title: 'Idea Generator', type: 'page' as const, subtitle: 'Investment ideas', keywords: ['ideas', 'opportunities', 'screening'] },
   { id: 'outcomes', title: 'Outcomes', type: 'page' as const, subtitle: 'Decisions and results', keywords: ['decisions', 'execution', 'results', 'approved', 'trades'] },
-  { id: 'attention', title: 'Attention Center', type: 'page' as const, subtitle: 'Alerts and items needing attention', keywords: ['alerts', 'flags', 'urgent', 'review', 'notifications', 'all priorities', 'priorities'] },
+  { id: 'priorities', title: 'All Priorities', type: 'page' as const, subtitle: 'What needs attention now', keywords: ['attention', 'alerts', 'flags', 'urgent', 'review', 'notifications', 'priorities', 'todo', 'decisions', 'team'] },
   { id: 'files', title: 'Files', type: 'page' as const, subtitle: 'File management', keywords: ['documents', 'uploads', 'models'] },
   { id: 'templates', title: 'Templates', type: 'page' as const, subtitle: 'Model and text templates', keywords: ['models', 'spreadsheets'] },
   { id: 'organization', title: 'Organization', type: 'page' as const, subtitle: 'Team and settings', keywords: ['team', 'settings', 'users', 'members'] },

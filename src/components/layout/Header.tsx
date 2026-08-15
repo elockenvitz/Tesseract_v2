@@ -1,7 +1,6 @@
-import { useState } from 'react'
-import { useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText } from 'lucide-react'
+import { Bell, MessageCircle, Mail, User, Users, Settings, LogOut, ChevronDown, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Workflow, LineChart, FolderOpen, ShoppingCart } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -41,9 +40,11 @@ export function Header({
   onShowThoughts = () => {}
 }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showAppMenu, setShowAppMenu] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
+  const appMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
   const { hasUnreadNotifications, unreadCount } = useNotifications()
 
@@ -180,13 +181,16 @@ export function Header({
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false)
       }
+      if (appMenuRef.current && !appMenuRef.current.contains(event.target as Node)) {
+        setShowAppMenu(false)
+      }
     }
 
-    if (showUserMenu) {
+    if (showUserMenu || showAppMenu) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showUserMenu])
+  }, [showUserMenu, showAppMenu])
 
   const handleSignOut = async () => {
     try {
@@ -243,11 +247,135 @@ export function Header({
         <div className="flex justify-between items-center h-16">
           {/* Logo and Search */}
           <div className="flex items-center space-x-6 flex-1">
-            <div className="flex items-center space-x-3">
-              <TesseractLogo size={32} />
-              <div>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white">Tesseract</h1>
-              </div>
+            {/* App Launcher */}
+            <div className="relative" ref={appMenuRef}>
+              <button
+                onClick={() => setShowAppMenu(!showAppMenu)}
+                className="flex items-center space-x-3 p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-colors group"
+                title="App launcher"
+              >
+                <TesseractLogo size={32} />
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">Tesseract</h1>
+                </div>
+              </button>
+
+              {/* App Launcher Panel */}
+              {showAppMenu && (
+                <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
+                  {/* Future: System status row can be added here */}
+
+                  {/* Core */}
+                  <div className="px-4 pb-2">
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Core</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 px-2 pb-3">
+                    {/* Priorities - Primary entry point with subtle emphasis */}
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        onSearchResult({ id: 'priorities', title: 'Priorities', type: 'priorities', data: null })
+                      }}
+                      className="flex flex-col items-center p-3 rounded-lg hover:bg-rose-50 dark:hover:bg-gray-700 transition-colors group/tile ring-1 ring-rose-200 bg-rose-50/30"
+                    >
+                      <div className="w-11 h-11 rounded-lg flex items-center justify-center mb-1 bg-rose-100">
+                        <Target className="h-6 w-6 text-rose-600" />
+                      </div>
+                      <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 text-center leading-tight">Priorities</span>
+                      <span className="text-[10px] text-gray-500 mt-0.5">Start here</span>
+                    </button>
+
+                    {/* Other Core tiles */}
+                    {[
+                      { id: 'trade-queue', title: 'Trade Queue', type: 'trade-queue', icon: ShoppingCart, color: 'text-amber-500', bg: 'bg-amber-50' },
+                      { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
+                      { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+                      { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
+                      { id: 'outcomes', title: 'Outcomes', type: 'outcomes', icon: Target, color: 'text-teal-500', bg: 'bg-teal-50' },
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: item.id, title: item.title, type: item.type, data: null })
+                        }}
+                        className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile"
+                      >
+                        <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center mb-1.5', item.bg)}>
+                          <item.icon className={clsx('h-5 w-5', item.color)} />
+                        </div>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200 text-center leading-tight">{item.title}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Work Management */}
+                  <div className="border-t border-gray-100 dark:border-gray-700 pt-3 px-4 pb-2">
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Work Management</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 px-2 pb-3">
+                    {[
+                      { id: 'lists', title: 'Lists', type: 'lists', icon: List, color: 'text-violet-500', bg: 'bg-violet-50' },
+                      { id: 'workflows', title: 'Workflows', type: 'workflows', icon: Workflow, color: 'text-cyan-500', bg: 'bg-cyan-50' },
+                      { id: 'projects-list', title: 'Projects', type: 'projects-list', icon: FolderKanban, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+                      { id: 'coverage', title: 'Coverage', type: 'coverage', icon: Users, color: 'text-sky-500', bg: 'bg-sky-50' },
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: item.id, title: item.title, type: item.type, data: null })
+                        }}
+                        className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile"
+                      >
+                        <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center mb-1.5', item.bg)}>
+                          <item.icon className={clsx('h-5 w-5', item.color)} />
+                        </div>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200 text-center leading-tight">{item.title}</span>
+                      </button>
+                    ))}
+                    {/* Organization - demoted with reduced emphasis */}
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        onSearchResult({ id: 'organization', title: 'Organization', type: 'organization', data: null })
+                      }}
+                      className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile opacity-75"
+                    >
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-1.5 bg-gray-100">
+                        <Building2 className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">Organization</span>
+                    </button>
+                  </div>
+
+                  {/* Tools - visually de-emphasized */}
+                  <div className="border-t border-gray-100 dark:border-gray-700 pt-3 px-4 pb-2">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Tools</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 px-2 pb-1">
+                    {[
+                      { id: 'charting', title: 'Charting', type: 'charting', icon: LineChart, color: 'text-gray-400', bg: 'bg-gray-100' },
+                      { id: 'files', title: 'Files', type: 'files', icon: FolderOpen, color: 'text-gray-400', bg: 'bg-gray-100' },
+                      { id: 'calendar', title: 'Calendar', type: 'calendar', icon: Calendar, color: 'text-gray-400', bg: 'bg-gray-100' },
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: item.id, title: item.title, type: item.type, data: null })
+                        }}
+                        className="flex flex-col items-center p-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group/tile"
+                      >
+                        <div className={clsx('w-8 h-8 rounded-md flex items-center justify-center mb-1', item.bg)}>
+                          <item.icon className={clsx('h-4 w-4', item.color)} />
+                        </div>
+                        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 text-center leading-tight">{item.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Search */}

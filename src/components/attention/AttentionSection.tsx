@@ -21,6 +21,11 @@ import { AttentionCard, type QuickCaptureMode, type DismissReason } from './Atte
 import type { AttentionItem, AttentionType } from '../../types/attention'
 
 // Section configuration
+// Sections represent the four priority types:
+// 1. What's New - Activity from others that's relevant to you
+// 2. To Do - Things you're responsible for acting on
+// 3. Decisions - Explicit decision points requiring approval/rejection
+// 4. Team - Alignment and shared awareness items
 const SECTION_CONFIG: Record<AttentionType, {
   title: string
   icon: React.ElementType
@@ -36,21 +41,21 @@ const SECTION_CONFIG: Record<AttentionType, {
     borderColor: 'border-sky-200',
   },
   action_required: {
-    title: 'What I Need To Do',
+    title: 'To Do',
     icon: CheckCircle,
     color: 'text-amber-600',
     bgColor: 'bg-amber-50',
     borderColor: 'border-amber-200',
   },
   decision_required: {
-    title: 'Decisions I Need To Make',
+    title: 'Decisions',
     icon: Scale,
     color: 'text-violet-600',
     bgColor: 'bg-violet-50',
     borderColor: 'border-violet-200',
   },
   alignment: {
-    title: 'Team Priority',
+    title: 'Team',
     icon: Users,
     color: 'text-emerald-600',
     bgColor: 'bg-emerald-50',
