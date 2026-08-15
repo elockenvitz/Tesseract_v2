@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, Workflow, Users, Star, Clock, BarChart3, Settings, Trash2, Edit3, Copy, Eye, TrendingUp, StarOff, Target, CheckSquare, UserCog, Calendar, GripVertical, ArrowUp, ArrowDown, Save, X, CalendarDays, Activity, PieChart, Zap, Home, FileText, Download, Globe, Check, Bell, CheckCircle, ChevronDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -331,16 +331,30 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
         throw error
       }
 
-      // For each branch, get asset progress stats
-      const branchesWithStats = await Promise.all((data || []).map(async (branch) => {
-        const { data: progressData } = await supabase
-          .from('asset_workflow_progress')
-          .select('id, current_stage_key, completed_at')
-          .eq('workflow_id', branch.id)
+      // Fetch asset progress for ALL branches in a single query (eliminates N+1 problem)
+      if (!data || data.length === 0) return []
 
-        const totalAssets = progressData?.length || 0
-        const activeAssets = progressData?.filter(p => !p.completed_at).length || 0
-        const completedAssets = progressData?.filter(p => p.completed_at).length || 0
+      const branchIds = data.map(b => b.id)
+      const { data: allProgressData } = await supabase
+        .from('asset_workflow_progress')
+        .select('workflow_id, id, completed_at')
+        .in('workflow_id', branchIds)
+
+      // Group progress data by workflow_id for O(1) lookup
+      const progressByWorkflow = (allProgressData || []).reduce((acc, progress) => {
+        if (!acc[progress.workflow_id]) {
+          acc[progress.workflow_id] = []
+        }
+        acc[progress.workflow_id].push(progress)
+        return acc
+      }, {} as Record<string, any[]>)
+
+      // Map branches with their stats
+      const branchesWithStats = data.map(branch => {
+        const progressData = progressByWorkflow[branch.id] || []
+        const totalAssets = progressData.length
+        const activeAssets = progressData.filter(p => !p.completed_at).length
+        const completedAssets = progressData.filter(p => p.completed_at).length
 
         // Determine if branch is "ended" (no active assets and has had assets)
         const isEnded = activeAssets === 0 && totalAssets > 0
@@ -353,7 +367,7 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           isEnded,
           status: isEnded ? 'ended' : 'active'
         }
-      }))
+      })
 
       return branchesWithStats
     },
@@ -680,8 +694,8 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
 
   // Query to get all workflows with statistics
   const { data: workflows, isLoading, error: workflowsError } = useQuery({
-    queryKey: ['workflows-full', filterBy, sortBy, workflowStages],
-    // Remove dependency - run immediately for faster loading
+    queryKey: ['workflows-full', filterBy, sortBy],
+    // workflowStages removed from queryKey to prevent circular dependency and improve performance
     queryFn: async () => {
       console.log('Fetching workflows...', { filterBy, sortBy })
       const user = await supabase.auth.getUser()
@@ -709,17 +723,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           workflowQuery = workflowQuery.eq('created_by', userId)
           break
         case 'shared':
-          // Get shared workflow IDs (as collaborator)
-          const { data: sharedCollabIds } = await supabase
-            .from('workflow_collaborations')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          // Get workflow IDs where user is a stakeholder
-          const { data: sharedStakeholderIds } = await supabase
-            .from('workflow_stakeholders')
-            .select('workflow_id')
-            .eq('user_id', userId)
+          // Parallelize collaboration and stakeholder lookups
+          const [{ data: sharedCollabIds }, { data: sharedStakeholderIds }] = await Promise.all([
+            supabase
+              .from('workflow_collaborations')
+              .select('workflow_id')
+              .eq('user_id', userId),
+            supabase
+              .from('workflow_stakeholders')
+              .select('workflow_id')
+              .eq('user_id', userId)
+          ])
 
           const sharedCollaboratorIds = sharedCollabIds?.map(s => s.workflow_id) || []
           const sharedStakeholderWorkflowIds = sharedStakeholderIds?.map(s => s.workflow_id) || []
@@ -741,17 +755,17 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
           break
         case 'all':
         default:
-          // Get shared workflow IDs (as collaborator)
-          const { data: allCollabIds } = await supabase
-            .from('workflow_collaborations')
-            .select('workflow_id')
-            .eq('user_id', userId)
-
-          // Get workflow IDs where user is a stakeholder
-          const { data: allStakeholderIds } = await supabase
-            .from('workflow_stakeholders')
-            .select('workflow_id')
-            .eq('user_id', userId)
+          // Parallelize collaboration and stakeholder lookups
+          const [{ data: allCollabIds }, { data: allStakeholderIds }] = await Promise.all([
+            supabase
+              .from('workflow_collaborations')
+              .select('workflow_id')
+              .eq('user_id', userId),
+            supabase
+              .from('workflow_stakeholders')
+              .select('workflow_id')
+              .eq('user_id', userId)
+          ])
 
           const allCollaboratorIds = allCollabIds?.map(s => s.workflow_id) || []
           const allStakeholderWorkflowIds = allStakeholderIds?.map(s => s.workflow_id) || []
@@ -881,6 +895,23 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
     workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     workflow.description.toLowerCase().includes(searchTerm.toLowerCase())
   ) || []
+
+  // Memoize expensive stats calculations to prevent re-computing on every render
+  const workflowStats = useMemo(() => {
+    const totalActive = filteredWorkflows.reduce((sum, w) => sum + w.active_assets, 0)
+    const totalCompleted = filteredWorkflows.reduce((sum, w) => sum + w.completed_assets, 0)
+    const totalUsage = filteredWorkflows.reduce((sum, w) => sum + w.usage_count, 0)
+    const averageCadence = filteredWorkflows.length > 0
+      ? Math.round(filteredWorkflows.reduce((sum, w) => sum + w.cadence_days, 0) / filteredWorkflows.length)
+      : 0
+
+    return {
+      totalActive,
+      totalCompleted,
+      totalUsage,
+      averageCadence
+    }
+  }, [filteredWorkflows])
 
   // Separate workflows into persistent and cadence groups
   const persistentWorkflows = filteredWorkflows.filter(w =>
@@ -1835,10 +1866,10 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
       await queryClient.cancelQueries({ queryKey: ['workflows-full'] })
 
       // Snapshot the previous value
-      const previousWorkflows = queryClient.getQueryData(['workflows-full', filterBy, sortBy, workflowStages])
+      const previousWorkflows = queryClient.getQueryData(['workflows-full', filterBy, sortBy])
 
       // Optimistically update the cache
-      queryClient.setQueryData(['workflows-full', filterBy, sortBy, workflowStages], (old: any) => {
+      queryClient.setQueryData(['workflows-full', filterBy, sortBy], (old: any) => {
         if (!old) return old
         return old.map((workflow: any) =>
           workflow.id === workflowId
@@ -4764,33 +4795,22 @@ export function WorkflowsPage({ className = '', tabId = 'workflows' }: Workflows
                         </div>
                       </div>
                       <div className="p-4 space-y-4">
-                        {(() => {
-                          const totalActive = filteredWorkflows.reduce((sum, w) => sum + w.active_assets, 0)
-                          const totalCompleted = filteredWorkflows.reduce((sum, w) => sum + w.completed_assets, 0)
-                          const totalUsage = filteredWorkflows.reduce((sum, w) => sum + w.usage_count, 0)
-                          const averageCadence = Math.round(filteredWorkflows.reduce((sum, w) => sum + w.cadence_days, 0) / filteredWorkflows.length) || 0
-
-                          return (
-                            <>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Total Active Assets</span>
-                                <span className="text-lg font-semibold text-green-600">{totalActive}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Completed Assets</span>
-                                <span className="text-lg font-semibold text-blue-600">{totalCompleted}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Total Usage</span>
-                                <span className="text-lg font-semibold text-purple-600">{totalUsage}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Avg. Frequency</span>
-                                <span className="text-lg font-semibold text-orange-600">{averageCadence}d</span>
-                              </div>
-                            </>
-                          )
-                        })()}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Total Active Assets</span>
+                          <span className="text-lg font-semibold text-green-600">{workflowStats.totalActive}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Completed Assets</span>
+                          <span className="text-lg font-semibold text-blue-600">{workflowStats.totalCompleted}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Total Usage</span>
+                          <span className="text-lg font-semibold text-purple-600">{workflowStats.totalUsage}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Avg. Frequency</span>
+                          <span className="text-lg font-semibold text-orange-600">{workflowStats.averageCadence}d</span>
+                        </div>
                       </div>
                     </Card>
 

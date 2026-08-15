@@ -29,9 +29,15 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
   const [showLeftArrow, setShowLeftArrow] = useState(false)
   const [showRightArrow, setShowRightArrow] = useState(false)
   const [isScrolling, setIsScrolling] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const visibilityCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const dragStartPosRef = useRef({ x: 0, y: 0 })
+  const lastReorderTimeRef = useRef(0)
+  const dragStartIndexRef = useRef(0)
+  const lastMousePosRef = useRef({ x: 0, y: 0 })
+  const currentOffsetRef = useRef({ x: 0, y: 0 })
 
   const handleDragStart = (e: React.DragEvent, tabId: string) => {
     // Don't allow dragging the dashboard tab
@@ -39,54 +45,178 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
       e.preventDefault()
       return
     }
-    
+
     setDraggedTab(tabId)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', tabId)
+
+    // Store initial cursor position and tab index
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY }
+    dragStartIndexRef.current = tabs.findIndex(tab => tab.id === tabId)
+    lastMousePosRef.current = { x: e.clientX, y: e.clientY }
+    currentOffsetRef.current = { x: 0, y: 0 }
+    setDragOffset({ x: 0, y: 0 })
+
+    // Create an invisible drag image to hide the default ghost image
+    const invisibleImage = document.createElement('div')
+    invisibleImage.style.width = '1px'
+    invisibleImage.style.height = '1px'
+    invisibleImage.style.opacity = '0'
+    invisibleImage.style.position = 'absolute'
+    invisibleImage.style.top = '-9999px'
+    document.body.appendChild(invisibleImage)
+    e.dataTransfer.setDragImage(invisibleImage, 0, 0)
+
+    // Clean up the invisible image after drag starts
+    setTimeout(() => {
+      if (document.body.contains(invisibleImage)) {
+        document.body.removeChild(invisibleImage)
+      }
+    }, 0)
+
+    // Add document-level dragover to handle both position tracking and reordering
+    const handleDocumentDragOver = (e: DragEvent) => {
+      e.preventDefault()
+
+      if (!scrollContainerRef.current) return
+      if (e.clientX === 0 && e.clientY === 0) return
+
+      // Calculate offset - ALWAYS just cursor movement
+      const deltaX = e.clientX - dragStartPosRef.current.x
+      currentOffsetRef.current = { x: deltaX, y: 0 }
+      setDragOffset({ x: deltaX, y: 0 })
+
+      // Check for reordering (throttled)
+      const now = Date.now()
+      if (now - lastReorderTimeRef.current < 150) return
+
+      const draggedElement = scrollContainerRef.current.querySelector(`[data-tab-id="${tabId}"]`) as HTMLElement
+      if (!draggedElement) return
+
+      // Calculate where the dragged tab's visual center is
+      const draggedRect = draggedElement.getBoundingClientRect()
+      const visualCenterX = draggedRect.left + draggedRect.width / 2 + deltaX
+
+      // Find current index
+      const currentIndex = tabs.findIndex(t => t.id === tabId)
+      if (currentIndex === -1) return
+
+      // Check all tabs to see if we should swap
+      const allTabElements = Array.from(scrollContainerRef.current.querySelectorAll('[data-tab-id]')) as HTMLElement[]
+
+      for (let i = 0; i < allTabElements.length; i++) {
+        const otherTabId = allTabElements[i].getAttribute('data-tab-id')
+        if (otherTabId === tabId) continue
+
+        const otherRect = allTabElements[i].getBoundingClientRect()
+        const otherCenterX = otherRect.left + otherRect.width / 2
+
+        // Check if visual center crossed this tab's center
+        const shouldSwap = (
+          (i < currentIndex && visualCenterX < otherCenterX) || // Moving left
+          (i > currentIndex && visualCenterX > otherCenterX)     // Moving right
+        )
+
+        if (shouldSwap) {
+          lastReorderTimeRef.current = now
+          onTabReorder(currentIndex, i)
+
+          // Reset reference point
+          dragStartPosRef.current = { x: e.clientX, y: e.clientY }
+          currentOffsetRef.current = { x: 0, y: 0 }
+          setDragOffset({ x: 0, y: 0 })
+          break
+        }
+      }
+    }
+
+    document.addEventListener('dragover', handleDocumentDragOver)
+
+    // Clean up on drag end
+    const cleanup = () => {
+      document.removeEventListener('dragover', handleDocumentDragOver)
+      document.removeEventListener('dragend', cleanup)
+    }
+    document.addEventListener('dragend', cleanup)
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent, tabId?: string) => {
     e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
+
+    if (!draggedTab) return
+
+    // The offset is already being tracked by the document drag handler
+    // Just need to handle detection here
+
+    // Throttle reordering to prevent too many calls
+    const now = Date.now()
+    if (now - lastReorderTimeRef.current < 100) return
+
+    // Temporarily hide the dragged element to detect what's underneath
+    const originalPointerEvents = draggedElement?.style.pointerEvents
+
+    if (draggedElement) {
+      draggedElement.style.pointerEvents = 'none'
+    }
+
+    // Use elementFromPoint to find what's under the cursor
+    // Always use the container's vertical center for consistent detection
+    const containerRect = scrollContainerRef.current?.getBoundingClientRect()
+    const checkY = containerRect ? containerRect.top + containerRect.height / 2 : e.clientY
+
+    const elementUnderCursor = document.elementFromPoint(e.clientX, checkY)
+
+    // Restore pointer events
+    if (draggedElement) {
+      draggedElement.style.pointerEvents = originalPointerEvents || ''
+    }
+
+    if (elementUnderCursor) {
+      // Find the closest tab element (the element or its parent)
+      let tabElement = elementUnderCursor.closest('[data-tab-id]') as HTMLElement
+
+      if (tabElement) {
+        const targetTabId = tabElement.getAttribute('data-tab-id')
+
+        // If we found a target tab and it's different from the dragged tab
+        if (targetTabId && targetTabId !== draggedTab) {
+          const fromIndex = tabs.findIndex(tab => tab.id === draggedTab)
+          const toIndex = tabs.findIndex(tab => tab.id === targetTabId)
+
+          if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+            lastReorderTimeRef.current = now
+            setDraggedOverTab(targetTabId)
+            onTabReorder(fromIndex, toIndex)
+          }
+        }
+      }
+    }
   }
 
   const handleDragEnter = (e: React.DragEvent, tabId: string) => {
     e.preventDefault()
-    if (draggedTab && draggedTab !== tabId) {
-      setDraggedOverTab(tabId)
-    }
+    e.stopPropagation()
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
-    // Only clear if we're leaving the tab entirely
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDraggedOverTab(null)
-    }
+    e.stopPropagation()
   }
 
   const handleDrop = (e: React.DragEvent, targetTabId: string) => {
     e.preventDefault()
-    
-    if (!draggedTab || draggedTab === targetTabId) {
-      setDraggedTab(null)
-      setDraggedOverTab(null)
-      return
-    }
-    
-    const fromIndex = tabs.findIndex(tab => tab.id === draggedTab)
-    const toIndex = tabs.findIndex(tab => tab.id === targetTabId)
-    
-    if (fromIndex !== -1 && toIndex !== -1) {
-      onTabReorder(fromIndex, toIndex)
-    }
-    
+    e.stopPropagation()
+
     setDraggedTab(null)
     setDraggedOverTab(null)
+    setDragOffset({ x: 0, y: 0 })
   }
 
   const handleDragEnd = () => {
     setDraggedTab(null)
     setDraggedOverTab(null)
+    setDragOffset({ x: 0, y: 0 })
   }
 
   const checkScrollVisibility = () => {
@@ -285,6 +415,7 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
         <div
           ref={scrollContainerRef}
           className="flex items-center space-x-1 overflow-x-auto flex-1"
+          onDragOver={(e) => handleDragOver(e)}
           style={{
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
@@ -296,26 +427,27 @@ export function TabManager({ tabs, onTabReorder, onTabChange, onTabClose, onNewT
           {tabs.map((tab) => (
             <div
               key={tab.id}
+              data-tab-id={tab.id}
               draggable={tab.id !== 'dashboard'}
               onDragStart={(e) => handleDragStart(e, tab.id)}
-              onDragOver={handleDragOver}
-              onDragEnter={(e) => handleDragEnter(e, tab.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, tab.id)}
               onDragEnd={handleDragEnd}
               className={clsx(
-                'flex items-center space-x-2 px-4 py-3 border-b-2 cursor-pointer transition-all duration-200 group flex-shrink-0',
+                'flex items-center space-x-2 px-4 py-3 border-b-2 cursor-pointer group flex-shrink-0',
                 'min-w-[120px] max-w-[200px]', // Set reasonable min and max width
                 tab.isActive
                   ? 'border-primary-500 bg-primary-50 text-primary-700'
                   : 'border-transparent hover:bg-gray-50 text-gray-600 hover:text-gray-900',
                 draggedTab === tab.id && 'opacity-50',
                 draggedOverTab === tab.id && 'bg-primary-100 border-primary-300',
-                tab.id === 'dashboard' && 'cursor-default'
+                tab.id === 'dashboard' && 'cursor-default',
+                // No transitions during drag to prevent visual glitches
+                !draggedTab && 'transition-all duration-200'
               )}
               onClick={() => onTabChange(tab.id)}
               style={{
-                cursor: tab.id === 'dashboard' ? 'default' : draggedTab === tab.id ? 'grabbing' : 'grab'
+                cursor: tab.id === 'dashboard' ? 'default' : draggedTab === tab.id ? 'grabbing' : 'grab',
+                transform: draggedTab === tab.id ? `translate(${dragOffset.x}px, 0)` : undefined,
+                zIndex: draggedTab === tab.id ? 50 : undefined
               }}
             >
               <span className="text-gray-500">{getTabIcon(tab.type)}</span>
