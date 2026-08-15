@@ -1,4 +1,20 @@
 [build]
+  # The guard runs BEFORE the build, and a failure here means nothing
+  # publishes.
+  #
+  # This is the actual fix for a two-day cross-tenant leak. The org-scope
+  # guard named the offending file and line the moment it was introduced,
+  # and main's CI sat red across three merges (11-13 Aug) while Netlify
+  # published every one of them — because the build command was `vite build`
+  # and Vite does not run tests. The guard could fail forever without
+  # stopping a deploy.
+  #
+  # Deliberately narrow: the scope and signal guards, not the full suite. A
+  # gate that blocks deploys for unrelated flakes is a gate somebody deletes,
+  # and these are the two that protect the tenant boundary. Widening it is
+  # one word.
+  command = "npm run guard && npm run build"
+
   # Netlify only auto-detects netlify/functions when no [build] block sets
   # otherwise; naming it explicitly means adding a function never depends on
   # detection behaviour.
