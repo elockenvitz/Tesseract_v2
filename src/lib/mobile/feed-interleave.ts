@@ -29,6 +29,16 @@
 export interface InterleavableEntry {
   /** Source bucket — 'attention', 'idea', 'news'… */
   kind: string
+  /**
+   * What this entry is *about* — usually a ticker.
+   *
+   * Distinct from `kind`, and the distinction is the whole point: NVDA can
+   * arrive as a news tile, then a crowding tile, then a target-hit tile.
+   * Three different kinds, three consecutive screens, one subject — which
+   * reads as repetition however well the kinds were mixed. Entries without a
+   * subject (a macro release, a story attributed to nobody) are exempt.
+   */
+  subject?: string | null
   /** Higher is more relevant. Only compared within a kind. */
   score: number
 }
@@ -36,6 +46,14 @@ export interface InterleavableEntry {
 export interface InterleaveOptions {
   /** Max consecutive entries of one kind before another must be emitted. */
   maxRun?: number
+  /**
+   * How many screens must pass before the same subject may reappear.
+   *
+   * A soft constraint: if honouring it would stall the feed, it yields. A
+   * feed that runs out is worse than one that repeats a name, and the
+   * alternative — dropping entries entirely — would silently shorten it.
+   */
+  subjectCooldown?: number
   /**
    * Kinds that may lead regardless of score. Used so the single most pressing
    * decision opens the feed even when an idea outranks it on its own scale.
@@ -123,7 +141,7 @@ function makeRandom(seed: number): () => number {
 
 export function interleaveByKind<T extends InterleavableEntry>(
   entries: T[],
-  { maxRun = 1, leadWith, seed, priorityBias = 2 }: InterleaveOptions = {}
+  { maxRun = 1, leadWith, seed, priorityBias = 2, subjectCooldown = 6 }: InterleaveOptions = {}
 ): T[] {
   const random = seed == null ? null : makeRandom(seed)
   // Bucket, preserving each source's own ordering by score.
@@ -153,6 +171,14 @@ export function interleaveByKind<T extends InterleavableEntry>(
 
   let runKind: string | null = out.length ? out[out.length - 1].kind : null
   let runLength = out.length ? 1 : 0
+  /** Subjects emitted within the cooldown window, most recent last. */
+  const recentSubjects: string[] = []
+  const noteSubject = (entry: T) => {
+    if (!entry.subject) return
+    recentSubjects.push(entry.subject)
+    while (recentSubjects.length > subjectCooldown) recentSubjects.shift()
+  }
+  for (const e of out) noteSubject(e)
 
   while (true) {
     const available = [...buckets.entries()].filter(([, items]) => items.length > 0)
@@ -160,7 +186,17 @@ export function interleaveByKind<T extends InterleavableEntry>(
 
     // Prefer a kind that would not extend the current run.
     const eligible = available.filter(([kind]) => !(kind === runKind && runLength >= maxRun))
-    const pool = eligible.length ? eligible : available
+    const runPool = eligible.length ? eligible : available
+
+    // Then prefer kinds that can offer a subject not shown recently. "Can
+    // offer" rather than "whose head is": when one name is the top-scoring
+    // entry of every kind — the exact case this exists for — every head is on
+    // cooldown and a head-only test falls straight back to repeating it.
+    const fresh = subjectCooldown > 0
+      ? runPool.filter(([, items]) => items.some(i => !i.subject || !recentSubjects.includes(i.subject)))
+      : runPool
+    // Falls back rather than stalling — see subjectCooldown's note.
+    const pool = fresh.length ? fresh : runPool
 
     let bestKind: string
     if (random) {
@@ -190,8 +226,19 @@ export function interleaveByKind<T extends InterleavableEntry>(
       }
     }
 
-    const chosen = buckets.get(bestKind)!.shift() as T
+    // Take the first entry in the chosen bucket whose subject is not on
+    // cooldown, rather than always the head. Score order within a bucket is a
+    // preference; not showing the same name twice in a row is worth more than
+    // one position of it, and the skipped entry keeps its place for later.
+    const bucket = buckets.get(bestKind)!
+    let index = 0
+    if (subjectCooldown > 0) {
+      const free = bucket.findIndex(i => !i.subject || !recentSubjects.includes(i.subject))
+      if (free >= 0) index = free
+    }
+    const chosen = bucket.splice(index, 1)[0] as T
     out.push(chosen)
+    noteSubject(chosen)
 
     if (bestKind === runKind) {
       runLength += 1

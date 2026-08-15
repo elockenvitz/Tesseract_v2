@@ -74,3 +74,57 @@ jobs:
   # cross-org access patterns, so it needs the service-role key. Until
   # then, run it manually via `npm run tenant:lint:all` with the env
   # vars set in .env.local.
+
+  # ── Red main must reach a human the same day ──────────────────────────────
+  #
+  # Main's CI sat red across three merges on 11-13 Aug while Netlify published
+  # every one of them. The org-scope guard had already named the file and line
+  # of a cross-tenant leak; nobody was watching the dashboard, and there is no
+  # reason anybody should have to.
+  #
+  # This opens a GitHub issue on the first red build and comments on it for
+  # each subsequent one, so a standing failure is a single tracked thing
+  # rather than a stream. Issues notify by email through normal repo watching,
+  # which needs no SMTP secret and cannot silently expire the way a webhook
+  # token does.
+  notify-red-main:
+    name: Alert on red main
+    needs: [typecheck, test]
+    if: failure() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'CI is red on main'
+            const body = [
+              `Main is failing as of ${new Date().toISOString()}.`,
+              '',
+              `Commit: ${context.sha.slice(0, 8)}`,
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Netlify will NOT publish while the guard is failing — see the',
+              'build command in netlify.toml. Production is pinned to the last',
+              'green build until this is fixed.',
+            ].join('\n')
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'ci-red',
+            })
+
+            if (existing.data.length) {
+              // Comment rather than open a second issue: a standing failure is
+              // one problem, and a stream of issues is how alerts get muted.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['ci-red'],
+              })
+            }

@@ -569,7 +569,12 @@ export function MobileDashboard({
     // Facets intersect: two sectors widen, adding a country narrows. The chip
     // filter stays a separate one-tap override on top.
     const curated = filterCount(feedFilter) ? all.filter(matchesFilter) : all
-    const pool = kindFilter ? curated.filter(e => e.kind === kindFilter) : curated
+    const filtered = kindFilter ? curated.filter(e => e.kind === kindFilter) : curated
+
+    // Tag each entry with what it is *about* so the interleaver can keep one
+    // name off three consecutive screens. symbolOf already knows where each
+    // kind hides its subject.
+    const pool = filtered.map(e => ({ ...e, subject: symbolOf(e) }))
 
     return interleaveByKind<any>(pool, {
       maxRun: 1,
@@ -768,7 +773,7 @@ export function MobileDashboard({
             const linked = a.context?.asset_id ? attentionAssets?.[a.context.asset_id] : null
             const target = attentionTarget(a)
             return (
-              <section key={a.attention_id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+              <section key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <AttentionFeedCard
                   onFilterKind={() => setKindFilter('attention')}
                   item={a}
@@ -801,6 +806,7 @@ export function MobileDashboard({
             return (
               <section
                 key={key}
+                ref={track({ assetId: null, kind: 'lens' })}
                 className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
               >
                 {l.type === 'conviction' ? (
@@ -824,6 +830,7 @@ export function MobileDashboard({
             return (
               <section
                 key={`${entry.insight.id}-r${entry.round}`}
+                ref={track({ assetId: entry.insight.assetId ?? null, kind: 'insight' })}
                 className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
               >
                 <DerivedInsightTile
@@ -842,7 +849,7 @@ export function MobileDashboard({
 
           if (entry.kind === 'signal') {
             return (
-              <section key={entry.signal.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+              <section key={entry.signal.id} ref={track({ assetId: (entry.signal.relatedAssets?.[0] as any)?.id ?? null, kind: 'signal' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <SignalFeedTile
                   onFilterKind={() => setKindFilter('signal')}
                   signal={entry.signal}
@@ -860,7 +867,7 @@ export function MobileDashboard({
           if (entry.kind === 'template') {
             const c = entry.card
             return (
-              <section key={c.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+              <section key={c.id} ref={track({ assetId: (c as any).assetId ?? null, kind: 'template' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <TemplateFeedTile
                   card={c}
                   onAssetClick={openAsset}
@@ -881,7 +888,7 @@ export function MobileDashboard({
               .map((s: string) => assetBySymbol.get(s.toUpperCase()) ?? null)
               .find(Boolean) ?? null
             return (
-              <section key={n.id} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
+              <section key={n.id} ref={track({ assetId: null, kind: 'news' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <NewsFeedTile
                   item={n}
                   assetForSymbol={(sym) => assetBySymbol.get(sym.toUpperCase()) ?? null}
@@ -902,11 +909,11 @@ export function MobileDashboard({
           const itemAssetId = ('asset' in item && item.asset ? item.asset.id : null) as string | null
           const itemAuthorId = item.author?.id ?? null
           const note = (signal: 'reaction' | 'share' | 'open' | 'readthrough') =>
-            userId && recordInterest({ userId, signal, assetId: itemAssetId, authorId: itemAuthorId })
+            userId && recordInterest({ userId, signal, assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })
           return (
             <section
               key={item.id}
-              ref={track({ assetId: itemAssetId, authorId: itemAuthorId })}
+              ref={track({ assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })}
               className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
             >
               {/* Inset by exactly the bar height so the card never renders

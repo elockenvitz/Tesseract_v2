@@ -4,6 +4,16 @@ import { recordInterest } from '../../lib/mobile/feed-telemetry'
 interface DwellTarget {
   assetId?: string | null
   authorId?: string | null
+  /**
+   * Which tile type this was.
+   *
+   * Dwell on an asset says the *name* is interesting; dwell on a kind says the
+   * *format* earns its screen. Without this the feed could never learn that a
+   * whole tile type is being scrolled past — and tiles about no particular
+   * asset recorded nothing at all, so the kinds most likely to be filler were
+   * exactly the ones it could not learn to stop showing.
+   */
+  kind?: string | null
 }
 
 /**
@@ -36,6 +46,7 @@ export function useFeedDwell(userId: string | undefined) {
       signal: 'dwell',
       assetId: target.assetId,
       authorId: target.authorId,
+      kind: target.kind,
       dwellMs: Date.now() - start,
     })
   }, [userId])
