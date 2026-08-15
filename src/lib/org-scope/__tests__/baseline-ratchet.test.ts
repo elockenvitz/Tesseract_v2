@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import baseline from '../known-unscoped-queries.json'
 
 /**
@@ -16,12 +18,35 @@ import baseline from '../known-unscoped-queries.json'
  *
  * There is no temporary exception, because a temporary exception is exactly
  * how this got to 109.
- *
- * To lower it: fix the file, remove its entry, drop MAX to match. That is a
- * deliberate three-step edit, and it should be — every step down is a real
- * improvement to the tenant boundary and worth noticing in review.
  */
 const MAX_KNOWN_UNSCOPED = 109
+
+/**
+ * `org-scope-exempt` is the scanner's escape hatch: a comment within three
+ * lines of a query suppresses it entirely.
+ *
+ * It is sometimes the right tool — `useObjectSearch` reads `portfolios`,
+ * whose RLS is genuinely org-aware, and a client filter there would be
+ * *narrower* than the policy and would hide legacy rows carrying team_id with
+ * a null organization_id. But an uncounted escape hatch is the allowlist
+ * problem in miniature: the cheapest way to silence the scanner, with nothing
+ * stopping the next one.
+ *
+ * So exemptions ratchet too. Adding one fails the build until somebody raises
+ * this number in a commit that says why.
+ */
+const MAX_EXEMPTIONS = 1
+
+/** Every .ts/.tsx under src, excluding the org-scope module itself. */
+function sourceFiles(dir: string, acc: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name.startsWith('.')) continue
+    const full = join(dir, name)
+    if (statSync(full).isDirectory()) sourceFiles(full, acc)
+    else if (name.endsWith('.ts') || name.endsWith('.tsx')) acc.push(full)
+  }
+  return acc
+}
 
 describe('unscoped-query allowlist ratchet', () => {
   it('never grows', () => {
@@ -52,5 +77,36 @@ describe('unscoped-query allowlist ratchet', () => {
   it('holds no duplicates — a duplicate is a silent slot for a regression', () => {
     const entries = baseline as string[]
     expect(new Set(entries).size).toBe(entries.length)
+  })
+})
+
+describe('scanner exemption ratchet', () => {
+  it('never grows', () => {
+    const root = resolve(__dirname, '../../..')
+    const orgScopeDir = join('lib', 'org-scope')
+    const hits: string[] = []
+
+    for (const file of sourceFiles(root)) {
+      // The scanner and the guard test both *describe* the marker. Only real
+      // uses count, so the module that defines it is excluded.
+      if (file.includes(orgScopeDir)) continue
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        // Marker plus a colon: an exemption must carry a reason to count as
+        // one, and a bare mention in prose is not an exemption.
+        if (/org-scope-exempt\s*:/.test(line)) {
+          hits.push(`${file.replace(root, '')}: ${line.trim().slice(0, 70)}`)
+        }
+      }
+    }
+
+    expect(
+      hits.length,
+      hits.length > MAX_EXEMPTIONS
+        ? `\n  Exemptions grew from ${MAX_EXEMPTIONS} to ${hits.length}:\n` +
+          hits.map(h => `    ${h}`).join('\n') +
+          `\n\n  An exemption means RLS alone holds the tenant boundary there.\n` +
+          `  Raise MAX_EXEMPTIONS deliberately, in a commit that says why.\n`
+        : undefined,
+    ).toBeLessThanOrEqual(MAX_EXEMPTIONS)
   })
 })
