@@ -107,6 +107,5 @@
   "src/pages/WorkflowsPage.tsx",
   "src/pages/ops/OpsClientDetailPage.tsx",
   "src/pages/ops/OpsDashboardPage.tsx",
-  "src/pages/ops/OpsMetricsPage.tsx",
-  "src/deliberate/gate-proof.ts"
+  "src/pages/ops/OpsMetricsPage.tsx"
 ]
