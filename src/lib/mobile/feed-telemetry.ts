@@ -43,6 +43,19 @@ export interface InterestVector {
   assets: Record<string, number>
   /** authorId -> accumulated weight */
   authors: Record<string, number>
+  /**
+   * Feed kind -> accumulated weight.
+   *
+   * Assets and authors answer "what is this about"; kinds answer "is this
+   * *sort* of thing worth my time". They are different questions and only the
+   * second can tell you a whole tile type is being scrolled past — someone can
+   * care intensely about NVDA and never once stop on a crowding tile.
+   *
+   * Kept separate from the other two rather than folded in, because the
+   * remedy differs: a cold asset should rank lower, a cold *kind* should
+   * appear less often or be cut.
+   */
+  kinds: Record<string, number>
   /** Last decay application, ISO. */
   decayedAt: string
 }
@@ -55,7 +68,7 @@ export interface InterestVector {
  * made the first decay pass treat the data as ~55 years old and erase it.
  */
 function emptyVector(): InterestVector {
-  return { assets: {}, authors: {}, decayedAt: new Date().toISOString() }
+  return { assets: {}, authors: {}, kinds: {}, decayedAt: new Date().toISOString() }
 }
 
 function key(userId: string) {
@@ -97,6 +110,7 @@ function decay(vector: InterestVector): InterestVector {
   return {
     assets: scale(vector.assets),
     authors: scale(vector.authors),
+    kinds: scale(vector.kinds ?? {}),
     decayedAt: new Date().toISOString(),
   }
 }
@@ -108,11 +122,17 @@ export interface RecordInterestInput {
   authorId?: string | null
   /** Required for `dwell`; ignored otherwise. */
   dwellMs?: number
+  /** The tile kind this signal came from — 'news', 'lens', 'attention'. */
+  kind?: string | null
 }
 
-export function recordInterest({ userId, signal, assetId, authorId, dwellMs }: RecordInterestInput): void {
+export function recordInterest({ userId, signal, assetId, authorId, dwellMs, kind }: RecordInterestInput): void {
   if (typeof localStorage === 'undefined' || !userId) return
-  if (!assetId && !authorId) return
+  // A kind alone is enough to record. Tiles that are about no particular asset
+  // — a macro release, an unattributed story — used to contribute nothing at
+  // all, which meant the kinds most likely to be filler were also the ones the
+  // feed could never learn to stop showing.
+  if (!assetId && !authorId && !kind) return
 
   let weight = SIGNAL_WEIGHTS[signal]
   if (signal === 'dwell') {
@@ -126,6 +146,10 @@ export function recordInterest({ userId, signal, assetId, authorId, dwellMs }: R
     const vector = loadInterest(userId)
     if (assetId) vector.assets[assetId] = (vector.assets[assetId] ?? 0) + weight
     if (authorId) vector.authors[authorId] = (vector.authors[authorId] ?? 0) + weight
+    if (kind) {
+      vector.kinds ??= {}
+      vector.kinds[kind] = (vector.kinds[kind] ?? 0) + weight
+    }
 
     trim(vector.assets)
     trim(vector.authors)
@@ -155,7 +179,7 @@ function trim(rec: Record<string, number>) {
  */
 export function interestScore(
   vector: InterestVector,
-  { assetId, authorId }: { assetId?: string | null; authorId?: string | null }
+  { assetId, authorId, kind }: { assetId?: string | null; authorId?: string | null; kind?: string | null }
 ): number {
   const maxAsset = Math.max(1, ...Object.values(vector.assets))
   const maxAuthor = Math.max(1, ...Object.values(vector.authors))
@@ -164,8 +188,55 @@ export function interestScore(
   const author = authorId ? (vector.authors[authorId] ?? 0) / maxAuthor : 0
 
   // Asset interest dominates: on a research feed, *what* it is about matters
-  // more than who wrote it.
-  return asset * 0.7 + author * 0.3
+  // more than who wrote it. Kind is a smaller, separate term — it should nudge
+  // ordering, not let one ignored tile type disappear a name the user follows
+  // closely.
+  const base = asset * 0.7 + author * 0.3
+
+  // Centred on neutral, not added to it. Returning 0.5 for an unknown kind and
+  // adding it gave every item a constant floor, so a score could never be zero
+  // and "no interest at all" stopped being expressible. As a signed delta, a
+  // kind with no history contributes nothing, a cold one pushes down and a hot
+  // one pushes up.
+  const affinity = kindAffinity(vector, kind)
+  return affinity == null ? base : base + (affinity - 0.5) * 0.25
+}
+
+/**
+ * How much this user engages with a kind, relative to the kind they engage
+ * with most: 0 is ignored, 1 is their favourite, 0.5 is neutral.
+ *
+ * Returns null — not 0.5 — when there is nothing to say: no kind given, no
+ * history at all, or this kind never seen. Callers must distinguish "no
+ * information" from "average", because a newly added tile type has no history
+ * and must not be buried before anyone has had the chance to skip it.
+ */
+export function kindAffinity(vector: InterestVector, kind?: string | null): number | null {
+  if (!kind) return null
+  const kinds = vector.kinds ?? {}
+  const values = Object.values(kinds)
+  if (!values.length) return null
+  const seen = kinds[kind]
+  if (seen == null) return null
+  return seen / Math.max(1, ...values)
+}
+
+/**
+ * Kinds this user reliably scrolls past.
+ *
+ * Only meaningful once there is enough history to compare against — below
+ * that, a kind that simply has not come up yet is indistinguishable from one
+ * being ignored, and acting on the difference would suppress tiles nobody has
+ * had the chance to skip.
+ */
+export function coldKinds(vector: InterestVector, opts?: { threshold?: number }): string[] {
+  const kinds = vector.kinds ?? {}
+  const entries = Object.entries(kinds)
+  if (entries.length < 3) return []
+  const max = Math.max(...entries.map(([, v]) => v))
+  if (max <= 0) return []
+  const threshold = opts?.threshold ?? 0.12
+  return entries.filter(([, v]) => v / max < threshold).map(([k]) => k)
 }
 
 /** Human-readable reason, for showing why an item ranked where it did. */
