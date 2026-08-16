@@ -24,7 +24,7 @@ export const dayKey = (iso: string): string => {
  */
 export const TRIAGE: CardAction[] = [
   { id: 'snooze', label: 'Snooze', inline: true },
-  { id: 'dismiss', label: 'Not useful', inline: true },
+  { id: 'dismiss', label: 'Dismiss', inline: true },
 ]
 
 /**

@@ -13,7 +13,14 @@
   # gate that blocks deploys for unrelated flakes is a gate somebody deletes,
   # and these are the two that protect the tenant boundary. Widening it is
   # one word.
-  command = "npm run guard && npm run build"
+  # guard:unit, not guard. The full guard now also runs the Playwright layout
+# assertions, which need a Chromium download (~115MB) on every deploy — and
+# whether Netlify's image tolerates that is exactly the kind of thing this
+# project has assumed and been wrong about before (see
+# docs/tickets/netlify-branch-deploy-gate-unproven.md). The layout rules are
+# enforced instead as a required status check on main, which blocks the merge
+# rather than the deploy — a strictly earlier gate.
+command = "npm run guard:unit && npm run build"
 
   # Netlify only auto-detects netlify/functions when no [build] block sets
   # otherwise; naming it explicitly means adding a function never depends on

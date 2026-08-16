@@ -19,7 +19,9 @@
     "analyze": "vite build --mode analyze",
     "lint": "eslint .",
     "preview": "vite preview",
-    "guard": "vitest run --project unit src/lib/org-scope src/lib/signals src/components/signals",
+    "guard": "npm run guard:unit && npm run guard:layout",
+    "guard:unit": "vitest run --project unit src/lib/org-scope src/lib/signals src/components/signals",
+    "guard:layout": "vite build --config vite.gallery.config.ts && playwright test --project=phone",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
@@ -102,6 +104,7 @@
   "devDependencies": {
     "@chromatic-com/storybook": "^4.1.3",
     "@eslint/js": "^9.30.0",
+    "@playwright/test": "^1.62.1",
     "@sentry/vite-plugin": "^5.3.0",
     "@storybook/addon-a11y": "^10.0.8",
     "@storybook/addon-docs": "^10.0.8",
