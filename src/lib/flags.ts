@@ -51,11 +51,14 @@ function write(set: Set<string>): void {
 /**
  * Apply any `?flag=` in the current URL, then report the active set.
  *
- * Called from `isFlagOn` rather than at module load so that a flag set by URL
- * takes effect on the first render that asks for it, including on a cold start
- * where the app mounts before any effect runs.
+ * Called from `main.tsx` before React mounts, NOT lazily from the screen that
+ * uses the flag. The root route redirects with `<Navigate to="/dashboard"
+ * replace />`, which discards the query string — so by the time the feed
+ * rendered and asked, the parameter was already gone and the flag silently
+ * never set. Reading it at entry is the only point that survives both the
+ * auth redirect and the dashboard redirect.
  */
-function syncFromUrl(): Set<string> {
+export function syncFlagsFromUrl(): Set<string> {
   const flags = read()
   if (typeof window === 'undefined') return flags
   const param = new URLSearchParams(window.location.search).get('flag')
@@ -88,8 +91,14 @@ function syncFromUrl(): Set<string> {
 let cached: Set<string> | null = null
 
 export function isFlagOn(name: FlagName): boolean {
-  if (cached === null) cached = syncFromUrl()
+  if (cached === null) cached = syncFlagsFromUrl()
   return cached.has(name)
+}
+
+/** Every flag currently on, for the debug indicator. */
+export function activeFlags(): string[] {
+  if (cached === null) cached = syncFlagsFromUrl()
+  return [...cached].sort()
 }
 
 /** Testing seam. */

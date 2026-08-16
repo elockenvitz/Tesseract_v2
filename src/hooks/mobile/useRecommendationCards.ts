@@ -34,7 +34,17 @@ export function useRecommendationCards(options?: { enabled?: boolean }) {
           portfolios!inner(id, name, organization_id)
         `)
         .eq('portfolios.organization_id', currentOrgId!)
-        .in('status', ['pending', 'proposed', 'awaiting_review'])
+        // The real status values, read from production rather than guessed.
+        // The first version filtered on 'pending', 'proposed' and
+        // 'awaiting_review' — none of which exist in this table, so the hook
+        // returned zero rows unconditionally and no recommendation card could
+        // ever render. Live distribution: idea 90, executed 49, deleted 49,
+        // approved 11, deciding 9, discussing 9, simulating 6.
+        //
+        // These four are the ones still awaiting a decision. 'approved' is
+        // already decided and 'executed' is done, so neither belongs on a card
+        // whose primary action is Approve.
+        .in('status', ['idea', 'deciding', 'discussing', 'simulating'])
         .order('created_at', { ascending: false })
         .limit(40)
 
