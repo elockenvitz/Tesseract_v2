@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
 
 /** Above this a card is a screen, not a card, and the queue stops feeling finite. */
 const MAX_CARD_HEIGHT = 720
@@ -92,6 +92,16 @@ test.describe('layout rules', () => {
 
   test('the chart appears when a card argues for it', async ({ page }) => {
     await expect(card(page, 'active-risk-sparkline').locator('[data-testid="sparkline"]')).toHaveCount(1)
+  })
+
+  test('the scenario ladder renders every case the analyst wrote', async ({ page }) => {
+    // AAPL carries four, including one named "Uber Bull" — the analyst's own
+    // word. A ladder that normalised to bear/base/bull would silently drop it.
+    const ladder = card(page, 'scenario-at-expected').locator('[data-testid="scenario-ladder"]')
+    await expect(ladder).toHaveCount(1)
+    await expect(ladder.getByText('Uber Bull')).toBeVisible()
+    await expect(ladder.getByText('$500')).toBeVisible()
+    await expect(ladder.getByText('$276.49')).toBeVisible()
   })
 
   test('more than one card is visible at once', async ({ page }) => {

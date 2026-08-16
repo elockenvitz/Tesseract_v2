@@ -37,6 +37,15 @@ export type SignalType =
   | 'conviction_oversized'
   // research
   | 'recommendation'
+  /**
+   * The price against the analyst's own scenario ladder.
+   *
+   * The richest data in the product and, until now, the least used: targets
+   * are stored one row per scenario with a probability, so a name carries a
+   * bear/base/bull spread and a probability-weighted expected value. Every
+   * other surface reduces that to a single number and throws the shape away.
+   */
+  | 'scenario_gap'
   | 'research_stale'
   | 'no_research'
   | 'target_hit'
@@ -128,7 +137,15 @@ export interface CardContextChip {
   href?: string
 }
 
-export type EvidenceKind = 'none' | 'sparkline' | 'peer_bar' | 'timeline'
+export type EvidenceKind =
+  | 'none'
+  | 'sparkline'
+  | 'peer_bar'
+  | 'timeline'
+  /** The scenario ladder: every case as a marker on a price axis, with the
+   *  live price against them. The one chart on this surface that carries the
+   *  argument rather than decorating it — the spread IS the claim. */
+  | 'scenario_ladder'
 
 export interface EvidenceAnnotation {
   date: string

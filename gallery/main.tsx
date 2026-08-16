@@ -4,6 +4,8 @@ import { SignalCardView } from '../src/components/signals/SignalCardView'
 import { buildActiveRiskCard } from '../src/lib/signals/builders/activeRisk'
 import { buildRecommendationCard } from '../src/lib/signals/builders/recommendation'
 import { buildNewsCard } from '../src/lib/signals/builders/news'
+import { buildScenarioGapCard } from '../src/lib/signals/builders/scenarioGap'
+import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -87,9 +89,56 @@ const Sparkline = ({ points }: { points: number[] }) => {
   )
 }
 
+/**
+ * Real production ladders, read from analyst_price_targets on 2026-08-16.
+ * The price is stamped now so the freshness guard passes in the gallery; every
+ * other number is exactly what is in the database.
+ */
+const tsla = unwrap(buildScenarioGapCard({
+  assetId: 'tsla', symbol: 'TSLA', companyName: 'Tesla',
+  price: 248.90, priceAsOf: new Date().toISOString(),
+  cases: [
+    { name: 'Bear', price: 325, probability: 10, timeframe: '6 months' },
+    { name: 'Base', price: 375, probability: 15, timeframe: '6 months' },
+    { name: 'Bull', price: 400, probability: 75, timeframe: '6 months' },
+  ],
+  heldIn: ['Tech & Consumer Growth'], statedAt: '2026-03-21T18:49:00.000Z',
+}))
+
+const aapl = unwrap(buildScenarioGapCard({
+  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
+  price: 276.49, priceAsOf: new Date().toISOString(),
+  cases: [
+    { name: 'Bear', price: 205, probability: 12, timeframe: '6 months' },
+    { name: 'Base', price: 230, probability: 19, timeframe: '6 months' },
+    { name: 'Bull', price: 285, probability: 62, timeframe: '12 months' },
+    { name: 'Uber Bull', price: 500, probability: 7, timeframe: '12 months' },
+  ],
+  heldIn: ['Tech & Consumer Growth', 'Vision Fund 10K'], statedAt: '2026-04-04T00:00:00.000Z',
+}))
+
+const amzn = unwrap(buildScenarioGapCard({
+  assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
+  price: 232.99, priceAsOf: new Date().toISOString(),
+  cases: [
+    { name: 'Bear', price: 90, probability: null, timeframe: '12 months' },
+    { name: 'Base', price: 120, probability: null, timeframe: '12 months' },
+    { name: 'Bull', price: 180, probability: null, timeframe: '12 months' },
+  ],
+  heldIn: ['Vision Fund 10K'], statedAt: '2026-02-05T00:00:00.000Z',
+}))
+
+const ladderFor = (c: SignalCard) => {
+  const d = c.evidence!.data as any
+  return <ScenarioLadder price={d.price} cases={d.cases} expected={d.expected} />
+}
+
 const noop = () => {}
 
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode }[] = [
+  { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla) },
+  { slug: 'scenario-at-expected', card: aapl, evidence: ladderFor(aapl) },
+  { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn) },
   { slug: 'active-risk', card: activeRisk },
   { slug: 'active-risk-sparkline', card: withSparkline, evidence: <Sparkline points={withSparkline.evidence!.data as number[]} /> },
   { slug: 'recommendation', card: recommendation },

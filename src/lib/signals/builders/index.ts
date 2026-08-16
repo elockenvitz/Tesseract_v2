@@ -6,3 +6,6 @@ export type { RecommendationInput, RecommendationAction } from './recommendation
 
 export { buildNewsCard } from './news'
 export type { NewsInput } from './news'
+
+export { buildScenarioGapCard } from './scenarioGap'
+export type { ScenarioGapInput, ScenarioCase, ScenarioClaim } from './scenarioGap'
