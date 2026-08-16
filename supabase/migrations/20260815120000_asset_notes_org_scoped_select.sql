@@ -1,11 +1,18 @@
 /**
  * asset_notes: the SELECT policy permits reads across every organization.
  *
- * Live policy in production:
+ * Live policy in production, read from pg_policies rather than reconstructed
+ * from this repo's migration history, and named:
+ *
+ *   "Users can read own notes and shared notes from others"
  *
  *   (auth.uid() = created_by)
  *   OR (is_shared = true)
- *   OR EXISTS (SELECT 1 FROM note_collaborations ...)
+ *   OR EXISTS (SELECT 1 FROM note_collaborations
+ *              WHERE note_id = asset_notes.id
+ *                AND note_type = 'asset'
+ *                AND user_id = auth.uid()
+ *                AND permission = ANY (ARRAY['read','write','admin']))
  *
  * The `is_shared = true` branch has no organization predicate, so a note
  * flagged shared is readable by every authenticated user in all 27
@@ -57,10 +64,7 @@
  * ones, none of which can currently occur.
  */
 
-DROP POLICY IF EXISTS "Users can view own and shared notes" ON public.asset_notes;
--- The live name in production may differ from the migration that created it;
--- both spellings are dropped so the CREATE below cannot collide.
-DROP POLICY IF EXISTS "Users can view accessible notes" ON public.asset_notes;
+DROP POLICY IF EXISTS "Users can read own notes and shared notes from others" ON public.asset_notes;
 
 CREATE POLICY "Org members can view notes in current org"
   ON public.asset_notes
@@ -72,15 +76,17 @@ CREATE POLICY "Org members can view notes in current org"
       auth.uid() = created_by
       OR is_shared = true
       OR EXISTS (
-        SELECT 1 FROM note_collaborations nc
-        WHERE nc.note_id = asset_notes.id
-          AND nc.user_id = auth.uid()
+        SELECT 1 FROM note_collaborations
+        WHERE note_collaborations.note_id = asset_notes.id
+          AND note_collaborations.note_type = 'asset'
+          AND note_collaborations.user_id = auth.uid()
+          AND note_collaborations.permission = ANY (ARRAY['read','write','admin'])
       )
     )
   );
 
--- Legacy rows with no org can still be read by whoever wrote them, so a
--- pre-2026 note does not vanish from its author's own view.
+-- Dead code today: 0 of 57 rows have a null organization_id. Kept as a guard
+-- against a future null-org insert silently becoming unreadable to its author.
 CREATE POLICY "Authors can view their own unattributed notes"
   ON public.asset_notes
   FOR SELECT
@@ -88,11 +94,27 @@ CREATE POLICY "Authors can view their own unattributed notes"
   USING (organization_id IS NULL AND auth.uid() = created_by);
 
 -- ---------------------------------------------------------------------------
--- Verification — run after applying.
+-- Verification. Asserts a NEGATIVE, because the failure mode of this migration
+-- is persistence, not absence.
+--
+-- The first draft dropped two policy names that do not exist in production
+-- ("Users can view own and shared notes", "Users can view accessible notes"),
+-- reconstructed from this repo's migration history. Both DROPs would have
+-- no-opped, both CREATEs would have succeeded, and the old permissive policy
+-- would have remained — policies OR together, so the cross-org read stays
+-- open while pg_policies shows two correctly-scoped new policies. A check for
+-- "the new policy exists" passes on that. Only a check for "the old policy is
+-- gone" catches it.
 -- ---------------------------------------------------------------------------
 --
---   SELECT policyname, qual FROM pg_policies
+--   SELECT policyname FROM pg_policies
 --    WHERE tablename = 'asset_notes' AND cmd = 'SELECT';
+--   -- exactly 2 rows, and NOT containing
+--   -- 'Users can read own notes and shared notes from others'
 --
--- Expect exactly the two policies above, both containing an organization
--- predicate or an explicit author check.
+--   SELECT policyname FROM pg_policies
+--    WHERE tablename = 'asset_notes' AND cmd = 'SELECT'
+--      AND qual NOT LIKE '%organization_id%';
+--   -- zero rows
+--
+-- Applied to production 2026-08-16. Both assertions passed.
