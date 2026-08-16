@@ -135,7 +135,19 @@ const ladderFor = (c: SignalCard) => {
 
 const noop = () => {}
 
+/**
+ * A deliberately long label. CI on Linux failed the overflow rule where local
+ * font metrics passed, which means the action row was sized to the exact width
+ * of one platform's fonts. This exercises the row's limit everywhere.
+ */
+const longLabel: SignalCard = {
+  ...amzn,
+  id: 'scenario-long-label',
+  actions: { ...amzn.actions, open: { label: 'Open BRK.B WXYZ', href: '/asset/x' } },
+}
+
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode }[] = [
+  { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
   { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla) },
   { slug: 'scenario-at-expected', card: aapl, evidence: ladderFor(aapl) },
   { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn) },

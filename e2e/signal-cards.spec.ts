@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
 
 /** Above this a card is a screen, not a card, and the queue stops feeling finite. */
 const MAX_CARD_HEIGHT = 720

@@ -218,7 +218,7 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
               type="button"
               onClick={() => onAction(a.id, card)}
               data-slot="quick"
-              className="h-9 px-2.5 shrink-0 whitespace-nowrap rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+              className="h-9 px-2.5 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
             >
               {a.label}
             </button>
@@ -227,7 +227,7 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
             type="button"
             onClick={() => onAction(card.actions.primary.id, card)}
             data-slot="primary"
-            className="h-9 px-3 shrink-0 whitespace-nowrap rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
+            className="h-9 px-3 min-w-0 shrink-[0.5] whitespace-nowrap overflow-hidden text-ellipsis rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
           >
             {card.actions.primary.label}
           </button>
