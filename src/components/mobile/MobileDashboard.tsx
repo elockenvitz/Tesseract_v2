@@ -418,21 +418,6 @@ export function MobileDashboard({
     return m
   }, [recommendationResults])
 
-  /** How many contract cards this feed will actually render. The flag being on
-   *  and the feed containing contract cards are different claims, and only the
-   *  second one tells you whether looking is worthwhile. */
-  const signalCardCount = useMemo(() => {
-    if (!signalCardsOn) return 0
-    let n = 0
-    for (const e of feedEntries) {
-      if (e.kind === 'news') n++
-      else if (e.kind === 'template' && (e as any).card?.kind === 'active_risk') n++
-      else if (e.kind === 'attention' && (e as any).attention?.source_type === 'trade_queue_item'
-               && recommendationBySource.has((e as any).attention?.source_id)) n++
-    }
-    return n
-  }, [signalCardsOn, feedEntries, recommendationBySource])
-
   /** Keyed by assetId, replacing the active_risk template cards one for one. */
   const activeRiskByAsset = useMemo(() => {
     const m = new Map<string, SignalCard>()
@@ -826,21 +811,6 @@ export function MobileDashboard({
           it grow to its content instead of scrolling, and the snap sections
           inside are full-height by definition. Without it the scroller has no
           bounded height and every tile spills. */}
-      {/* Flag indicator. Deliberately ugly and impossible to miss — a temporary
-          state you cannot see you are in is worse than no flag at all. The
-          first attempt at this flag never turned on for anyone, because the
-          root route's <Navigate replace> dropped the query string before any
-          screen could read it, and nothing on screen said so. Goes when the
-          legacy tiles go. */}
-      {signalCardsOn && (
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 bg-amber-400 text-black text-[11px] font-bold uppercase tracking-wide">
-          <span>flag: signal-cards ON</span>
-          <span className="font-medium normal-case tracking-normal opacity-80">
-            {signalCardCount} contract {signalCardCount === 1 ? 'card' : 'cards'} in this feed
-          </span>
-        </div>
-      )}
-
       <div
         ref={setScroller}
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
