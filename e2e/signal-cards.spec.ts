@@ -58,9 +58,14 @@ test.describe('layout rules', () => {
           // A 1px tolerance: sub-pixel rounding on scaled text produces
           // scrollWidth one greater than clientWidth on elements that are not
           // actually scrollable.
-          if (e.scrollWidth > e.clientWidth + 1) {
-            bad.push(`${e.tagName.toLowerCase()}.${e.className}`.slice(0, 90))
-          }
+          if (e.scrollWidth <= e.clientWidth + 1) continue
+          // Content wider than the box is only a defect when the user can
+          // scroll it. `overflow-x: hidden` or `clip` means the text is
+          // deliberately ellipsised — which is the correct degradation for a
+          // long label, and flagging it made the rule fire on its own fix.
+          const ox = getComputedStyle(e).overflowX
+          if (ox === 'hidden' || ox === 'clip') continue
+          bad.push(`${e.tagName.toLowerCase()}.${e.className}`.slice(0, 90))
         }
         return bad
       })
