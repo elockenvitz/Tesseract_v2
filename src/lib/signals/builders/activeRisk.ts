@@ -134,7 +134,7 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         // Recording a view is the one thing genuinely resolvable from a feed.
         // Changing the size is not, and pretending otherwise with an inline
         // control would be a lie about what the button does.
-        { id: 'log_view', label: 'Log a view', inline: true },
+        { id: 'log_view', label: 'Log view', inline: true },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
         TRIAGE,
       ),

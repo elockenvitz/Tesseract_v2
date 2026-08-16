@@ -3,6 +3,9 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
+    // The signal card gallery. Its own wrapper classes would otherwise be
+    // purged, and the layout assertions in e2e/ measure the rendered result.
+    "./gallery/**/*.{html,tsx}",
   ],
   safelist: [
     // Section theme colors - left borders

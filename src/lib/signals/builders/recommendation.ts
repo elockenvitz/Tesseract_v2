@@ -187,7 +187,12 @@ export function buildRecommendationCard(input: RecommendationInput): CardResult 
         // notification, not a card.
         { id: 'approve', label: 'Approve', inline: true },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
-        [{ id: 'reject', label: 'Decline', inline: true }, ...TRIAGE],
+        // Decline and snooze, but no dismiss. Five buttons did not fit 390px
+        // — e2e caught it as horizontal overflow — and the one to cut was
+        // never in doubt: you do not dismiss a recommendation, you answer it.
+        // "Not useful" on a colleague's proposal is a decline that avoids
+        // telling them so.
+        [{ id: 'reject', label: 'Decline', inline: true }, TRIAGE[0]],
       ),
       provenance: {
         actor: recommendedBy ? { name: recommendedBy } : undefined,

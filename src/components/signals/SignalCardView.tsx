@@ -59,7 +59,10 @@ const METRIC_TONE = {
 function shortDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  // UTC, not local. A holdings snapshot dated 2026-07-31T00:00:00Z rendered
+  // as "Jul 30" west of Greenwich, which quietly ages every book number by a
+  // day. The date belongs to the snapshot, not to the reader's clock.
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
 function relative(iso: string): string {
@@ -85,25 +88,38 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
         {/* Eyebrow: surface, when it happened, and — only when a number is on
             screen — when that number was true. */}
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
-          <span>{SURFACE_LABEL[card.surface]}</span>
-          <span aria-hidden>·</span>
-          <span className="normal-case tracking-normal font-medium">
-            {relative(card.provenance.occurredAt)}
-          </span>
-          {card.metric && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="normal-case tracking-normal font-medium">
-                {card.metric.source === 'holdings' ? 'book ' : ''}
-                {shortDate(card.metric.asOf)}
-              </span>
-            </>
-          )}
+          {/* The metadata clips; it never pushes the row wider than the card.
+              At 390px the surface, a relative time like "about 1 hour ago" and
+              a "book 31 Jul" stamp together exceed the width, and without
+              min-w-0 the flex row grows to fit them and scrolls sideways —
+              measured, not theorised: e2e/signal-cards.spec.ts caught this on
+              all four card types at once. */}
+          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
+            <span className="shrink-0">{SURFACE_LABEL[card.surface]}</span>
+            <span aria-hidden className="shrink-0">·</span>
+            <span className="normal-case tracking-normal font-medium truncate">
+              {relative(card.provenance.occurredAt)}
+            </span>
+            {card.metric && (
+              <>
+                <span aria-hidden className="shrink-0">·</span>
+                <span className="normal-case tracking-normal font-medium shrink-0">
+                  {card.metric.source === 'holdings' ? 'book ' : ''}
+                  {shortDate(card.metric.asOf)}
+                </span>
+              </>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => onWhy(card)}
             aria-label="Why am I seeing this"
-            className="ml-auto -mr-1 flex items-center justify-center h-8 w-8 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+            data-slot="why"
+            // No negative margin. `-mr-1` optically aligned the icon with the
+            // right text edge and bought 4px of horizontal overflow for it —
+            // the button sat outside its parent's content box, so the row
+            // became scrollable. Optical alignment is not worth a scrollbar.
+            className="ml-auto shrink-0 flex items-center justify-center h-8 w-8 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
@@ -129,7 +145,7 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
           </div>
         )}
 
-        {hasEvidence && <div className="mt-3">{evidence}</div>}
+        {hasEvidence && <div className="mt-3" data-evidence={card.evidence!.kind}>{evidence}</div>}
 
         <p className={clsx(
           'mt-3 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
@@ -165,13 +181,17 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
         {/* One grammar on every card. Quick actions resolve in place; the
             primary is the move; open always sits last and always navigates.
             Two of the old cards had no action bar at all and were dead ends. */}
-        <div className="mt-4 flex items-center gap-1.5">
+        {/* One row, never two. Four buttons at 390px is the budget every
+            action label has to fit inside — "Not useful" and "Log a view"
+            both wrapped to two lines and inflated the card by 28px. */}
+        <div className="mt-4 flex items-center gap-1">
           {card.actions.quick.map(a => (
             <button
               key={a.id}
               type="button"
               onClick={() => onAction(a.id, card)}
-              className="h-9 px-3 rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+              data-slot="quick"
+              className="h-9 px-2.5 shrink-0 whitespace-nowrap rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
             >
               {a.label}
             </button>
@@ -179,14 +199,16 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
           <button
             type="button"
             onClick={() => onAction(card.actions.primary.id, card)}
-            className="h-9 px-3.5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
+            data-slot="primary"
+            className="h-9 px-3 shrink-0 whitespace-nowrap rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
           >
             {card.actions.primary.label}
           </button>
           <button
             type="button"
             onClick={() => onOpen(card)}
-            className="ml-auto h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-[13px] font-semibold text-gray-700 dark:text-gray-200 no-touch-target"
+            data-slot="open"
+            className="ml-auto h-9 px-2.5 shrink-0 whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-700 text-[13px] font-semibold text-gray-700 dark:text-gray-200 no-touch-target"
           >
             {card.actions.open.label}
           </button>

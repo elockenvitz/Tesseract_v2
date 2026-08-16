@@ -94,22 +94,24 @@ export class BrowserFinancialService {
         this.cache.set(upperSymbol, { data: finnhubQuote, timestamp: Date.now() })
         return finnhubQuote
       }
-      // If we have cached data (even if expired), return it rather than null
+      // Expired cache is still a real price with a real time on it. Returning
+      // it is honest because `timestamp` is the moment the price was true, not
+      // the moment we fetched it — so anything downstream can tell how old it
+      // is and decide for itself. That is the whole difference between this
+      // and the placeholder that used to sit below it.
       if (cached) {
         return cached.data
       }
 
-      // As last resort, provide a placeholder quote so UI doesn't break
-      return this.createPlaceholderQuote(upperSymbol)
+      // Every provider failed and there is nothing cached. Say so.
+      return null
     } catch (error) {
       console.warn('Failed to fetch quote for', symbol, error)
 
-      // Try to return cached data first
       const cached = this.cache.get(symbol.toUpperCase())
       if (cached) return cached.data
 
-      // As fallback, provide a placeholder quote so UI doesn't break
-      return this.createPlaceholderQuote(symbol.toUpperCase())
+      return null
     }
   }
 
@@ -183,6 +185,15 @@ export class BrowserFinancialService {
         return null
       }
 
+      // The same lie as the placeholder, in miniature: falling back to
+      // `new Date()` here stamped an undated quote as current. If Alpha
+      // Vantage will not say when the price was true, we do not know, and the
+      // next provider in the chain gets a turn.
+      if (!quote['07. latest trading day']) {
+        console.warn('Alpha Vantage quote has no trading day for', symbol)
+        return null
+      }
+
       const result = {
         symbol: quote['01. symbol'] || symbol,
         price: parseFloat(quote['05. price'] || '0'),
@@ -193,7 +204,7 @@ export class BrowserFinancialService {
         low: parseFloat(quote['04. low'] || '0'),
         previousClose: parseFloat(quote['08. previous close'] || '0'),
         volume: parseInt(quote['06. volume'] || '0'),
-        timestamp: quote['07. latest trading day'] || new Date().toISOString(),
+        timestamp: quote['07. latest trading day'],
         dayHigh: parseFloat(quote['03. high'] || '0'),
         dayLow: parseFloat(quote['04. low'] || '0')
       }
@@ -352,23 +363,26 @@ export class BrowserFinancialService {
   }
 
 
-  private createPlaceholderQuote(symbol: string): Quote {
-    // Create a basic placeholder quote that won't break the UI
-    return {
-      symbol: symbol,
-      price: 0,
-      change: 0,
-      changePercent: 0,
-      open: 0,
-      high: 0,
-      low: 0,
-      previousClose: 0,
-      volume: 0,
-      timestamp: new Date().toISOString(),
-      dayHigh: 0,
-      dayLow: 0
-    }
-  }
+  /*
+   * createPlaceholderQuote was here.
+   *
+   * It returned price/change/changePercent as 0 with
+   * `timestamp: new Date().toISOString()` whenever every provider failed, so
+   * that "the UI doesn't break". Two things followed from that, and the second
+   * is the one that matters:
+   *
+   *   1. A fabricated zero rendered as a real price. `getQuote` was already
+   *      typed `Promise<Quote | null>`, so the type had always been willing to
+   *      say "I don't know" — the implementation simply never used it.
+   *
+   *   2. The fabricated quote stamped itself with the current time, which made
+   *      it the *freshest* quote in the system. Any downstream freshness check
+   *      passed on it by construction. A staleness guard cannot catch a lie
+   *      about staleness; it can only catch honest old data.
+   *
+   * getQuote now returns null when it does not know. Every caller already
+   * handled null because the signature always said it could happen.
+   */
 
   private createMockNews(symbols?: string[], limit: number = 5): NewsItem[] {
     const mockHeadlines = [

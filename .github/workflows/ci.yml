@@ -68,6 +68,36 @@ jobs:
         env:
           CI: true
 
+  layout:
+    name: Card layout
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      # Chromium only. The layout rules are claims about rendered geometry —
+      # card height at 390px, horizontal overflow, whether a chart node exists
+      # — and jsdom has no layout engine, so offsetHeight is always 0 there.
+      # A rule that cannot be measured where it is tested regresses silently,
+      # which is exactly how the eyebrow row came to overflow on all four card
+      # types without anything noticing.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run guard:layout
+      # The screenshots are a by-product of the assertions, but they are the
+      # fastest way for a human to see what changed in a review.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: signal-cards
+          path: artifacts/cards/
+          retention-days: 30
+
   # TODO: add a tenant-boundary lint job once SUPABASE_URL and
   # SUPABASE_SERVICE_KEY are wired up as repository secrets. The script
   # in scripts/tenant-boundary-lint.mjs queries the DB to detect unsafe

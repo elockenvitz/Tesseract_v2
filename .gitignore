@@ -19,3 +19,8 @@ Thumbs.db
 
 *storybook.log
 storybook-static
+
+# Signal card gallery build + Playwright scratch. The screenshots under
+# artifacts/cards/ are kept deliberately — they are the review artifact.
+dist-gallery/
+artifacts/playwright-output/
