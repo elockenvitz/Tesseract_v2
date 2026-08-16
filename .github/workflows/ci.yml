@@ -88,6 +88,7 @@ jobs:
       # which is exactly how the eyebrow row came to overflow on all four card
       # types without anything noticing.
       - run: npx playwright install --with-deps chromium
+      - run: npm run guard:tdz
       - run: npm run guard:layout
       # The screenshots are a by-product of the assertions, but they are the
       # fastest way for a human to see what changed in a review.

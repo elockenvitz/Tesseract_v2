@@ -240,6 +240,15 @@ function CaseField({
   }
 }
 
+const FIELD_TYPE_LABEL: Record<string, string> = {
+  checklist: 'Checklist',
+  key_references: 'Notes and documents',
+  timeline: 'Timeline',
+  metric: 'Metric',
+  numeric: 'Number',
+  date: 'Date',
+}
+
 function UnsupportedField({ name, type }: { name: string; type: string }) {
   return (
     <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2.5">
@@ -251,11 +260,3 @@ function UnsupportedField({ name, type }: { name: string; type: string }) {
   )
 }
 
-const FIELD_TYPE_LABEL: Record<string, string> = {
-  checklist: 'Checklist',
-  key_references: 'Notes and documents',
-  timeline: 'Timeline',
-  metric: 'Metric',
-  numeric: 'Number',
-  date: 'Date',
-}
