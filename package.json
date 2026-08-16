@@ -19,7 +19,7 @@
     "analyze": "vite build --mode analyze",
     "lint": "eslint .",
     "preview": "vite preview",
-    "guard": "vitest run --project unit src/lib/org-scope src/lib/signals",
+    "guard": "vitest run --project unit src/lib/org-scope src/lib/signals src/components/signals",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
