@@ -24,6 +24,8 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { TemplateFeedTile } from './TemplateFeedTile'
+import { ScenarioLadder } from '../signals/ScenarioLadder'
+import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import { SignalCardSection } from './SignalCardSection'
 import { isFlagOn } from '../../lib/flags'
 import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
@@ -434,6 +436,20 @@ export function MobileDashboard({
     return m
   }, [signalCardsOn, activeRiskRows])
 
+  /**
+   * Scenario cards — the strongest content the product can produce.
+   *
+   * Behind the `signal-cards` flag. Placed ahead of the interleave rather than
+   * inside it: these are the only cards built on data no other tool has, and
+   * burying the one saying "TSLA is below your bear case" beneath four news
+   * items would be a ranking decision nobody would defend out loud.
+   */
+  const { data: scenarioResults = [] } = useScenarioCards({ enabled: signalCardsOn })
+  const scenarioCards = useMemo(
+    () => scenarioResults.filter(r => r.ok).map(r => (r as { ok: true; card: any }).card),
+    [scenarioResults],
+  )
+
   const templateCards = useMemo(() => {
     const quoteList = newsSymbols
       .map(sym => {
@@ -815,6 +831,38 @@ export function MobileDashboard({
         ref={setScroller}
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
+        {/* Flag indicator. Deliberately loud: a temporary two-paradigm state
+            you cannot see you are in is worse than no flag. The first version
+            of this flag was never on for anyone and nothing on screen said so. */}
+        {signalCardsOn && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-400 text-black text-[11px] font-bold uppercase tracking-wide">
+            <span>signal-cards ON</span>
+            <span className="font-medium normal-case tracking-normal opacity-80">
+              {scenarioCards.length} scenario {scenarioCards.length === 1 ? 'card' : 'cards'}
+            </span>
+          </div>
+        )}
+
+        {scenarioCards.map((card: any) => (
+          <SignalCardSection
+            key={card.id}
+            card={card}
+            evidence={
+              <ScenarioLadder
+                price={card.evidence.data.price}
+                cases={card.evidence.data.cases}
+                expected={card.evidence.data.expected}
+              />
+            }
+            onOpenAsset={openAsset}
+            onCapture={setCaptureCtx}
+            onWhy={() => {}}
+            onSnooze={() => {}}
+            onDismiss={() => {}}
+            onPrimary={() => {}}
+          />
+        ))}
+
         {feedEntries.map(entry => {
           if (entry.kind === 'attention') {
             const a = entry.attention

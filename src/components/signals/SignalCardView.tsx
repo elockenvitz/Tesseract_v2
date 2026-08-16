@@ -211,14 +211,14 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
         {/* One row, never two. Four buttons at 390px is the budget every
             action label has to fit inside — "Not useful" and "Log a view"
             both wrapped to two lines and inflated the card by 28px. */}
-        <div className="mt-4 flex items-center gap-1">
+        <div className="mt-4 flex items-center gap-1 min-w-0">
           {card.actions.quick.map(a => (
             <button
               key={a.id}
               type="button"
               onClick={() => onAction(a.id, card)}
               data-slot="quick"
-              className="h-9 px-2.5 shrink-0 whitespace-nowrap rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+              className="h-9 px-2.5 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
             >
               {a.label}
             </button>
@@ -227,7 +227,7 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
             type="button"
             onClick={() => onAction(card.actions.primary.id, card)}
             data-slot="primary"
-            className="h-9 px-3 shrink-0 whitespace-nowrap rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
+            className="h-9 px-3 min-w-0 shrink-[0.5] whitespace-nowrap overflow-hidden text-ellipsis rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
           >
             {card.actions.primary.label}
           </button>
@@ -235,7 +235,12 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
             type="button"
             onClick={() => onOpen(card)}
             data-slot="open"
-            className="ml-auto h-9 px-2.5 shrink-0 whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-700 text-[13px] font-semibold text-gray-700 dark:text-gray-200 no-touch-target"
+            // The only action whose label varies in length — "Open AMZN" against
+            // "Open X". Everything else is fixed, so this is the one that gives
+            // way when four buttons will not fit. Truncating a label the user
+            // can still act on beats a row that scrolls sideways; CI on Linux
+            // caught this where local font metrics did not.
+            className="ml-auto min-w-0 h-9 px-2.5 whitespace-nowrap overflow-hidden text-ellipsis rounded-lg border border-gray-200 dark:border-gray-700 text-[13px] font-semibold text-gray-700 dark:text-gray-200 no-touch-target"
           >
             {card.actions.open.label}
           </button>

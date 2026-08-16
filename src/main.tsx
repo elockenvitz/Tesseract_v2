@@ -3,6 +3,12 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.tsx'
+import { syncFlagsFromUrl } from './lib/flags'
+
+// Consume ?flag= before anything routes. The root route redirects with
+// <Navigate to="/dashboard" replace />, which drops the query string, so any
+// flag read from inside a screen runs after the parameter is gone.
+syncFlagsFromUrl()
 
 // Sentry — must initialize before render so it can catch React errors.
 // We only init when a DSN is present, so local dev never reports out.

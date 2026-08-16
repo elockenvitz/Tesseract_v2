@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
 
 /** Above this a card is a screen, not a card, and the queue stops feeling finite. */
 const MAX_CARD_HEIGHT = 720
@@ -58,9 +58,14 @@ test.describe('layout rules', () => {
           // A 1px tolerance: sub-pixel rounding on scaled text produces
           // scrollWidth one greater than clientWidth on elements that are not
           // actually scrollable.
-          if (e.scrollWidth > e.clientWidth + 1) {
-            bad.push(`${e.tagName.toLowerCase()}.${e.className}`.slice(0, 90))
-          }
+          if (e.scrollWidth <= e.clientWidth + 1) continue
+          // Content wider than the box is only a defect when the user can
+          // scroll it. `overflow-x: hidden` or `clip` means the text is
+          // deliberately ellipsised — which is the correct degradation for a
+          // long label, and flagging it made the rule fire on its own fix.
+          const ox = getComputedStyle(e).overflowX
+          if (ox === 'hidden' || ox === 'clip') continue
+          bad.push(`${e.tagName.toLowerCase()}.${e.className}`.slice(0, 90))
         }
         return bad
       })
@@ -92,6 +97,16 @@ test.describe('layout rules', () => {
 
   test('the chart appears when a card argues for it', async ({ page }) => {
     await expect(card(page, 'active-risk-sparkline').locator('[data-testid="sparkline"]')).toHaveCount(1)
+  })
+
+  test('the scenario ladder renders every case the analyst wrote', async ({ page }) => {
+    // AAPL carries four, including one named "Uber Bull" — the analyst's own
+    // word. A ladder that normalised to bear/base/bull would silently drop it.
+    const ladder = card(page, 'scenario-at-expected').locator('[data-testid="scenario-ladder"]')
+    await expect(ladder).toHaveCount(1)
+    await expect(ladder.getByText('Uber Bull')).toBeVisible()
+    await expect(ladder.getByText('$500')).toBeVisible()
+    await expect(ladder.getByText('$276.49')).toBeVisible()
   })
 
   test('more than one card is visible at once', async ({ page }) => {
