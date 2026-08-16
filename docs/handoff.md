@@ -1,6 +1,6 @@
 # Handoff — signal card system
 
-Written 2026-08-16. Read this before touching the mobile feed, the signal card
+Written 2026-08-16. Updated after a production outage the same evening. Read this before touching the mobile feed, the signal card
 contract, or anything named `guard`, `ratchet` or `verification`.
 
 ---
@@ -176,6 +176,30 @@ unchanged. Five instances, each found separately before the pattern was named:
 | 3 | asset_notes migration verification | That the old permissive policy persisted. Policies OR together and the DROP no-opped on a name reconstructed from repo history. Two correct new policies would have appeared and the check would have passed |
 | 4 | org-scope scanner | That a query *selects* `organization_id` without filtering on it — and that 63 of 73 org-carrying tables exist at all. It greps a literal string near ten hardcoded table names |
 | 5 | `buildActiveRiskCard` | That a null benchmark weight means "no benchmark data" rather than "not in the index". Absence rendered as a meaningful zero — **written after instance 2 was ticketed** |
+| 6 | all three required CI checks | That the app does not boot. #138 passed Type check, Unit tests and Card layout, and hung production on the loading spinner for every logged-in user. Every gate tests components in isolation; none of them starts the app |
+| 7 | `eslint` exiting 0 | That it never ran. A SyntaxError in `eslint.config.js` made it exit without linting, and the resulting `0` was read and reported as "zero violations" — **committed while adding the gate against instance 6** |
+
+### The rule that generalises all of it
+
+**AN EXIT CODE IS NOT EVIDENCE A CHECK RAN.**
+
+Zero violations and zero execution are indistinguishable from the outside.
+Every gate must emit positive proof of work — files scanned, tests collected,
+rules applied — and the CI assertion is on *that output*, not on the exit
+status.
+
+Three instances from three different angles:
+
+- `vite build` exited 0 having run no tests at all
+- `eslint` exited 0 having thrown on its own config
+- the org-scope ratchet exited 0 having counted a number that measured the
+  wrong thing
+
+This is the one most likely to recur, because every tool in the pipeline
+reports success the same way it reports vacuity. `scripts/lint-mobile-ratchet.mjs`
+is the worked example: it parses the JSON formatter, requires at least 40 files
+actually linted, and fails if the count collapses — a passing exit code with
+zero files linted is a failure, not a pass.
 
 Instance 4 deserves emphasis: the ratchet **had** passed a deliberate
 break-and-restore (allowlist raised to 110, build failed, `dist/` absent) and
@@ -244,9 +268,57 @@ id**).
 7. **Enumeration audit** — all 286 RLS policy bodies, then the column groups,
    then the behavioural CI test with two fixture orgs.
 
+### The outage, 2026-08-16 evening
+
+**#138 hung production.** `signalCardCount` in `MobileDashboard` read
+`feedEntries` in its dependency array at line 434; `feedEntries` was declared at
+line 495. Temporal dead zone — `ReferenceError: Cannot access 'feedEntries'
+before initialization` on every render of the feed, regardless of flag state.
+
+Reverted, not fixed forward: `d05a103d08d07ed4249312c03ac88621292ce154`.
+Production confirmed loading by booting it in real Chromium — `#root` had
+children, the login page rendered, zero page errors.
+
+Guard added: `npm run guard:tdz` (`scripts/lint-mobile-ratchet.mjs`), scoped to
+`src/components/mobile` and ratcheted at 0. Runs in CI **and** in the Netlify
+build command, so it blocks the deploy as well as the merge. Proven by
+break-and-restore against the subject: checking out #138's `MobileDashboard`
+makes it exit 1 naming both lines.
+
+137 `no-use-before-define` violations exist repo-wide and are **not**
+allowlisted. The rule is scoped to one directory; widen it one directory at a
+time, each widening reported with its count before it lands.
+
+### Open ruling: the authenticated smoke test
+
+A boot test that stops at the login screen tests nothing — verified, not
+assumed: the broken #138 build boots cleanly at `/`, because `MobileDashboard`
+only renders once authenticated. Catching instance 6 requires a test that logs
+in and renders the feed.
+
+That needs a dedicated CI user, and it needs a ruling before it is built:
+
+- A throwaway organisation containing only seeded fixture data, created for
+  this purpose and never joined to a real org.
+- A user that is a member of **that org only**. No membership in
+  `Joe Test Capital` or `Tesseract`.
+- Least privilege: whatever the lowest role is that can still load the feed —
+  read on assets, portfolios, holdings, trade queue items within its own org.
+  Explicitly not PM (Trade Lab execute is PM-only), not an org admin, no
+  service-role key, no Management API token.
+- Credentials in GitHub Actions secrets, referenced only by the smoke-test job.
+  Never printed, and the job must not run on `pull_request` from forks.
+- The assertion is that the feed renders at least one card — not that the page
+  loads.
+
+Open question for the ruling: whether that org's fixture data is seeded by a
+migration, by a script run against production, or by a Supabase branch. All
+three have different blast radii and the last one may not exist on this plan.
+
 ### Open PRs at handoff
 
-- **#134** — defect class ticket (docs)
+- **#134** — defect class ticket (docs). Needs instances 6 and 7 and the
+  exit-code rule added; they are written above but not yet in the ticket
 - **#136** — asset_notes migration file corrected to match production (the SQL
   is already applied; this only fixes the committed file)
 - **#137** — tenant enumeration seed + queued scanner fix (docs)
