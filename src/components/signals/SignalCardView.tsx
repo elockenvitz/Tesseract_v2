@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { vintageOf } from '../../lib/signals/contract'
 import type { SignalCard, Severity, Surface } from '../../lib/signals/contract'
 
 /**
@@ -65,6 +66,12 @@ function shortDate(iso: string): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
+/** YYYY-MM-DD in UTC, or '' when unparseable. */
+function utcDay(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+}
+
 function relative(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
@@ -79,6 +86,13 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
   // and 3 held the rationale and the next action behind near-invisible dots —
   // most readers never saw them.
   const bodyIsLong = card.body.length > 140
+
+  // Same UTC day means one date, not two. Compared in UTC because that is how
+  // both are rendered — comparing local days would hide or invent a gap either
+  // side of midnight.
+  const sameDay = !!card.metric && utcDay(card.provenance.occurredAt) === utcDay(card.metric.asOf)
+  const isBook = !!card.metric && vintageOf(card.metric) === 'holdings'
+  const showsSecondDate = !!card.metric && !sameDay
 
   return (
     <article className="relative flex w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
@@ -97,15 +111,28 @@ export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: Sign
           <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
             <span className="shrink-0">{SURFACE_LABEL[card.surface]}</span>
             <span aria-hidden className="shrink-0">·</span>
+            {/* Collapsing to one date must not drop the vintage. On an active
+                risk card occurredAt IS the snapshot date, so the naive version
+                of "render once" removed the only marker saying the weight came
+                off the book rather than a live feed. When they coincide and the
+                number is a snapshot, the absolute date wins — it is the more
+                useful form for a book figure, and it keeps the prefix. */}
             <span className="normal-case tracking-normal font-medium truncate">
-              {relative(card.provenance.occurredAt)}
+              {sameDay && isBook
+                ? `book ${shortDate(card.metric!.asOf)}`
+                : relative(card.provenance.occurredAt)}
             </span>
-            {card.metric && (
+            {/* One date unless they differ. When the event and the number share
+                a day, "16 days ago · book Jul 31" is the same fact twice in two
+                formats. The second stamp earns its place only when the gap
+                between when something happened and when its number was true
+                would change what you conclude. */}
+            {showsSecondDate && (
               <>
                 <span aria-hidden className="shrink-0">·</span>
                 <span className="normal-case tracking-normal font-medium shrink-0">
-                  {card.metric.source === 'holdings' ? 'book ' : ''}
-                  {shortDate(card.metric.asOf)}
+                  {vintageOf(card.metric!) === 'holdings' ? 'book ' : ''}
+                  {shortDate(card.metric!.asOf)}
                 </span>
               </>
             )}

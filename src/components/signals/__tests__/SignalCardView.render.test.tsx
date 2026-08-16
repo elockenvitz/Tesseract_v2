@@ -79,7 +79,25 @@ describe('SignalCardView renders every builder output', () => {
 
   it('flags a number that came from the book rather than a live quote', () => {
     render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} onWhy={noop} />)
-    // The active weight is 15 days old. The eyebrow says so.
+    // occurredAt and asOf are the same day here, so the eyebrow renders one
+    // date — but it keeps the qualifier, because "this weight is off the book"
+    // is the thing the reader cannot recover from anything else on the card.
+    expect(screen.getByText(/^book /)).toBeTruthy()
+    expect(screen.queryByText(/ago/)).toBeNull()
+  })
+
+  it('renders one date when the event and the number share a day', () => {
+    const { container } = render(
+      <SignalCardView card={RISK} onAction={noop} onOpen={noop} onWhy={noop} />)
+    // "16 days ago · book Jul 31" is one fact in two formats.
+    expect(container.textContent).not.toMatch(/ago.*book/)
+  })
+
+  it('renders both dates when they genuinely differ', () => {
+    // The recommendation was made a day ago; the weight it argues against is
+    // from the 31st. That gap changes what you conclude.
+    render(<SignalCardView card={REC} onAction={noop} onOpen={noop} onWhy={noop} />)
+    expect(screen.getByText(/ago/)).toBeTruthy()
     expect(screen.getByText(/^book /)).toBeTruthy()
   })
 

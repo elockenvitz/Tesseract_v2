@@ -45,7 +45,9 @@ const RISK: ActiveRiskInput = {
 describe('active risk', () => {
   it('states the difference from the benchmark, not the position size', () => {
     const c = card(buildActiveRiskCard(RISK))
-    expect(c.headline).toBe('MSFT is a +3.1% overweight in Core Equity')
+    // The claim, not the number. The number is the metric block's job.
+    expect(c.headline).toBe('MSFT is an active overweight in Core Equity')
+    expect(c.headline).not.toMatch(/[0-9]/)
     expect(c.metric?.value).toBe('+3.1%')
     expect(c.metric?.label).toBe('Active weight')
   })
@@ -60,6 +62,7 @@ describe('active risk', () => {
   it('treats an absent benchmark weight as a genuine zero, not missing data', () => {
     const c = card(buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null }))
     expect(c.metric?.value).toBe('+6.2%')
+    expect(c.headline).toBe('MSFT is an off-benchmark overweight in Core Equity')
     expect(c.body).toContain('the benchmark does not hold it')
     expect(c.context.some(x => x.label === 'Off benchmark')).toBe(true)
   })
@@ -139,7 +142,8 @@ const REC: RecommendationInput = {
 describe('recommendation', () => {
   it('leads with the size change, not the verb', () => {
     const c = card(buildRecommendationCard(REC))
-    expect(c.headline).toBe('Priya Raman wants DASH down to 1.5% in Core Equity')
+    expect(c.headline).toBe('Priya Raman wants DASH reduced in Core Equity')
+    expect(c.headline).not.toMatch(/[0-9]/)
     expect(c.metric?.value).toBe('-2.50%')
     expect(c.metric?.label).toBe('4.0% → 1.5%')
   })
@@ -149,6 +153,9 @@ describe('recommendation', () => {
     // it with today would claim a freshness it does not have.
     const c = card(buildRecommendationCard(REC))
     expect(c.metric?.source).toBe('computed')
+    // ...and it inherits the vintage of its stalest input, so the eyebrow
+    // still calls it a book number.
+    expect(c.metric?.vintage).toBe('holdings')
     expect(c.metric?.asOf).toBe('2026-07-31T00:00:00.000Z')
   })
 
@@ -367,6 +374,12 @@ describe('contract invariants', () => {
       // type in disguise.
       expect(c.headline).toContain(' ')
       expect(c.headline.toLowerCase()).not.toBe(c.type.replace('_', ' '))
+      // A number appears once per card. The headline states the claim; the
+      // metric block carries the figure. News is exempt — its headline comes
+      // from the publisher and rewriting it would be editorialising.
+      if (c.type !== 'news' && c.metric) {
+        expect(c.headline).not.toContain(c.metric.value)
+      }
     }
   })
 

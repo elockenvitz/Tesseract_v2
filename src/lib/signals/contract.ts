@@ -80,6 +80,28 @@ export interface CardMetric {
   source: NumberSource
   /** ISO. Rendered in the eyebrow whenever the number is shown. */
   asOf: string
+  /**
+   * Where the vintage came from, when `source` alone does not say.
+   *
+   * A `computed` number inherits the provenance of its stalest input. The
+   * recommendation delta is computed from a holdings snapshot, so it is a
+   * snapshot number and must be marked as one — reading the "book" prefix off
+   * `source === 'holdings'` showed it as a bare date and implied a currency it
+   * does not have.
+   *
+   * Omitted when `source` is self-describing.
+   */
+  vintage?: NumberSource
+}
+
+/**
+ * What the eyebrow should call this number's age.
+ *
+ * The one place the "book" prefix is decided, so a fourth card type cannot
+ * reintroduce the bug by checking `source` directly.
+ */
+export function vintageOf(metric: CardMetric): NumberSource {
+  return metric.vintage ?? metric.source
 }
 
 export type EntityKind =
@@ -168,9 +190,19 @@ export interface SignalCard {
   surface: Surface
   severity: Severity
   /**
-   * A full sentence containing the number. "MSFT is your largest overweight
-   * at +29.6%", not "ACTIVE RISK". The badge is metadata; this is the
-   * message, and if it reads like a label the card has failed.
+   * The claim and its qualifier, as a sentence — and NOT the number.
+   *
+   * "MSFT is your largest overweight in Core Equity", not "ACTIVE RISK" and
+   * not "MSFT is a +3.1% overweight". The headline states what is true; the
+   * metric block below it carries the figure.
+   *
+   * This rule replaces "a full sentence containing the number", which put the
+   * same value on screen twice in 22px and then again in 38px directly
+   * beneath. For any card resting on a single number — which is most of them
+   * — the two are guaranteed to collide.
+   *
+   * A second dimension that genuinely helps the reader (the 6.2% position
+   * behind a +3.1% active weight) belongs in `body`, never in `metric`.
    */
   headline: string
   /** The one number the decision turns on. Null when the claim is not
