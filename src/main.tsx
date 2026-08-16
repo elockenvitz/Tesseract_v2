@@ -1,8 +1,14 @@
 import { StrictMode } from 'react'
+// Consume ?flag= before React mounts. The root route redirects with
+// <Navigate to="/dashboard" replace />, which drops the query string, so a
+// flag read inside any screen is read after the parameter is already gone.
+syncFlagsFromUrl()
+
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.tsx'
+import { syncFlagsFromUrl } from './lib/flags'
 
 // Sentry — must initialize before render so it can catch React errors.
 // We only init when a DSN is present, so local dev never reports out.
