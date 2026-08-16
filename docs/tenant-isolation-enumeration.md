@@ -1,8 +1,11 @@
 # Tenant isolation enumeration
 
-**Status:** one section written. The audit itself — all 286 RLS policy bodies,
+**Status:** two sections written. The audit itself — all 286 RLS policy bodies,
 the three column groups, the client-query intersection, the behavioural CI test
 — is scoped and **not started**.
+
+**Sequencing:** the scanner fix in §3 comes *before* the audit. The audit is a
+one-time sweep; the scanner is what catches instance five.
 
 ---
 
@@ -114,3 +117,73 @@ written slightly differently. It is a tripwire on ten known paths, not a model
 of tenant scoping. Rewriting it to distinguish a filter from a mention, and to
 derive its table list from the live schema rather than a literal, is part of the
 audit and is **not started**.
+
+
+---
+
+## 3. Queued: fix the scanner before running the audit
+
+Not started. Ordered before the audit deliberately — a one-time sweep does not
+catch what gets written next week, and the current scanner demonstrably does
+not either.
+
+### 3.1 Derive the table list from the schema
+
+Replace the hardcoded ten-entry `ORG_SCOPED_TABLES` with every table carrying an
+`organization_id` column — 73 today, from
+`information_schema.columns`. New tables enrol automatically.
+
+A tenant guard whose coverage is a literal somebody has to remember to update is
+a guard that decays, and this one already had: `asset_models`, the table whose
+policy started this work, was never on the list.
+
+The schema read cannot happen at test time (CI has no database credentials —
+see the `tenant:lint` TODO in `ci.yml`), so the list is generated into a
+committed artifact and the test asserts against that. The generator's freshness
+is then itself something that must be checkable, or this reintroduces the same
+decay one level up.
+
+### 3.2 Require a filter, not a mention
+
+The assertion must be that the query *constrains* the column, not that the
+string appears within 14 lines. Probe case A is the proof: a query selecting
+`portfolios!inner(organization_id)` and never filtering on it passes today, as
+completely as one that filters.
+
+Concretely, the check must recognise `.eq('organization_id', …)`,
+`.eq('<relation>.organization_id', …)`, `.in('organization_id', …)`, and the
+`!inner` join *paired with* a filter on the joined column — and must not be
+satisfied by a `select()` list, a comment, or an adjacent unrelated query.
+Comments should be stripped before matching.
+
+### 3.3 Re-baseline in the open
+
+Coverage going from 10 tables to 73 will surface violations the scanner has
+never looked for. Those do **not** get folded into `known-unscoped-queries.json`
+silently.
+
+Report the new count, list what appeared and where, and get sign-off before any
+of it becomes a number that may only decrease. A ratchet seeded with an
+unreviewed baseline is a ratchet that has legitimised whatever it found.
+
+### 3.4 Probe the fixed scanner
+
+Same method as the old one — `scanFile` called directly on constructed sources,
+caught/missed reported for each. Minimum four cases, including the two that fail
+today:
+
+- A. selects `organization_id` via `!inner` but never filters on it → must be **CAUGHT**
+- B. a comment mentioning `organization_id`, no filter → must be **CAUGHT**
+- C. transitive filter, no mention of the column → must remain **CAUGHT**
+- D. a table with an org column that is not on the old ten-entry list → must be **CAUGHT**
+
+Plus the negatives that must stay quiet: a genuine `.eq('organization_id', …)`,
+and a fetch by primary key.
+
+### 3.5 This is an instance of the #134 defect class
+
+The scanner reports green on a table it does not know exists. It asserts the
+presence of a string rather than the absence of an unconstrained query — the
+same shape as a migration verification asserting new policies exist while the
+old permissive one persists. Recorded as instance four in
+`docs/tickets/guards-defeated-by-defaults.md`.
