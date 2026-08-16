@@ -24,6 +24,12 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { TemplateFeedTile } from './TemplateFeedTile'
+import { SignalCardSection } from './SignalCardSection'
+import { isFlagOn } from '../../lib/flags'
+import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
+import { buildNewsCard } from '../../lib/signals/builders/news'
+import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
+import type { SignalCard } from '../../lib/signals/contract'
 import { useMarketNews } from '../../hooks/useMarketNews'
 import { useMarketEvents } from '../../hooks/useMarketEvents'
 import { useMarketData } from '../../hooks/useMarketData'
@@ -338,10 +344,11 @@ export function MobileDashboard({
     queryFn: async () => {
       const { data: portfolios } = await supabase
         .from('portfolios')
-        .select('id')
+        .select('id, name')
         .eq('status', 'active')
         .limit(1)
       const portfolioId = (portfolios as any[])?.[0]?.id as string | undefined
+      const portfolioName = (portfolios as any[])?.[0]?.name as string | undefined
       if (!portfolioId) return []
 
       const [{ data: holdings }, { data: bench }] = await Promise.all([
@@ -373,6 +380,11 @@ export function MobileDashboard({
           symbol: h.assets?.symbol ?? '',
           weight: ((Number(h.shares) || 0) * (Number(h.price) || 0)) / total * 100,
           benchmarkWeight: benchByAsset.has(h.asset_id) ? benchByAsset.get(h.asset_id)! : null,
+          // Carried for the contract card: a weight is a book number and the
+          // eyebrow has to be able to say which book, and as of when.
+          portfolioId,
+          portfolioName: portfolioName ?? 'Portfolio',
+          asOf: h.date ?? null,
         }))
         .filter(r => r.symbol)
     },
@@ -386,6 +398,42 @@ export function MobileDashboard({
    * saying, which is what keeps the feed from filling with cards that always
    * fire.
    */
+  /**
+   * The three kinds that have moved onto the card contract.
+   *
+   * Behind the `signal-cards` flag. While it is off nothing here renders and
+   * the feed is exactly as it was; while it is on, these three kinds render
+   * through SignalCardView and the other four keep their legacy tiles. That
+   * mixed state is deliberate and temporary — the exit is the remaining four
+   * builders, after which the legacy components are deleted in one PR.
+   */
+  const signalCardsOn = isFlagOn('signal-cards')
+  const { data: recommendationResults = [] } = useRecommendationCards({ enabled: signalCardsOn })
+
+  /** Keyed by trade_queue_items.id, so a recommendation keeps its position in
+   *  the interleave rather than jumping to the top of the feed. */
+  const recommendationBySource = useMemo(() => {
+    const m = new Map<string, SignalCard>()
+    for (const r of recommendationResults) if (r.ok) m.set(r.card.id.replace(/^recommendation:/, ''), r.card)
+    return m
+  }, [recommendationResults])
+
+  /** Keyed by assetId, replacing the active_risk template cards one for one. */
+  const activeRiskByAsset = useMemo(() => {
+    const m = new Map<string, SignalCard>()
+    if (!signalCardsOn) return m
+    const usable = activeRiskRows.filter((r: any) => r.asOf)
+    for (const row of selectActiveRisk(usable.map((r: any) => ({
+      assetId: r.assetId, symbol: r.symbol, weightPct: r.weight,
+      benchmarkWeightPct: r.benchmarkWeight, portfolioId: r.portfolioId,
+      portfolioName: r.portfolioName, asOf: r.asOf,
+    })), { limit: 3 })) {
+      const built = buildActiveRiskCard(row)
+      if (built.ok) m.set(row.assetId, built.card)
+    }
+    return m
+  }, [signalCardsOn, activeRiskRows])
+
   const templateCards = useMemo(() => {
     const quoteList = newsSymbols
       .map(sym => {
@@ -772,6 +820,29 @@ export function MobileDashboard({
             const a = entry.attention
             const linked = a.context?.asset_id ? attentionAssets?.[a.context.asset_id] : null
             const target = attentionTarget(a)
+
+            // Trade-queue-backed attention items are recommendations. Matched
+            // by source_id so the card holds its place in the interleave
+            // instead of jumping to the top of the feed.
+            const asRecommendation = signalCardsOn && a.source_type === 'trade_queue_item' && a.source_id
+              ? recommendationBySource.get(a.source_id)
+              : undefined
+            if (asRecommendation) {
+              return (
+                <div key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
+                  <SignalCardSection
+                    card={asRecommendation}
+                    onOpenAsset={openAsset}
+                    onCapture={setCaptureCtx}
+                    onWhy={() => {}}
+                    onSnooze={() => snoozeFor(a.attention_id, 24)}
+                    onDismiss={() => acknowledge(a.attention_id)}
+                    onPrimary={() => { markRead(a.attention_id); if (target) onNavigate?.(target) }}
+                  />
+                </div>
+              )
+            }
+
             return (
               <section key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <AttentionFeedCard
@@ -866,6 +937,29 @@ export function MobileDashboard({
 
           if (entry.kind === 'template') {
             const c = entry.card
+
+            // Only active_risk has a builder. The other five template kinds —
+            // unusual_move, earnings_ahead, earnings_result, corporate_action,
+            // economic — keep their legacy tile until they have one.
+            if (signalCardsOn && c.kind === 'active_risk' && c.assetId) {
+              const built = activeRiskByAsset.get(c.assetId)
+              if (built) {
+                return (
+                  <div key={c.id} ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
+                    <SignalCardSection
+                      card={built}
+                      onOpenAsset={openAsset}
+                      onCapture={setCaptureCtx}
+                      onWhy={() => {}}
+                      onSnooze={() => {}}
+                      onDismiss={() => {}}
+                      onPrimary={() => {}}
+                    />
+                  </div>
+                )
+              }
+            }
+
             return (
               <section key={c.id} ref={track({ assetId: (c as any).assetId ?? null, kind: 'template' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <TemplateFeedTile
@@ -887,6 +981,39 @@ export function MobileDashboard({
             const linked = n.symbols
               .map((s: string) => assetBySymbol.get(s.toUpperCase()) ?? null)
               .find(Boolean) ?? null
+
+            if (signalCardsOn) {
+              // No quote is passed. The feed's quote map has no per-symbol
+              // timestamp to check freshness against, and the builder must not
+              // be handed a number it cannot date — that is the exact shape of
+              // the placeholder bug. A news card with no move is correct; a
+              // news card with an undateable move is not.
+              const built = buildNewsCard({
+                id: n.id, headline: n.headline, summary: n.summary ?? null,
+                url: n.url, source: n.source, publishedAt: n.publishedAt,
+                primarySymbol: n.primarySymbol ?? null, symbols: n.symbols,
+                sentiment: n.sentiment ?? null,
+                asset: linked ? { id: linked.id, symbol: linked.symbol, companyName: (linked as any).company_name ?? null } : null,
+                heldIn: [], maxWeightPct: null, quote: null,
+              })
+              // Suppressed cards render nothing at all. The suppression is
+              // already logged with its reason by gate().
+              if (!built.ok) return null
+              return (
+                <div key={n.id} ref={track({ assetId: null, kind: 'news' })}>
+                  <SignalCardSection
+                    card={built.card}
+                  onOpenAsset={openAsset}
+                  onCapture={setCaptureCtx}
+                  onWhy={() => {}}
+                  onSnooze={() => {}}
+                  onDismiss={() => {}}
+                  onPrimary={() => {}}
+                  />
+                </div>
+              )
+            }
+
             return (
               <section key={n.id} ref={track({ assetId: null, kind: 'news' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
                 <NewsFeedTile

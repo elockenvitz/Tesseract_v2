@@ -104,7 +104,10 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
       type: 'active_risk',
       surface: 'risk',
       severity: severityFor(active, offBenchmark),
-      headline: `${symbol} is a ${pct(active)} ${over ? 'overweight' : 'underweight'} in ${portfolioName}`,
+      // The claim and its qualifier, no number — the metric block below
+      // carries it. "MSFT is a +3.1% overweight" over "+3.1% ACTIVE WEIGHT"
+      // put the same figure on screen twice.
+      headline: `${symbol} is ${offBenchmark ? 'an off-benchmark' : `an active`} ${over ? 'overweight' : 'underweight'} in ${portfolioName}`,
       metric: {
         value: pct(active),
         label: 'Active weight',

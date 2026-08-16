@@ -138,6 +138,10 @@ export function buildRecommendationCard(input: RecommendationInput): CardResult 
         direction: 'neutral',
         source: 'computed',
         asOf: currentWeightAsOf,
+        // Computed off a holdings snapshot, so it IS a snapshot number and the
+        // eyebrow must say "book". Reading the prefix off `source` alone
+        // rendered a bare date and implied a currency it does not have.
+        vintage: 'holdings',
       }
     } else if (hasProposed) {
       // No current weight, or no date to anchor it to. The proposal alone is
@@ -163,8 +167,10 @@ export function buildRecommendationCard(input: RecommendationInput): CardResult 
       type: 'recommendation',
       surface: 'research',
       severity: severityFor(ageDays),
+      // No number. The metric block carries the change, and its label already
+      // spells out both ends of it ("4.0% -> 1.5%").
       headline: delta != null
-        ? `${who} wants ${symbol} ${delta > 0 ? 'up' : 'down'} to ${proposedWeightPct!.toFixed(1)}% in ${portfolioName}`
+        ? `${who} wants ${symbol} ${delta > 0 ? 'increased' : 'reduced'} in ${portfolioName}`
         : `${who} recommends you ${verb} ${symbol} in ${portfolioName}`,
       metric,
       body: rationale!.trim(),
