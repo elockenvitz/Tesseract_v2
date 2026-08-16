@@ -20,7 +20,7 @@
 # docs/tickets/netlify-branch-deploy-gate-unproven.md). The layout rules are
 # enforced instead as a required status check on main, which blocks the merge
 # rather than the deploy — a strictly earlier gate.
-command = "npm run guard:unit && npm run build"
+command = "npm run guard:unit && npm run guard:tdz && npm run build"
 
   # Netlify only auto-detects netlify/functions when no [build] block sets
   # otherwise; naming it explicitly means adding a function never depends on
