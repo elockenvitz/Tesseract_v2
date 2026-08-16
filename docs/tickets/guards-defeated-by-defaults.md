@@ -15,6 +15,7 @@ were the same defect:
 | 1 | `netlify.toml` build gate | nothing — no build command was set | that no test had ever gated a deploy. Main's CI was red across three merges and every one published |
 | 2 | `isQuoteFresh(asOf)` | `quote.timestamp` | that the quote was fabricated. `createPlaceholderQuote` stamped `new Date()`, making the fake the *freshest* value in the system. The guard passed, correctly, on a lie |
 | 3 | asset_notes migration verification | "do the new policies exist?" | that the old permissive policy was still there. Policies OR together; the DROP had no-opped on a wrong name. Two correct new policies would have appeared, the check would have passed, and the cross-org read would have stayed open |
+| 4 | the org-scope scanner (`org-scope-scan.mjs`) | the literal string `organization_id` within 14 lines of `.from()`, for 10 hardcoded table names | that the query never *filtered* on the column — selecting it passes identically — and that 63 of the 73 org-carrying tables exist at all. It reports green on a table it does not know about |
 
 The common shape: **each check asserted the presence of the good state.** In all
 three, the bad state is compatible with the good state being present. Presence
@@ -42,10 +43,22 @@ presence-shaped. The rewrite is mechanical: assert the count of *unscoped*
 policies is zero rather than that a scoped one exists. Includes the tenant
 enumeration work not yet started.
 
-**B. The org-scope ratchet** (`src/lib/org-scope`). Already proven by
-deliberate breakage (allowlist 110 → exit 1, `dist/` absent), so it is in the
-good column — but the audit should confirm it asserts a ceiling on unscoped
-queries rather than a floor on scoped ones.
+**B. The org-scope ratchet** (`src/lib/org-scope`). **No longer in the good
+column.** The break-and-restore proved the *ratchet* fires when the count
+exceeds the allowlist — it proved nothing about whether the *scanner* feeding
+it can see a violation. Probing showed it cannot, in three of four constructed
+cases. That is instance 4 above, and it is the sharpest illustration of the
+class in this document: a check that had been verified by deliberate breakage,
+was reported as protection, and was nearly cosmetic.
+
+The lesson generalises to the acceptance criterion below. Breaking a check's
+*threshold* is not the same as breaking its *subject*. A ratchet proven by
+raising its allowlist has only been shown to compare two numbers; the question
+is whether the number counts what it claims to.
+
+The fix is scoped in `docs/tenant-isolation-enumeration.md` §3 and is ordered
+**before** the enumeration audit, because the audit is a one-time sweep and the
+scanner is what catches the next instance.
 
 **C. Freshness checks.** Anything comparing a timestamp to `Date.now()`.
 Defeated by any upstream that stamps `new Date()` rather than the moment the
@@ -83,7 +96,12 @@ fixture whose creation is unchecked.
 
 A table of (check → what it reads → what it cannot see → verdict), and for
 every check that survives, a **deliberate break-and-restore** proving it fires
-on the bad state rather than merely on absence. A verdict of "looks correct" is
+on the bad state rather than merely on absence.
+
+The breakage must target the check's *subject*, not its threshold. Instance 4
+had passed a break-and-restore — its allowlist was raised and the build failed
+correctly — while remaining blind to three of four ways of writing the very
+violation it counts. A verdict of "looks correct" is
 not acceptable for anything in group A or F.
 
 ## Do not
