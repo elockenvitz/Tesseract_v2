@@ -59,6 +59,7 @@ jobs:
       # parsed, and it then asserts the job set, that every needs: resolves, and
       # that the display names branch protection requires still exist.
       - run: npm run guard:ci
+      - run: npm run guard:holdings
       - run: npm run guard:types
 
   test:
