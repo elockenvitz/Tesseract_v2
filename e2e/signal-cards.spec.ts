@@ -166,7 +166,20 @@ test.describe('layout rules', () => {
     await expect(ladder).toHaveCount(1)
     await expect(ladder.locator('[data-testid="ladder-dot"]')).toHaveCount(6)
     await expect(ladder.locator('[data-testid="ladder-tape"]')).toHaveCount(1)
-    await expect(ladder.getByText('6 cases')).toBeVisible()
+    // Identity is reachable without leaving the pane: every case is named and
+    // priced in the legend beneath the axis. Dots alone were not actionable —
+    // "below your bear case" needs the reader to know which dot is bear.
+    const legend = ladder.locator('[data-testid="ladder-legend-item"]')
+    await expect(legend).toHaveCount(6)
+    await expect(legend.filter({ hasText: '$205' })).toHaveCount(1)
+    await expect(legend.filter({ hasText: '$500' })).toHaveCount(1)
+
+    // Every dot is the same size: 11 of 30 rows in this corpus have no
+    // probability, so encoding it in diameter would make a missing weight
+    // indistinguishable from a real one.
+    const sizes = await ladder.locator('[data-testid="ladder-dot"]')
+      .evaluateAll(els => [...new Set(els.map(e => Math.round(e.getBoundingClientRect().width)))])
+    expect(sizes).toHaveLength(1)
 
     // A coherent ladder also shows its expected value as a derived marker.
     const coh = card(page, 'scenario-at-expected').locator('[data-testid="scenario-ladder"]')

@@ -24,7 +24,18 @@ export default defineConfig({
     deviceScaleFactor: 2,
   },
   projects: [
-    { name: 'phone', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 } },
+    {
+      name: 'phone',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        // hasTouch was false, so dispatched touch events were ignored and the
+        // gesture tests measured nothing. A layout suite for a phone that
+        // cannot receive touch input is testing a desktop.
+        hasTouch: true,
+      },
+    },
   ],
   webServer: {
     command: 'npx vite preview --config vite.gallery.config.ts --port 4319 --strictPort',

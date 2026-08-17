@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import type { ScenarioCase } from '../../lib/signals/builders/scenarioGap'
 
@@ -40,6 +41,7 @@ interface ScenarioLadderProps {
  * tool shows; the analyst's own modelled range is what only this product knows.
  */
 export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) {
+  const [picked, setPicked] = useState<number | null>(null)
   if (cases.length < 2) return null
 
   const sorted = [...cases].sort((a, b) => a.price - b.price)
@@ -55,8 +57,17 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
   // 8% padding each end so an extreme marker is never flush against the edge.
   const pos = (v: number) => 8 + ((v - min) / span) * 84
 
-  const anyProbability = sorted.some(c => c.probability != null)
-  const maxProb = Math.max(...sorted.map(c => c.probability ?? 0), 1)
+  /**
+   * Diameter no longer encodes probability.
+   *
+   * It did, and on this corpus that was a lie by omission: 11 of 30 target rows
+   * have no probability at all, and the sums that do exist are 125 and 25. A
+   * dot sized by a missing or inconsistent weight looks exactly like a dot
+   * sized by a real one, and the reader has no way to tell which they are
+   * looking at. Every dot is the same size until conviction is trustworthy;
+   * the conviction pane is where weight is shown, and it says when it cannot.
+   */
+  const DOT = 11
 
   const below = price < lo
   const above = price > hi
@@ -69,7 +80,7 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="scenario-ladder">
-      <div className="relative min-h-[92px] flex-1 overflow-hidden">
+      <div className="relative min-h-[76px] flex-1 overflow-hidden">
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
@@ -109,25 +120,29 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         {/* One dot per case. Diameter scales with probability where the analyst
             set one; a 7% tail must still be visible, so there is a floor. No
             labels means no collision is possible at any density. */}
-        {sorted.map((c, i) => {
-          const weight = anyProbability ? (c.probability ?? 0) / maxProb : 0.6
-          const d = 6 + weight * 10
-          return (
-            <div
-              key={`${c.name}-${c.price}-${i}`}
-              data-testid="ladder-dot"
-              title={`${c.name} $${c.price.toFixed(2)}${c.probability != null ? ` · ${c.probability.toFixed(0)}%` : ''}`}
-              className="absolute rounded-full bg-gray-500 ring-2 ring-white dark:bg-gray-300 dark:ring-gray-900"
-              style={{
-                left: `${pos(c.price)}%`,
-                top: `calc(50% - ${d / 2}px)`,
-                width: `${d}px`,
-                height: `${d}px`,
-                transform: 'translateX(-50%)',
-              }}
-            />
-          )
-        })}
+        {sorted.map((c, i) => (
+          <button
+            key={`${c.name}-${c.price}-${i}`}
+            type="button"
+            data-testid="ladder-dot"
+            data-case-index={i}
+            aria-label={`${c.name} $${c.price.toFixed(2)}`}
+            onClick={() => setPicked(picked === i ? null : i)}
+            className={clsx(
+              'absolute rounded-full ring-2 transition-colors no-touch-target',
+              picked === i
+                ? 'bg-gray-900 ring-gray-900 dark:bg-white dark:ring-white'
+                : 'bg-gray-500 ring-white dark:bg-gray-300 dark:ring-gray-900',
+            )}
+            style={{
+              left: `${pos(c.price)}%`,
+              top: `calc(50% - ${DOT / 2}px)`,
+              width: `${DOT}px`,
+              height: `${DOT}px`,
+              transform: 'translateX(-50%)',
+            }}
+          />
+        ))}
 
         {/* The tape marker, drawn after the dots so it sits above them. */}
         <div
@@ -144,9 +159,32 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         <div className="absolute bottom-0 right-0 text-[10px] font-semibold tabular-nums text-gray-400">
           ${max.toFixed(0)}
         </div>
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-          {sorted.length} cases
-        </div>
+      </div>
+
+      {/* Identity, off the axis. Wraps freely, so density cannot make two
+          entries overlap — the failure mode that killed labelled markers. */}
+      <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden" data-testid="ladder-legend">
+        {sorted.map((c, i) => (
+          <button
+            key={`legend-${c.name}-${c.price}-${i}`}
+            type="button"
+            data-testid="ladder-legend-item"
+            onClick={() => setPicked(picked === i ? null : i)}
+            className={clsx(
+              'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition-colors no-touch-target',
+              picked === i
+                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                : 'text-gray-500 dark:text-gray-400',
+            )}
+          >
+            <span className={clsx(
+              'h-1.5 w-1.5 shrink-0 rounded-full',
+              picked === i ? 'bg-white dark:bg-gray-900' : 'bg-gray-400',
+            )} aria-hidden />
+            <span className="uppercase tracking-wide">{c.name}</span>
+            <span className="tabular-nums">${c.price.toFixed(0)}</span>
+          </button>
+        ))}
       </div>
     </div>
   )

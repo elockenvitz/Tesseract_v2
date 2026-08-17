@@ -222,10 +222,16 @@ createRoot(document.getElementById('root')!).render(
   <div className="bg-gray-100 dark:bg-black min-h-screen">
     {/* The feed proper — cards stacked as the user meets them, which is the
         only way to see whether more than one fits on a phone screen. */}
-    <div id="feed" className="max-w-[390px] mx-auto">
+    {/* A real snap feed, not a stack. The scroll-conflict test has to drive a
+        touch gesture against the same container the app uses, or it proves
+        nothing about gesture arbitration. */}
+    <div
+      id="feed"
+      className="mx-auto h-[844px] max-w-[390px] snap-y snap-mandatory overflow-y-auto overscroll-contain"
+    >
       {/* One screen per card, as the feed renders them. */}
       {CARDS.map(({ slug, card, evidence, detail, detailLabel }) => (
-        <div key={slug} data-card={slug} className="h-[844px] overflow-y-auto border-b-8 border-gray-200">
+        <div key={slug} data-card={slug} className="h-full w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           <SignalCardView card={card} onAction={noop} onOpen={noop}
             evidence={evidence} detail={detail} detailLabel={detailLabel} />
         </div>

@@ -22,23 +22,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typecheck:
-    name: Type check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      # `npm install` instead of `npm ci` because the lockfile carries a
-      # legacy peer-dep mismatch (vitest@4 wants vite@6/7, but we pin to
-      # vite@5). `npm install` is lenient about that; `npm ci` refuses.
-      # Locks aren't mutated in CI because we don't commit anything back.
-      # TODO(tech-debt): reconcile vitest/vite versions, then switch
-      # this back to `npm ci --legacy-peer-deps=false` for stricter CI.
-      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
-      - run: npx tsc --noEmit
+  # ── REMOVED: the repo-wide `Type check` job ────────────────────────────────
+  #
+  # It ran `npx tsc --noEmit` against tsconfig.json, which is a solution file —
+  # "files": [] with project references. Plain tsc does not build referenced
+  # projects, so it exited 0 unconditionally: a deliberately injected type error
+  # produced exit 0. It checked nothing, for the whole life of this repo, while
+  # reporting success on every PR page as a required status check.
+  #
+  # Deleted rather than renamed. A job that burns CI minutes to report a result
+  # nobody may trust is worse than its absence, and a rename would have left a
+  # required context that never reports, hanging every PR.
+  #
+  # `Type check (cards)` below is the real gate: scoped, ratcheted at zero, and
+  # proven to fail on an injected error.
 
   typecheck-cards:
     name: Type check (cards)
