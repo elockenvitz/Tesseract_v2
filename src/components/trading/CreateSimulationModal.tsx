@@ -9,6 +9,7 @@ import { Input } from '../ui/Input'
 import { TextArea } from '../ui/TextArea'
 import type { TradeQueueItemWithDetails, BaselineHolding } from '../../types/trading'
 import { clsx } from 'clsx'
+import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 
 interface CreateSimulationModalProps {
   isOpen: boolean
@@ -81,7 +82,7 @@ export function CreateSimulationModal({
   const { data: holdings } = useQuery({
     queryKey: ['portfolio-holdings', portfolioId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: holdingRows, error } = await supabase
         .from('portfolio_holdings')
         .select(`
           *,
@@ -90,6 +91,9 @@ export function CreateSimulationModal({
         .eq('portfolio_id', portfolioId)
 
       if (error) throw error
+      // Dated snapshots — a simulation baseline built from every upload would
+      // be the sum of the portfolio's whole history.
+      const data = latestSnapshotRows(holdingRows ?? [])
       return data
     },
     enabled: isOpen && !!portfolioId,

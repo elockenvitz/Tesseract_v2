@@ -69,6 +69,7 @@ import { ThesesDebatePanel } from './ThesesDebatePanel'
 // AddThesisModal replaced by inline composers in ThesesDebatePanel
 import { useThesisCounts, useTheses } from '../../hooks/useTheses'
 import { LinkedResearchSection } from './LinkedResearchSection'
+import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 
 type ModalTab = 'details' | 'debate' | 'discussion' | 'decisions' | 'activity'
 
@@ -454,20 +455,26 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       let portfolioAum = 0
 
       if (pairTradePortfolioId) {
-        const { data: holdings, error: holdingsError } = await supabase
+        const { data: holdingsRaw, error: holdingsError } = await supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price')
+          .select('asset_id, shares, price, date')
           .eq('portfolio_id', pairTradePortfolioId)
           .in('asset_id', pairTradeLegAssetIds)
+        // portfolio_holdings is a series of dated snapshots; summing every row
+        // multiplies the total by the number of dates. See latest-snapshot.ts.
+        const holdings = latestSnapshotRows(holdingsRaw ?? [])
 
         if (holdingsError) throw holdingsError
         assetHoldings = holdings || []
 
         // Get total portfolio value (AUM)
-        const { data: allHoldings, error: allError } = await supabase
+        const { data: allHoldingsRaw, error: allError } = await supabase
           .from('portfolio_holdings')
-          .select('shares, price')
+          .select('shares, price, date')
           .eq('portfolio_id', pairTradePortfolioId)
+        // portfolio_holdings is a series of dated snapshots; summing every row
+        // multiplies the total by the number of dates. See latest-snapshot.ts.
+        const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
 
         if (allError) throw allError
 
@@ -851,19 +858,25 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       if (!trade?.asset_id || linkedPortfolioIds.length === 0) return []
 
       // Get holdings for the asset in all linked portfolios
-      const { data: assetHoldings, error: assetError } = await supabase
+      const { data: assetHoldingsRaw, error: assetError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .eq('asset_id', trade.asset_id)
         .in('portfolio_id', linkedPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const assetHoldings = latestSnapshotRows(assetHoldingsRaw ?? [])
 
       if (assetError) throw assetError
 
       // Get total portfolio values for weight calculation
-      const { data: allHoldings, error: allError } = await supabase
+      const { data: allHoldingsRaw, error: allError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .in('portfolio_id', linkedPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 
@@ -908,19 +921,25 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       if (pairTradeLegAssetIds.length === 0 || pairTradeProposalPortfolioIds.length === 0) return {}
 
       // Get holdings for all leg assets in all proposal portfolios
-      const { data: holdings, error: holdingsError } = await supabase
+      const { data: holdingsRaw, error: holdingsError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price')
+        .select('portfolio_id, asset_id, shares, price, date')
         .in('portfolio_id', pairTradeProposalPortfolioIds)
         .in('asset_id', pairTradeLegAssetIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const holdings = latestSnapshotRows(holdingsRaw ?? [])
 
       if (holdingsError) throw holdingsError
 
       // Get total portfolio values for weight calculation
-      const { data: allHoldings, error: allError } = await supabase
+      const { data: allHoldingsRaw, error: allError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .in('portfolio_id', pairTradeProposalPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 

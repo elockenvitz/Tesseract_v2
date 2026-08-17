@@ -14,6 +14,7 @@ import { clsx } from 'clsx'
 import type { TradeAction } from '../../types/trading'
 import { inferProvenance, type Provenance } from '../../lib/provenance'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
+import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 
 // Shape of a row returned by the duplicate-idea queries below. Kept loose
 // since we only project a handful of columns and don't need a full type.
@@ -429,19 +430,25 @@ export function QuickTradeIdeaCapture({
       if (selectedPortfolioIds.length === 0 || !currentAssetId) return []
 
       // Get holdings for the selected asset in all selected portfolios
-      const { data: assetHoldings, error: assetError } = await supabase
+      const { data: assetHoldingsRaw, error: assetError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .eq('asset_id', currentAssetId)
         .in('portfolio_id', selectedPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const assetHoldings = latestSnapshotRows(assetHoldingsRaw ?? [])
 
       if (assetError) throw assetError
 
       // Get total portfolio values for weight calculation
-      const { data: allHoldings, error: allError } = await supabase
+      const { data: allHoldingsRaw, error: allError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .in('portfolio_id', selectedPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 

@@ -13,14 +13,9 @@
  * times too small, and because MIN_WEIGHT_PCT rejects anything under 0.5% the
  * conviction cards emitted NOTHING rather than something visibly wrong.
  *
- * An audit found 22 of 27 aggregating sites had no date constraint. The defect
- * was the norm. One has been fixed; the rest are listed below and MUST ONLY
- * SHRINK.
- *
- * The allowlist is the honest form of "not yet migrated". It is not an
- * exemption: every entry is a site that will silently inflate the moment its
- * portfolio has more than one snapshot date, which the seeded tenant will
- * deliberately produce.
+ * An audit found 22 of 27 aggregating sites had no date constraint — the defect
+ * was the norm rather than the outlier. All of them are now migrated, so the
+ * allowlist below is empty and adding to it is a regression.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -40,7 +35,14 @@ const walk = (dir) => {
 roots.forEach(walk)
 
 /** Constrains the snapshot date, or defers to the shared helper. */
-const SAFE = /\.eq\('date'|\.gte\('date'|\.lte\('date'|\.order\('date'|max\(date\)|latestSnapshotRows/
+/**
+ * Constrains the date, defers to the shared helper, or is explicitly marked
+ * reviewed-and-safe. The marker is for queries that build a SET rather than a
+ * sum — duplicates across snapshots cannot change a set — and it must carry a
+ * reason on the line, so a future reader can check the claim rather than trust
+ * the comment.
+ */
+const SAFE = /\.eq\('date'|\.gte\('date'|\.lte\('date'|\.order\('date'|max\(date\)|latestSnapshotRows|holdings-audit: safe/
 
 /** Sums, averages, or builds a denominator from the rows. */
 const AGGREGATES = /reduce\(|totals?\b|weightPct|weight_pct|\/\s*total|percent|\*\s*100\b/
@@ -50,29 +52,14 @@ const AGGREGATES = /reduce\(|totals?\b|weightPct|weight_pct|\/\s*total|percent|\
  * latestSnapshotRows. MAY ONLY SHRINK. Adding an entry is a regression and
  * should be rejected in review, not appended to.
  */
-const NOT_YET_MIGRATED = new Set([
-  'src/components/tabs/AssetTab.tsx:982',
-  'src/components/tabs/AssetTab.tsx:1009',
-  'src/components/thoughts/QuickTradeIdeaCapture.tsx:414',
-  'src/components/thoughts/QuickTradeIdeaCapture.tsx:433',
-  'src/components/thoughts/QuickTradeIdeaCapture.tsx:442',
-  'src/components/trading/AddTradeIdeaModal.tsx:197',
-  'src/components/trading/AddTradeIdeaModal.tsx:216',
-  'src/components/trading/AddTradeIdeaModal.tsx:225',
-  'src/components/trading/AddTradeIdeaModal.tsx:487',
-  'src/components/trading/CreateSimulationModal.tsx:85',
-  'src/components/trading/TradeIdeaDetailModal.tsx:458',
-  'src/components/trading/TradeIdeaDetailModal.tsx:468',
-  'src/components/trading/TradeIdeaDetailModal.tsx:855',
-  'src/components/trading/TradeIdeaDetailModal.tsx:864',
-  'src/components/trading/TradeIdeaDetailModal.tsx:912',
-  'src/components/trading/TradeIdeaDetailModal.tsx:921',
-  'src/hooks/ideas/useIdeasFeed.ts:109',
-  'src/pages/SimulationPage.tsx:837',
-  'src/pages/SimulationPage.tsx:1650',
-  'src/pages/SimulationPage.tsx:2726',
-  'src/pages/TradeQueuePage.tsx:1377',
-])
+/**
+ * EMPTY, and it must stay that way.
+ *
+ * All 21 sites have been migrated to latestSnapshotRows(), or — in one case —
+ * reviewed and marked `holdings-audit: safe` because it builds a Set rather
+ * than a sum. Adding an entry here is a regression, not a workaround.
+ */
+const NOT_YET_MIGRATED = new Set([])
 
 const sites = []
 for (const f of files) {
@@ -95,6 +82,11 @@ console.log(`portfolio_holdings query sites : ${sites.length}`)
 console.log(`  aggregating                  : ${agg.length}`)
 console.log(`  aggregating without a date   : ${unsafe.length}`)
 console.log(`  awaiting migration (allowed) : ${NOT_YET_MIGRATED.size}`)
+
+if (process.argv.includes('--list')) {
+  console.log('\nUNSAFE SITES (aggregating, no date constraint):')
+  unsafe.forEach(s => console.log(`  ${s.id}`))
+}
 
 if (unlisted.length) {
   console.error(`\nFAIL: ${unlisted.length} NEW aggregating query/queries with no date constraint:`)

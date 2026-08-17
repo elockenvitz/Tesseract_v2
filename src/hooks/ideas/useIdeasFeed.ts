@@ -107,6 +107,9 @@ function useUserContext() {
       if (!user) return new Set<string>()
       const { data } = await supabase
         .from('portfolio_holdings')
+        // holdings-audit: safe — builds a Set of asset ids, and a set is
+        // unaffected by the same asset appearing on several snapshot dates.
+        // No sum, no denominator, so latestSnapshotRows would change nothing.
         .select('asset_id, portfolios!inner(id)')
       const ids = new Set<string>()
       for (const h of data || []) if (h.asset_id) ids.add(h.asset_id)
