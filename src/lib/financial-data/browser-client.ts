@@ -287,16 +287,16 @@ export class BrowserFinancialService {
      * price.
      */
     try {
-      const res = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}&range=5d&interval=1d`)
+      const res = await fetch(`/.netlify/functions/quote?symbol=${encodeURIComponent(symbol)}&range=5d&interval=1d`)
       if (res.ok) {
         const data = await res.json()
         const quote = this.quoteFromChart(symbol, data)
         if (quote) return quote
       } else {
-        console.warn('[browser-client] /api/quote returned', res.status, 'for', symbol)
+        console.warn('[browser-client] quote function returned', res.status, 'for', symbol)
       }
     } catch (e) {
-      console.warn('[browser-client] /api/quote unreachable:', e)
+      console.warn('[browser-client] quote function unreachable:', e)
     }
 
     // Fallback: the Supabase edge proxy.
