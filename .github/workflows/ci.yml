@@ -137,7 +137,9 @@ jobs:
   # token does.
   notify-red-main:
     name: Alert on red main
-    needs: [typecheck, test]
+    # typecheck was deleted (it checked nothing); this now waits on the
+    # three real gates.
+    needs: [typecheck-cards, test, layout]
     if: failure() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
