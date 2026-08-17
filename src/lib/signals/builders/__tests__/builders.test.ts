@@ -399,11 +399,20 @@ describe('contract invariants', () => {
     }
   })
 
-  it('no evidence is attached without an argument for it', () => {
-    // Charts require a reason to appear, not a reason to suppress. None of
-    // these three has one yet.
+  it('evidence appears only where there is an argument for it', () => {
+    // Charts need a reason to appear, not a reason to suppress.
+    //
+    // active_risk earned one by measurement: rendered as a bare claim against
+    // real SPY weights it left 486px of dead space on a 390px screen, because a
+    // single active weight cannot be judged without the others. The ranked peer
+    // list closed that to -147px. news and recommendation still have no such
+    // argument and carry nothing.
     for (const c of all) {
-      expect(c.evidence == null || c.evidence.kind === 'none').toBe(true)
+      if (c.type === 'active_risk') {
+        expect(c.evidence?.kind).toBe('peer_bar')
+      } else {
+        expect(c.evidence == null || c.evidence.kind === 'none').toBe(true)
+      }
     }
   })
 })

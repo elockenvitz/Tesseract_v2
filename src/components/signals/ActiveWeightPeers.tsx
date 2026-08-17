@@ -21,6 +21,8 @@ interface ActiveWeightPeersProps {
   notHeldActivePct: number
   /** Total held names, so truncation is visible. */
   heldCount: number
+  /** Detail mode: show every peer supplied rather than the top five. */
+  full?: boolean
 }
 
 /**
@@ -49,14 +51,14 @@ interface ActiveWeightPeersProps {
  * is visible without pretending to be a ranking.
  */
 export function ActiveWeightPeers({
-  subject, peers, notHeldCount, notHeldActivePct, heldCount,
-}: ActiveWeightPeersProps) {
+  subject, peers, notHeldCount, notHeldActivePct, heldCount, full,
+}: ActiveWeightPeersProps & { full?: boolean }) {
   if (!peers.length) return null
-  const shown = peers.slice(0, 5)
+  const shown = full ? peers : peers.slice(0, 5)
   const max = Math.max(...shown.map(p => Math.abs(p.activePct)), 0.01)
 
   return (
-    <div className="flex min-h-[92px] flex-1 flex-col overflow-hidden" data-testid="active-weight-peers">
+    <div className={clsx('flex flex-col overflow-hidden', full ? '' : 'min-h-[92px] flex-1')} data-testid="active-weight-peers">
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5">
         {shown.map(p => {
           const over = p.activePct >= 0

@@ -219,14 +219,15 @@ test.describe('layout rules', () => {
      *   the recommender's rationale given the space the scenario detail has.
      * long-label: a synthetic stress fixture of the AMZN card, thin for the
      *   same reason its parent is — no probabilities, so no expectation.
-     * active-risk-real: MEASURED, not assumed. Rendered against real SSGA SPY
-     *   weights (504 names, 99.9775%, as-of 14-Aug-2026) for US Core Equity's
-     *   69-name snapshot, it leaves 486px of dead space — 58% of a 390px
-     *   viewport. The data gap is closed and the claim is still thin. It needs
-     *   a second dimension: the portfolio's other largest active weights, which
-     *   is the comparison that makes one active weight mean anything.
+     *
+     * active-risk-real LEFT this set, which is the direction the ratchet is
+     * supposed to move. Measured at 486px of dead space with a bare claim, 306px
+     * once the ranked peer pane was added, and -147px once the full list became
+     * the detail — it now overflows into its bounded scroller like the scenario
+     * cards. The claim was never weak; it was uncomparable. One active weight
+     * says nothing about whether it is the portfolio's largest bet or its fifth.
      */
-    const THIN_CLAIM = new Set(['news', 'recommendation', 'long-label', 'active-risk-real'])
+    const THIN_CLAIM = new Set(['news', 'recommendation', 'long-label'])
 
     const KNOWN_THIN = new Set([...DATA_GAP, ...THIN_CLAIM])
     // Ratcheted. Neither set may grow; entries leave when the underlying gap
@@ -235,11 +236,10 @@ test.describe('layout rules', () => {
     // still empty, so the synthetic active-risk fixtures genuinely cannot
     // render there.
     expect(DATA_GAP.size).toBeLessThanOrEqual(2)
-    // Raised 3 -> 4, once, for a RECLASSIFICATION rather than a regression:
-    // active-risk-real was measured against real weights and found thin. The
-    // ceiling moved because the diagnosis changed, not to accommodate a new
-    // thin card. It does not move again without the same standard of evidence.
-    expect(THIN_CLAIM.size).toBeLessThanOrEqual(4)
+    // Back to 3. It was raised to 4 for one measured reclassification and has
+    // now come down again because the card was fixed — a ceiling that only ever
+    // rises is an allowlist wearing a ratchet's clothes.
+    expect(THIN_CLAIM.size).toBeLessThanOrEqual(3)
 
     for (const slug of CARDS) {
       if (KNOWN_THIN.has(slug)) continue
