@@ -28,7 +28,6 @@ import { ScenarioLadder } from '../signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import { SignalCardSection } from './SignalCardSection'
-import { isFlagOn } from '../../lib/flags'
 import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
@@ -410,8 +409,20 @@ export function MobileDashboard({
    * mixed state is deliberate and temporary — the exit is the remaining four
    * builders, after which the legacy components are deleted in one PR.
    */
-  const signalCardsOn = isFlagOn('signal-cards')
-  const { data: recommendationResults = [] } = useRecommendationCards({ enabled: signalCardsOn })
+  /**
+   * Signal cards are the feed, not an experiment.
+   *
+   * They were behind a `signal-cards` flag while three of seven kinds were
+   * migrated and the other four still rendered as legacy tiles. That flag cost
+   * more than it bought: it silently failed twice — once because the root
+   * route's <Navigate replace> dropped the query string before anything read
+   * it, and once because nothing on screen said which state you were in — and
+   * every "why is the feed empty" question had to rule the flag out first.
+   *
+   * A card that renders nothing and a card behind an unset flag look identical.
+   * Removing the flag removes that ambiguity permanently.
+   */
+  const { data: recommendationResults = [] } = useRecommendationCards()
 
   /** Keyed by trade_queue_items.id, so a recommendation keeps its position in
    *  the interleave rather than jumping to the top of the feed. */
@@ -424,7 +435,6 @@ export function MobileDashboard({
   /** Keyed by assetId, replacing the active_risk template cards one for one. */
   const activeRiskByAsset = useMemo(() => {
     const m = new Map<string, SignalCard>()
-    if (!signalCardsOn) return m
     const usable = activeRiskRows.filter((r: any) => r.asOf)
     for (const row of selectActiveRisk(usable.map((r: any) => ({
       assetId: r.assetId, symbol: r.symbol, weightPct: r.weight,
@@ -435,7 +445,7 @@ export function MobileDashboard({
       if (built.ok) m.set(row.assetId, built.card)
     }
     return m
-  }, [signalCardsOn, activeRiskRows])
+  }, [activeRiskRows])
 
   /**
    * Scenario cards — the strongest content the product can produce.
@@ -445,7 +455,7 @@ export function MobileDashboard({
    * burying the one saying "TSLA is below your bear case" beneath four news
    * items would be a ranking decision nobody would defend out loud.
    */
-  const { data: scenarioResults = [] } = useScenarioCards({ enabled: signalCardsOn })
+  const { data: scenarioResults = [] } = useScenarioCards()
   const scenarioCards = useMemo(
     () => scenarioResults.filter(r => r.ok).map(r => (r as { ok: true; card: any }).card),
     [scenarioResults],
@@ -869,7 +879,7 @@ export function MobileDashboard({
             // Trade-queue-backed attention items are recommendations. Matched
             // by source_id so the card holds its place in the interleave
             // instead of jumping to the top of the feed.
-            const asRecommendation = signalCardsOn && a.source_type === 'trade_queue_item' && a.source_id
+            const asRecommendation = a.source_type === 'trade_queue_item' && a.source_id
               ? recommendationBySource.get(a.source_id)
               : undefined
             if (asRecommendation) {
@@ -993,7 +1003,7 @@ export function MobileDashboard({
             // Only active_risk has a builder. The other five template kinds —
             // unusual_move, earnings_ahead, earnings_result, corporate_action,
             // economic — keep their legacy tile until they have one.
-            if (signalCardsOn && c.kind === 'active_risk' && c.assetId) {
+            if (c.kind === 'active_risk' && c.assetId) {
               const built = activeRiskByAsset.get(c.assetId)
               if (built) {
                 return (
@@ -1034,7 +1044,7 @@ export function MobileDashboard({
               .map((s: string) => assetBySymbol.get(s.toUpperCase()) ?? null)
               .find(Boolean) ?? null
 
-            if (signalCardsOn) {
+            {
               // No quote is passed. The feed's quote map has no per-symbol
               // timestamp to check freshness against, and the builder must not
               // be handed a number it cannot date — that is the exact shape of
