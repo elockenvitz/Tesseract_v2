@@ -193,6 +193,24 @@ const sixCases = unwrap(buildScenarioGapCard({
   heldIn: ['Tech & Consumer Growth'], statedAt: '2026-04-04T00:00:00.000Z',
 }))
 
+/**
+ * Active risk from REAL data — the S9 measurement.
+ *
+ * US Core Equity's 69-name snapshot of 2026-04-21, against SPY holdings from
+ * SSGA's file dated 14-Aug-2026 (504 names, weights summing to 99.9775%).
+ * All 69 portfolio names matched a SPY constituent; nothing was off-benchmark.
+ *
+ * Numbers are computed, not invented: NVDA is 3.75% of the book against
+ * 8.14% of the index.
+ */
+const activeReal = unwrap(buildActiveRiskCard({
+  assetId: 'nvda', symbol: 'NVDA', companyName: 'NVIDIA',
+  weightPct: 3.7473, benchmarkWeightPct: 8.1367,
+  portfolioId: 'usce', portfolioName: 'US Core Equity',
+  asOf: '2026-04-21T00:00:00.000Z',
+  benchmarkSource: { index: 'S&P 500', proxy: 'SPY', asOf: '2026-08-14T00:00:00.000Z', isProxy: true },
+}))
+
 const noop = () => {}
 
 /**
@@ -208,6 +226,7 @@ const longLabel: SignalCard = {
 
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
+  { slug: 'active-risk-real', card: activeReal },
   { slug: 'six-cases', card: sixCases, evidence: ladderFor(sixCases), detail: detailFor(sixCases), detailLabel: 'See all 6 cases' },
   { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-at-expected', card: coherent, evidence: ladderFor(coherent), detail: detailFor(coherent), detailLabel: 'See all 3 cases' },
