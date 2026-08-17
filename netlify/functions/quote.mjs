@@ -23,44 +23,46 @@
  * degrades to silence rather than to a wrong number.
  *
  * Dependency-free on purpose.
+ *
+ * Written in the v1 `export const handler` style, matching article-extract.
+ * The first version used the v2 `export default` + `config.path` form; this
+ * site does not route those, so `/api/quote` fell through to the SPA catch-all
+ * in public/_redirects and returned index.html with HTTP 200 — a well-formed
+ * wrong answer, which is exactly the failure the client is built to distrust.
  */
 
 const FETCH_TIMEOUT_MS = 10_000
 const ALLOWED_RANGES = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y'])
 const ALLOWED_INTERVALS = new Set(['1m', '5m', '15m', '1d', '1wk', '1mo'])
 
-const json = (status, body) => new Response(JSON.stringify(body), {
-  status,
+const reply = (statusCode, body) => ({
+  statusCode,
   headers: {
     'content-type': 'application/json',
-    // The browser calls this from the app origin; Netlify serves both, so this
-    // is same-origin in production. The header is here for `netlify dev`, which
-    // serves functions on a different port.
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'content-type',
-    // Quotes are worth a few seconds of edge caching: a feed asks for the same
-    // handful of symbols repeatedly on one render pass. Shorter than the
-    // 15-minute freshness ceiling in suppression.ts, so a cached response can
-    // never be the reason a card claims to be fresher than it is.
+    // Shorter than the 15-minute freshness ceiling in suppression.ts, so a
+    // cached response can never be why a card claims to be fresher than it is.
     'cache-control': 'public, max-age=30',
   },
+  body: JSON.stringify(body),
 })
 
-export default async (request) => {
-  if (request.method === 'OPTIONS') return json(204, {})
+export const handler = async event => {
+  if (event.httpMethod === 'OPTIONS') return reply(204, {})
 
-  const url = new URL(request.url)
-  const symbol = (url.searchParams.get('symbol') || '').trim().toUpperCase()
-  const range = url.searchParams.get('range') || '5d'
-  const interval = url.searchParams.get('interval') || '1d'
+  const q = event.queryStringParameters || {}
+  const symbol = (q.symbol || '').trim().toUpperCase()
+  const range = q.range || '5d'
+  const interval = q.interval || '1d'
 
   // Symbols reach this from user data, so the shape is constrained rather than
   // interpolated blind — a ticker is letters, digits, dot, dash, caret.
   if (!symbol || !/^[A-Z0-9.\-^]{1,12}$/.test(symbol)) {
-    return json(400, { error: 'bad symbol' })
+    return reply(400, { error: 'bad symbol' })
   }
   if (!ALLOWED_RANGES.has(range) || !ALLOWED_INTERVALS.has(interval)) {
-    return json(400, { error: 'bad range or interval' })
+    return reply(400, { error: 'bad range or interval' })
   }
 
   const target =
@@ -73,26 +75,21 @@ export default async (request) => {
     const res = await fetch(target, {
       signal: controller.signal,
       headers: {
-        // Yahoo serves an interstitial to obviously-automated clients. This is
-        // the same shape the working manual test used.
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
         accept: 'application/json,text/plain,*/*',
       },
     })
-    if (!res.ok) return json(502, { error: `upstream ${res.status}` })
+    if (!res.ok) return reply(502, { error: `upstream ${res.status}` })
 
     const text = await res.text()
-    // A 200 carrying HTML is a bot interstitial, not data. Returning it as JSON
-    // would hand the client something well-formed and wrong, which is the exact
-    // failure mode the placeholder quote used to have.
-    if (!text.startsWith('{')) return json(502, { error: 'upstream returned non-json' })
+    // A 200 carrying HTML is a bot interstitial, not data. Passing it through
+    // would hand the client something well-formed and wrong.
+    if (!text.startsWith('{')) return reply(502, { error: 'upstream returned non-json' })
 
-    return json(200, JSON.parse(text))
+    return reply(200, JSON.parse(text))
   } catch (e) {
-    return json(502, { error: e?.name === 'AbortError' ? 'upstream timeout' : 'upstream unreachable' })
+    return reply(502, { error: e && e.name === 'AbortError' ? 'upstream timeout' : 'upstream unreachable' })
   } finally {
     clearTimeout(timer)
   }
 }
-
-export const config = { path: '/api/quote' }
