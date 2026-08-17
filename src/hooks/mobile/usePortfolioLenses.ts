@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { timeframeMonths } from '../../lib/signals/timeframe'
 
 /**
  * Four questions about the book that no existing screen asks.
@@ -126,15 +127,6 @@ const MIN_WEIGHT_PCT = 0.5
 /** A target this far past its own horizon has stopped being a view. */
 const OVERDUE_MONTHS = 2
 
-/** Parse "12M", "18M", "3Y" into months. */
-function timeframeMonths(tf: string | null | undefined): number | null {
-  if (!tf) return null
-  const m = /^(\d+)\s*([MY])$/i.exec(tf.trim())
-  if (!m) return null
-  const n = Number(m[1])
-  if (!Number.isFinite(n) || n <= 0) return null
-  return m[2].toUpperCase() === 'Y' ? n * 12 : n
-}
 
 export function usePortfolioLenses(options?: { enabled?: boolean }) {
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
