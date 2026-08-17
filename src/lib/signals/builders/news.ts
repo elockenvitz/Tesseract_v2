@@ -7,7 +7,7 @@ import {
   type SignalCard,
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent, isQuoteFresh } from '../suppression'
-import { actions, assetHref, dayKey, pct, TRIAGE } from './shared'
+import { actions, assetHref, dayKey, pct } from './shared'
 
 /**
  * A news story, with the book's stake in it.
@@ -160,7 +160,6 @@ export function buildNewsCard(input: NewsInput): CardResult {
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open source', href: url },
-        TRIAGE,
       ),
       provenance: {
         occurredAt: publishedAt,

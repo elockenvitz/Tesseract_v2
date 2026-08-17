@@ -30,7 +30,7 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
       const { data: rows } = await supabase
         .from('analyst_price_targets')
         .select(`
-          asset_id, price, probability, timeframe, is_official, created_at, updated_at,
+          asset_id, price, probability, timeframe, reasoning, is_official, created_at, updated_at,
           scenarios(name),
           assets!inner(id, symbol, company_name)
         `)
@@ -69,7 +69,7 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
       for (const t of targets) {
         const symbol = t.assets?.symbol
         if (!t.asset_id || !symbol) continue
-        const g = byAsset.get(t.asset_id) ?? {
+        const g: Group = byAsset.get(t.asset_id) ?? {
           assetId: t.asset_id,
           symbol,
           companyName: t.assets?.company_name ?? null,
@@ -85,6 +85,7 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
             price,
             probability: t.probability != null ? Number(t.probability) : null,
             timeframe: t.timeframe ?? null,
+            reasoning: t.reasoning ?? null,
           })
         }
         const stamp = t.updated_at || t.created_at

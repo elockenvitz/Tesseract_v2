@@ -23,9 +23,12 @@ export const dayKey = (iso: string): string => {
  * card type, which is how two of the old cards became dead ends.
  */
 export const TRIAGE: CardAction[] = [
-  { id: 'snooze', label: 'Snooze', inline: true },
-  { id: 'dismiss', label: 'Dismiss', inline: true },
+  { id: 'snooze', label: 'Snooze for a week', inline: true },
+  { id: 'dismiss', label: 'Not useful', inline: true },
 ]
+
+/** Always last in the menu, on every card type. */
+export const WHY: CardAction = { id: 'why', label: 'Why am I seeing this', inline: true }
 
 /**
  * The app is tab-based rather than routed — there is no `/asset/:id` route —
@@ -38,7 +41,8 @@ export const assetHref = (assetId: string) => `/asset/${assetId}`
 export function actions(
   primary: CardAction,
   open: { label: string; href: string },
-  quick: CardAction[] = TRIAGE,
+  quick: CardAction[] = [],
+  menu: CardAction[] = TRIAGE,
 ): CardActions {
-  return { primary, quick, open }
+  return { primary, quick, menu: [...menu, WHY], open }
 }

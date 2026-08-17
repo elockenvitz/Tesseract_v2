@@ -9,6 +9,12 @@ interface SignalCardSectionProps {
   onDismiss: (card: SignalCard) => void
   onWhy: (card: SignalCard) => void
   onPrimary: (card: SignalCard) => void
+  /** Chart or ladder for the evidence band. Supplied here so the card
+   *  component never imports a chart. */
+  evidence?: React.ReactNode
+  /** Revealed in place by the card's disclosure control. */
+  detail?: React.ReactNode
+  detailLabel?: string
 }
 
 /**
@@ -26,7 +32,7 @@ interface SignalCardSectionProps {
  * exit is the remaining four builders and the deletion of the legacy tiles.
  */
 export function SignalCardSection({
-  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary,
+  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -34,11 +40,16 @@ export function SignalCardSection({
       // snap-start without snap-always: a short card should not trap the
       // scroller the way a full-screen tile does, and several in a row should
       // be scrollable past as a group.
-      className="relative w-full snap-start border-b-8 border-gray-200 dark:border-gray-800"
+      // One screen per card, matching the legacy tiles rather than sitting
+      // short among them. The earlier short version made a card carrying a real
+      // finding look like a table row beside a full-screen tile.
+      className="relative h-full w-full snap-start snap-always overflow-y-auto border-b-8 border-gray-200 dark:border-gray-800"
     >
       <SignalCardView
         card={card}
-        onWhy={onWhy}
+        evidence={evidence}
+        detail={detail}
+        detailLabel={detailLabel}
         onOpen={c => {
           if (c.entity.kind === 'asset') onOpenAsset(c.entity.id, c.entity.ticker ?? c.entity.name)
           else if (c.actions.open.href.startsWith('http')) window.open(c.actions.open.href, '_blank', 'noopener')
@@ -46,7 +57,8 @@ export function SignalCardSection({
         onAction={(actionId, c) => {
           if (actionId === 'snooze') return onSnooze(c)
           if (actionId === 'dismiss') return onDismiss(c)
-          if (actionId === 'log_view') {
+          if (actionId === 'why') return onWhy(c)
+          if (actionId === 'capture') {
             return onCapture({
               assetId: c.entity.kind === 'asset' ? c.entity.id : null,
               symbol: c.entity.ticker ?? null,

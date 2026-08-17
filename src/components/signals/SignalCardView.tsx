@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, MoreHorizontal } from 'lucide-react'
+import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { vintageOf } from '../../lib/signals/contract'
 import type { SignalCard, Severity, Surface } from '../../lib/signals/contract'
@@ -8,39 +8,65 @@ import type { SignalCard, Severity, Surface } from '../../lib/signals/contract'
 /**
  * The only component that renders a signal card.
  *
- * Every type goes through here. There is no per-type branch and there must
- * never be one: seven bespoke card components is what produced three header
- * patterns, four action bars and two cards that were dead ends. If a type
- * cannot render from the contract, the contract changes — not this file.
+ * Every type goes through here and there is no per-type branch — seven bespoke
+ * card components is what produced three header patterns, four action bars and
+ * two cards that were dead ends. If a type cannot render from the contract,
+ * the contract changes, not this file.
  *
- * Height is content-driven. The previous cards were full-viewport with the
- * payload in the top 40%, which is what made a triage surface feel like an
- * endless scroll of near-empty screens and hid the sense of a finite queue.
- * Two or three cards visible at once is the goal, not a compromise.
+ * ── On height ─────────────────────────────────────────────────────────────
+ *
+ * One screen per card, filled.
+ *
+ * The first version was deliberately short, on the reading that full-viewport
+ * cards were the defect. They were not: the defect was full-viewport cards
+ * that were 60% empty, with the payload crammed into the top 40% and a chart
+ * panel rendering nothing. Shrinking the card cured the emptiness by removing
+ * the space rather than using it, which made a card carrying a real finding
+ * look like a table row.
+ *
+ * So the card owns the screen and has to earn it. Everything in it is
+ * load-bearing: the claim, the number, evidence that changes the decision, the
+ * detail behind the number, the actions. A card that cannot fill a screen with
+ * substance is a thin claim, not a candidate for less room.
  */
 
 interface SignalCardViewProps {
   card: SignalCard
   onAction: (actionId: string, card: SignalCard) => void
   onOpen: (card: SignalCard) => void
-  onWhy: (card: SignalCard) => void
-  /** Rendered between body and context — a sparkline, a peer bar. Supplied by
-   *  the feed so this component never imports a chart. */
+  /** Rendered in the evidence band — a ladder, a sparkline. Supplied by the
+   *  feed so this component never imports a chart. */
   evidence?: React.ReactNode
+  /**
+   * Detail behind the number, revealed in place.
+   *
+   * The point of the disclosure: a card saying a name is below its bear case
+   * must be able to show the cases themselves without sending anybody to an
+   * asset page. Navigation is the failure this surface exists to avoid.
+   */
+  detail?: React.ReactNode
+  /** Label for the disclosure control, e.g. "See all 3 cases". */
+  detailLabel?: string
 }
 
 /**
- * Severity is a rail, not a pill.
+ * Severity tints the eyebrow, and nothing else.
  *
- * The old cards led with a large coloured badge saying ACTIVE RISK — shouting
- * the least useful thing on the card, since the headline already says what it
- * is. A 4px rail carries the same information at the edge of vision and gives
- * the width back to the sentence.
+ * It was a 4px rail down the left edge. On a full-screen card that reads as a
+ * coloured border around the whole app, and three risk cards in a row looked
+ * like an error state. The eyebrow already names the surface; colouring that
+ * word carries urgency without painting the frame.
  */
-const RAIL: Record<Severity, string> = {
+const SEVERITY_TEXT: Record<Severity, string> = {
+  critical: 'text-rose-600 dark:text-rose-400',
+  attention: 'text-amber-600 dark:text-amber-500',
+  informational: 'text-gray-400 dark:text-gray-500',
+}
+
+const SEVERITY_DOT: Record<Severity, string> = {
   critical: 'bg-rose-500',
   attention: 'bg-amber-500',
-  informational: 'bg-gray-300 dark:bg-gray-700',
+  informational: 'bg-gray-300 dark:bg-gray-600',
 }
 
 const SURFACE_LABEL: Record<Surface, string> = {
@@ -56,20 +82,11 @@ const METRIC_TONE = {
   neutral: 'text-gray-900 dark:text-white',
 } as const
 
-/** "31 Jul" — short enough to sit in the eyebrow without pushing it to two lines. */
+/** "31 Jul" in UTC — the date belongs to the snapshot, not the reader's clock. */
 function shortDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  // UTC, not local. A holdings snapshot dated 2026-07-31T00:00:00Z rendered
-  // as "Jul 30" west of Greenwich, which quietly ages every book number by a
-  // day. The date belongs to the snapshot, not to the reader's clock.
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })
-}
-
-/** YYYY-MM-DD in UTC, or '' when unparseable. */
-function utcDay(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
 
 function relative(iso: string): string {
@@ -78,173 +95,222 @@ function relative(iso: string): string {
   return formatDistanceToNow(d, { addSuffix: true })
 }
 
-export function SignalCardView({ card, onAction, onOpen, onWhy, evidence }: SignalCardViewProps) {
-  const [expanded, setExpanded] = useState(false)
+function utcDay(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+}
+
+export function SignalCardView({
+  card, onAction, onOpen, evidence, detail, detailLabel,
+}: SignalCardViewProps) {
+  const [bodyOpen, setBodyOpen] = useState(false)
+  /**
+   * Open by default.
+   *
+   * The card owns a screen, and with the detail closed there were ~400px of
+   * nothing between the disclosure control and the actions — the exact "full
+   * viewport, 60% empty" failure this redesign exists to remove, reproduced by
+   * the redesign. The detail is the densest, most useful content available, so
+   * it fills the space it was written for and collapses for anyone who wants
+   * the claim alone.
+   */
+  const [detailOpen, setDetailOpen] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close on any outside press. Without this the menu stayed open while the
+  // feed scrolled under it, which reads as a stuck overlay.
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [menuOpen])
+
   const hasEvidence = !!evidence && card.evidence && card.evidence.kind !== 'none'
+  const bodyIsLong = card.body.length > 150
 
-  // Two lines by default. Replaces the horizontal swipe pages, where pages 2
-  // and 3 held the rationale and the next action behind near-invisible dots —
-  // most readers never saw them.
-  const bodyIsLong = card.body.length > 140
-
-  // Same UTC day means one date, not two. Compared in UTC because that is how
-  // both are rendered — comparing local days would hide or invent a gap either
-  // side of midnight.
   const sameDay = !!card.metric && utcDay(card.provenance.occurredAt) === utcDay(card.metric.asOf)
   const isBook = !!card.metric && vintageOf(card.metric) === 'holdings'
   const showsSecondDate = !!card.metric && !sameDay
 
   return (
-    <article className="relative flex w-full bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-      <div className={clsx('w-1 shrink-0', RAIL[card.severity])} aria-hidden />
-
-      <div className="flex-1 min-w-0 px-4 py-3.5">
-        {/* Eyebrow: surface, when it happened, and — only when a number is on
-            screen — when that number was true. */}
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400 dark:text-gray-500">
-          {/* The metadata clips; it never pushes the row wider than the card.
-              At 390px the surface, a relative time like "about 1 hour ago" and
-              a "book 31 Jul" stamp together exceed the width, and without
-              min-w-0 the flex row grows to fit them and scrolls sideways —
-              measured, not theorised: e2e/signal-cards.spec.ts caught this on
-              all four card types at once. */}
+    <article
+      data-signal-card={card.type}
+      className="relative flex min-h-full w-full flex-col bg-white dark:bg-gray-900"
+    >
+      <div className="flex-1 min-h-0 flex flex-col px-4 pt-4 pb-2">
+        {/* Eyebrow. Severity is the colour of the surface word plus a dot. */}
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]">
+          <span className={clsx('h-1.5 w-1.5 rounded-full shrink-0', SEVERITY_DOT[card.severity])} aria-hidden />
           <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
-            <span className="shrink-0">{SURFACE_LABEL[card.surface]}</span>
-            <span aria-hidden className="shrink-0">·</span>
-            {/* Collapsing to one date must not drop the vintage. On an active
-                risk card occurredAt IS the snapshot date, so the naive version
-                of "render once" removed the only marker saying the weight came
-                off the book rather than a live feed. When they coincide and the
-                number is a snapshot, the absolute date wins — it is the more
-                useful form for a book figure, and it keeps the prefix. */}
-            <span className="normal-case tracking-normal font-medium truncate">
-              {sameDay && isBook
-                ? `book ${shortDate(card.metric!.asOf)}`
-                : relative(card.provenance.occurredAt)}
+            <span className={clsx('shrink-0', SEVERITY_TEXT[card.severity])}>
+              {SURFACE_LABEL[card.surface]}
             </span>
-            {/* One date unless they differ. When the event and the number share
-                a day, "16 days ago · book Jul 31" is the same fact twice in two
-                formats. The second stamp earns its place only when the gap
-                between when something happened and when its number was true
-                would change what you conclude. */}
+            <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
+            <span className="normal-case tracking-normal font-medium truncate text-gray-400 dark:text-gray-500">
+              {sameDay && isBook ? `book ${shortDate(card.metric!.asOf)}` : relative(card.provenance.occurredAt)}
+            </span>
             {showsSecondDate && (
               <>
-                <span aria-hidden className="shrink-0">·</span>
-                <span className="normal-case tracking-normal font-medium shrink-0">
-                  {vintageOf(card.metric!) === 'holdings' ? 'book ' : ''}
-                  {shortDate(card.metric!.asOf)}
+                <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
+                <span className="normal-case tracking-normal font-medium shrink-0 text-gray-400 dark:text-gray-500">
+                  {isBook ? 'book ' : ''}{shortDate(card.metric!.asOf)}
                 </span>
               </>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => onWhy(card)}
-            aria-label="Why am I seeing this"
-            data-slot="why"
-            // No negative margin. `-mr-1` optically aligned the icon with the
-            // right text edge and bought 4px of horizontal overflow for it —
-            // the button sat outside its parent's content box, so the row
-            // became scrollable. Optical alignment is not worth a scrollbar.
-            className="ml-auto shrink-0 flex items-center justify-center h-8 w-8 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+
+          {/* The overflow menu. This control was wired to a no-op — it looked
+              like an affordance and did nothing, which is worse than having
+              none. Snooze, dismiss and "why am I seeing this" live here now. */}
+          <div className="relative ml-auto shrink-0" ref={menuRef}>
+            <button
+              type="button"
+              data-slot="menu"
+              aria-label="More options"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(v => !v)}
+              // No negative margin. This is the second time it has been added here
+              // for optical alignment and the second time it put the button
+              // outside its parent's content box, making the eyebrow row
+              // scrollable. Optical alignment is not worth a scrollbar.
+              className="flex items-center justify-center h-9 w-9 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-10 z-30 min-w-[210px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                {card.actions.menu.map(a => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    data-slot="menu-item"
+                    onClick={() => { setMenuOpen(false); onAction(a.id, card) }}
+                    className="block w-full px-4 py-3 text-left text-[14px] font-medium normal-case tracking-normal text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/60"
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* The headline is the message. A full sentence carrying the number,
-            never a category label — the eyebrow already says the category. */}
-        <h2 className="mt-1.5 text-[22px] leading-[1.22] font-semibold tracking-[-0.02em] text-gray-900 dark:text-white">
+        {/* The claim. Never carries the number — the metric block does. */}
+        <h2 className="mt-3 text-[26px] leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white">
           {card.headline}
         </h2>
 
         {card.metric && (
-          <div className="mt-3">
+          <div className="mt-4">
             <div className={clsx(
-              'text-[38px] leading-none font-bold tabular-nums tracking-[-0.03em]',
+              'text-[56px] leading-none font-bold tabular-nums tracking-[-0.035em]',
               METRIC_TONE[card.metric.direction ?? 'neutral'],
             )}>
               {card.metric.value}
             </div>
-            <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+            <div className="mt-1.5 text-[12px] font-semibold uppercase tracking-[0.05em] text-gray-400">
               {card.metric.label}
             </div>
           </div>
         )}
 
-        {hasEvidence && <div className="mt-3" data-evidence={card.evidence!.kind}>{evidence}</div>}
+        {/* Evidence gets real space now that the card owns the screen. */}
+        {hasEvidence && <div className="mt-5">{evidence}</div>}
 
         <p className={clsx(
-          'mt-3 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-          bodyIsLong && !expanded && 'line-clamp-2',
+          'mt-5 text-[16px] leading-[1.55] text-gray-600 dark:text-gray-300',
+          bodyIsLong && !bodyOpen && 'line-clamp-3',
         )}>
           {card.body}
         </p>
 
-        {bodyIsLong && !expanded && (
+        {bodyIsLong && (
+          // Both directions. "Show more" with no way back left the card
+          // permanently expanded and removed its own control, so the reader
+          // could not tell whether anything was still hidden.
           <button
             type="button"
-            onClick={() => setExpanded(true)}
-            className="mt-1 flex items-center gap-1 text-[13px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
+            data-slot="body-toggle"
+            onClick={() => setBodyOpen(v => !v)}
+            className="mt-1.5 flex items-center gap-1 self-start text-[14px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
           >
-            Show more
-            <ChevronDown className="h-3.5 w-3.5" />
+            {bodyOpen ? 'Show less' : 'Show more'}
+            {bodyOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
         )}
 
+        {/* Context as a legible row, not decorative pills. "Held · 2" at 11px
+            inside a grey pill was invisible, and it is the line that says
+            whether any of this is your problem. */}
         {card.context.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {card.context.map(chip => (
-              <span
-                key={chip.label}
-                className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-[11px] font-medium text-gray-600 dark:text-gray-300"
-              >
-                {chip.label}
+          <div className="mt-5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px]">
+            {card.context.map((chip, i) => (
+              <span key={chip.label} className="flex items-center gap-2">
+                {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
+                <span className="font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
               </span>
             ))}
           </div>
         )}
 
-        {/* One grammar on every card. Quick actions resolve in place; the
-            primary is the move; open always sits last and always navigates.
-            Two of the old cards had no action bar at all and were dead ends. */}
-        {/* One row, never two. Four buttons at 390px is the budget every
-            action label has to fit inside — "Not useful" and "Log a view"
-            both wrapped to two lines and inflated the card by 28px. */}
-        <div className="mt-4 flex items-center gap-1 min-w-0">
-          {card.actions.quick.map(a => (
+        {/* Detail in place. A card that must send you elsewhere to be
+            understood is a notification. */}
+        {detail && (
+          <div className="mt-4">
             <button
-              key={a.id}
               type="button"
-              onClick={() => onAction(a.id, card)}
-              data-slot="quick"
-              className="h-9 px-2.5 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis rounded-lg text-[13px] font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+              data-slot="detail-toggle"
+              aria-expanded={detailOpen}
+              onClick={() => setDetailOpen(v => !v)}
+              className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3.5 py-3 text-[14px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
             >
-              {a.label}
+              {detailOpen ? 'Hide detail' : (detailLabel ?? 'Show detail')}
+              {detailOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
             </button>
-          ))}
+            {detailOpen && <div className="mt-3" data-testid="card-detail">{detail}</div>}
+          </div>
+        )}
+
+        {/* Absorbs slack when a card genuinely has less to say. If this is
+            doing real work on a card type, that card is too thin for a screen
+            and the e2e dead-space rule will say so. */}
+        <div className="flex-1 min-h-4" aria-hidden />
+      </div>
+
+      {/* Actions pinned to the bottom of the screen the card owns, so the
+          gesture is in the same place on every card type. */}
+      <div className="sticky bottom-0 flex items-center gap-2 border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+        {card.actions.quick.map(a => (
           <button
+            key={a.id}
             type="button"
-            onClick={() => onAction(card.actions.primary.id, card)}
-            data-slot="primary"
-            className="h-9 px-3 min-w-0 shrink-[0.5] whitespace-nowrap overflow-hidden text-ellipsis rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[13px] font-bold no-touch-target"
+            data-slot="quick"
+            onClick={() => onAction(a.id, card)}
+            className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
           >
-            {card.actions.primary.label}
+            {a.label}
           </button>
-          <button
-            type="button"
-            onClick={() => onOpen(card)}
-            data-slot="open"
-            // The only action whose label varies in length — "Open AMZN" against
-            // "Open X". Everything else is fixed, so this is the one that gives
-            // way when four buttons will not fit. Truncating a label the user
-            // can still act on beats a row that scrolls sideways; CI on Linux
-            // caught this where local font metrics did not.
-            className="ml-auto min-w-0 h-9 px-2.5 whitespace-nowrap overflow-hidden text-ellipsis rounded-lg border border-gray-200 dark:border-gray-700 text-[13px] font-semibold text-gray-700 dark:text-gray-200 no-touch-target"
-          >
-            {card.actions.open.label}
-          </button>
-        </div>
+        ))}
+        <button
+          type="button"
+          data-slot="primary"
+          onClick={() => onAction(card.actions.primary.id, card)}
+          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+        >
+          {card.actions.primary.label}
+        </button>
+        <button
+          type="button"
+          data-slot="open"
+          onClick={() => onOpen(card)}
+          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
+        >
+          {card.actions.open.label}
+        </button>
       </div>
     </article>
   )
