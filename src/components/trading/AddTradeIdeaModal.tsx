@@ -12,6 +12,7 @@ import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 import { inferProvenance, type Provenance } from '../../lib/provenance'
 import type { TradeAction, PairLegType } from '../../types/trading'
 import { clsx } from 'clsx'
+import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 
 // Visibility options - must match database constraint: 'private', 'team', 'public'
 type VisibilityOption = 'private' | 'team'
@@ -212,19 +213,25 @@ export function AddTradeIdeaModal({
       if (selectedPortfolioIds.length === 0 || !assetId) return []
 
       // Get holdings for the selected asset in all selected portfolios
-      const { data: assetHoldings, error: assetError } = await supabase
+      const { data: assetHoldingsRaw, error: assetError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .eq('asset_id', assetId)
         .in('portfolio_id', selectedPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const assetHoldings = latestSnapshotRows(assetHoldingsRaw ?? [])
 
       if (assetError) throw assetError
 
       // Get total portfolio values for weight calculation
-      const { data: allHoldings, error: allError } = await supabase
+      const { data: allHoldingsRaw, error: allError } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, shares, price')
+        .select('portfolio_id, shares, price, date')
         .in('portfolio_id', selectedPortfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 
@@ -260,13 +267,16 @@ export function AddTradeIdeaModal({
     queryKey: ['asset-price', assetId],
     queryFn: async () => {
       // First try to get from portfolio_holdings (most recent price)
-      const { data: holdingData } = await supabase
+      const { data: holdingDataRaw } = await supabase
         .from('portfolio_holdings')
-        .select('price')
+        .select('price, date')
         .eq('asset_id', assetId)
         .gt('price', 0)
         .limit(1)
         .single()
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const holdingData = latestSnapshotRows(holdingDataRaw ?? [])
 
       if (holdingData?.price) return holdingData.price
 
@@ -483,13 +493,14 @@ export function AddTradeIdeaModal({
   const { data: portfolioHoldings } = useQuery({
     queryKey: ['portfolio-holdings', firstSelectedPortfolioId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: rows, error } = await supabase
         .from('portfolio_holdings')
-        .select('asset_id, shares, price')
+        .select('asset_id, shares, price, date')
         .eq('portfolio_id', firstSelectedPortfolioId!)
 
       if (error) throw error
-      return data
+      // Dated snapshots — only the newest is a current position.
+      return latestSnapshotRows(rows ?? [])
     },
     enabled: !!firstSelectedPortfolioId,
   })

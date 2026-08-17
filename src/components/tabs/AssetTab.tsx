@@ -53,6 +53,7 @@ import { useUserAssetWidgets, type WidgetType } from '../../hooks/useUserAssetWi
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
+import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 
 // Visibility options for thesis sections
 const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
@@ -978,7 +979,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const { data: portfolioHoldings } = useQuery({
     queryKey: ['portfolio-holdings', asset.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: holdingRows, error } = await supabase
         .from('portfolio_holdings')
         .select(`
           *,
@@ -1005,12 +1006,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       const totals: Record<string, number> = {}
 
       for (const portfolioId of portfolioIds) {
-        const { data, error } = await supabase
+        const { data: costRows, error } = await supabase
           .from('portfolio_holdings')
-          .select('shares, cost')
+          .select('shares, cost, date')
           .eq('portfolio_id', portfolioId)
 
         if (error) throw error
+        // Dated snapshots: summing every row multiplies cost basis by the
+        // number of uploads. See src/lib/holdings/latest-snapshot.ts.
+        const data = latestSnapshotRows(costRows ?? [])
 
         // Calculate total cost (cost basis) for this portfolio
         const totalCost = (data || []).reduce((sum, holding) => {

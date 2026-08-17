@@ -78,6 +78,7 @@ import type {
 } from '../types/trading'
 import { getDerivedUrgency, getUrgencySeverity, DERIVED_URGENCY_CONFIG, type DerivedUrgency } from '../lib/derived-urgency'
 import { clsx } from 'clsx'
+import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
 import { useTradeExpressionCounts, getExpressionStatus } from '../hooks/useTradeExpressionCounts'
 import { useTradeIdeaService } from '../hooks/useTradeIdeaService'
 import { submitRecommendation } from '../lib/services/recommendation-service'
@@ -1373,10 +1374,13 @@ export function TradeQueuePage() {
       }
 
       // Fetch all holdings for these portfolios to calculate total values and current positions
-      const { data: allHoldings } = await supabase
+      const { data: allHoldingsRaw } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price')
+        .select('portfolio_id, asset_id, shares, price, date')
         .in('portfolio_id', portfolioIds)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
 
       // Calculate portfolio totals
       const portfolioTotals = new Map<string, number>()

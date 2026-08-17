@@ -216,11 +216,90 @@ export class BrowserFinancialService {
     }
   }
 
+  /**
+   * One parser for both egress paths.
+   *
+   * The Netlify function and the Supabase edge function return the identical
+   * Yahoo chart payload, so the parsing must not be duplicated — two copies
+   * drift, and the copy that drifts is the fallback nobody exercises until the
+   * primary is already down.
+   *
+   * `timestamp` is `regularMarketTime`, the moment the price was true, never
+   * the moment we fetched it. Every freshness check downstream rests on that
+   * distinction.
+   */
+  private quoteFromChart(symbol: string, data: any): Quote | null {
+    const chart = data?.chart?.result?.[0]
+    if (!chart) return null
+
+    const meta = chart.meta
+    const quote = chart.indicators?.quote?.[0]
+    if (!meta || !quote) return null
+
+    const prices = quote.close || []
+    const opens = quote.open || []
+    const highs = quote.high || []
+    const lows = quote.low || []
+
+    const latestIndex = prices.length - 1
+    if (latestIndex < 0) return null
+
+    const currentPrice = prices[latestIndex]
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0) return null
+    if (!Number.isFinite(meta.regularMarketTime)) return null
+
+    const previousClose = meta.previousClose || currentPrice
+    const change = currentPrice - previousClose
+    const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
+
+    return {
+      symbol: meta.symbol || symbol.toUpperCase(),
+      price: currentPrice,
+      change,
+      changePercent,
+      open: opens[latestIndex] || currentPrice,
+      high: highs[latestIndex] || currentPrice,
+      low: lows[latestIndex] || currentPrice,
+      previousClose,
+      volume: meta.regularMarketVolume || 0,
+      marketCap: meta.marketCap,
+      timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
+      dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
+      dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice,
+    }
+  }
+
   private async fetchFromYahooFinance(symbol: string): Promise<Quote | null> {
-    // Route through the yahoo-chart-proxy Supabase edge function.
-    // Yahoo blocks direct browser requests via CORS and the free public
-    // CORS proxies this method used to rotate through have been paywalled
-    // or rate-limited to nothing — all quotes were silently failing.
+    /**
+     * Netlify first, Supabase edge second.
+     *
+     * `yahoo-chart-proxy` is deployed and ACTIVE and returns 502 on every call:
+     * Yahoo refuses Supabase's datacenter egress at the connection level, the
+     * same refusal that moved the article reader to Netlify. The effect was not
+     * a degraded feed but an empty one — every quote came back null, so every
+     * scenario card suppressed with `quote_unavailable` and no signal content
+     * rendered at all.
+     *
+     * The edge function is kept as a fallback rather than deleted: if Netlify
+     * is the one being blocked on some future day, having two independent
+     * egress paths is worth more than a tidy call site. Both failing still
+     * returns null, and null still means "we do not know" — never a fabricated
+     * price.
+     */
+    try {
+      const res = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}&range=5d&interval=1d`)
+      if (res.ok) {
+        const data = await res.json()
+        const quote = this.quoteFromChart(symbol, data)
+        if (quote) return quote
+      } else {
+        console.warn('[browser-client] /api/quote returned', res.status, 'for', symbol)
+      }
+    } catch (e) {
+      console.warn('[browser-client] /api/quote unreachable:', e)
+    }
+
+    // Fallback: the Supabase edge proxy.
     try {
       const { supabase } = await import('../supabase')
       const { data, error } = await supabase.functions.invoke('yahoo-chart-proxy', {
@@ -235,41 +314,7 @@ export class BrowserFinancialService {
         return null
       }
 
-      const chart = data?.chart?.result?.[0]
-      if (!chart) return null
-
-      const meta = chart.meta
-      const quote = chart.indicators?.quote?.[0]
-      if (!meta || !quote) return null
-
-      const prices = quote.close || []
-      const opens = quote.open || []
-      const highs = quote.high || []
-      const lows = quote.low || []
-
-      const latestIndex = prices.length - 1
-      if (latestIndex < 0) return null
-
-      const currentPrice = prices[latestIndex]
-      const previousClose = meta.previousClose || currentPrice
-      const change = currentPrice - previousClose
-      const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0
-
-      return {
-        symbol: meta.symbol || symbol.toUpperCase(),
-        price: currentPrice,
-        change,
-        changePercent,
-        open: opens[latestIndex] || currentPrice,
-        high: highs[latestIndex] || currentPrice,
-        low: lows[latestIndex] || currentPrice,
-        previousClose,
-        volume: meta.regularMarketVolume || 0,
-        marketCap: meta.marketCap,
-        timestamp: new Date(meta.regularMarketTime * 1000).toISOString(),
-        dayHigh: meta.regularMarketDayHigh || highs[latestIndex] || currentPrice,
-        dayLow: meta.regularMarketDayLow || lows[latestIndex] || currentPrice,
-      }
+      return this.quoteFromChart(symbol, data)
     } catch (e) {
       console.warn('[browser-client] yahoo-chart-proxy invoke threw:', e)
       return null

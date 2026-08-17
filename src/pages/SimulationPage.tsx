@@ -113,6 +113,7 @@ import type { SimulationShareAccess, SimulationShareMode, SharedSimulationListIt
 import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
 import { OrgBadge } from '../components/common/OrgBadge'
 import { DebateIndicatorBadge } from '../components/trading/DebateIndicatorBadge'
+import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -833,15 +834,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         setIsAutoCreating(true)
         try {
           // Get portfolio holdings for baseline
-          const { data: holdings } = await supabase
+          const { data: holdingsRaw } = await supabase
             .from('portfolio_holdings')
             .select(`
+              date,
               asset_id,
               shares,
               price,
               assets (id, symbol, company_name, sector)
             `)
             .eq('portfolio_id', selectedPortfolioId)
+          // portfolio_holdings is a series of dated snapshots; summing every row
+          // multiplies the total by the number of dates. See latest-snapshot.ts.
+          const holdings = latestSnapshotRows(holdingsRaw ?? [])
 
           // Calculate baseline
           const totalValue = (holdings || []).reduce((sum, h) => sum + (h.shares * h.price), 0)
@@ -1646,10 +1651,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       if (committed > 0 && selectedSimulationId && selectedPortfolioId) {
         void (async () => {
           try {
-            const { data: holdings } = await supabase
+            const { data: holdingsRaw } = await supabase
               .from('portfolio_holdings')
-              .select('asset_id, shares, price, assets (id, symbol, company_name, sector)')
+              .select('asset_id, shares, price, assets (id, symbol, company_name, sector), date')
               .eq('portfolio_id', selectedPortfolioId)
+            // portfolio_holdings is a series of dated snapshots; summing every row
+            // multiplies the total by the number of dates. See latest-snapshot.ts.
+            const holdings = latestSnapshotRows(holdingsRaw ?? [])
             const totalValue = (holdings || []).reduce(
               (s, h: any) => s + (Number(h.shares) || 0) * (Number(h.price) || 0),
               0,
@@ -2722,15 +2730,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       if (!newSimPortfolioId) throw new Error('Portfolio required')
 
       // Get portfolio holdings for baseline
-      const { data: holdings, error: holdingsError } = await supabase
+      const { data: holdingsRaw, error: holdingsError } = await supabase
         .from('portfolio_holdings')
         .select(`
+              date,
           asset_id,
           shares,
           price,
           assets (id, symbol, company_name, sector)
         `)
         .eq('portfolio_id', newSimPortfolioId)
+      // portfolio_holdings is a series of dated snapshots; summing every row
+      // multiplies the total by the number of dates. See latest-snapshot.ts.
+      const holdings = latestSnapshotRows(holdingsRaw ?? [])
 
       if (holdingsError) throw holdingsError
 
