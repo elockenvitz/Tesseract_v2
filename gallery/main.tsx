@@ -9,6 +9,7 @@ import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail'
 import { ScenarioDistribution } from '../src/components/signals/ScenarioDistribution'
 import { CardCarousel } from '../src/components/signals/CardCarousel'
+import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -211,6 +212,37 @@ const activeReal = unwrap(buildActiveRiskCard({
   benchmarkSource: { index: 'S&P 500', proxy: 'SPY', asOf: '2026-08-14T00:00:00.000Z', isProxy: true },
 }))
 
+/**
+* S10 peer pane, from the same real computation as the card: US Core Equity's
+ * 69-name snapshot against SSGA SPY dated 14-Aug-2026.
+ */
+const PEERS = [
+{ symbol: 'NVDA', weightPct: 3.7473, benchmarkPct: 8.1367, activePct: -4.3894 },
+    { symbol: 'AVGO', weightPct: 0.2872, benchmarkPct: 2.7760, activePct: -2.4888 },
+    { symbol: 'UNH', weightPct: 2.7421, benchmarkPct: 0.5443, activePct: 2.1978 },
+    { symbol: 'CRM', weightPct: 2.1129, benchmarkPct: 0.2393, activePct: 1.8736 },
+    { symbol: 'ADBE', weightPct: 1.8191, benchmarkPct: 0.1593, activePct: 1.6597 },
+    { symbol: 'BAC', weightPct: 2.0978, benchmarkPct: 0.6282, activePct: 1.4696 },
+    { symbol: 'PFE', weightPct: 1.5305, benchmarkPct: 0.2279, activePct: 1.3026 },
+    { symbol: 'AAPL', weightPct: 5.5026, benchmarkPct: 6.7040, activePct: -1.2014 },
+    { symbol: 'JNJ', weightPct: 2.1192, benchmarkPct: 0.9352, activePct: 1.1840 },
+    { symbol: 'GS', weightPct: 1.6382, benchmarkPct: 0.4575, activePct: 1.1807 },
+    { symbol: 'GE', weightPct: 1.6992, benchmarkPct: 0.5734, activePct: 1.1258 },
+    { symbol: 'MCD', weightPct: 1.3982, benchmarkPct: 0.2890, activePct: 1.1092 },
+    { symbol: 'NEE', weightPct: 1.3229, benchmarkPct: 0.2680, activePct: 1.0549 },
+    { symbol: 'NKE', weightPct: 1.1190, benchmarkPct: 0.0729, activePct: 1.0460 },
+]
+
+const activeEvidence = (
+  <CardCarousel
+    panes={[
+      { id: 'weight', label: 'Active weight',
+        content: <ActiveWeightPeers subject="NVDA" peers={PEERS} heldCount={69}
+                   notHeldCount={435} notHeldActivePct={-41.0944} /> },
+    ]}
+  />
+)
+
 const noop = () => {}
 
 /**
@@ -226,7 +258,12 @@ const longLabel: SignalCard = {
 
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
-  { slug: 'active-risk-real', card: activeReal },
+  { slug: 'active-risk-real', card: activeReal, evidence: activeEvidence,
+    // Same disclosure pattern as the scenario card: the pane ranks the top
+    // five, the detail carries the rest without the card growing.
+    detail: <ActiveWeightPeers subject="NVDA" peers={PEERS} heldCount={69}
+              notHeldCount={435} notHeldActivePct={-41.0900} full />,
+    detailLabel: 'See all 69 active weights' },
   { slug: 'six-cases', card: sixCases, evidence: ladderFor(sixCases), detail: detailFor(sixCases), detailLabel: 'See all 6 cases' },
   { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-at-expected', card: coherent, evidence: ladderFor(coherent), detail: detailFor(coherent), detailLabel: 'See all 3 cases' },
