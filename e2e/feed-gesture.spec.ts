@@ -44,6 +44,27 @@ async function swipeUp(
 const feedTop = (page: import('@playwright/test').Page) =>
   page.evaluate(() => document.getElementById('feed')!.scrollTop)
 
+/**
+ * Scroll a named card to the top of the feed and report where it starts.
+ *
+ * Positions were hardcoded as `scrollTop = 844`, which assumed a card was
+ * second in the deck. Adding one card ahead of it moved the target off-screen,
+ * the gesture landed outside it, and the feed did not move — a test failing for
+ * a reason that had nothing to do with what it was testing. CI caught it; the
+ * local run did not, because the local gallery build was a step behind.
+ */
+async function alignTo(page: import('@playwright/test').Page, slug: string) {
+  const top = await page.evaluate(s => {
+    const feed = document.getElementById('feed')!
+    const card = document.querySelector(`[data-card="${s}"]`) as HTMLElement
+    const y = card.offsetTop
+    feed.scrollTop = y
+    return feed.scrollTop
+  }, slug)
+  await page.waitForTimeout(400)
+  return top
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await page.locator('[data-card="news"]').waitFor()
@@ -63,20 +84,18 @@ test('one swipe from card body advances exactly one tile', async ({ page }) => {
 // swallowed by the horizontal scroller — which is necessary but not sufficient.
 // Confirming pan-x arbitration needs a real touchscreen.
 test('a vertical gesture over the carousel is not swallowed by it', async ({ page }) => {
+  const start = await alignTo(page, 'six-cases')
   const track = page.locator('[data-card="six-cases"] [data-carousel-track]')
-  await page.evaluate(() => { document.getElementById('feed')!.scrollTop = 844 })
-  await page.waitForTimeout(300)
   const box = await track.boundingBox()
   expect(box).not.toBeNull()
   await swipeUp(page, box!.x + box!.width / 2, box!.y + box!.height / 2)
   const after = await feedTop(page)
-  expect(after).toBeGreaterThan(VH * 1.9)
-  expect(after).toBeLessThan(VH * 2.1)
+  expect(after - start).toBeGreaterThan(VH * 0.9)
+  expect(after - start).toBeLessThan(VH * 1.1)
 })
 
 test('a swipe from the detail scroller at its end advances exactly one tile', async ({ page }) => {
-  await page.evaluate(() => { document.getElementById('feed')!.scrollTop = 844 })
-  await page.waitForTimeout(300)
+  const start = await alignTo(page, 'six-cases')
   const detail = page.locator('[data-card="six-cases"] [data-testid="card-detail"]')
   // Drive it to its end first; overscroll-behavior: contain should then hand
   // the gesture to the feed rather than swallowing it.
@@ -86,6 +105,6 @@ test('a swipe from the detail scroller at its end advances exactly one tile', as
   expect(box).not.toBeNull()
   await swipeUp(page, box!.x + box!.width / 2, box!.y + box!.height / 2)
   const after = await feedTop(page)
-  expect(after, 'feed did not advance from inside the exhausted detail scroller').toBeGreaterThan(VH * 1.9)
-  expect(after).toBeLessThan(VH * 2.1)
+  expect(after - start, 'feed did not advance from inside the exhausted detail scroller').toBeGreaterThan(VH * 0.9)
+  expect(after - start).toBeLessThan(VH * 1.1)
 })
