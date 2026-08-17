@@ -240,7 +240,7 @@ export function SignalCardView({
             and moved the emptiness inside the chart: a 500px-tall ladder with
             the axis floating in the middle of nothing. The slack belongs to the
             detail, which is content. */}
-        {hasEvidence && <div className="mt-4 flex h-[124px] shrink-0 flex-col">{evidence}</div>}
+        {hasEvidence && <div className="mt-4 flex h-[164px] shrink-0 flex-col">{evidence}</div>}
 
         <p className={clsx(
           'mt-4 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
@@ -298,12 +298,19 @@ export function SignalCardView({
             {detailOpen && (
               // The one bounded vertical scroller on the card, and only when
               // opened. Six cases with reasoning cannot be paged sideways
-              // without losing the comparison, so this region scrolls — but it
-              // is bounded by flex-1/min-h-0 so the CARD never grows, and
-              // overscroll-contain hands the gesture back to the feed at its
-              // end instead of swallowing it.
+              // without losing the comparison, so this region scrolls — bounded
+              // by flex-1/min-h-0, so the CARD never grows.
+              //
+              // Scroll chaining is deliberately LEFT ON. This was
+              // `overscroll-behavior-y: contain`, which means "do not chain to
+              // the ancestor" — the exact opposite of what was wanted. At the
+              // end of the case list the feed was blocked from advancing, which
+              // is the scroll conflict reproduced inside the region meant to
+              // contain it. A computed-style assertion had reported it as
+              // handled; a driven gesture showed the feed sitting at 844 and
+              // refusing to move.
               <div
-                className="mt-3 min-h-0 flex-1 overflow-y-auto [overscroll-behavior-y:contain]"
+                className="mt-3 min-h-0 flex-1 overflow-y-auto"
                 data-testid="card-detail"
               >
                 {detail}

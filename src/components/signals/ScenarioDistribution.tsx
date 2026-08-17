@@ -56,7 +56,7 @@ export function ScenarioDistribution({ cases, expected, blockedBy, price }: Scen
       {/* One bar per case, ordered by price descending so it reads against the
           ladder's left-to-right axis turned on its side. */}
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5">
-        {sorted.slice(0, 4).map((c, i) => {
+        {sorted.slice(0, 5).map((c, i) => {
           const p = c.probability
           const frac = p != null ? p / maxProb : 0
           return (
@@ -103,8 +103,8 @@ export function ScenarioDistribution({ cases, expected, blockedBy, price }: Scen
           ) : (
             <span className="text-gray-400">Sums to {sum.toFixed(0)}%</span>
           )}
-          {sorted.length > 4 && (
-            <span className="ml-auto shrink-0 text-gray-400">+{sorted.length - 4} in detail</span>
+          {sorted.length > 5 && (
+            <span className="ml-auto shrink-0 text-gray-400">+{sorted.length - 5} in detail</span>
           )}
         </div>
       </div>
